@@ -12,6 +12,11 @@ dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
+const defaultAllowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://smarterhub.netlify.app',
+];
 
 function normalizeOrigin(origin: string) {
   const value = origin.trim();
@@ -27,10 +32,12 @@ function normalizeOrigin(origin: string) {
   return `https://${value}`;
 }
 
-const allowedOrigins = (process.env.FRONTEND_URL ?? '')
+const envAllowedOrigins = (process.env.FRONTEND_URL ?? '')
   .split(',')
   .map((item) => normalizeOrigin(item))
   .filter(Boolean);
+
+const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...envAllowedOrigins]));
 
 app.use(
   cors({

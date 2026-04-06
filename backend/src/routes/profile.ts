@@ -47,7 +47,7 @@ const updateProfileSchema = z.object({
   remuneracao: z.string(),
   tipoContrato: z.string(),
   regimeHorario: z.string()
-});
+}).partial();
 
 router.get("/profile/me", requireAuth, async (req, res) => {
   const userId = req.authUser!.id;
