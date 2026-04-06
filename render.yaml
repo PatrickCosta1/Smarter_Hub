@@ -1,6 +1,7 @@
 databases:
   - name: smarter-hub-postgres
     plan: free
+    region: frankfurt
     databaseName: smarter_hub
     user: smarter_hub_user
 
