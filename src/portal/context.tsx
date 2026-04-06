@@ -5,6 +5,61 @@ import { AuthUser, PortalNotification, ProfileData, UserRole } from './types';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
+const profileKeys: Array<keyof ProfileData> = [
+  'primeiroNome',
+  'apelido',
+  'nomeAbreviado',
+  'dataNascimento',
+  'genero',
+  'estadoCivil',
+  'habilitacoesLiterarias',
+  'curso',
+  'faculdade',
+  'emailPessoal',
+  'telemovel',
+  'moradaFiscal',
+  'endereco',
+  'localidade',
+  'codigoPostal',
+  'matriculaCarro',
+  'cartaoCidadao',
+  'nif',
+  'niss',
+  'iban',
+  'situacaoIrs',
+  'numeroDependentes',
+  'irsJovem',
+  'anoPrimeiroDesconto',
+  'numeroCartaoContinente',
+  'voucherNosData',
+  'comprovativoMoradaFiscal',
+  'comprovativoCartaoCidadao',
+  'comprovativoIban',
+  'comprovativoCartaoContinente',
+  'contactoEmergenciaNome',
+  'contactoEmergenciaParentesco',
+  'contactoEmergenciaNumero',
+  'cargo',
+  'funcao',
+  'dataInicioContrato',
+  'dataFimContrato',
+  'remuneracao',
+  'tipoContrato',
+  'regimeHorario',
+];
+
+function normalizeProfileData(input: unknown): ProfileData {
+  const source = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const normalized = { ...initialProfileData } as ProfileData;
+
+  profileKeys.forEach((key) => {
+    const value = source[key];
+    normalized[key] = typeof value === 'string' ? value : '';
+  });
+
+  return normalized;
+}
+
 type PortalContextValue = {
   isAuthenticated: boolean;
   isLoadingSession: boolean;
@@ -62,7 +117,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       }),
     ]);
 
-    setProfileState(profileData);
+    setProfileState(normalizeProfileData(profileData));
     setNotifications(notificationsData);
   }, []);
 
@@ -124,7 +179,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setProfile = useCallback((profileData: ProfileData) => {
-    setProfileState(profileData);
+    setProfileState(normalizeProfileData(profileData));
   }, []);
 
   const saveProfile = useCallback(async (profileData: ProfileData) => {
@@ -132,14 +187,16 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       return { success: false, message: 'Sessão inválida. Faça login novamente.' };
     }
 
+    const normalizedProfile = normalizeProfileData(profileData);
+
     try {
       await apiRequest<ProfileData>('/profile/me', {
         method: 'PUT',
         headers: authHeaders(authToken),
-        body: JSON.stringify(profileData),
+        body: JSON.stringify(normalizedProfile),
       });
 
-      setProfileState(profileData);
+      setProfileState(normalizedProfile);
       return { success: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao guardar alterações.';
