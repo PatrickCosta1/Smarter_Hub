@@ -13,9 +13,40 @@ dotenv.config();
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
 
+function normalizeOrigin(origin: string) {
+  const value = origin.trim();
+
+  if (!value) {
+    return '';
+  }
+
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    return value;
+  }
+
+  return `https://${value}`;
+}
+
+const allowedOrigins = (process.env.FRONTEND_URL ?? '')
+  .split(',')
+  .map((item) => normalizeOrigin(item))
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL ?? "*"
+    origin: (origin, callback) => {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`Origin não permitida por CORS: ${origin}`));
+    }
   })
 );
 app.use(express.json());

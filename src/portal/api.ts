@@ -1,4 +1,5 @@
-const apiBase = (import.meta.env.VITE_API_URL ?? 'https://smarter-hub-api.onrender.com').replace(/\/$/, '');
+const rawApiBase = import.meta.env.VITE_API_URL ?? 'https://smarter-hub-api.onrender.com/api';
+const apiBase = rawApiBase.replace(/\/$/, '');
 
 export function getApiBase() {
   return apiBase;
