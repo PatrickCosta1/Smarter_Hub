@@ -26,7 +26,7 @@ export default function PortalLayout() {
       <section className="app-layout">
         <header className="topbar topbar-portal">
           <div className="topbar-brand">
-            <img src="src\public\logo.png" alt="Tlantic" />
+            <img src="/logo.png" alt="Tlantic" />
             <div>
               <strong>Smarter Hub</strong>
               <span>{roleLabels[userRole]}</span>

@@ -73,10 +73,15 @@ export default function LoginView() {
     setStatusType('idle');
     setStatusMessage('');
 
-    await new Promise((resolve) => setTimeout(resolve, 700));
-
-    login(username);
+    const result = await login(username, password);
     setIsSubmitting(false);
+
+    if (!result.success) {
+      setStatusType('error');
+      setStatusMessage(result.message || 'Credenciais inválidas.');
+      return;
+    }
+
     setStatusType('success');
     setStatusMessage('Login efetuado com sucesso.');
     navigate('/');
@@ -97,7 +102,7 @@ export default function LoginView() {
         <section className="auth-card" aria-labelledby="login-title">
           <div className="auth-card__brand">
             <div className="brand-mark" aria-label="Tlantic">
-              <img src="src\public\logo.png" alt="Tlantic" />
+              <img src="/logo.png" alt="Tlantic" />
             </div>
           </div>
 
@@ -119,7 +124,7 @@ export default function LoginView() {
                 <input
                   type="text"
                   name="username"
-                  placeholder="Nome de utilizador"
+                  placeholder="Ex: patrick"
                   autoComplete="username"
                   value={username}
                   onChange={(event) => {
@@ -151,7 +156,7 @@ export default function LoginView() {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   name="password"
-                  placeholder="Palavra-passe"
+                  placeholder="Ex: 1212"
                   autoComplete="current-password"
                   value={password}
                   onChange={(event) => {

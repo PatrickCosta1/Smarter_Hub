@@ -1,4 +1,4 @@
-import { ChangeEvent, useMemo, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useState } from 'react';
 import {
   cargoOptions,
   estadoCivilOptions,
@@ -104,6 +104,10 @@ export default function ProfilePage() {
   }, [profile]);
 
   const collaboratorName = useMemo(() => `${profile.primeiroNome} ${profile.apelido}`.trim(), [profile.apelido, profile.primeiroNome]);
+
+  useEffect(() => {
+    setDraftProfile(profile);
+  }, [profile]);
 
   function handleProfileChange(field: keyof ProfileData, value: string) {
     setDraftProfile((current) => {

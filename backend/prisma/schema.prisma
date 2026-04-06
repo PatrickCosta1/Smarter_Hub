@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  COLABORADOR
+  COORDENADOR
+  RH
+  ADMIN
+  CONVIDADO
+}
+
+model User {
+  id            String         @id @default(cuid())
+  username      String         @unique
+  email         String         @unique
+  passwordHash  String
+  role          Role           @default(COLABORADOR)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  profile       Profile?
+  notifications Notification[]
+}
+
+model Profile {
+  id                             String   @id @default(cuid())
+  userId                         String   @unique
+  primeiroNome                   String   @default("")
+  apelido                        String   @default("")
+  nomeAbreviado                  String   @default("")
+  dataNascimento                 String   @default("")
+  genero                         String   @default("")
+  estadoCivil                    String   @default("")
+  habilitacoesLiterarias         String   @default("")
+  curso                          String   @default("")
+  faculdade                      String   @default("")
+  emailPessoal                   String   @default("")
+  telemovel                      String   @default("")
+  moradaFiscal                   String   @default("")
+  endereco                       String   @default("")
+  localidade                     String   @default("")
+  codigoPostal                   String   @default("")
+  matriculaCarro                 String   @default("")
+  cartaoCidadao                  String   @default("")
+  nif                            String   @default("")
+  niss                           String   @default("")
+  iban                           String   @default("")
+  situacaoIrs                    String   @default("")
+  numeroDependentes              String   @default("")
+  irsJovem                       String   @default("")
+  anoPrimeiroDesconto            String   @default("")
+  numeroCartaoContinente         String   @default("")
+  voucherNosData                 String   @default("")
+  comprovativoMoradaFiscal       String   @default("")
+  comprovativoCartaoCidadao      String   @default("")
+  comprovativoIban               String   @default("")
+  comprovativoCartaoContinente   String   @default("")
+  contactoEmergenciaNome         String   @default("")
+  contactoEmergenciaParentesco   String   @default("")
+  contactoEmergenciaNumero       String   @default("")
+  cargo                          String   @default("")
+  funcao                         String   @default("")
+  dataInicioContrato             String   @default("")
+  dataFimContrato                String   @default("")
+  remuneracao                    String   @default("")
+  tipoContrato                   String   @default("")
+  regimeHorario                  String   @default("")
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
+  user                           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

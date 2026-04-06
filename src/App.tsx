@@ -7,7 +7,11 @@ import ProfilePage from './pages/ProfilePage';
 import { PortalProvider, usePortal } from './portal/context';
 
 function AppRoutes() {
-  const { isAuthenticated } = usePortal();
+  const { isAuthenticated, isLoadingSession } = usePortal();
+
+  if (isLoadingSession) {
+    return <main className="login-shell">A carregar sessão...</main>;
+  }
 
   if (!isAuthenticated) {
     return (

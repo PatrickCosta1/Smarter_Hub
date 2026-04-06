@@ -52,3 +52,18 @@ export type ProfileData = {
 };
 
 export type ProfileFieldError = Partial<Record<keyof ProfileData, string>>;
+
+export type PortalNotification = {
+  id: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+};
+
+export type AuthUser = {
+  id: string;
+  username: string;
+  email: string;
+  role: 'COLABORADOR' | 'COORDENADOR' | 'RH' | 'ADMIN' | 'CONVIDADO';
+};
