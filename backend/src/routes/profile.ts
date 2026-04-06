@@ -6,6 +6,69 @@ import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
+const profileFields = [
+  "primeiroNome",
+  "apelido",
+  "nomeAbreviado",
+  "dataNascimento",
+  "genero",
+  "estadoCivil",
+  "habilitacoesLiterarias",
+  "curso",
+  "faculdade",
+  "emailPessoal",
+  "telemovel",
+  "moradaFiscal",
+  "endereco",
+  "localidade",
+  "codigoPostal",
+  "matriculaCarro",
+  "cartaoCidadao",
+  "nif",
+  "niss",
+  "iban",
+  "situacaoIrs",
+  "numeroDependentes",
+  "irsJovem",
+  "anoPrimeiroDesconto",
+  "numeroCartaoContinente",
+  "voucherNosData",
+  "comprovativoMoradaFiscal",
+  "comprovativoCartaoCidadao",
+  "comprovativoIban",
+  "comprovativoCartaoContinente",
+  "contactoEmergenciaNome",
+  "contactoEmergenciaParentesco",
+  "contactoEmergenciaNumero",
+  "cargo",
+  "funcao",
+  "dataInicioContrato",
+  "dataFimContrato",
+  "remuneracao",
+  "tipoContrato",
+  "regimeHorario"
+] as const;
+
+function normalizeProfilePayload(payload: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("Payload invalido.");
+  }
+
+  const source = payload as Record<string, unknown>;
+  const normalized: Partial<Record<(typeof profileFields)[number], string>> = {};
+
+  profileFields.forEach((field) => {
+    if (!(field in source)) {
+      return;
+    }
+
+    const rawValue = source[field];
+    normalized[field] = rawValue == null ? "" : String(rawValue);
+  });
+
+  return normalized;
+}
+
 const optionalStringField = z.union([z.string(), z.null()]).transform((value) => value ?? '').optional();
 
 const updateProfileSchema = z.object({
@@ -68,7 +131,8 @@ router.get("/profile/me", requireAuth, async (req, res) => {
 router.put("/profile/me", requireAuth, async (req, res, next) => {
   try {
     const userId = req.authUser!.id;
-    const data = updateProfileSchema.parse(req.body);
+    const normalizedPayload = normalizeProfilePayload(req.body);
+    const data = updateProfileSchema.parse(normalizedPayload);
 
     const profile = await prisma.profile.upsert({
       where: { userId },

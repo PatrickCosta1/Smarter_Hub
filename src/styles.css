@@ -948,6 +948,8 @@ button {
 .profile-fields label {
   display: grid;
   gap: 7px;
+  align-self: start;
+  align-content: start;
 }
 
 .profile-fields span {
@@ -959,6 +961,7 @@ button {
 .profile-fields input,
 .profile-fields select,
 .profile-fields textarea {
+  width: 100%;
   min-height: 44px;
   border: 1px solid #c8d8f8;
   border-radius: 12px;

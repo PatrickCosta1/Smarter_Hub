@@ -1,4 +1,8 @@
-const rawApiBase = import.meta.env.VITE_API_URL ?? 'https://smarter-hub-api.onrender.com/api';
+const defaultApiBase = import.meta.env.DEV
+  ? 'http://localhost:4000/api'
+  : 'https://smarter-hub-api.onrender.com/api';
+
+const rawApiBase = import.meta.env.VITE_API_URL ?? defaultApiBase;
 const apiBase = rawApiBase.replace(/\/$/, '');
 
 export function getApiBase() {
@@ -6,17 +10,32 @@ export function getApiBase() {
 }
 
 export async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  const requestHeaders: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...(options?.headers ?? {}),
+  };
+
   const response = await fetch(`${apiBase}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options?.headers ?? {}),
-    },
     ...options,
+    headers: requestHeaders,
   });
 
   if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.message || 'Falha na comunicacao com a API.');
+    const payload = await response.json().catch(() => ({} as Record<string, unknown>));
+
+    if (Array.isArray(payload.issues) && payload.issues.length > 0) {
+      const issueText = payload.issues
+        .map((issue: unknown) => {
+          const entry = issue as { path?: unknown[]; message?: string };
+          const field = Array.isArray(entry.path) && entry.path.length > 0 ? String(entry.path[0]) : 'campo desconhecido';
+          return `${field}: ${entry.message ?? 'valor inválido'}`;
+        })
+        .join(' | ');
+
+      throw new Error(`Payload inválido. ${issueText}`);
+    }
+
+    throw new Error((payload.message as string) || 'Falha na comunicacao com a API.');
   }
 
   if (response.status === 204) {

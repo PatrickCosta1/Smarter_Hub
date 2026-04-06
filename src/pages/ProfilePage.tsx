@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, MouseEvent, useEffect, useMemo, useState } from 'react';
 import {
   cargoOptions,
   estadoCivilOptions,
@@ -133,6 +133,11 @@ export default function ProfilePage() {
   function handleFileChange(field: keyof ProfileData, event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     handleProfileChange(field, file ? file.name : '');
+  }
+
+  function handleFileInputClick(event: MouseEvent<HTMLInputElement>) {
+    // Clear current browser-level selection so the same file can be chosen again.
+    event.currentTarget.value = '';
   }
 
   function toggleSectionEdit(section: SectionKey) {
@@ -322,7 +327,13 @@ export default function ProfilePage() {
             </label>
             <label>
               <span>Comprovativo morada fiscal (PDF/JPG)</span>
-              <input type="file" accept=".pdf,.jpg,.jpeg" disabled={!editingSections.contacts} onChange={(event) => handleFileChange('comprovativoMoradaFiscal', event)} />
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg"
+                disabled={!editingSections.contacts}
+                onClick={handleFileInputClick}
+                onChange={(event) => handleFileChange('comprovativoMoradaFiscal', event)}
+              />
               <em>{draftProfile.comprovativoMoradaFiscal || 'Nenhum ficheiro selecionado'}</em>
               {profileErrors.comprovativoMoradaFiscal && <small>{profileErrors.comprovativoMoradaFiscal}</small>}
             </label>
@@ -361,13 +372,25 @@ export default function ProfilePage() {
             </label>
             <label className="field-span-2">
               <span>Comprovativo cartão cidadão (PDF/JPG)</span>
-              <input type="file" accept=".pdf,.jpg,.jpeg" disabled={!editingSections.documents} onChange={(event) => handleFileChange('comprovativoCartaoCidadao', event)} />
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg"
+                disabled={!editingSections.documents}
+                onClick={handleFileInputClick}
+                onChange={(event) => handleFileChange('comprovativoCartaoCidadao', event)}
+              />
               <em>{draftProfile.comprovativoCartaoCidadao || 'Nenhum ficheiro selecionado'}</em>
               {profileErrors.comprovativoCartaoCidadao && <small>{profileErrors.comprovativoCartaoCidadao}</small>}
             </label>
             <label className="field-span-2">
               <span>Comprovativo IBAN</span>
-              <input type="file" accept=".pdf,.jpg,.jpeg" disabled={!editingSections.documents} onChange={(event) => handleFileChange('comprovativoIban', event)} />
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg"
+                disabled={!editingSections.documents}
+                onClick={handleFileInputClick}
+                onChange={(event) => handleFileChange('comprovativoIban', event)}
+              />
               <em>{draftProfile.comprovativoIban || 'Nenhum ficheiro selecionado'}</em>
               {profileErrors.comprovativoIban && <small>{profileErrors.comprovativoIban}</small>}
             </label>
@@ -384,7 +407,7 @@ export default function ProfilePage() {
             )}
           </div>
           <div className="profile-fields">
-            <label>
+            <label className="field-span-2">
               <span>Situação IRS</span>
               <select value={draftProfile.situacaoIrs} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('situacaoIrs', event.target.value)}>
                 <option value="">Selecionar</option>
@@ -424,7 +447,13 @@ export default function ProfilePage() {
             </label>
             <label className="field-span-2">
               <span>Comprovativo cartão continente (opcional)</span>
-              <input type="file" accept=".pdf,.jpg,.jpeg" disabled={!editingSections.tax} onChange={(event) => handleFileChange('comprovativoCartaoContinente', event)} />
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg"
+                disabled={!editingSections.tax}
+                onClick={handleFileInputClick}
+                onChange={(event) => handleFileChange('comprovativoCartaoContinente', event)}
+              />
               <em>{draftProfile.comprovativoCartaoContinente || 'Nenhum ficheiro selecionado'}</em>
             </label>
           </div>
