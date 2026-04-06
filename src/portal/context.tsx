@@ -1,4 +1,4 @@
-import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { initialProfileData } from './data';
 import { apiRequest, authHeaders } from './api';
 import { AuthUser, PortalNotification, ProfileData, UserRole } from './types';
@@ -17,6 +17,7 @@ type PortalContextValue = {
   markAllNotificationsRead: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
   setProfile: (profile: ProfileData) => void;
+  saveProfile: (profile: ProfileData) => Promise<{ success: boolean; message?: string }>;
 };
 
 const PortalContext = createContext<PortalContextValue | null>(null);
@@ -48,7 +49,6 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   const [userRole, setUserRole] = useState<UserRole>('colaborador');
   const [notifications, setNotifications] = useState<PortalNotification[]>([]);
   const [profile, setProfileState] = useState<ProfileData>(initialProfileData);
-  const profilePersistTimerRef = useRef<number | undefined>(undefined);
 
   const unreadNotifications = useMemo(() => notifications.filter((item) => !item.isRead).length, [notifications]);
 
@@ -125,26 +125,26 @@ export function PortalProvider({ children }: { children: ReactNode }) {
 
   const setProfile = useCallback((profileData: ProfileData) => {
     setProfileState(profileData);
+  }, []);
 
+  const saveProfile = useCallback(async (profileData: ProfileData) => {
     if (!authToken) {
-      return;
+      return { success: false, message: 'Sessão inválida. Faça login novamente.' };
     }
 
-    if (profilePersistTimerRef.current) {
-      window.clearTimeout(profilePersistTimerRef.current);
-    }
+    try {
+      await apiRequest<ProfileData>('/profile/me', {
+        method: 'PUT',
+        headers: authHeaders(authToken),
+        body: JSON.stringify(profileData),
+      });
 
-    profilePersistTimerRef.current = window.setTimeout(async () => {
-      try {
-        await apiRequest<ProfileData>('/profile/me', {
-          method: 'PUT',
-          headers: authHeaders(authToken),
-          body: JSON.stringify(profileData),
-        });
-      } catch {
-        // A UI continua responsiva; o utilizador pode voltar a guardar ao editar novamente.
-      }
-    }, 400);
+      setProfileState(profileData);
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao guardar alterações.';
+      return { success: false, message };
+    }
   }, [authToken]);
 
   const markAllNotificationsRead = useCallback(async () => {
@@ -186,8 +186,9 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       markAllNotificationsRead,
       markNotificationRead,
       setProfile,
+      saveProfile,
     }),
-    [isAuthenticated, isLoadingSession, login, logout, markAllNotificationsRead, markNotificationRead, notifications, profile, setProfile, unreadNotifications, userRole],
+    [isAuthenticated, isLoadingSession, login, logout, markAllNotificationsRead, markNotificationRead, notifications, profile, saveProfile, setProfile, unreadNotifications, userRole],
   );
 
   return <PortalContext.Provider value={value}>{children}</PortalContext.Provider>;

@@ -80,7 +80,7 @@ function validateProfile(profile: ProfileData): ProfileFieldError {
 }
 
 export default function ProfilePage() {
-  const { profile, setProfile, userRole } = usePortal();
+  const { profile, saveProfile, userRole } = usePortal();
 
   const [draftProfile, setDraftProfile] = useState<ProfileData>(profile);
   const [editingSections, setEditingSections] = useState<Record<SectionKey, boolean>>({
@@ -94,16 +94,18 @@ export default function ProfilePage() {
   const [profileErrors, setProfileErrors] = useState<ProfileFieldError>({});
   const [profileStatusType, setProfileStatusType] = useState<'idle' | 'error' | 'success'>('idle');
   const [profileStatusMessage, setProfileStatusMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const canEdit = userRole !== 'convidado';
 
   const profileCompletion = useMemo(() => {
-    const fields = Object.values(profile);
+    const fields = Object.values(draftProfile);
     const filled = fields.filter((item) => item.trim().length > 0).length;
     return Math.round((filled / fields.length) * 100);
-  }, [profile]);
+  }, [draftProfile]);
 
-  const collaboratorName = useMemo(() => `${profile.primeiroNome} ${profile.apelido}`.trim(), [profile.apelido, profile.primeiroNome]);
+  const collaboratorName = useMemo(() => `${draftProfile.primeiroNome} ${draftProfile.apelido}`.trim(), [draftProfile.apelido, draftProfile.primeiroNome]);
+  const hasUnsavedChanges = useMemo(() => JSON.stringify(draftProfile) !== JSON.stringify(profile), [draftProfile, profile]);
 
   useEffect(() => {
     setDraftProfile(profile);
@@ -111,9 +113,7 @@ export default function ProfilePage() {
 
   function handleProfileChange(field: keyof ProfileData, value: string) {
     setDraftProfile((current) => {
-      const updated = { ...current, [field]: value };
-      setProfile(updated);
-      return updated;
+      return { ...current, [field]: value };
     });
 
     setProfileErrors((current) => {
@@ -126,8 +126,8 @@ export default function ProfilePage() {
       return updated;
     });
 
-    setProfileStatusType('success');
-    setProfileStatusMessage('Alterações guardadas automaticamente.');
+    setProfileStatusType('idle');
+    setProfileStatusMessage('Tens alterações por guardar.');
   }
 
   function handleFileChange(field: keyof ProfileData, event: ChangeEvent<HTMLInputElement>) {
@@ -145,6 +145,37 @@ export default function ProfilePage() {
       setProfileStatusType(nextIsEditing ? 'idle' : 'success');
       return { ...current, [section]: nextIsEditing };
     });
+  }
+
+  async function handleSaveChanges() {
+    if (!canEdit || isSaving || !hasUnsavedChanges) {
+      return;
+    }
+
+    const errors = validateProfile(draftProfile);
+    setProfileErrors(errors);
+
+    if (Object.keys(errors).length > 0) {
+      setProfileStatusType('error');
+      setProfileStatusMessage('Revise os campos destacados antes de guardar.');
+      return;
+    }
+
+    setIsSaving(true);
+    setProfileStatusType('idle');
+    setProfileStatusMessage('A guardar alterações...');
+
+    const result = await saveProfile(draftProfile);
+    setIsSaving(false);
+
+    if (!result.success) {
+      setProfileStatusType('error');
+      setProfileStatusMessage(result.message || 'Não foi possível guardar agora.');
+      return;
+    }
+
+    setProfileStatusType('success');
+    setProfileStatusMessage('Alterações guardadas com sucesso.');
   }
 
   return (
@@ -328,13 +359,13 @@ export default function ProfilePage() {
               <input type="text" value={draftProfile.iban} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('iban', event.target.value)} />
               {profileErrors.iban && <small>{profileErrors.iban}</small>}
             </label>
-            <label>
+            <label className="field-span-2">
               <span>Comprovativo cartão cidadão (PDF/JPG)</span>
               <input type="file" accept=".pdf,.jpg,.jpeg" disabled={!editingSections.documents} onChange={(event) => handleFileChange('comprovativoCartaoCidadao', event)} />
               <em>{draftProfile.comprovativoCartaoCidadao || 'Nenhum ficheiro selecionado'}</em>
               {profileErrors.comprovativoCartaoCidadao && <small>{profileErrors.comprovativoCartaoCidadao}</small>}
             </label>
-            <label>
+            <label className="field-span-2">
               <span>Comprovativo IBAN</span>
               <input type="file" accept=".pdf,.jpg,.jpeg" disabled={!editingSections.documents} onChange={(event) => handleFileChange('comprovativoIban', event)} />
               <em>{draftProfile.comprovativoIban || 'Nenhum ficheiro selecionado'}</em>
@@ -498,6 +529,14 @@ export default function ProfilePage() {
       <p className={`status-line profile-status status-${profileStatusType}`} aria-live="polite">
         {profileStatusMessage || ''}
       </p>
+
+      {canEdit && (
+        <div className={`floating-save${hasUnsavedChanges ? ' is-visible' : ''}`}>
+          <button type="button" className="floating-save__button" onClick={handleSaveChanges} disabled={!hasUnsavedChanges || isSaving}>
+            {isSaving ? 'A guardar...' : 'Guardar alterações'}
+          </button>
+        </div>
+      )}
     </>
   );
 }
