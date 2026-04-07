@@ -46,6 +46,7 @@ const profileKeys: Array<keyof ProfileData> = [
   'remuneracao',
   'tipoContrato',
   'regimeHorario',
+  'workCountry',
 ];
 
 function normalizeProfileData(input: unknown): ProfileData {
@@ -54,6 +55,11 @@ function normalizeProfileData(input: unknown): ProfileData {
 
   profileKeys.forEach((key) => {
     const value = source[key];
+    if (key === 'workCountry') {
+      normalized.workCountry = value === 'BR' ? 'BR' : 'PT';
+      return;
+    }
+
     normalized[key] = typeof value === 'string' ? value : '';
   });
 
@@ -82,8 +88,8 @@ function mapBackendRole(role: AuthUser['role']): UserRole {
     return 'admin';
   }
 
-  if (role === 'RH') {
-    return 'rh';
+  if (role === 'MANAGER') {
+    return 'manager';
   }
 
   if (role === 'COORDENADOR') {
@@ -190,11 +196,15 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     const normalizedProfile = normalizeProfileData(profileData);
 
     try {
-      await apiRequest<ProfileData>('/profile/me', {
+      const response = await apiRequest<{ pending?: boolean; message?: string } | ProfileData>('/profile/me', {
         method: 'PUT',
         headers: authHeaders(authToken),
         body: JSON.stringify(normalizedProfile),
       });
+
+      if (response && typeof response === 'object' && 'pending' in response && response.pending) {
+        return { success: true, message: response.message || 'Pedido enviado para aprovação.' };
+      }
 
       setProfileState(normalizedProfile);
       return { success: true };

@@ -9,10 +9,41 @@ datasource db {
 
 enum Role {
   COLABORADOR
+  MANAGER
   COORDENADOR
-  RH
   ADMIN
   CONVIDADO
+}
+
+enum WorkCountry {
+  PT
+  BR
+}
+
+enum VacationRequestType {
+  VACATION
+  ABSENCE_MEDICAL
+  ABSENCE_TRAINING
+}
+
+enum VacationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model Team {
+  id            String      @id @default(cuid())
+  name          String      @unique
+  country       WorkCountry @default(PT)
+  managerId     String?     @unique
+  coordinatorId String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  members       User[]      @relation("TeamMembers")
+  manager       User?       @relation("TeamManager", fields: [managerId], references: [id], onDelete: SetNull)
+  coordinator   User?       @relation("TeamCoordinator", fields: [coordinatorId], references: [id], onDelete: SetNull)
 }
 
 model User {
@@ -21,13 +52,20 @@ model User {
   email         String         @unique
   passwordHash  String
   role          Role           @default(COLABORADOR)
+  teamId        String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+  team          Team?          @relation("TeamMembers", fields: [teamId], references: [id], onDelete: SetNull)
+  managedTeam   Team?          @relation("TeamManager")
+  coordinatedTeams Team[]      @relation("TeamCoordinator")
   profile       Profile?
   notifications Notification[]
-  trainings     Training[]
-  vacations     Vacation[]
-  receipts      Receipt[]
+  trainings     Training[]       @relation("TrainingUser")
+  assignedTrainings Training[]   @relation("TrainingAssigner")
+  vacations     Vacation[]       @relation("VacationUser")
+  reviewedVacations Vacation[]    @relation("VacationReviewer")
+  profileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestUser")
+  reviewedProfileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestReviewer")
 }
 
 model Profile {
@@ -73,9 +111,14 @@ model Profile {
   remuneracao                    String   @default("")
   tipoContrato                   String   @default("")
   regimeHorario                  String   @default("")
+  workCountry                    WorkCountry @default(PT)
+  unjustifiedAbsences            Int      @default(0)
   createdAt                      DateTime @default(now())
   updatedAt                      DateTime @updatedAt
   user                           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([workCountry])
 }
 
 model Notification {
@@ -97,30 +140,49 @@ model Training {
   duracao       String   @default("")
   entidade      String   @default("")
   dataConclusao String   @default("")
+  status        String   @default("CONCLUIDA")
+  assignedByUserId String?
+  completedAt   DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User     @relation("TrainingUser", fields: [userId], references: [id], onDelete: Cascade)
+  assignedBy    User?    @relation("TrainingAssigner", fields: [assignedByUserId], references: [id], onDelete: SetNull)
 }
 
 model Vacation {
-  id         String   @id @default(cuid())
-  userId     String
-  dataInicio String
-  dataFim    String
-  observacoes String  @default("")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String   @id @default(cuid())
+  userId       String
+  dataInicio   String
+  dataFim      String
+  observacoes  String   @default("")
+  requestType  VacationRequestType @default(VACATION)
+  attachmentLink String @default("")
+  status       VacationStatus @default(PENDING)
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewReason String   @default("")
+  approvedByRole String @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation("VacationUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy   User?    @relation("VacationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+  @@index([userId, status])
 }
 
-model Receipt {
-  id             String   @id @default(cuid())
-  userId         String
-  periodo        String
-  salarioLiquido String   @default("")
-  estado         String   @default("Pendente")
-  documentoLink  String   @default("")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model ProfileChangeRequest {
+  id            String   @id @default(cuid())
+  userId        String
+  requestedData Json
+  changesSummary String
+  status        String   @default("PENDING")
+  reviewedById  String?
+  reviewedAt    DateTime?
+  reviewReason  String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation("ProfileChangeRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy    User?    @relation("ProfileChangeRequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
 }

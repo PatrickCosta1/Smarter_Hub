@@ -1,6 +1,6 @@
-export type UserRole = 'colaborador' | 'coordenador' | 'rh' | 'admin' | 'convidado';
+export type UserRole = 'colaborador' | 'manager' | 'coordenador' | 'admin' | 'convidado';
 
-export type PortalPage = 'home' | 'profile' | 'notifications' | 'formacoes' | 'ferias' | 'recibos';
+export type PortalPage = 'home' | 'profile' | 'perfil' | 'notifications' | 'aprovacoes' | 'formacoes' | 'ferias' | 'recibos' | 'admin';
 
 export type MenuItem = {
   id: string;
@@ -49,6 +49,7 @@ export type ProfileData = {
   remuneracao: string;
   tipoContrato: string;
   regimeHorario: string;
+  workCountry: 'PT' | 'BR';
 };
 
 export type ProfileFieldError = Partial<Record<keyof ProfileData, string>>;
@@ -65,5 +66,5 @@ export type AuthUser = {
   id: string;
   username: string;
   email: string;
-  role: 'COLABORADOR' | 'COORDENADOR' | 'RH' | 'ADMIN' | 'CONVIDADO';
+  role: 'COLABORADOR' | 'MANAGER' | 'COORDENADOR' | 'ADMIN' | 'CONVIDADO';
 };

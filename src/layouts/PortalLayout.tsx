@@ -49,9 +49,9 @@ export default function PortalLayout() {
               {unreadNotifications > 0 && <span className="icon-badge">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>}
             </button>
             <button
-              className={`icon-button${location.pathname === '/profile' ? ' is-active' : ''}`}
+              className={`icon-button${location.pathname === '/perfil' ? ' is-active' : ''}`}
               type="button"
-              onClick={() => navigate('/profile')}
+              onClick={() => navigate('/perfil')}
               aria-label="Perfil"
               title="Perfil"
             >

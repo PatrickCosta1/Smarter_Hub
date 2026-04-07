@@ -1,0 +1,38 @@
+Feriados identificados em 2026
+
+Portugal (PT)
+2026-01-01 - quinta-feira - Ano Novo
+2026-02-17 - terça-feira - Carnaval
+2026-04-03 - sexta-feira - Sexta-feira Santa
+2026-04-05 - domingo - Domingo de Páscoa
+2026-04-25 - sábado - Dia da Liberdade
+2026-05-01 - sexta-feira - Dia do Trabalhador
+2026-06-04 - quinta-feira - Corpo de Deus
+2026-06-10 - quarta-feira - Dia de Portugal, de Camões e das Comunidades Portuguesas
+2026-08-15 - sábado - Assunção de Nossa Senhora
+2026-10-05 - segunda-feira - Implantação da República
+2026-11-01 - domingo - Dia de Todos-os-Santos
+2026-12-01 - terça-feira - Restauração da Independência
+2026-12-08 - terça-feira - Imaculada Conceição
+2026-12-25 - sexta-feira - Natal
+2026-12-26 - sábado - Primeira Oitava
+
+Brasil (BR)
+2026-01-01 - quinta-feira - Confraternização Universal
+2026-02-16 - segunda-feira - Carnaval
+2026-02-17 - terça-feira - Carnaval
+2026-04-03 - sexta-feira - Sexta-feira Santa
+2026-04-05 - domingo - Domingo de Páscoa
+2026-04-21 - terça-feira - Dia de Tiradentes
+2026-05-01 - sexta-feira - Dia do Trabalhador
+2026-06-04 - quinta-feira - Corpus Christi
+2026-07-09 - quinta-feira - Revolução Constitucionalista de 1932
+2026-09-07 - segunda-feira - Dia da Independência
+2026-10-12 - segunda-feira - Nossa Senhora Aparecida
+2026-11-02 - segunda-feira - Dia de Finados
+2026-11-15 - domingo - Proclamação da República
+2026-11-20 - sexta-feira - Dia da Consciência Negra
+2026-12-25 - sexta-feira - Natal
+
+Regra de aniversário
+Se o aniversário cair num sábado ou domingo, o dia compensatório é o próximo dia útil disponível.

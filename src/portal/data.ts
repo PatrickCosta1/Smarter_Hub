@@ -10,20 +10,28 @@ export const roleMenus: Record<UserRole, MenuItem[]> = {
   ],
   coordenador: [
     { id: 'home', label: 'Home', path: '/' },
-    { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
-    { id: 'notifications', label: 'Notificações', path: '/notifications' }
-  ],
-  rh: [
-    { id: 'home', label: 'Home', path: '/' },
+    { id: 'aprovacoes', label: 'Aprovações', path: '/aprovacoes' },
     { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
     { id: 'formacoes', label: 'Formações', path: '/formacoes' },
+    { id: 'ferias', label: 'Férias', path: '/ferias' },
+    { id: 'notifications', label: 'Notificações', path: '/notifications' }
+  ],
+  manager: [
+    { id: 'home', label: 'Home', path: '/' },
+    { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
+    { id: 'aprovacoes', label: 'Aprovações', path: '/aprovacoes' },
+    { id: 'formacoes', label: 'Formações', path: '/formacoes' },
+    { id: 'ferias', label: 'Férias', path: '/ferias' },
     { id: 'recibos', label: 'Recibos', path: '/recibos' },
-    { id: 'notifications', label: 'Notificações', path: '/notifications' },
+    { id: 'notifications', label: 'Notificações', path: '/notifications' }
   ],
   admin: [
     { id: 'home', label: 'Home', path: '/' },
     { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
+    { id: 'admin', label: 'Administração', path: '/admin' },
+    { id: 'aprovacoes', label: 'Aprovações', path: '/aprovacoes' },
     { id: 'formacoes', label: 'Formações', path: '/formacoes' },
+    { id: 'ferias', label: 'Férias', path: '/ferias' },
     { id: 'recibos', label: 'Recibos', path: '/recibos' },
     { id: 'notifications', label: 'Notificações', path: '/notifications' },
   ],
@@ -36,8 +44,8 @@ export const roleMenus: Record<UserRole, MenuItem[]> = {
 
 export const roleLabels: Record<UserRole, string> = {
   colaborador: 'Colaborador',
+  manager: 'Manager',
   coordenador: 'Coordenador',
-  rh: 'RH',
   admin: 'Admin',
   convidado: 'Convidado',
 };
@@ -61,7 +69,7 @@ export const parentescoOptions = ['Pai/Mãe', 'Cônjuge', 'Filho(a)', 'Irmão/Ir
 export const habilitacoesOptions = ['12 ano', 'Licenciatura', 'Mestrado', 'Outro'];
 export const generoOptions = ['Feminino', 'Masculino', 'Prefiro não indicar'];
 export const estadoCivilOptions = ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viúvo(a)'];
-export const cargoOptions = ['Colaborador', 'Especialista', 'Coordenador', 'RH', 'Manager'];
+export const cargoOptions = ['Colaborador', 'Especialista', 'Coordenador', 'Manager'];
 export const tipoContratoOptions = ['Sem termo', 'Estágio Curricular', 'Estágio IEFP', 'Termo certo', 'Termo incerto'];
 export const regimeHorarioOptions = ['10%', '20%', '50%', '100%'];
 export const irsJovemOptions = ['Sim', 'Nao'];
@@ -107,6 +115,7 @@ export const initialProfileData: ProfileData = {
   remuneracao: '2250',
   tipoContrato: 'Sem termo',
   regimeHorario: '100%',
+  workCountry: 'PT',
 };
 
 export function detectRoleByUsername(currentUsername: string): UserRole {
@@ -116,8 +125,8 @@ export function detectRoleByUsername(currentUsername: string): UserRole {
     return 'admin';
   }
 
-  if (normalized.includes('rh')) {
-    return 'rh';
+  if (normalized.includes('manager') || normalized.includes('mgr')) {
+    return 'manager';
   }
 
   if (normalized.includes('coord')) {

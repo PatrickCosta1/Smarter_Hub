@@ -973,6 +973,19 @@ button {
   gap: 3px;
 }
 
+.notification-card__tag {
+  justify-self: start;
+  border: 1px solid #c4d9ff;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #2a5eab;
+  background: #edf4ff;
+}
+
 .notification-card__meta {
   display: flex;
   align-items: center;
@@ -1449,6 +1462,162 @@ button {
   color: #ffe0e0;
 }
 
+.portal-toast {
+  position: fixed;
+  right: 18px;
+  top: 88px;
+  z-index: 90;
+  min-width: min(420px, calc(100vw - 28px));
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 3px;
+  animation: riseIn 220ms ease both;
+  box-shadow: 0 18px 28px rgba(8, 33, 95, 0.24);
+}
+
+.portal-toast strong {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.portal-toast span {
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.portal-toast--success {
+  border: 1px solid #9ae3bf;
+  background: linear-gradient(165deg, #ebfff4, #d8fbe8);
+  color: #0f6b3d;
+}
+
+.portal-toast--error {
+  border: 1px solid #f3b2b2;
+  background: linear-gradient(165deg, #fff2f2, #ffe1e1);
+  color: #9f1f1f;
+}
+
+.account-shell {
+  display: grid;
+  gap: 16px;
+  max-width: 980px;
+}
+
+.account-hero {
+  border-radius: 22px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background:
+    radial-gradient(circle at 88% 10%, rgba(255, 224, 145, 0.35), rgba(255, 224, 145, 0)),
+    linear-gradient(145deg, #fff7e2, #ffe9be 45%, #ffd17f);
+  box-shadow: 0 20px 40px rgba(96, 55, 8, 0.2);
+  color: #5f3a07;
+}
+
+.account-kicker {
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #8a5812;
+}
+
+.account-hero h1 {
+  margin: 8px 0 6px;
+  font-size: clamp(1.28rem, 2.2vw, 1.8rem);
+  font-family: 'Sora', sans-serif;
+}
+
+.account-hero p {
+  margin: 0;
+  font-weight: 700;
+  color: #7a4e13;
+}
+
+.account-card {
+  border-radius: 22px;
+  padding: 18px;
+  border: 1px solid #f2d49f;
+  background: linear-gradient(170deg, #fffefb, #fff4db);
+  box-shadow: 0 16px 34px rgba(96, 55, 8, 0.16);
+}
+
+.account-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.account-meta div {
+  border: 1px dashed #e8be7d;
+  border-radius: 12px;
+  padding: 9px 11px;
+  background: #fff7e8;
+  display: grid;
+  gap: 3px;
+}
+
+.account-meta span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+  color: #8a5812;
+}
+
+.account-meta strong {
+  color: #5f3a07;
+}
+
+.account-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.account-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.account-form span {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #6f430c;
+}
+
+.account-form input {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid #dfb671;
+  padding: 0 12px;
+  background: #fff9ee;
+  color: #4f3106;
+}
+
+.account-form input:focus {
+  outline: none;
+  border-color: #c88014;
+  box-shadow: 0 0 0 3px rgba(200, 128, 20, 0.22);
+}
+
+.account-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.account-status {
+  margin: 12px 0 0;
+  font-weight: 700;
+  color: #7a4e13;
+}
+
 .trainings-shell {
   display: grid;
   gap: 14px;
@@ -1514,6 +1683,75 @@ button {
   font-size: 1.05rem;
   font-family: 'Sora', sans-serif;
 }
+
+.vacations-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.vacations-overview-grid article {
+  border-radius: 16px;
+  border: 1px solid #d7e5fb;
+  background: linear-gradient(180deg, #fafdff, #edf5ff);
+  padding: 12px;
+  display: grid;
+  gap: 5px;
+}
+
+.vacations-overview-grid span,
+.vacations-month-card header h4 {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+  color: #4c719f;
+}
+
+.vacations-overview-grid strong {
+  color: #0f3d86;
+  font-size: 1.2rem;
+  font-family: 'Sora', sans-serif;
+}
+
+.vacations-overview-grid small {
+  color: #5d7aa6;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.vacations-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-bottom: 14px;
+}
+
+.vacations-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #45648e;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.legend-swatch--holiday { background: linear-gradient(145deg, #fff0d8, #ffe0a6); }
+.legend-swatch--weekend { background: #f4f7fc; }
+.legend-swatch--absence { background: linear-gradient(145deg, #fff2f2, #ffd9d9); }
+.legend-swatch--pending { background: linear-gradient(145deg, #fff9e5, #ffeab1); }
+.legend-swatch--approved { background: linear-gradient(145deg, #eafcf0, #c9f1d7); }
+.legend-swatch--extra { background: linear-gradient(145deg, #eef1ff, #d8dcff); }
 
 .trainings-form-card,
 .trainings-list-card {
@@ -1729,6 +1967,235 @@ button {
   text-decoration: underline;
 }
 
+.rh-tabs {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rh-tabs button {
+  min-height: 38px;
+  border-radius: 12px;
+  border: 1px solid #bfd5fb;
+  background: #edf5ff;
+  color: #1a4d94;
+  font-weight: 800;
+  padding: 0 14px;
+}
+
+.rh-tabs button:hover {
+  background: #e2efff;
+  border-color: #9fc2f7;
+}
+
+.rh-tabs button.is-active {
+  border-color: #2f7df1;
+  background: linear-gradient(135deg, #2f7df1, #63b7ff);
+  color: #fff;
+  box-shadow: 0 10px 18px rgba(36, 102, 211, 0.24);
+}
+
+.vacations-year-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.vacations-month-card {
+  border: 1px solid #d4e2fb;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff, #f4f8ff);
+  padding: 12px;
+  box-shadow: 0 10px 24px rgba(20, 56, 118, 0.08);
+}
+
+.vacations-month-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.vacations-month-card h4 {
+  margin: 0;
+  color: #123a81;
+  font-family: 'Sora', sans-serif;
+  font-size: 0.92rem;
+}
+
+.vacations-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.vacations-month-grid strong {
+  text-align: center;
+  color: #6a87aa;
+  font-size: 0.71rem;
+  text-transform: uppercase;
+}
+
+.vacations-day {
+  min-height: 32px;
+  border-radius: 10px;
+  border: 1px solid #d8e6fb;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 0.76rem;
+  color: #1a457e;
+}
+
+.vacations-day--blank {
+  background: transparent;
+  border-color: transparent;
+}
+
+.vacations-day--weekend {
+  background: #f4f7fc;
+  color: #7a8aa0;
+}
+
+.vacations-day--holiday {
+  background: linear-gradient(145deg, #fff0d8, #ffe0a6);
+  border-color: #ffc85f;
+  color: #8e5c00;
+}
+
+.vacations-day--absence {
+  background: linear-gradient(145deg, #fff2f2, #ffd9d9);
+  border-color: #f0a0a0;
+  color: #a12a2a;
+}
+
+.vacations-day--pending {
+  background: linear-gradient(145deg, #fff9e5, #ffeab1);
+  border-color: #f1c24e;
+  color: #876100;
+}
+
+.vacations-day--approved {
+  background: linear-gradient(145deg, #eafcf0, #c9f1d7);
+  border-color: #82d29a;
+  color: #0f6b3d;
+}
+
+.vacations-day--extra {
+  background: linear-gradient(145deg, #eef1ff, #d8dcff);
+  border-color: #7f8cff;
+  color: #3c4cb9;
+}
+
+.vacations-day--normal {
+  background: #fff;
+}
+
+.vacations-shell .trainings-list-head small {
+  color: #5c769c;
+  font-weight: 700;
+  max-width: 620px;
+}
+
+.rh-request-list {
+  display: grid;
+  gap: 10px;
+}
+
+.rh-reason-input {
+  width: min(420px, 100%);
+  min-width: 0;
+}
+
+.rh-collaborator-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.rh-collaborator-results {
+  max-height: 248px;
+  overflow: auto;
+  border: 1px solid #d4e2fb;
+  border-radius: 12px;
+  background: #f8fbff;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+}
+
+.rh-collaborator-results p {
+  margin: 0;
+  color: #55729d;
+  font-size: 0.83rem;
+}
+
+.rh-collaborator-result {
+  width: 100%;
+  border: 1px solid #cfe1ff;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 10px;
+  display: grid;
+  gap: 2px;
+  text-align: left;
+}
+
+.rh-collaborator-result strong {
+  color: #0e3f86;
+  font-size: 0.88rem;
+}
+
+.rh-collaborator-result span {
+  color: #4b6791;
+  font-size: 0.8rem;
+}
+
+.rh-collaborator-result small {
+  color: #6884ae;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.rh-collaborator-result:hover {
+  border-color: #9bc0f9;
+  background: #f0f7ff;
+}
+
+.rh-selected-collaborator {
+  border: 1px solid #bcd6fb;
+  border-radius: 12px;
+  background: linear-gradient(170deg, #f9fcff, #edf5ff);
+  padding: 10px 12px;
+  display: grid;
+  gap: 3px;
+}
+
+.rh-selected-collaborator strong {
+  color: #103f84;
+}
+
+.rh-selected-collaborator span {
+  color: #56739d;
+  font-size: 0.83rem;
+}
+
+.rh-selected-collaborator button {
+  justify-self: start;
+  min-height: 30px;
+  border-radius: 9px;
+  border: 1px solid #9bc0f8;
+  background: #e7f1ff;
+  color: #1e5cad;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0 10px;
+}
+
+.rh-selected-collaborator button:hover {
+  background: #dcecff;
+}
+
 .floating-save {
   position: fixed;
   right: 18px;
@@ -1807,6 +2274,11 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .vacations-overview-grid,
+  .vacations-year-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .trainings-form .field-span-2 {
     grid-column: span 1;
   }
@@ -1876,6 +2348,11 @@ button {
 
   .trainings-mobile-list {
     display: grid;
+  }
+
+  .vacations-overview-grid,
+  .vacations-year-grid {
+    grid-template-columns: 1fr;
   }
 
   .notifications-filters {

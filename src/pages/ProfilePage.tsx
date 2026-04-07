@@ -117,11 +117,16 @@ export default function ProfilePage() {
     contract: false,
   });
   const [profileErrors, setProfileErrors] = useState<ProfileFieldError>({});
-  const [profileStatusType, setProfileStatusType] = useState<'idle' | 'error' | 'success'>('idle');
-  const [profileStatusMessage, setProfileStatusMessage] = useState('');
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string; visible: boolean }>({
+    type: 'success',
+    message: '',
+    visible: false,
+  });
   const [isSaving, setIsSaving] = useState(false);
 
   const canEdit = userRole !== 'convidado';
+  const canEditContract = userRole === 'manager' || userRole === 'coordenador' || userRole === 'admin';
+  const requestMode = !canEditContract;
 
   const profileCompletion = useMemo(() => {
     const fields = Object.values(draftProfile);
@@ -135,6 +140,13 @@ export default function ProfilePage() {
   useEffect(() => {
     setDraftProfile(profile);
   }, [profile]);
+
+  function showToast(type: 'success' | 'error', message: string) {
+    setToast({ type, message, visible: true });
+    window.setTimeout(() => {
+      setToast((current) => ({ ...current, visible: false }));
+    }, 3400);
+  }
 
   function handleProfileChange(field: keyof ProfileData, value: string) {
     setDraftProfile((current) => {
@@ -151,8 +163,6 @@ export default function ProfilePage() {
       return updated;
     });
 
-    setProfileStatusType('idle');
-    setProfileStatusMessage('Tens alterações por guardar.');
   }
 
   async function handleFileChange(field: keyof ProfileData, event: ChangeEvent<HTMLInputElement>) {
@@ -165,9 +175,6 @@ export default function ProfilePage() {
     const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
     const formData = new FormData();
     formData.append('file', file);
-
-    setProfileStatusType('idle');
-    setProfileStatusMessage('A carregar ficheiro...');
 
     try {
       const response = await fetch(`${getApiBase()}/files/upload`, {
@@ -183,11 +190,9 @@ export default function ProfilePage() {
 
       const payload = (await response.json()) as { link?: string; linkPath?: string };
       handleProfileChange(field, payload.linkPath || payload.link || '');
-      setProfileStatusType('success');
-      setProfileStatusMessage('Ficheiro carregado e convertido em link com sucesso.');
+      showToast('success', 'Ficheiro carregado com sucesso.');
     } catch (error) {
-      setProfileStatusType('error');
-      setProfileStatusMessage(error instanceof Error ? error.message : 'Falha ao carregar ficheiro.');
+      showToast('error', error instanceof Error ? error.message : 'Falha ao carregar ficheiro.');
     }
   }
 
@@ -203,7 +208,6 @@ export default function ProfilePage() {
 
     setEditingSections((current) => {
       const nextIsEditing = !current[section];
-      setProfileStatusType(nextIsEditing ? 'idle' : 'success');
       return { ...current, [section]: nextIsEditing };
     });
   }
@@ -217,26 +221,26 @@ export default function ProfilePage() {
     setProfileErrors(errors);
 
     if (Object.keys(errors).length > 0) {
-      setProfileStatusType('error');
-      setProfileStatusMessage('Revise os campos destacados antes de guardar.');
+      showToast('error', 'Revise os campos destacados antes de submeter.');
       return;
     }
 
     setIsSaving(true);
-    setProfileStatusType('idle');
-    setProfileStatusMessage('A guardar alterações...');
 
     const result = await saveProfile(draftProfile);
     setIsSaving(false);
 
     if (!result.success) {
-      setProfileStatusType('error');
-      setProfileStatusMessage(result.message || 'Não foi possível guardar agora.');
+      showToast('error', result.message || 'Não foi possível submeter o pedido agora.');
       return;
     }
 
-    setProfileStatusType('success');
-    setProfileStatusMessage('Alterações guardadas com sucesso.');
+    if (requestMode) {
+      showToast('success', 'Pedido efetuado com sucesso. Em breve irá receber uma resposta.');
+      return;
+    }
+
+    showToast('success', result.message || 'Alterações guardadas com sucesso.');
   }
 
   return (
@@ -551,7 +555,7 @@ export default function ProfilePage() {
         <article className="profile-card">
           <div className="section-headline">
             <h2>6. Situação contratual</h2>
-            {canEdit && (
+            {canEditContract && (
               <button className={`section-edit-button${editingSections.contract ? ' is-active' : ''}`} type="button" onClick={() => toggleSectionEdit('contract')}>
                 ✏️
               </button>
@@ -560,7 +564,7 @@ export default function ProfilePage() {
           <div className="profile-fields">
             <label>
               <span>Cargo</span>
-              <select value={draftProfile.cargo} disabled={!editingSections.contract} onChange={(event) => handleProfileChange('cargo', event.target.value)}>
+              <select value={draftProfile.cargo} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('cargo', event.target.value)}>
                 <option value="">Selecionar</option>
                 {cargoOptions.map((option) => (
                   <option key={option} value={option}>{option}</option>
@@ -570,26 +574,26 @@ export default function ProfilePage() {
             </label>
             <label className="field-span-2">
               <span>Função</span>
-              <textarea value={draftProfile.funcao} disabled={!editingSections.contract} onChange={(event) => handleProfileChange('funcao', event.target.value)} rows={2} />
+              <textarea value={draftProfile.funcao} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('funcao', event.target.value)} rows={2} />
               {profileErrors.funcao && <small>{profileErrors.funcao}</small>}
             </label>
             <label>
               <span>Data início do contrato</span>
-              <input type="date" value={draftProfile.dataInicioContrato} disabled={!editingSections.contract} onChange={(event) => handleProfileChange('dataInicioContrato', event.target.value)} />
+              <input type="date" value={draftProfile.dataInicioContrato} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('dataInicioContrato', event.target.value)} />
               {profileErrors.dataInicioContrato && <small>{profileErrors.dataInicioContrato}</small>}
             </label>
             <label>
               <span>Data fim do contrato</span>
-              <input type="date" value={draftProfile.dataFimContrato} disabled={!editingSections.contract} onChange={(event) => handleProfileChange('dataFimContrato', event.target.value)} />
+              <input type="date" value={draftProfile.dataFimContrato} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('dataFimContrato', event.target.value)} />
             </label>
             <label>
               <span>Remuneração</span>
-              <input type="number" min="0" value={draftProfile.remuneracao} disabled={!editingSections.contract} onChange={(event) => handleProfileChange('remuneracao', event.target.value)} />
+              <input type="number" min="0" value={draftProfile.remuneracao} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('remuneracao', event.target.value)} />
               {profileErrors.remuneracao && <small>{profileErrors.remuneracao}</small>}
             </label>
             <label>
               <span>Tipo de contrato</span>
-              <select value={draftProfile.tipoContrato} disabled={!editingSections.contract} onChange={(event) => handleProfileChange('tipoContrato', event.target.value)}>
+              <select value={draftProfile.tipoContrato} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('tipoContrato', event.target.value)}>
                 <option value="">Selecionar</option>
                 {tipoContratoOptions.map((option) => (
                   <option key={option} value={option}>{option}</option>
@@ -599,7 +603,7 @@ export default function ProfilePage() {
             </label>
             <label>
               <span>Regime horário</span>
-              <select value={draftProfile.regimeHorario} disabled={!editingSections.contract} onChange={(event) => handleProfileChange('regimeHorario', event.target.value)}>
+              <select value={draftProfile.regimeHorario} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('regimeHorario', event.target.value)}>
                 <option value="">Selecionar</option>
                 {regimeHorarioOptions.map((option) => (
                   <option key={option} value={option}>{option}</option>
@@ -611,14 +615,17 @@ export default function ProfilePage() {
         </article>
       </section>
 
-      <p className={`status-line profile-status status-${profileStatusType}`} aria-live="polite">
-        {profileStatusMessage || ''}
-      </p>
+      {toast.visible && (
+        <aside className={`portal-toast portal-toast--${toast.type}`} role="status" aria-live="polite">
+          <strong>{toast.type === 'success' ? 'Sucesso' : 'Atenção'}</strong>
+          <span>{toast.message}</span>
+        </aside>
+      )}
 
       {canEdit && (
         <div className={`floating-save${hasUnsavedChanges ? ' is-visible' : ''}`}>
           <button type="button" className="floating-save__button" onClick={handleSaveChanges} disabled={!hasUnsavedChanges || isSaving}>
-            {isSaving ? 'A guardar...' : 'Guardar alterações'}
+            {isSaving ? (requestMode ? 'A submeter...' : 'A guardar...') : requestMode ? 'Submeter pedido' : 'Guardar alterações'}
           </button>
         </div>
       )}

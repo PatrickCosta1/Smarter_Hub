@@ -4,6 +4,85 @@ import { usePortal } from '../portal/context';
 
 type FilterMode = 'all' | 'unread' | 'read';
 
+function buildFriendlyMessage(title: string, message: string) {
+  const normalized = `${title} ${message}`.toLowerCase();
+
+  if (normalized.includes('férias') && normalized.includes('aprov')) {
+    return {
+      title: 'Pedido de férias aprovado',
+      message: 'O pedido foi validado pelo RH. Já pode avançar com o planeamento da equipa.',
+      tag: 'Férias',
+    };
+  }
+
+  if (normalized.includes('férias') && normalized.includes('recus')) {
+    return {
+      title: 'Pedido de férias recusado',
+      message: 'O pedido foi recusado. Consulte o motivo e ajuste as datas para nova submissão.',
+      tag: 'Férias',
+    };
+  }
+
+  if (normalized.includes('ficha') && normalized.includes('aprov')) {
+    return {
+      title: 'Pedido de atualização aprovado',
+      message: 'As alterações da ficha foram aprovadas e já se encontram em processamento.',
+      tag: 'Ficha',
+    };
+  }
+
+  if (normalized.includes('ficha') && normalized.includes('recus')) {
+    return {
+      title: 'Pedido de atualização recusado',
+      message: 'Foi necessário recusar o pedido. Reveja os dados e submeta novamente.',
+      tag: 'Ficha',
+    };
+  }
+
+  if (normalized.includes('formação') && normalized.includes('atribu')) {
+    return {
+      title: 'Nova formação atribuída',
+      message: 'Tem uma nova formação atribuída. Consulte os detalhes e planeie a conclusão.',
+      tag: 'Formação',
+    };
+  }
+
+  if (normalized.includes('formação') && normalized.includes('conclu')) {
+    return {
+      title: 'Formação concluída',
+      message: 'A conclusão foi registada com sucesso e enviada para acompanhamento do RH.',
+      tag: 'Formação',
+    };
+  }
+
+  return {
+    title: title || 'Atualização interna',
+    message: message || 'Tem uma nova atualização no portal.',
+    tag: 'Portal',
+  };
+}
+
+function formatRelativeDate(dateText: string) {
+  const value = new Date(dateText).getTime();
+  const diffMs = Date.now() - value;
+
+  if (!Number.isFinite(diffMs) || diffMs < 0) {
+    return new Date(dateText).toLocaleString('pt-PT');
+  }
+
+  const minutes = Math.floor(diffMs / (1000 * 60));
+  if (minutes < 1) return 'agora mesmo';
+  if (minutes < 60) return `há ${minutes} min`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `há ${hours} h`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `há ${days} dia${days === 1 ? '' : 's'}`;
+
+  return new Date(dateText).toLocaleDateString('pt-PT');
+}
+
 export default function NotificationsPage() {
   const { notifications, markAllNotificationsRead, markNotificationRead, unreadNotifications } = usePortal();
   const navigate = useNavigate();
@@ -29,8 +108,8 @@ export default function NotificationsPage() {
   const readCount = notifications.length - unreadNotifications;
   const headlineText =
     unreadNotifications > 0
-      ? `Tens ${unreadNotifications} ${unreadNotifications === 1 ? 'notificação por ler' : 'notificações por ler'}.`
-      : 'Caixa de entrada limpa.';
+      ? `${unreadNotifications} ${unreadNotifications === 1 ? 'alerta por tratar' : 'alertas por tratar'} na sua caixa interna.`
+      : 'Tudo tratado. Não existem alertas pendentes.';
 
   return (
     <section className="notifications-shell">
@@ -43,15 +122,15 @@ export default function NotificationsPage() {
 
         <div className="notifications-stats">
           <div>
-            <span>Total</span>
+            <span>Eventos</span>
             <strong>{notifications.length}</strong>
           </div>
           <div>
-            <span>Por ler</span>
+            <span>Pendentes</span>
             <strong>{unreadNotifications}</strong>
           </div>
           <div>
-            <span>Lidas</span>
+            <span>Concluídos</span>
             <strong>{readCount}</strong>
           </div>
         </div>
@@ -72,7 +151,7 @@ export default function NotificationsPage() {
 
         <div className="home-actions">
           <button className="cta-button cta-primary" type="button" onClick={() => void markAllNotificationsRead()}>
-            Marcar todas como lidas
+            Marcar tudo como tratado
           </button>
           <button className="cta-button cta-ghost" type="button" onClick={() => navigate('/')}>
             Voltar à home
@@ -88,30 +167,35 @@ export default function NotificationsPage() {
           </article>
         )}
 
-        {visibleNotifications.map((notification) => (
-          <article key={notification.id} className={`notification-card${notification.isRead ? '' : ' is-unread'}`}>
-            <div className="notification-card__leading" aria-hidden="true">
-              {notification.isRead ? '✓' : '•'}
-            </div>
+        {visibleNotifications.map((notification) => {
+          const friendly = buildFriendlyMessage(notification.title, notification.message);
 
-            <div className="notification-card__main">
-              <div className="notification-card__meta">
-                <span>{new Date(notification.createdAt).toLocaleString('pt-PT')}</span>
-                <strong>{notification.isRead ? 'Lida' : 'Nova'}</strong>
+          return (
+            <article key={notification.id} className={`notification-card${notification.isRead ? '' : ' is-unread'}`}>
+              <div className="notification-card__leading" aria-hidden="true">
+                {notification.isRead ? '✓' : '•'}
               </div>
-              <h3>{notification.title}</h3>
-              <p>{notification.message}</p>
-            </div>
 
-            <div className="notification-card__actions">
-              {!notification.isRead && (
-                <button type="button" onClick={() => void markNotificationRead(notification.id)}>
-                  Marcar como lida
-                </button>
-              )}
-            </div>
-          </article>
-        ))}
+              <div className="notification-card__main">
+                <span className="notification-card__tag">{friendly.tag}</span>
+                <div className="notification-card__meta">
+                  <span>{formatRelativeDate(notification.createdAt)}</span>
+                  <strong>{notification.isRead ? 'Tratada' : 'Nova'}</strong>
+                </div>
+                <h3>{friendly.title}</h3>
+                <p>{friendly.message}</p>
+              </div>
+
+              <div className="notification-card__actions">
+                {!notification.isRead && (
+                  <button type="button" onClick={() => void markNotificationRead(notification.id)}>
+                    Marcar como tratada
+                  </button>
+                )}
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
