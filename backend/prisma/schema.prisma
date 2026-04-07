@@ -25,6 +25,8 @@ model User {
   updatedAt     DateTime       @updatedAt
   profile       Profile?
   notifications Notification[]
+  trainings     Training[]
+  vacations     Vacation[]
 }
 
 model Profile {
@@ -83,4 +85,30 @@ model Notification {
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Training {
+  id            String   @id @default(cuid())
+  userId        String
+  nome          String
+  link          String   @default("")
+  horas         Float
+  duracao       String   @default("")
+  entidade      String   @default("")
+  dataConclusao String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Vacation {
+  id         String   @id @default(cuid())
+  userId     String
+  dataInicio String
+  dataFim    String
+  tipo       String   @default("dia_completo")
+  observacoes String  @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

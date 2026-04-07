@@ -6,7 +6,9 @@ import { ZodError } from "zod";
 import { authRouter } from "./routes/auth.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { profileRouter } from "./routes/profile.js";
+import { trainingsRouter } from "./routes/trainings.js";
 import { usersRouter } from "./routes/users.js";
+import { vacationsRouter } from "./routes/vacations.js";
 
 dotenv.config();
 
@@ -65,6 +67,8 @@ app.get("/health", (_req, res) => {
 app.use("/api", authRouter);
 app.use("/api", usersRouter);
 app.use("/api", profileRouter);
+app.use("/api", trainingsRouter);
+app.use("/api", vacationsRouter);
 app.use("/api", notificationsRouter);
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

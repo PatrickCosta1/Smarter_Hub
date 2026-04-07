@@ -59,10 +59,10 @@ export default function HomePage() {
         </article>
 
         <article className="home-card">
-          <p>Benefícios</p>
-          <h3>Recibos e férias</h3>
-          <small>Área preparada para recibos, férias, benefícios e vouchers.</small>
-          <button type="button">Em breve</button>
+          <p>Formação</p>
+          <h3>Formações e horas</h3>
+          <small>Regista formações e acompanha o total de horas acumuladas.</small>
+          <button type="button" onClick={() => navigate('/formacoes')}>Abrir</button>
         </article>
       </section>
     </>

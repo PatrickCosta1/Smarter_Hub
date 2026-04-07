@@ -1,16 +1,19 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import LoginView from './components/LoginView';
+import LoadingScreen from './components/LoadingScreen';
 import PortalLayout from './layouts/PortalLayout';
 import HomePage from './pages/HomePage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProfilePage from './pages/ProfilePage';
+import TrainingsPage from './pages/TrainingsPage';
+import VacationsPage from './pages/VacationsPage';
 import { PortalProvider, usePortal } from './portal/context';
 
 function AppRoutes() {
   const { isAuthenticated, isLoadingSession } = usePortal();
 
   if (isLoadingSession) {
-    return <main className="login-shell">A carregar sessão...</main>;
+    return <LoadingScreen />;
   }
 
   if (!isAuthenticated) {
@@ -27,6 +30,8 @@ function AppRoutes() {
         <Route index element={<HomePage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="formacoes" element={<TrainingsPage />} />
+        <Route path="ferias" element={<VacationsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

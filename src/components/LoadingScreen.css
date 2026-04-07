@@ -1,0 +1,165 @@
+.loading-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.15), transparent 22%),
+    radial-gradient(circle at 82% 76%, rgba(255, 255, 255, 0.1), transparent 24%),
+    linear-gradient(135deg, var(--bg-deep), var(--bg) 38%, #118cff 100%);
+  z-index: 9999;
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  animation: loadingFadeIn 0.8s ease-out;
+}
+
+.loading-logo-wrapper {
+  width: 30%;
+  height: 30%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0);
+  backdrop-filter: blur(10px);
+  border-radius: 20px;
+  animation: loadingBounce 2s ease-in-out infinite;
+}
+
+.loading-logo {
+  width: 170%;
+  height: 170%;
+  object-fit: contain;
+}
+
+.loading-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: white;
+  margin: 0;
+  font-family: 'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  animation: loadingPulse 2s ease-in-out infinite;
+}
+
+.loading-subtitle {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0;
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  animation: loadingFadeIn 1.2s ease-out 0.3s both;
+}
+
+.loading-bars {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  height: 40px;
+}
+
+.bar {
+  width: 6px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 3px;
+  animation: loadingBarWave 1.2s ease-in-out infinite;
+}
+
+.bar-1 {
+  animation-delay: 0s;
+}
+
+.bar-2 {
+  animation-delay: 0.1s;
+}
+
+.bar-3 {
+  animation-delay: 0.2s;
+}
+
+.bar-4 {
+  animation-delay: 0.3s;
+}
+
+.bar-5 {
+  animation-delay: 0.4s;
+}
+
+.loading-status {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0;
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  animation: loadingStatusFade 2s ease-in-out infinite;
+}
+
+/* Keyframe Animations */
+@keyframes loadingBounce {
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-15px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes loadingPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes loadingBarWave {
+  0%, 100% {
+    height: 20px;
+    opacity: 0.7;
+  }
+  50% {
+    height: 35px;
+    opacity: 1;
+  }
+}
+
+@keyframes loadingFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes loadingStatusFade {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Universal selector fallback for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .loading-screen,
+  .loading-container,
+  .loading-logo-wrapper,
+  .loading-title,
+  .loading-subtitle,
+  .bar,
+  .loading-status {
+    animation: none;
+  }
+}

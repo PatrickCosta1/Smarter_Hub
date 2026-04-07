@@ -27,10 +27,6 @@ export default function PortalLayout() {
         <header className="topbar topbar-portal">
           <div className="topbar-brand">
             <img src="/logo.png" alt="Tlantic" />
-            <div>
-              <strong>Smarter Hub</strong>
-              <span>{roleLabels[userRole]}</span>
-            </div>
           </div>
 
           <nav className="topbar-nav" aria-label="Menu principal">

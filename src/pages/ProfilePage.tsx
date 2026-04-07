@@ -199,13 +199,13 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        <div className="completion-card">
+        <div className="completion-card completion-card--highlight">
           <p>Completude da ficha</p>
           <strong>{profileCompletion}%</strong>
           <div className="completion-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={profileCompletion}>
             <span style={{ width: `${profileCompletion}%` }} />
           </div>
-          <small>Campos com comprovativo e dados fiscais aumentam a fiabilidade operacional.</small>
+          <small>Completa a tua ficha</small>
         </div>
       </section>
 

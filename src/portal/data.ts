@@ -10,19 +10,25 @@ export const roleMenus: Record<UserRole, MenuItem[]> = {
   ],
   coordenador: [
     { id: 'home', label: 'Home', path: '/' },
-    { id: 'profile', label: 'A Minha Ficha', path: '/profile' }
+    { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
+    { id: 'notifications', label: 'Notificações', path: '/notifications' }
   ],
   rh: [
     { id: 'home', label: 'Home', path: '/' },
     { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
+    { id: 'formacoes', label: 'Formações', path: '/formacoes' },
+    { id: 'notifications', label: 'Notificações', path: '/notifications' },
   ],
   admin: [
     { id: 'home', label: 'Home', path: '/' },
     { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
+    { id: 'formacoes', label: 'Formações', path: '/formacoes' },
+    { id: 'notifications', label: 'Notificações', path: '/notifications' },
   ],
   convidado: [
     { id: 'home', label: 'Home', path: '/' },
     { id: 'profile', label: 'Onboarding', path: '/profile' },
+    { id: 'notifications', label: 'Notificações', path: '/notifications' },
   ],
 };
 
