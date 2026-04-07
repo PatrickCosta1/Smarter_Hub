@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiRequest, authHeaders } from '../portal/api';
+import { apiRequestCached, authHeaders } from '../portal/api';
 import { usePortal } from '../portal/context';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
@@ -33,9 +33,9 @@ export default function HomePage() {
     void (async () => {
       try {
         const [profileRequests, vacationRequests, trainings] = await Promise.all([
-          apiRequest<unknown[]>('/profile/requests', { headers: getAuthHeaders() }),
-          apiRequest<unknown[]>('/vacations/requests', { headers: getAuthHeaders() }),
-          apiRequest<Array<{ status?: string }>>('/trainings/assigned', { headers: getAuthHeaders() }),
+          apiRequestCached<unknown[]>('/profile/requests', { headers: getAuthHeaders() }, 15000),
+          apiRequestCached<unknown[]>('/vacations/requests', { headers: getAuthHeaders() }, 15000),
+          apiRequestCached<Array<{ status?: string }>>('/trainings/assigned', { headers: getAuthHeaders() }, 15000),
         ]);
 
         setPendingProfileRequests(profileRequests.length);
@@ -113,7 +113,7 @@ export default function HomePage() {
 
             <article className="home-card">
               <p>Comunicação</p>
-              <h3>Notificações internas RH</h3>
+              <h3>Notificações internas</h3>
               <small>Centraliza eventos críticos do dia e marca ações tratadas sem perder histórico.</small>
               <button type="button" onClick={() => navigate('/notifications')}>Abrir</button>
             </article>

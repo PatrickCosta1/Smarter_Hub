@@ -5,6 +5,20 @@ const defaultApiBase = import.meta.env.DEV
 const rawApiBase = import.meta.env.VITE_API_URL ?? defaultApiBase;
 const apiBase = rawApiBase.replace(/\/$/, '');
 
+type ApiCacheEntry = {
+  expiresAt: number;
+  value: unknown;
+};
+
+const apiGetCache = new Map<string, ApiCacheEntry>();
+
+function buildCacheKey(path: string, options?: RequestInit) {
+  const method = (options?.method || 'GET').toUpperCase();
+  const headers = (options?.headers ?? {}) as Record<string, string>;
+  const auth = headers.Authorization || headers.authorization || '';
+  return `${method}|${path}|${auth}`;
+}
+
 export function getApiBase() {
   return apiBase;
 }
@@ -47,6 +61,50 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
   }
 
   return (await response.json()) as T;
+}
+
+export async function apiRequestCached<T>(
+  path: string,
+  options?: RequestInit,
+  ttlMs = 20000,
+  forceRefresh = false,
+): Promise<T> {
+  const method = (options?.method || 'GET').toUpperCase();
+
+  if (method !== 'GET') {
+    return apiRequest<T>(path, options);
+  }
+
+  const key = buildCacheKey(path, options);
+  const now = Date.now();
+
+  if (!forceRefresh) {
+    const cached = apiGetCache.get(key);
+    if (cached && cached.expiresAt > now) {
+      return cached.value as T;
+    }
+  }
+
+  const fresh = await apiRequest<T>(path, options);
+  apiGetCache.set(key, {
+    expiresAt: now + ttlMs,
+    value: fresh,
+  });
+
+  return fresh;
+}
+
+export function clearApiCache(prefix?: string) {
+  if (!prefix) {
+    apiGetCache.clear();
+    return;
+  }
+
+  for (const key of apiGetCache.keys()) {
+    if (key.includes(`|${prefix}`)) {
+      apiGetCache.delete(key);
+    }
+  }
 }
 
 export function authHeaders(token: string) {

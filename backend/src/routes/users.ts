@@ -25,6 +25,12 @@ const updateAdminUserSchema = z.object({
   localidade: z.string().optional(),
 });
 
+const managerTeamMemberUpdateSchema = z.object({
+  teamId: z.string().nullable().optional(),
+  cargo: z.string().optional(),
+  funcao: z.string().optional(),
+});
+
 function requireAdmin(reqRole: string) {
   return reqRole === 'ADMIN';
 }
@@ -125,6 +131,76 @@ router.get('/teams', requireAuth, async (req, res) => {
   });
 
   return res.json(teams);
+});
+
+router.patch('/manager/team-members/:id', requireAuth, async (req, res) => {
+  if (req.authUser!.role !== 'MANAGER') {
+    return res.status(403).json({ message: 'Apenas manager pode gerir membros da equipa.' });
+  }
+
+  const targetUserId = String(req.params.id || '');
+  const payload = managerTeamMemberUpdateSchema.safeParse(req.body);
+
+  if (!payload.success) {
+    return res.status(400).json({ message: payload.error.issues[0].message });
+  }
+
+  const data = payload.data;
+
+  const targetUser = await prisma.user.findUnique({
+    where: { id: targetUserId },
+    include: { team: true },
+  });
+
+  if (!targetUser) {
+    return res.status(404).json({ message: 'Colaborador não encontrado.' });
+  }
+
+  if (targetUser.role !== 'COLABORADOR') {
+    return res.status(400).json({ message: 'Só é possível gerir utilizadores com role COLABORADOR.' });
+  }
+
+  const currentTeamAllowed = targetUser.team?.managerId === req.authUser!.id;
+  if (!currentTeamAllowed) {
+    return res.status(403).json({ message: 'Este colaborador não pertence à tua equipa.' });
+  }
+
+  let nextTeamId: string | null | undefined = data.teamId;
+
+  if (nextTeamId !== undefined && nextTeamId !== null) {
+    const nextTeam = await prisma.team.findFirst({
+      where: { id: nextTeamId, managerId: req.authUser!.id },
+      select: { id: true },
+    });
+
+    if (!nextTeam) {
+      return res.status(403).json({ message: 'Só podes mover para equipas geridas por ti.' });
+    }
+  }
+
+  await prisma.user.update({
+    where: { id: targetUserId },
+    data: {
+      ...(nextTeamId !== undefined ? { teamId: nextTeamId } : {}),
+    },
+  });
+
+  if (data.cargo !== undefined || data.funcao !== undefined) {
+    await prisma.profile.upsert({
+      where: { userId: targetUserId },
+      update: {
+        ...(data.cargo !== undefined ? { cargo: data.cargo } : {}),
+        ...(data.funcao !== undefined ? { funcao: data.funcao } : {}),
+      },
+      create: {
+        userId: targetUserId,
+        ...(data.cargo !== undefined ? { cargo: data.cargo } : {}),
+        ...(data.funcao !== undefined ? { funcao: data.funcao } : {}),
+      },
+    });
+  }
+
+  return res.json({ success: true });
 });
 
 router.get('/admin/users', requireAuth, async (req, res) => {

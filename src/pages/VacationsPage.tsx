@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { apiRequest, authHeaders, getApiBase } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase } from '../portal/api';
 import { usePortal } from '../portal/context';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
@@ -201,7 +201,7 @@ function buildMonthGrid(year: number, monthIndex: number) {
 
 export default function VacationsPage() {
   const { userRole, profile } = usePortal();
-  const canApprove = userRole === 'manager' || userRole === 'coordenador' || userRole === 'admin';
+  const canApprove = userRole === 'admin';
 
   const [activeTab, setActiveTab] = useState<Subtab>('overview');
   const [draft, setDraft] = useState<VacationDraft>(EMPTY_DRAFT);
@@ -286,31 +286,31 @@ export default function VacationsPage() {
   }, [canApprove]);
 
   async function loadMine() {
-    const data = await apiRequest<VacationRecord[]>('/vacations/me', {
+    const data = await apiRequestCached<VacationRecord[]>('/vacations/me', {
       headers: getAuthHeaders(),
-    });
+    }, 10000);
     setRecords(data);
   }
 
   async function loadOverview() {
-    const data = await apiRequest<VacationOverview>('/vacations/overview', {
+    const data = await apiRequestCached<VacationOverview>('/vacations/overview', {
       headers: getAuthHeaders(),
-    });
+    }, 20000);
     setOverview(data);
   }
 
   async function loadCalendar() {
     const year = new Date().getFullYear();
-    const data = await apiRequest<CalendarPayload>(`/vacations/calendar?year=${year}`, {
+    const data = await apiRequestCached<CalendarPayload>(`/vacations/calendar?year=${year}`, {
       headers: getAuthHeaders(),
-    });
+    }, 20000);
     setCalendarData(data);
   }
 
   async function loadApprovalQueue() {
-    const data = await apiRequest<VacationRecord[]>('/vacations/requests', {
+    const data = await apiRequestCached<VacationRecord[]>('/vacations/requests', {
       headers: getAuthHeaders(),
-    });
+    }, 10000);
     setApprovalQueue(data);
   }
 
@@ -409,6 +409,7 @@ export default function VacationsPage() {
         body: JSON.stringify(payload),
       });
 
+      clearApiCache('/vacations');
       await Promise.all([loadMine(), loadOverview(), loadCalendar()]);
       resetForm();
       setStatus('Pedido submetido com sucesso.');
@@ -424,6 +425,7 @@ export default function VacationsPage() {
         headers: getAuthHeaders(),
       });
 
+      clearApiCache('/vacations');
       await Promise.all([loadMine(), loadOverview(), loadCalendar()]);
       setStatus('Pedido cancelado.');
     } catch (error) {
@@ -437,6 +439,7 @@ export default function VacationsPage() {
         method: 'POST',
         headers: getAuthHeaders(),
       });
+      clearApiCache('/vacations');
       await loadApprovalQueue();
       setStatus(action === 'approve' ? 'Pedido aprovado.' : 'Pedido recusado.');
     } catch (error) {

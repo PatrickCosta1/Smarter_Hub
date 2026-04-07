@@ -1,6 +1,6 @@
 import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { initialProfileData } from './data';
-import { apiRequest, authHeaders } from './api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from './api';
 import { AuthUser, PortalNotification, ProfileData, UserRole } from './types';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
@@ -115,12 +115,12 @@ export function PortalProvider({ children }: { children: ReactNode }) {
 
   const loadPortalData = useCallback(async (token: string) => {
     const [profileData, notificationsData] = await Promise.all([
-      apiRequest<ProfileData>('/profile/me', {
+      apiRequestCached<ProfileData>('/profile/me', {
         headers: authHeaders(token),
-      }),
-      apiRequest<PortalNotification[]>('/notifications/me', {
+      }, 30000),
+      apiRequestCached<PortalNotification[]>('/notifications/me', {
         headers: authHeaders(token),
-      }),
+      }, 10000),
     ]);
 
     setProfileState(normalizeProfileData(profileData));
@@ -178,6 +178,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     window.localStorage.removeItem(STORAGE_TOKEN_KEY);
+    clearApiCache();
     setAuthToken('');
     setIsAuthenticated(false);
     setNotifications([]);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiRequest, authHeaders } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
 import { usePortal } from '../portal/context';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
@@ -49,8 +49,8 @@ export default function AdminPage() {
   async function loadData() {
     try {
       const [usersData, teamsData] = await Promise.all([
-        apiRequest<AdminUser[]>('/admin/users', { headers: getAuthHeaders() }),
-        apiRequest<Team[]>('/teams', { headers: getAuthHeaders() }),
+        apiRequestCached<AdminUser[]>('/admin/users', { headers: getAuthHeaders() }, 15000),
+        apiRequestCached<Team[]>('/teams', { headers: getAuthHeaders() }, 30000),
       ]);
 
       setUsers(usersData);
@@ -83,6 +83,8 @@ export default function AdminPage() {
         }),
       });
 
+      clearApiCache('/admin/users');
+      clearApiCache('/teams');
       await loadData();
       setStatus('Perfil atualizado com sucesso.');
     } catch (error) {

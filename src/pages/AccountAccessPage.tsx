@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { apiRequest, authHeaders } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
 
 type MeResponse = {
   user: {
@@ -30,9 +30,9 @@ export default function AccountAccessPage() {
     const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
 
     try {
-      const data = await apiRequest<MeResponse>('/auth/me', {
+      const data = await apiRequestCached<MeResponse>('/auth/me', {
         headers: authHeaders(token),
-      });
+      }, 20000);
 
       setUsername(data.user.username);
       setEmail(data.user.email);
@@ -82,6 +82,7 @@ export default function AccountAccessPage() {
       });
 
       localStorage.setItem(STORAGE_TOKEN_KEY, response.token);
+      clearApiCache('/auth/me');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmNewPassword('');

@@ -11,6 +11,7 @@ import ReceiptsPage from './pages/ReceiptsPage';
 import TrainingsPage from './pages/TrainingsPage';
 import VacationsPage from './pages/VacationsPage';
 import AdminPage from './pages/AdminPage';
+import ManagerTeamsPage from './pages/ManagerTeamsPage';
 import { PortalProvider, usePortal } from './portal/context';
 
 function AppRoutes() {
@@ -36,6 +37,7 @@ function AppRoutes() {
         <Route path="profile" element={<ProfilePage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="aprovacoes" element={<RHApprovalsPage />} />
+        <Route path="equipas" element={<ManagerTeamsPage />} />
         <Route path="formacoes" element={<TrainingsPage />} />
         <Route path="ferias" element={<VacationsPage />} />
         <Route path="recibos" element={<ReceiptsPage />} />

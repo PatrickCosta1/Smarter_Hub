@@ -13,17 +13,15 @@ export const roleMenus: Record<UserRole, MenuItem[]> = {
     { id: 'aprovacoes', label: 'Aprovações', path: '/aprovacoes' },
     { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
     { id: 'formacoes', label: 'Formações', path: '/formacoes' },
-    { id: 'ferias', label: 'Férias', path: '/ferias' },
-    { id: 'notifications', label: 'Notificações', path: '/notifications' }
+    { id: 'ferias', label: 'Férias', path: '/ferias' }
   ],
   manager: [
     { id: 'home', label: 'Home', path: '/' },
     { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
+    { id: 'equipas', label: 'Equipas', path: '/equipas' },
     { id: 'aprovacoes', label: 'Aprovações', path: '/aprovacoes' },
     { id: 'formacoes', label: 'Formações', path: '/formacoes' },
-    { id: 'ferias', label: 'Férias', path: '/ferias' },
-    { id: 'recibos', label: 'Recibos', path: '/recibos' },
-    { id: 'notifications', label: 'Notificações', path: '/notifications' }
+    { id: 'ferias', label: 'Férias', path: '/ferias' }
   ],
   admin: [
     { id: 'home', label: 'Home', path: '/' },

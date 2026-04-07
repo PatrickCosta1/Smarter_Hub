@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiRequest, authHeaders } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -55,8 +55,8 @@ export default function RHApprovalsPage() {
   async function loadData() {
     try {
       const [profiles, vacations] = await Promise.all([
-        apiRequest<ProfileRequest[]>('/profile/requests', { headers: getAuthHeaders() }),
-        apiRequest<VacationRequest[]>('/vacations/requests', { headers: getAuthHeaders() }),
+        apiRequestCached<ProfileRequest[]>('/profile/requests', { headers: getAuthHeaders() }, 10000),
+        apiRequestCached<VacationRequest[]>('/vacations/requests', { headers: getAuthHeaders() }, 10000),
       ]);
 
       setProfileRequests(profiles);
@@ -68,6 +68,7 @@ export default function RHApprovalsPage() {
 
   async function approveProfileRequest(id: string) {
     await apiRequest(`/profile/requests/${id}/approve`, { method: 'POST', headers: getAuthHeaders() });
+    clearApiCache('/profile/requests');
     setProfileRequests((current) => current.filter((item) => item.id !== id));
   }
 
@@ -77,11 +78,13 @@ export default function RHApprovalsPage() {
       headers: getAuthHeaders(),
       body: JSON.stringify({ reason: rejectReason }),
     });
+    clearApiCache('/profile/requests');
     setProfileRequests((current) => current.filter((item) => item.id !== id));
   }
 
   async function approveVacationRequest(id: string) {
     await apiRequest(`/vacations/${id}/approve`, { method: 'POST', headers: getAuthHeaders() });
+    clearApiCache('/vacations');
     setVacationRequests((current) => current.filter((item) => item.id !== id));
   }
 
@@ -91,6 +94,7 @@ export default function RHApprovalsPage() {
       headers: getAuthHeaders(),
       body: JSON.stringify({ reason: rejectReason }),
     });
+    clearApiCache('/vacations');
     setVacationRequests((current) => current.filter((item) => item.id !== id));
   }
 
@@ -98,8 +102,8 @@ export default function RHApprovalsPage() {
     <section className="trainings-shell">
       <header className="trainings-hero">
         <div>
-          <p className="hero-kicker">RH</p>
-          <h2>Aprovações RH</h2>
+          <p className="hero-kicker"></p>
+          <h2>Aprovações</h2>
           <p>Revê pedidos de perfil e pedidos de férias pendentes.</p>
         </div>
 

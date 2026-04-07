@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { usePortal } from '../portal/context';
-import { apiRequest, authHeaders } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -128,9 +128,9 @@ export default function TrainingsPage() {
   async function loadTrainings() {
     try {
       const path = canManage ? '/trainings/assigned' : '/trainings/me';
-      const data = await apiRequest<TrainingRecord[]>(path, {
+      const data = await apiRequestCached<TrainingRecord[]>(path, {
         headers: getAuthHeaders(),
-      });
+      }, 15000);
       setRecords(data);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar formações.');
@@ -138,14 +138,22 @@ export default function TrainingsPage() {
   }
 
   async function loadCollaborators(searchValue: string) {
+    const trimmed = searchValue.trim();
+
+    if (!trimmed) {
+      setCollaborators([]);
+      setIsSearchingCollaborators(false);
+      return;
+    }
+
     setIsSearchingCollaborators(true);
 
     try {
-      const q = encodeURIComponent(searchValue.trim());
-      const path = q ? `/users?q=${q}&limit=40` : '/users?limit=40';
-      const data = await apiRequest<Collaborator[]>(path, {
+      const q = encodeURIComponent(trimmed);
+      const path = `/users?q=${q}&limit=40`;
+      const data = await apiRequestCached<Collaborator[]>(path, {
         headers: getAuthHeaders(),
-      });
+      }, 10000);
       setCollaborators(data);
     } catch (error) {
       setAssignStatus(error instanceof Error ? error.message : 'Falha ao pesquisar colaboradores.');
@@ -182,6 +190,7 @@ export default function TrainingsPage() {
         }),
       });
 
+      clearApiCache('/trainings');
       setAssignStatus('Formação atribuída com sucesso.');
       setAssignDraft(EMPTY_ASSIGN_DRAFT);
       await loadTrainings();
@@ -197,6 +206,7 @@ export default function TrainingsPage() {
         headers: getAuthHeaders(),
       });
 
+      clearApiCache('/trainings');
       setRecords((current) => current.map((record) => (record.id === id ? updated : record)));
       setStatus('Formação marcada como concluída.');
     } catch (error) {
@@ -209,7 +219,7 @@ export default function TrainingsPage() {
       <header className="trainings-hero">
         <div>
           <p className="hero-kicker">Formações</p>
-          <h2>{canManage ? 'Atribuição e acompanhamento RH' : 'As minhas formações'}</h2>
+          <h2>{canManage ? 'Atribuição e acompanhamento' : 'As minhas formações'}</h2>
           <p>{canManage ? 'Atribui formações por colaborador e acompanha o estado de conclusão.' : 'Consulta as formações atribuídas e marca como concluídas quando terminares.'}</p>
         </div>
 
@@ -249,8 +259,9 @@ export default function TrainingsPage() {
                 </div>
               ) : (
                 <div className="rh-collaborator-results" role="listbox" aria-label="Resultados de colaboradores">
+                  {!isSearchingCollaborators && !collaboratorQuery.trim() && <p>Escreve para pesquisar colaboradores.</p>}
                   {isSearchingCollaborators && <p>A pesquisar colaboradores...</p>}
-                  {!isSearchingCollaborators && collaborators.length === 0 && <p>Sem resultados para a pesquisa.</p>}
+                  {!isSearchingCollaborators && collaboratorQuery.trim() && collaborators.length === 0 && <p>Sem resultados para a pesquisa.</p>}
                   {!isSearchingCollaborators &&
                     collaborators.map((collaborator) => {
                       const displayName = `${collaborator.profile?.primeiroNome ?? ''} ${collaborator.profile?.apelido ?? ''}`.trim() || collaborator.username;
