@@ -5,6 +5,7 @@ import PortalLayout from './layouts/PortalLayout';
 import HomePage from './pages/HomePage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProfilePage from './pages/ProfilePage';
+import ReceiptsPage from './pages/ReceiptsPage';
 import TrainingsPage from './pages/TrainingsPage';
 import VacationsPage from './pages/VacationsPage';
 import { PortalProvider, usePortal } from './portal/context';
@@ -32,6 +33,7 @@ function AppRoutes() {
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="formacoes" element={<TrainingsPage />} />
         <Route path="ferias" element={<VacationsPage />} />
+        <Route path="recibos" element={<ReceiptsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

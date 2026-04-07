@@ -9,7 +9,6 @@ const vacationSchema = z
   .object({
     dataInicio: z.string().min(1, 'Data de início é obrigatória'),
     dataFim: z.string().min(1, 'Data de fim é obrigatória'),
-    tipo: z.enum(['dia_completo', 'meio_dia_manha', 'meio_dia_tarde']).default('dia_completo'),
     observacoes: z.string().default(''),
   })
   .superRefine((data, ctx) => {
@@ -18,15 +17,6 @@ const vacationSchema = z
         code: z.ZodIssueCode.custom,
         path: ['dataFim'],
         message: 'A data de fim deve ser igual ou posterior à data de início.',
-      });
-    }
-
-    const isHalfDay = data.tipo === 'meio_dia_manha' || data.tipo === 'meio_dia_tarde';
-    if (isHalfDay && data.dataInicio !== data.dataFim) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['tipo'],
-        message: 'Meio dia só pode ser usado para uma única data.',
       });
     }
   });
@@ -63,7 +53,6 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
         userId,
         dataInicio: data.dataInicio,
         dataFim: data.dataFim,
-        tipo: data.tipo,
         observacoes: data.observacoes,
       },
     });
@@ -98,7 +87,6 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
       data: {
         dataInicio: data.dataInicio,
         dataFim: data.dataFim,
-        tipo: data.tipo,
         observacoes: data.observacoes,
       },
     });

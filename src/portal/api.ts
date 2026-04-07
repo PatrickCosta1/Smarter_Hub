@@ -9,6 +9,10 @@ export function getApiBase() {
   return apiBase;
 }
 
+export function getBackendBase() {
+  return apiBase.replace(/\/api$/i, '');
+}
+
 export async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const requestHeaders: HeadersInit = {
     'Content-Type': 'application/json',

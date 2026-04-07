@@ -1,6 +1,6 @@
 export type UserRole = 'colaborador' | 'coordenador' | 'rh' | 'admin' | 'convidado';
 
-export type PortalPage = 'home' | 'profile' | 'notifications' | 'formacoes' | 'ferias';
+export type PortalPage = 'home' | 'profile' | 'notifications' | 'formacoes' | 'ferias' | 'recibos';
 
 export type MenuItem = {
   id: string;

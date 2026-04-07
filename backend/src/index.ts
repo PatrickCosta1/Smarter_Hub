@@ -1,11 +1,14 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
+import path from "path";
 import { ZodError } from "zod";
 
 import { authRouter } from "./routes/auth.js";
+import { filesRouter } from "./routes/files.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { profileRouter } from "./routes/profile.js";
+import { receiptsRouter } from "./routes/receipts.js";
 import { trainingsRouter } from "./routes/trainings.js";
 import { usersRouter } from "./routes/users.js";
 import { vacationsRouter } from "./routes/vacations.js";
@@ -59,6 +62,7 @@ app.use(
   })
 );
 app.use(express.json());
+app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
 
 app.get("/health", (_req, res) => {
   return res.json({ status: "ok" });
@@ -66,9 +70,11 @@ app.get("/health", (_req, res) => {
 
 app.use("/api", authRouter);
 app.use("/api", usersRouter);
+app.use("/api", filesRouter);
 app.use("/api", profileRouter);
 app.use("/api", trainingsRouter);
 app.use("/api", vacationsRouter);
+app.use("/api", receiptsRouter);
 app.use("/api", notificationsRouter);
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

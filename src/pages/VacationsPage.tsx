@@ -8,13 +8,10 @@ function getAuthHeaders() {
   return authHeaders(token);
 }
 
-type VacationType = 'dia_completo' | 'meio_dia_manha' | 'meio_dia_tarde';
-
 type VacationRecord = {
   id: string;
   dataInicio: string;
   dataFim: string;
-  tipo: VacationType;
   observacoes: string;
   createdAt: string;
 };
@@ -22,7 +19,6 @@ type VacationRecord = {
 type VacationDraft = {
   dataInicio: string;
   dataFim: string;
-  tipo: VacationType;
   observacoes: string;
 };
 
@@ -31,30 +27,14 @@ type DraftErrors = Partial<Record<keyof VacationDraft, string>>;
 const EMPTY_DRAFT: VacationDraft = {
   dataInicio: '',
   dataFim: '',
-  tipo: 'dia_completo',
   observacoes: '',
 };
-
-function getTypeLabel(type: VacationType) {
-  if (type === 'meio_dia_manha') {
-    return 'Meio dia (manhã)';
-  }
-
-  if (type === 'meio_dia_tarde') {
-    return 'Meio dia (tarde)';
-  }
-
-  return 'Dia completo';
-}
 
 function toLocalDate(dateText: string) {
   return new Date(`${dateText}T00:00:00`);
 }
 
-function calculateDays(record: Pick<VacationRecord, 'dataInicio' | 'dataFim' | 'tipo'>) {
-  if (record.tipo !== 'dia_completo') {
-    return 0.5;
-  }
+function calculateDays(record: Pick<VacationRecord, 'dataInicio' | 'dataFim'>) {
 
   const start = toLocalDate(record.dataInicio);
   const end = toLocalDate(record.dataFim);
@@ -82,11 +62,6 @@ function buildValidationErrors(draft: VacationDraft): DraftErrors {
     errors.dataFim = 'A data de fim deve ser igual ou posterior à data de início.';
   }
 
-  const isHalfDay = draft.tipo === 'meio_dia_manha' || draft.tipo === 'meio_dia_tarde';
-  if (isHalfDay && draft.dataInicio && draft.dataFim && draft.dataInicio !== draft.dataFim) {
-    errors.tipo = 'Meio dia só pode ser usado numa única data.';
-  }
-
   return errors;
 }
 
@@ -111,13 +86,7 @@ export default function VacationsPage() {
   }
 
   function handleDraftChange(field: keyof VacationDraft, value: string) {
-    setDraft((current) => {
-      if (field === 'tipo') {
-        return { ...current, tipo: value as VacationType };
-      }
-
-      return { ...current, [field]: value };
-    });
+    setDraft((current) => ({ ...current, [field]: value }));
     setDraftErrors((current) => {
       if (!current[field]) {
         return current;
@@ -149,7 +118,6 @@ export default function VacationsPage() {
     setDraft({
       dataInicio: record.dataInicio,
       dataFim: record.dataFim,
-      tipo: record.tipo,
       observacoes: record.observacoes,
     });
     setDraftErrors({});
@@ -187,7 +155,6 @@ export default function VacationsPage() {
     const payload = {
       dataInicio: draft.dataInicio,
       dataFim: draft.dataFim,
-      tipo: draft.tipo,
       observacoes: draft.observacoes.trim(),
     };
 
@@ -263,16 +230,6 @@ export default function VacationsPage() {
           </label>
 
           <label>
-            <span>Tipo *</span>
-            <select value={draft.tipo} onChange={(event) => handleDraftChange('tipo', event.target.value)}>
-              <option value="dia_completo">Dia completo</option>
-              <option value="meio_dia_manha">Meio dia (manhã)</option>
-              <option value="meio_dia_tarde">Meio dia (tarde)</option>
-            </select>
-            {draftErrors.tipo && <small>{draftErrors.tipo}</small>}
-          </label>
-
-          <label>
             <span>Observações</span>
             <input
               type="text"
@@ -307,7 +264,6 @@ export default function VacationsPage() {
               <tr>
                 <th>Início</th>
                 <th>Fim</th>
-                <th>Tipo</th>
                 <th>Dias</th>
                 <th>Observações</th>
                 <th>Ações</th>
@@ -316,7 +272,7 @@ export default function VacationsPage() {
             <tbody>
               {sortedRecords.length === 0 && (
                 <tr>
-                  <td colSpan={6}>Sem registos de férias.</td>
+                  <td colSpan={5}>Sem registos de férias.</td>
                 </tr>
               )}
 
@@ -324,7 +280,6 @@ export default function VacationsPage() {
                 <tr key={record.id}>
                   <td>{record.dataInicio}</td>
                   <td>{record.dataFim}</td>
-                  <td>{getTypeLabel(record.tipo)}</td>
                   <td>{calculateDays(record).toLocaleString('pt-PT')}</td>
                   <td>{record.observacoes || '-'}</td>
                   <td>
@@ -352,9 +307,6 @@ export default function VacationsPage() {
                 <h4>{record.dataInicio} até {record.dataFim}</h4>
                 <strong>{calculateDays(record).toLocaleString('pt-PT')} d</strong>
               </header>
-              <p>
-                <span>Tipo:</span> {getTypeLabel(record.tipo)}
-              </p>
               <p>
                 <span>Observações:</span> {record.observacoes || '-'}
               </p>

@@ -17,12 +17,14 @@ export const roleMenus: Record<UserRole, MenuItem[]> = {
     { id: 'home', label: 'Home', path: '/' },
     { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
     { id: 'formacoes', label: 'Formações', path: '/formacoes' },
+    { id: 'recibos', label: 'Recibos', path: '/recibos' },
     { id: 'notifications', label: 'Notificações', path: '/notifications' },
   ],
   admin: [
     { id: 'home', label: 'Home', path: '/' },
     { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
     { id: 'formacoes', label: 'Formações', path: '/formacoes' },
+    { id: 'recibos', label: 'Recibos', path: '/recibos' },
     { id: 'notifications', label: 'Notificações', path: '/notifications' },
   ],
   convidado: [

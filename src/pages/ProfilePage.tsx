@@ -10,10 +10,35 @@ import {
   situacaoIrsOptions,
   tipoContratoOptions,
 } from '../portal/data';
+import { getApiBase, getBackendBase, authHeaders } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { ProfileData, ProfileFieldError } from '../portal/types';
 
 type SectionKey = 'personal' | 'contacts' | 'documents' | 'tax' | 'emergency' | 'contract';
+
+const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
+
+function renderFileLink(value: string) {
+  if (!value) {
+    return <em>Nenhum ficheiro selecionado</em>;
+  }
+
+  const isHttp = value.startsWith('http://') || value.startsWith('https://');
+  const isRelativeUpload = value.startsWith('/uploads/');
+  const href = isRelativeUpload ? `${getBackendBase()}${value}` : value;
+
+  if (!isHttp && !isRelativeUpload) {
+    return <em>{value}</em>;
+  }
+
+  return (
+    <em>
+      <a href={href} target="_blank" rel="noreferrer">
+        Abrir comprovativo
+      </a>
+    </em>
+  );
+}
 
 function validateProfile(profile: ProfileData): ProfileFieldError {
   const errors: ProfileFieldError = {};
@@ -130,9 +155,40 @@ export default function ProfilePage() {
     setProfileStatusMessage('Tens alterações por guardar.');
   }
 
-  function handleFileChange(field: keyof ProfileData, event: ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(field: keyof ProfileData, event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-    handleProfileChange(field, file ? file.name : '');
+    if (!file) {
+      handleProfileChange(field, '');
+      return;
+    }
+
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const formData = new FormData();
+    formData.append('file', file);
+
+    setProfileStatusType('idle');
+    setProfileStatusMessage('A carregar ficheiro...');
+
+    try {
+      const response = await fetch(`${getApiBase()}/files/upload`, {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(payload.message || 'Falha ao carregar ficheiro.');
+      }
+
+      const payload = (await response.json()) as { link?: string; linkPath?: string };
+      handleProfileChange(field, payload.linkPath || payload.link || '');
+      setProfileStatusType('success');
+      setProfileStatusMessage('Ficheiro carregado e convertido em link com sucesso.');
+    } catch (error) {
+      setProfileStatusType('error');
+      setProfileStatusMessage(error instanceof Error ? error.message : 'Falha ao carregar ficheiro.');
+    }
   }
 
   function handleFileInputClick(event: MouseEvent<HTMLInputElement>) {
@@ -334,7 +390,7 @@ export default function ProfilePage() {
                 onClick={handleFileInputClick}
                 onChange={(event) => handleFileChange('comprovativoMoradaFiscal', event)}
               />
-              <em>{draftProfile.comprovativoMoradaFiscal || 'Nenhum ficheiro selecionado'}</em>
+              {renderFileLink(draftProfile.comprovativoMoradaFiscal)}
               {profileErrors.comprovativoMoradaFiscal && <small>{profileErrors.comprovativoMoradaFiscal}</small>}
             </label>
           </div>
@@ -379,7 +435,7 @@ export default function ProfilePage() {
                 onClick={handleFileInputClick}
                 onChange={(event) => handleFileChange('comprovativoCartaoCidadao', event)}
               />
-              <em>{draftProfile.comprovativoCartaoCidadao || 'Nenhum ficheiro selecionado'}</em>
+              {renderFileLink(draftProfile.comprovativoCartaoCidadao)}
               {profileErrors.comprovativoCartaoCidadao && <small>{profileErrors.comprovativoCartaoCidadao}</small>}
             </label>
             <label className="field-span-2">
@@ -391,7 +447,7 @@ export default function ProfilePage() {
                 onClick={handleFileInputClick}
                 onChange={(event) => handleFileChange('comprovativoIban', event)}
               />
-              <em>{draftProfile.comprovativoIban || 'Nenhum ficheiro selecionado'}</em>
+              {renderFileLink(draftProfile.comprovativoIban)}
               {profileErrors.comprovativoIban && <small>{profileErrors.comprovativoIban}</small>}
             </label>
           </div>
@@ -454,7 +510,7 @@ export default function ProfilePage() {
                 onClick={handleFileInputClick}
                 onChange={(event) => handleFileChange('comprovativoCartaoContinente', event)}
               />
-              <em>{draftProfile.comprovativoCartaoContinente || 'Nenhum ficheiro selecionado'}</em>
+              {renderFileLink(draftProfile.comprovativoCartaoContinente)}
             </label>
           </div>
         </article>
