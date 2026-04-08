@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
 import { usePortal } from '../portal/context';
+import { formatMembershipRoleLabel, formatRoleLabel } from '../portal/labels';
+import Button from '../components/ui/Button';
+import Badge from '../components/ui/Badge';
+import DataTable from '../components/ui/DataTable';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -72,12 +76,69 @@ export default function AdminPage() {
   const [selectedUserId, setSelectedUserId] = useState('');
   const [status, setStatus] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(false);
   const [membershipsDraft, setMembershipsDraft] = useState<MembershipDraft[]>([]);
   const [teamDraft, setTeamDraft] = useState<TeamDraft>(EMPTY_TEAM_DRAFT);
+  const [userQuery, setUserQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'ALL' | AdminUser['role']>('ALL');
+  const [sortBy, setSortBy] = useState<'username' | 'email' | 'role' | 'teamName'>('username');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const PAGE_SIZE = 8;
 
   const selectedUser = useMemo(
     () => users.find((item) => item.id === selectedUserId) || null,
     [users, selectedUserId],
+  );
+
+  const filteredUsers = useMemo(() => {
+    const normalizedQuery = userQuery.trim().toLowerCase();
+
+    return users
+      .filter((item) => (roleFilter === 'ALL' ? true : item.role === roleFilter))
+      .filter((item) => {
+        if (!normalizedQuery) {
+          return true;
+        }
+
+        return [item.username, item.email, item.teamName ?? '', formatRoleLabel(item.role)]
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedQuery);
+      })
+      .sort((a, b) => {
+        const aValue = String((a[sortBy] ?? '')).toLowerCase();
+        const bValue = String((b[sortBy] ?? '')).toLowerCase();
+        const comparison = aValue.localeCompare(bValue, 'pt-PT');
+        return sortDirection === 'asc' ? comparison : -comparison;
+      });
+  }, [users, roleFilter, userQuery, sortBy, sortDirection]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+
+  const paginatedUsers = useMemo(() => {
+    const startIndex = (currentPage - 1) * PAGE_SIZE;
+    return filteredUsers.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [filteredUsers, currentPage]);
+
+  const userColumns = useMemo(
+    () => [
+      { key: 'username', header: 'Utilizador', render: (item: AdminUser) => item.username },
+      { key: 'email', header: 'Email', render: (item: AdminUser) => item.email },
+      {
+        key: 'role',
+        header: 'Role',
+        render: (item: AdminUser) => <Badge tone="info">{formatRoleLabel(item.role)}</Badge>,
+      },
+      { key: 'teamName', header: 'Equipa', render: (item: AdminUser) => item.teamName || '-' },
+      {
+        key: 'country',
+        header: 'País',
+        render: (item: AdminUser) => <Badge tone="neutral">{item.workCountry}</Badge>,
+      },
+    ],
+    [],
   );
 
   useEffect(() => {
@@ -109,7 +170,18 @@ export default function AdminPage() {
     setMembershipsDraft(normalized);
   }, [selectedUser, teams]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [userQuery, roleFilter, sortBy, sortDirection]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
   async function loadData() {
+    setIsLoadingData(true);
     try {
       const [usersData, teamsData] = await Promise.all([
         apiRequestCached<AdminUser[]>('/admin/users', { headers: getAuthHeaders() }, 15000),
@@ -123,6 +195,8 @@ export default function AdminPage() {
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar dados de administração.');
+    } finally {
+      setIsLoadingData(false);
     }
   }
 
@@ -279,38 +353,66 @@ export default function AdminPage() {
       <section className="trainings-list-card">
         <div className="trainings-list-head">
           <h3>Utilizadores</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, width: 'min(920px, 100%)' }}>
+            <label>
+              <span>Pesquisar</span>
+              <input type="search" value={userQuery} onChange={(event) => setUserQuery(event.target.value)} placeholder="Nome, email, equipa..." />
+            </label>
+            <label>
+              <span>Perfil</span>
+              <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as 'ALL' | AdminUser['role'])}>
+                <option value="ALL">Todos</option>
+                <option value="COLABORADOR">{formatRoleLabel('COLABORADOR')}</option>
+                <option value="MANAGER">{formatRoleLabel('MANAGER')}</option>
+                <option value="COORDENADOR">{formatRoleLabel('COORDENADOR')}</option>
+                <option value="ADMIN">{formatRoleLabel('ADMIN')}</option>
+                <option value="CONVIDADO">{formatRoleLabel('CONVIDADO')}</option>
+              </select>
+            </label>
+            <label>
+              <span>Ordenar por</span>
+              <select value={sortBy} onChange={(event) => setSortBy(event.target.value as 'username' | 'email' | 'role' | 'teamName')}>
+                <option value="username">Nome de utilizador</option>
+                <option value="email">Email</option>
+                <option value="role">Perfil</option>
+                <option value="teamName">Equipa</option>
+              </select>
+            </label>
+            <label>
+              <span>Direção</span>
+              <select value={sortDirection} onChange={(event) => setSortDirection(event.target.value as 'asc' | 'desc')}>
+                <option value="asc">A-Z</option>
+                <option value="desc">Z-A</option>
+              </select>
+            </label>
+          </div>
         </div>
 
-        <div className="trainings-table-wrap">
-          <table className="trainings-table" aria-label="Utilizadores">
-            <thead>
-              <tr>
-                <th>Utilizador</th>
-                <th>Email</th>
-                <th>Role</th>
-                <th>Equipa</th>
-                <th>País</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((item) => (
-                <tr key={item.id} onClick={() => setSelectedUserId(item.id)} style={{ cursor: 'pointer', background: selectedUserId === item.id ? '#f0f7ff' : 'transparent' }}>
-                  <td>{item.username}</td>
-                  <td>{item.email}</td>
-                  <td>{item.role}</td>
-                  <td>{item.teamName || '-'}</td>
-                  <td>{item.workCountry}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <DataTable
+          columns={userColumns}
+          rows={paginatedUsers}
+          rowKey={(item) => item.id}
+          emptyMessage="Sem utilizadores para os filtros aplicados."
+          loading={isLoadingData}
+          loadingLines={3}
+          ariaLabel="Utilizadores"
+          selectedRowKey={selectedUserId || null}
+          onRowClick={(item) => setSelectedUserId(item.id)}
+        />
+
+        <div className="trainings-form-actions" style={{ justifyContent: 'space-between' }}>
+          <small>Página {currentPage} de {totalPages} · {filteredUsers.length} resultado(s)</small>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Button type="button" variant="ghost" onClick={() => setCurrentPage((value) => Math.max(1, value - 1))} disabled={currentPage === 1}>Anterior</Button>
+            <Button type="button" variant="ghost" onClick={() => setCurrentPage((value) => Math.min(totalPages, value + 1))} disabled={currentPage === totalPages}>Seguinte</Button>
+          </div>
         </div>
       </section>
 
       <section className="trainings-list-card">
         <div className="trainings-list-head">
           <h3>Equipas</h3>
-          <button type="button" className="cta-button cta-ghost" onClick={resetTeamDraft}>Nova equipa</button>
+          <Button type="button" variant="ghost" onClick={resetTeamDraft}>Nova equipa</Button>
         </div>
 
         <form className="trainings-form" onSubmit={(event) => { event.preventDefault(); void saveTeam(); }}>
@@ -358,8 +460,8 @@ export default function AdminPage() {
           </label>
 
           <div className="trainings-form-actions field-span-2">
-            <button type="submit" className="cta-button cta-primary" disabled={isSaving}>{isSaving ? 'A guardar...' : 'Guardar equipa'}</button>
-            <button type="button" className="cta-button cta-ghost" onClick={resetTeamDraft}>Limpar</button>
+            <Button type="submit" variant="primary" isLoading={isSaving}>{isSaving ? 'A guardar...' : 'Guardar equipa'}</Button>
+            <Button type="button" variant="ghost" onClick={resetTeamDraft}>Limpar</Button>
           </div>
         </form>
 
@@ -375,8 +477,8 @@ export default function AdminPage() {
               <p><span>Subequipa de:</span> {team.parentTeam?.name || '-'}</p>
               <p><span>Membros:</span> {team._count?.members ?? 0}</p>
               <div className="trainings-row-actions">
-                <button type="button" onClick={() => beginTeamEdit(team)}>Editar</button>
-                <button type="button" onClick={() => void deleteTeam(team.id)}>Remover</button>
+                <Button type="button" variant="secondary" size="sm" onClick={() => beginTeamEdit(team)}>Editar</Button>
+                <Button type="button" variant="danger" size="sm" onClick={() => void deleteTeam(team.id)}>Remover</Button>
               </div>
             </article>
           ))}
@@ -396,11 +498,11 @@ export default function AdminPage() {
             <label>
               <span>Role</span>
               <select value={selectedUser.role} onChange={(event) => patchSelectedUser({ role: event.target.value as AdminUser['role'] })}>
-                <option value="COLABORADOR">COLABORADOR</option>
-                <option value="MANAGER">MANAGER</option>
-                <option value="COORDENADOR">COORDENADOR</option>
-                <option value="ADMIN">ADMIN</option>
-                <option value="CONVIDADO">CONVIDADO</option>
+                <option value="COLABORADOR">{formatRoleLabel('COLABORADOR')}</option>
+                <option value="MANAGER">{formatRoleLabel('MANAGER')}</option>
+                <option value="COORDENADOR">{formatRoleLabel('COORDENADOR')}</option>
+                <option value="ADMIN">{formatRoleLabel('ADMIN')}</option>
+                <option value="CONVIDADO">{formatRoleLabel('CONVIDADO')}</option>
               </select>
             </label>
 
@@ -443,8 +545,8 @@ export default function AdminPage() {
                               value={membership.membershipRole}
                               onChange={(event) => patchMembership(membership.teamId, { membershipRole: event.target.value })}
                             >
-                              <option value="PARTICIPANT">Participante</option>
-                              <option value="MANAGER">Chefia</option>
+                              <option value="PARTICIPANT">{formatMembershipRoleLabel('PARTICIPANT')}</option>
+                              <option value="MANAGER">{formatMembershipRoleLabel('MANAGER')}</option>
                             </select>
                           </label>
 
@@ -496,7 +598,7 @@ export default function AdminPage() {
             </label>
 
             <div className="trainings-form-actions field-span-2">
-              <button type="submit" className="cta-button cta-primary" disabled={isSaving}>{isSaving ? 'A guardar...' : 'Guardar alterações'}</button>
+              <Button type="submit" variant="primary" isLoading={isSaving}>{isSaving ? 'A guardar...' : 'Guardar alterações'}</Button>
             </div>
           </form>
         </section>

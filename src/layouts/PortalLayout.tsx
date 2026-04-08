@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { roleLabels, roleMenus } from '../portal/data';
 import { usePortal } from '../portal/context';
@@ -6,6 +7,39 @@ export default function PortalLayout() {
   const { userRole, unreadNotifications, logout } = usePortal();
   const navigate = useNavigate();
   const location = useLocation();
+  const [menuQuery, setMenuQuery] = useState('');
+
+  const currentMenu = useMemo(
+    () => roleMenus[userRole].find((item) => item.path === location.pathname),
+    [location.pathname, userRole],
+  );
+
+  const filteredMenu = useMemo(() => {
+    const normalized = menuQuery.trim().toLowerCase();
+
+    if (!normalized) {
+      return roleMenus[userRole];
+    }
+
+    return roleMenus[userRole].filter((item) => item.label.toLowerCase().includes(normalized));
+  }, [menuQuery, userRole]);
+
+  const todayLabel = useMemo(
+    () => new Intl.DateTimeFormat('pt-PT', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(new Date()),
+    [],
+  );
+
+  const globalInfoLabel = useMemo(() => {
+    const now = new Date();
+    const utcYear = now.getUTCFullYear();
+    const utcMonth = now.getUTCMonth();
+    const utcDate = now.getUTCDate();
+    const start = new Date(Date.UTC(utcYear, 0, 1));
+    const days = Math.floor((Date.UTC(utcYear, utcMonth, utcDate) - start.getTime()) / 86400000) + 1;
+    const week = Math.ceil(days / 7);
+
+    return `${todayLabel}`;
+  }, [todayLabel]);
 
   function handleLogout() {
     logout();
@@ -23,21 +57,32 @@ export default function PortalLayout() {
         <span className="grid" />
       </div>
 
-      <section className="app-layout">
-        <header className="topbar topbar-portal">
-          <div className="topbar-brand">
+      <section className="app-layout app-layout--modern">
+        <aside className="portal-sidebar" aria-label="Navegação principal">
+          <div className="portal-sidebar__brand">
             <img src="/logo.png" alt="Tlantic" />
           </div>
 
-          <nav className="topbar-nav" aria-label="Menu principal">
-            {roleMenus[userRole].map((item) => (
-              <NavLink key={item.id} className={({ isActive }) => `menu-link${isActive ? ' is-active' : ''}`} to={item.path}>
+          <label className="portal-sidebar__search">
+            <span>Ir para</span>
+            <input
+              type="search"
+              placeholder="Pesquisar área..."
+              value={menuQuery}
+              onChange={(event) => setMenuQuery(event.target.value)}
+            />
+          </label>
+
+          <nav className="portal-nav" aria-label="Menu principal">
+            {filteredMenu.map((item) => (
+              <NavLink key={item.id} className={({ isActive }) => `portal-nav__link${isActive ? ' is-active' : ''}`} to={item.path}>
                 {item.label}
               </NavLink>
             ))}
+            {filteredMenu.length === 0 && <p className="portal-nav__empty">Sem áreas para essa pesquisa.</p>}
           </nav>
 
-          <div className="topbar-actions">
+          <div className="portal-sidebar__footer">
             <button
               className={`icon-button${unreadNotifications > 0 ? ' has-unread' : ''}${location.pathname === '/notifications' ? ' is-active' : ''}`}
               type="button"
@@ -46,6 +91,7 @@ export default function PortalLayout() {
               title="Notificações"
             >
               <span aria-hidden="true">🔔</span>
+              <span>Notificações</span>
               {unreadNotifications > 0 && <span className="icon-badge">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>}
             </button>
             <button
@@ -56,14 +102,31 @@ export default function PortalLayout() {
               title="Perfil"
             >
               <span aria-hidden="true">👤</span>
+              <span>Perfil</span>
             </button>
             <button className="topbar-link" type="button" onClick={handleLogout}>
               Sair
             </button>
           </div>
-        </header>
+        </aside>
 
-        <Outlet />
+        <section className="portal-content">
+          <header className="portal-header">
+            <div className="portal-header__meta">
+              <p className="portal-breadcrumb">Portal / {roleLabels[userRole]} / {currentMenu?.label || 'Início'}</p>
+              <h2>{currentMenu?.label || 'Início'}</h2>
+            </div>
+
+            <div className="portal-header__actions">
+              <span className="portal-header__chip">{globalInfoLabel}</span>
+            </div>
+          </header>
+
+          <div className="portal-page">
+            <Outlet />
+          </div>
+        </section>
+
       </section>
     </main>
   );

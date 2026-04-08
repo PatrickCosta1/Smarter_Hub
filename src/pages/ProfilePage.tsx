@@ -13,8 +13,18 @@ import {
 import { getApiBase, getBackendBase, authHeaders } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { ProfileData, ProfileFieldError } from '../portal/types';
+import Button from '../components/ui/Button';
 
 type SectionKey = 'personal' | 'contacts' | 'documents' | 'tax' | 'emergency' | 'contract';
+
+const profileSections: Array<{ key: SectionKey; label: string }> = [
+  { key: 'personal', label: 'Identificação' },
+  { key: 'contacts', label: 'Contactos' },
+  { key: 'documents', label: 'Documentos' },
+  { key: 'tax', label: 'IRS e benefícios' },
+  { key: 'emergency', label: 'Emergência' },
+  { key: 'contract', label: 'Contrato' },
+];
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -123,6 +133,7 @@ export default function ProfilePage() {
     visible: false,
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [currentSection, setCurrentSection] = useState<SectionKey>('personal');
 
   const canEdit = userRole !== 'convidado';
   const canEditContract = userRole === 'manager' || userRole === 'coordenador' || userRole === 'admin';
@@ -154,15 +165,50 @@ export default function ProfilePage() {
     });
 
     setProfileErrors((current) => {
-      if (!current[field]) {
-        return current;
+      const updated = { ...current };
+      if (!value.trim()) {
+        updated[field] = 'Campo obrigatório.';
+        return updated;
       }
 
-      const updated = { ...current };
+      if (field === 'emailPessoal' && !/^\S+@\S+\.\S+$/.test(value)) {
+        updated[field] = 'Email inválido.';
+        return updated;
+      }
+
+      if (field === 'nif' && !/^\d{9}$/.test(value)) {
+        updated[field] = 'O NIF deve ter 9 dígitos.';
+        return updated;
+      }
+
+      if (field === 'numeroDependentes' && !/^\d+$/.test(value)) {
+        updated[field] = 'Use apenas números inteiros.';
+        return updated;
+      }
+
+      if (field === 'anoPrimeiroDesconto' && !/^\d{4}$/.test(value)) {
+        updated[field] = 'Indique o ano com 4 dígitos.';
+        return updated;
+      }
+
       delete updated[field];
       return updated;
     });
 
+  }
+
+  function goToPreviousSection() {
+    const currentIndex = profileSections.findIndex((item) => item.key === currentSection);
+    if (currentIndex > 0) {
+      setCurrentSection(profileSections[currentIndex - 1].key);
+    }
+  }
+
+  function goToNextSection() {
+    const currentIndex = profileSections.findIndex((item) => item.key === currentSection);
+    if (currentIndex < profileSections.length - 1) {
+      setCurrentSection(profileSections[currentIndex + 1].key);
+    }
   }
 
   async function handleFileChange(field: keyof ProfileData, event: ChangeEvent<HTMLInputElement>) {
@@ -249,13 +295,15 @@ export default function ProfilePage() {
         <div className="hero-main">
           <p className="hero-kicker">Ficha de colaborador</p>
           <h1>{collaboratorName}</h1>
-          <p>
-            {profile.cargo} · {profile.tipoContrato} · {profile.regimeHorario}
-          </p>
+          <p>{profile.cargo} · {profile.tipoContrato}</p>
           <div className="hero-chips">
             <span>IRS Jovem: {profile.irsJovem || '-'}</span>
             <span>Dependentes: {profile.numeroDependentes || '0'}</span>
-            <span>Último acesso: hoje</span>
+          </div>
+          <div className="profile-hero__actions">
+            <span>{profile.regimeHorario}</span>
+            <span>{profile.localidade || '-'}</span>
+            <span>{profile.estadoCivil || '-'}</span>
           </div>
         </div>
 
@@ -269,7 +317,26 @@ export default function ProfilePage() {
         </div>
       </section>
 
+      <nav className="profile-stepper" aria-label="Navegação por etapas da ficha">
+        {profileSections.map((section) => (
+          <button
+            key={section.key}
+            type="button"
+            className={`profile-stepper__item${currentSection === section.key ? ' is-active' : ''}`}
+            onClick={() => setCurrentSection(section.key)}
+          >
+            {section.label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="profile-stepper-actions profile-stepper-actions--fixed">
+        <Button type="button" variant="ghost" onClick={goToPreviousSection} disabled={currentSection === profileSections[0].key}>Etapa anterior</Button>
+        <Button type="button" variant="primary" onClick={goToNextSection} disabled={currentSection === profileSections[profileSections.length - 1].key}>Próxima etapa</Button>
+      </div>
+
       <section className="profile-grid">
+        {currentSection === 'personal' && (
         <article className="profile-card profile-card--full">
           <div className="section-headline">
             <h2>1. Identificação pessoal</h2>
@@ -340,7 +407,9 @@ export default function ProfilePage() {
             </label>
           </div>
         </article>
+        )}
 
+        {currentSection === 'contacts' && (
         <article className="profile-card profile-card--full">
           <div className="section-headline">
             <h2>2. Contactos e moradas</h2>
@@ -399,7 +468,9 @@ export default function ProfilePage() {
             </label>
           </div>
         </article>
+        )}
 
+        {currentSection === 'documents' && (
         <article className="profile-card">
           <div className="section-headline">
             <h2>3. Documentos e fiscalidade</h2>
@@ -456,7 +527,9 @@ export default function ProfilePage() {
             </label>
           </div>
         </article>
+        )}
 
+        {currentSection === 'tax' && (
         <article className="profile-card">
           <div className="section-headline">
             <h2>4. IRS e benefícios</h2>
@@ -518,7 +591,9 @@ export default function ProfilePage() {
             </label>
           </div>
         </article>
+        )}
 
+        {currentSection === 'emergency' && (
         <article className="profile-card">
           <div className="section-headline">
             <h2>5. Contacto de emergência</h2>
@@ -551,7 +626,9 @@ export default function ProfilePage() {
             </label>
           </div>
         </article>
+        )}
 
+        {currentSection === 'contract' && (
         <article className="profile-card">
           <div className="section-headline">
             <h2>6. Situação contratual</h2>
@@ -613,6 +690,8 @@ export default function ProfilePage() {
             </label>
           </div>
         </article>
+        )}
+
       </section>
 
       {toast.visible && (

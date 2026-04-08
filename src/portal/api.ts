@@ -11,6 +11,7 @@ type ApiCacheEntry = {
 };
 
 const apiGetCache = new Map<string, ApiCacheEntry>();
+const apiGetInFlight = new Map<string, Promise<unknown>>();
 
 function buildCacheKey(path: string, options?: RequestInit) {
   const method = (options?.method || 'GET').toUpperCase();
@@ -83,15 +84,29 @@ export async function apiRequestCached<T>(
     if (cached && cached.expiresAt > now) {
       return cached.value as T;
     }
+
+    const inFlight = apiGetInFlight.get(key);
+    if (inFlight) {
+      return (await inFlight) as T;
+    }
   }
 
-  const fresh = await apiRequest<T>(path, options);
-  apiGetCache.set(key, {
-    expiresAt: now + ttlMs,
-    value: fresh,
-  });
+  const requestPromise = (async () => {
+    const fresh = await apiRequest<T>(path, options);
+    apiGetCache.set(key, {
+      expiresAt: Date.now() + ttlMs,
+      value: fresh,
+    });
+    return fresh;
+  })();
 
-  return fresh;
+  apiGetInFlight.set(key, requestPromise as Promise<unknown>);
+
+  try {
+    return await requestPromise;
+  } finally {
+    apiGetInFlight.delete(key);
+  }
 }
 
 export function clearApiCache(prefix?: string) {

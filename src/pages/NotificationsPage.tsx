@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePortal } from '../portal/context';
+import Button from '../components/ui/Button';
+import Badge from '../components/ui/Badge';
 
 type FilterMode = 'all' | 'unread' | 'read';
 
@@ -108,8 +110,8 @@ export default function NotificationsPage() {
   const readCount = notifications.length - unreadNotifications;
   const headlineText =
     unreadNotifications > 0
-      ? `${unreadNotifications} ${unreadNotifications === 1 ? 'alerta por tratar' : 'alertas por tratar'} na sua caixa interna.`
-      : 'Tudo tratado. Não existem alertas pendentes.';
+      ? `${unreadNotifications} ${unreadNotifications === 1 ? 'alerta pendente' : 'alertas pendentes'}.`
+      : 'Sem alertas pendentes.';
 
   return (
     <section className="notifications-shell">
@@ -138,24 +140,19 @@ export default function NotificationsPage() {
 
       <div className="notifications-toolbar">
         <div className="notifications-filters" role="tablist" aria-label="Filtro de notificações">
-          <button className={`notification-filter${filterMode === 'all' ? ' is-active' : ''}`} type="button" onClick={() => setFilterMode('all')}>
+          <button className={`notification-filter${filterMode === 'all' ? ' is-active' : ''}`} role="tab" aria-selected={filterMode === 'all'} type="button" onClick={() => setFilterMode('all')}>
             Todas
           </button>
-          <button className={`notification-filter${filterMode === 'unread' ? ' is-active' : ''}`} type="button" onClick={() => setFilterMode('unread')}>
+          <button className={`notification-filter${filterMode === 'unread' ? ' is-active' : ''}`} role="tab" aria-selected={filterMode === 'unread'} type="button" onClick={() => setFilterMode('unread')}>
             Por ler
           </button>
-          <button className={`notification-filter${filterMode === 'read' ? ' is-active' : ''}`} type="button" onClick={() => setFilterMode('read')}>
+          <button className={`notification-filter${filterMode === 'read' ? ' is-active' : ''}`} role="tab" aria-selected={filterMode === 'read'} type="button" onClick={() => setFilterMode('read')}>
             Lidas
           </button>
         </div>
 
         <div className="home-actions">
-          <button className="cta-button cta-primary" type="button" onClick={() => void markAllNotificationsRead()}>
-            Marcar tudo como tratado
-          </button>
-          <button className="cta-button cta-ghost" type="button" onClick={() => navigate('/')}>
-            Voltar à home
-          </button>
+          <Button variant="primary" type="button" onClick={() => void markAllNotificationsRead()}>Marcar tudo como tratado</Button>
         </div>
       </div>
 
@@ -163,7 +160,7 @@ export default function NotificationsPage() {
         {visibleNotifications.length === 0 && (
           <article className="notification-card notification-card--empty">
             <h3>Sem notificações neste filtro</h3>
-            <p>Quando surgirem novas mensagens, vais vê-las aqui automaticamente.</p>
+            <p>Sem registos.</p>
           </article>
         )}
 
@@ -180,7 +177,7 @@ export default function NotificationsPage() {
                 <span className="notification-card__tag">{friendly.tag}</span>
                 <div className="notification-card__meta">
                   <span>{formatRelativeDate(notification.createdAt)}</span>
-                  <strong>{notification.isRead ? 'Tratada' : 'Nova'}</strong>
+                  <Badge tone={notification.isRead ? 'neutral' : 'info'}>{notification.isRead ? 'Tratada' : 'Nova'}</Badge>
                 </div>
                 <h3>{friendly.title}</h3>
                 <p>{friendly.message}</p>
@@ -188,9 +185,7 @@ export default function NotificationsPage() {
 
               <div className="notification-card__actions">
                 {!notification.isRead && (
-                  <button type="button" onClick={() => void markNotificationRead(notification.id)}>
-                    Marcar como tratada
-                  </button>
+                  <Button size="sm" variant="secondary" type="button" onClick={() => void markNotificationRead(notification.id)}>Marcar como tratada</Button>
                 )}
               </div>
             </article>

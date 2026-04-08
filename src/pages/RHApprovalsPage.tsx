@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
 import { usePortal } from '../portal/context';
+import { formatVacationStatusLabel, getVacationStatusTone } from '../portal/labels';
+import Badge from '../components/ui/Badge';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -70,10 +72,10 @@ export default function RHApprovalsPage() {
     try {
       const [profiles, vacations] = await Promise.all([
         canReviewProfiles
-          ? apiRequestCached<ProfileRequest[]>('/profile/requests', { headers: getAuthHeaders() }, 10000)
+          ? apiRequestCached<ProfileRequest[]>('/profile/requests', { headers: getAuthHeaders() }, 45000)
           : Promise.resolve([]),
         canReviewVacations
-          ? apiRequestCached<VacationRequest[]>('/vacations/requests', { headers: getAuthHeaders() }, 10000)
+          ? apiRequestCached<VacationRequest[]>('/vacations/requests', { headers: getAuthHeaders() }, 45000)
           : Promise.resolve([]),
       ]);
 
@@ -176,7 +178,9 @@ export default function RHApprovalsPage() {
               <article key={request.id} className="trainings-mobile-card">
                 <header>
                   <h4>{request.user.username}</h4>
-                  <strong>{request.status}</strong>
+                  <Badge tone={getVacationStatusTone(request.status) === 'approved' ? 'success' : getVacationStatusTone(request.status) === 'pending' ? 'warning' : getVacationStatusTone(request.status) === 'rejected' ? 'danger' : 'neutral'}>
+                    {formatVacationStatusLabel(request.status)}
+                  </Badge>
                 </header>
                 <p>{request.changesSummary}</p>
                 <div className="trainings-row-actions">
@@ -208,7 +212,9 @@ export default function RHApprovalsPage() {
               <article key={request.id} className="trainings-mobile-card">
                 <header>
                   <h4>{request.user.username}</h4>
-                  <strong>{request.status}</strong>
+                  <Badge tone={getVacationStatusTone(request.status) === 'approved' ? 'success' : getVacationStatusTone(request.status) === 'pending' ? 'warning' : getVacationStatusTone(request.status) === 'rejected' ? 'danger' : 'neutral'}>
+                    {formatVacationStatusLabel(request.status)}
+                  </Badge>
                 </header>
                 <p>{request.dataInicio} - {request.dataFim}</p>
                 <p>{request.observacoes || 'Sem observações.'}</p>

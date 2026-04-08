@@ -261,6 +261,8 @@ router.get('/teams', requireAuth, async (req, res) => {
 router.get('/teams/me', requireAuth, async (req, res) => {
   const role = req.authUser!.role;
   const userId = req.authUser!.id;
+  const detailsMode = typeof req.query.details === 'string' ? req.query.details.toLowerCase() : 'full';
+  const includeMembers = detailsMode !== 'none';
   const year = Number(typeof req.query.year === 'string' ? req.query.year : new Date().getFullYear());
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
@@ -289,6 +291,43 @@ router.get('/teams/me', requireAuth, async (req, res) => {
               ],
             };
 
+  if (!includeMembers) {
+    const teams = await prisma.team.findMany({
+      where: teamWhere,
+      select: {
+        id: true,
+        name: true,
+        country: true,
+        parentTeamId: true,
+        manager: {
+          select: {
+            id: true,
+            username: true,
+            profile: { select: { primeiroNome: true, apelido: true } },
+          },
+        },
+        coordinator: {
+          select: {
+            id: true,
+            username: true,
+            profile: { select: { primeiroNome: true, apelido: true } },
+          },
+        },
+        parentTeam: { select: { id: true, name: true } },
+        _count: { select: { memberships: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    return res.json(teams.map((team) => ({
+      ...team,
+      _count: {
+        members: team._count.memberships,
+        memberships: team._count.memberships,
+      },
+    })));
+  }
+
   const teams = await prisma.team.findMany({
     where: teamWhere,
     select: {
@@ -298,8 +337,20 @@ router.get('/teams/me', requireAuth, async (req, res) => {
       managerId: true,
       coordinatorId: true,
       parentTeamId: true,
-      manager: { select: { id: true, username: true } },
-      coordinator: { select: { id: true, username: true } },
+      manager: {
+        select: {
+          id: true,
+          username: true,
+          profile: { select: { primeiroNome: true, apelido: true } },
+        },
+      },
+      coordinator: {
+        select: {
+          id: true,
+          username: true,
+          profile: { select: { primeiroNome: true, apelido: true } },
+        },
+      },
       parentTeam: { select: { id: true, name: true } },
       memberships: {
         where: { isActive: true },
@@ -373,6 +424,142 @@ router.get('/teams/me', requireAuth, async (req, res) => {
       memberships: team._count.memberships,
     },
   })));
+});
+
+router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
+  const role = req.authUser!.role;
+  const userId = req.authUser!.id;
+  const teamId = String(req.params.teamId || '');
+  const year = Number(typeof req.query.year === 'string' ? req.query.year : new Date().getFullYear());
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+
+  const teamWhere =
+    role === 'ADMIN'
+      ? { id: teamId }
+      : role === 'MANAGER'
+        ? {
+            id: teamId,
+            OR: [
+              { managerId: userId },
+              { memberships: { some: { userId, isActive: true } } },
+            ],
+          }
+        : role === 'COORDENADOR'
+          ? {
+              id: teamId,
+              OR: [
+                { coordinatorId: userId },
+                { memberships: { some: { userId, isActive: true } } },
+              ],
+            }
+          : {
+              id: teamId,
+              OR: [
+                { memberships: { some: { userId, isActive: true } } },
+                { members: { some: { id: userId } } },
+              ],
+            };
+
+  const team = await prisma.team.findFirst({
+    where: teamWhere,
+    select: {
+      id: true,
+      name: true,
+      country: true,
+      managerId: true,
+      coordinatorId: true,
+      parentTeamId: true,
+      manager: {
+        select: {
+          id: true,
+          username: true,
+          profile: { select: { primeiroNome: true, apelido: true } },
+        },
+      },
+      coordinator: {
+        select: {
+          id: true,
+          username: true,
+          profile: { select: { primeiroNome: true, apelido: true } },
+        },
+      },
+      parentTeam: { select: { id: true, name: true } },
+      memberships: {
+        where: { isActive: true },
+        select: {
+          userId: true,
+          membershipRole: true,
+          isApprover: true,
+          approvalLevel: true,
+          user: {
+            select: {
+              id: true,
+              username: true,
+              email: true,
+              role: true,
+              teamId: true,
+              profile: {
+                select: {
+                  primeiroNome: true,
+                  apelido: true,
+                  cargo: true,
+                  funcao: true,
+                },
+              },
+              vacations: {
+                where: {
+                  AND: [
+                    { dataInicio: { lte: yearEnd } },
+                    { dataFim: { gte: yearStart } },
+                  ],
+                },
+                select: {
+                  id: true,
+                  dataInicio: true,
+                  dataFim: true,
+                  status: true,
+                  requestType: true,
+                  partialDay: true,
+                  reviewReason: true,
+                  attachmentLink: true,
+                  contextTeamId: true,
+                  versionNumber: true,
+                  contextTeam: { select: { id: true, name: true } },
+                },
+                orderBy: [{ dataInicio: 'desc' }, { createdAt: 'desc' }],
+              },
+            },
+          },
+        },
+      },
+      _count: { select: { memberships: true } },
+    },
+  });
+
+  if (!team) {
+    return res.status(404).json({ message: 'Equipa não encontrada.' });
+  }
+
+  return res.json({
+    ...team,
+    members: team.memberships.map((membership) => ({
+      id: membership.user.id,
+      username: membership.user.username,
+      email: membership.user.email,
+      role: membership.user.role,
+      teamId: membership.user.teamId,
+      profile: membership.user.profile,
+      membershipRole: membership.membershipRole,
+      isApprover: membership.isApprover,
+      approvalLevel: membership.approvalLevel,
+      vacations: membership.user.vacations,
+    })),
+    _count: {
+      members: team._count.memberships,
+      memberships: team._count.memberships,
+    },
+  });
 });
 
 router.patch('/manager/team-members/:id', requireAuth, async (req, res) => {

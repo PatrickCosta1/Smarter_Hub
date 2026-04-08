@@ -1,5 +1,9 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
+import { formatRoleLabel } from '../portal/labels';
+import TextInput from '../components/ui/TextInput';
+import Button from '../components/ui/Button';
+import Toast from '../components/ui/Toast';
 
 type MeResponse = {
   user: {
@@ -109,37 +113,27 @@ export default function AccountAccessPage() {
             <span>Email</span>
             <strong>{email || '-'}</strong>
           </div>
+          <div>
+            <span>Perfil</span>
+            <strong>{formatRoleLabel(role || '-')}</strong>
+          </div>
         </div>
 
         <form className="account-form" onSubmit={handleSubmit}>
-          <label>
-            <span>Username</span>
-            <input type="text" value={username} onChange={(event) => setUsername(event.target.value)} />
-          </label>
+          <TextInput id="account-username" label="Username" type="text" value={username} onChange={(event) => setUsername(event.target.value)} />
 
-          <label>
-            <span>Password atual *</span>
-            <input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
-          </label>
+          <TextInput id="account-current-password" label="Password atual *" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
 
-          <label>
-            <span>Nova password</span>
-            <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="" />
-          </label>
+          <TextInput id="account-new-password" label="Nova password" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
 
-          <label>
-            <span>Confirmar nova password</span>
-            <input type="password" value={confirmNewPassword} onChange={(event) => setConfirmNewPassword(event.target.value)} placeholder="" />
-          </label>
+          <TextInput id="account-confirm-password" label="Confirmar nova password" type="password" value={confirmNewPassword} onChange={(event) => setConfirmNewPassword(event.target.value)} />
 
           <div className="account-actions">
-            <button type="submit" className="cta-button cta-primary" disabled={isSaving}>
-              {isSaving ? 'A guardar...' : 'Guardar alterações'}
-            </button>
+            <Button type="submit" variant="primary" isLoading={isSaving}>{isSaving ? 'A guardar...' : 'Guardar alterações'}</Button>
           </div>
         </form>
 
-        {status && <p className="account-status">{status}</p>}
+        <Toast show={Boolean(status)} tone={status.toLowerCase().includes('sucesso') ? 'success' : 'info'} message={status} />
       </section>
     </section>
   );

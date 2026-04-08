@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { usePortal } from '../portal/context';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
+import { formatRoleLabel, formatTrainingStatusLabel, getTrainingStatusTone } from '../portal/labels';
+import Badge from '../components/ui/Badge';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -102,7 +104,9 @@ export default function TrainingsPage() {
   }, [query, sortedRecords]);
 
   const totalHours = useMemo(() => records.reduce((sum, record) => sum + record.horas, 0), [records]);
-  const filteredHours = useMemo(() => visibleRecords.reduce((sum, record) => sum + record.horas, 0), [visibleRecords]);
+  const assignedCount = useMemo(() => records.filter((record) => record.status === 'ASSIGNED').length, [records]);
+  const completedCount = useMemo(() => records.filter((record) => record.status === 'COMPLETED').length, [records]);
+  const criticalCount = useMemo(() => (canManage ? assignedCount : assignedCount), [canManage, assignedCount]);
 
   const selectedCollaborator = useMemo(
     () => collaborators.find((item) => item.id === assignDraft.userId) ?? null,
@@ -130,7 +134,7 @@ export default function TrainingsPage() {
       const path = canManage ? '/trainings/assigned' : '/trainings/me';
       const data = await apiRequestCached<TrainingRecord[]>(path, {
         headers: getAuthHeaders(),
-      }, 15000);
+      }, 60000);
       setRecords(data);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar formações.');
@@ -153,7 +157,7 @@ export default function TrainingsPage() {
       const path = `/users?q=${q}&limit=40`;
       const data = await apiRequestCached<Collaborator[]>(path, {
         headers: getAuthHeaders(),
-      }, 10000);
+      }, 30000);
       setCollaborators(data);
     } catch (error) {
       setAssignStatus(error instanceof Error ? error.message : 'Falha ao pesquisar colaboradores.');
@@ -219,207 +223,299 @@ export default function TrainingsPage() {
       <header className="trainings-hero">
         <div>
           <p className="hero-kicker">Formações</p>
-          <h2>{canManage ? 'Atribuição e acompanhamento' : 'As minhas formações'}</h2>
-          <p>{canManage ? 'Atribui formações por colaborador e acompanha o estado de conclusão.' : 'Consulta as formações atribuídas e marca como concluídas quando terminares.'}</p>
+          <h2>{canManage ? 'Resumo de formações' : 'Resumo das minhas formações'}</h2>
+          <p>{canManage ? 'Carga horária e progresso da equipa.' : 'Horas e progresso de conclusão.'}</p>
         </div>
 
         <div className="trainings-hours-summary">
           <article>
-            <span>Total geral</span>
+            <span>Horas totais</span>
             <strong>{formatHours(totalHours)} h</strong>
           </article>
           <article>
-            <span>Total filtrado</span>
-            <strong>{formatHours(filteredHours)} h</strong>
+            <span>{canManage ? 'Por concluir' : 'Por concluir'}</span>
+            <strong>{criticalCount}</strong>
+          </article>
+          <article>
+            <span>Concluídas</span>
+            <strong>{completedCount}</strong>
           </article>
         </div>
       </header>
 
-      {canManage && (
-        <section className="trainings-form-card">
-          <div className="trainings-form-head">
-            <h3>Atribuir nova formação</h3>
-          </div>
-
-          <form className="trainings-form" onSubmit={handleAssignTraining} noValidate>
-            <div className="field-span-2 rh-collaborator-picker">
-              <span>Colaborador *</span>
-              <input
-                type="search"
-                value={collaboratorQuery}
-                onChange={(event) => setCollaboratorQuery(event.target.value)}
-                placeholder="Pesquisar por nome, username, email, cargo ou função..."
-              />
-
-              {selectedCollaborator ? (
-                <div className="rh-selected-collaborator">
-                  <strong>{`${selectedCollaborator.profile?.primeiroNome ?? ''} ${selectedCollaborator.profile?.apelido ?? ''}`.trim() || selectedCollaborator.username}</strong>
-                  <span>{selectedCollaborator.email}</span>
-                  <button type="button" onClick={() => updateAssignDraft('userId', '')}>Trocar colaborador</button>
-                </div>
-              ) : (
-                <div className="rh-collaborator-results" role="listbox" aria-label="Resultados de colaboradores">
-                  {!isSearchingCollaborators && !collaboratorQuery.trim() && <p>Escreve para pesquisar colaboradores.</p>}
-                  {isSearchingCollaborators && <p>A pesquisar colaboradores...</p>}
-                  {!isSearchingCollaborators && collaboratorQuery.trim() && collaborators.length === 0 && <p>Sem resultados para a pesquisa.</p>}
-                  {!isSearchingCollaborators &&
-                    collaborators.map((collaborator) => {
-                      const displayName = `${collaborator.profile?.primeiroNome ?? ''} ${collaborator.profile?.apelido ?? ''}`.trim() || collaborator.username;
-
-                      return (
-                        <button
-                          key={collaborator.id}
-                          type="button"
-                          className="rh-collaborator-result"
-                          onClick={() => updateAssignDraft('userId', collaborator.id)}
-                        >
-                          <strong>{displayName}</strong>
-                          <span>{collaborator.email}</span>
-                          <small>{collaborator.profile?.cargo || collaborator.role}</small>
-                        </button>
-                      );
-                    })}
-                </div>
-              )}
+      {canManage ? (
+        <div className="trainings-manage-grid">
+          <section className="trainings-form-card">
+            <div className="trainings-form-head">
+              <h3>Atribuir nova formação</h3>
             </div>
 
-            <label>
-              <span>Nome da formação *</span>
-              <input type="text" value={assignDraft.nome} onChange={(event) => updateAssignDraft('nome', event.target.value)} />
-            </label>
+            <form className="trainings-form" onSubmit={handleAssignTraining} noValidate>
+              <div className="field-span-2 rh-collaborator-picker">
+                <span>Colaborador *</span>
+                <input
+                  type="search"
+                  value={collaboratorQuery}
+                  onChange={(event) => setCollaboratorQuery(event.target.value)}
+                  placeholder="Pesquisar por nome, username, email, cargo ou função..."
+                />
 
-            <label>
-              <span>Horas *</span>
-              <input type="text" inputMode="decimal" value={assignDraft.horas} onChange={(event) => updateAssignDraft('horas', event.target.value)} />
-            </label>
+                {selectedCollaborator ? (
+                  <div className="rh-selected-collaborator">
+                    <strong>{`${selectedCollaborator.profile?.primeiroNome ?? ''} ${selectedCollaborator.profile?.apelido ?? ''}`.trim() || selectedCollaborator.username}</strong>
+                    <span>{selectedCollaborator.email}</span>
+                    <button type="button" onClick={() => updateAssignDraft('userId', '')}>Trocar colaborador</button>
+                  </div>
+                ) : (
+                  <div className="rh-collaborator-results" role="listbox" aria-label="Resultados de colaboradores">
+                    {!isSearchingCollaborators && !collaboratorQuery.trim() && <p>Escreve para pesquisar colaboradores.</p>}
+                    {isSearchingCollaborators && <p>A pesquisar colaboradores...</p>}
+                    {!isSearchingCollaborators && collaboratorQuery.trim() && collaborators.length === 0 && <p>Sem resultados para a pesquisa.</p>}
+                    {!isSearchingCollaborators &&
+                      collaborators.map((collaborator) => {
+                        const displayName = `${collaborator.profile?.primeiroNome ?? ''} ${collaborator.profile?.apelido ?? ''}`.trim() || collaborator.username;
 
-            <label>
-              <span>Link</span>
-              <input type="url" value={assignDraft.link} onChange={(event) => updateAssignDraft('link', event.target.value)} placeholder="https://..." />
-            </label>
+                        return (
+                          <button
+                            key={collaborator.id}
+                            type="button"
+                            className="rh-collaborator-result"
+                            onClick={() => updateAssignDraft('userId', collaborator.id)}
+                          >
+                            <strong>{displayName}</strong>
+                            <span>{collaborator.email}</span>
+                            <small>{collaborator.profile?.cargo || formatRoleLabel(collaborator.role)}</small>
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
 
-            <label>
-              <span>Duração</span>
-              <input type="text" value={assignDraft.duracao} onChange={(event) => updateAssignDraft('duracao', event.target.value)} placeholder="Ex: 3 dias" />
-            </label>
+              <label>
+                <span>Nome da formação *</span>
+                <input type="text" value={assignDraft.nome} onChange={(event) => updateAssignDraft('nome', event.target.value)} />
+              </label>
 
-            <label>
-              <span>Entidade</span>
-              <input type="text" value={assignDraft.entidade} onChange={(event) => updateAssignDraft('entidade', event.target.value)} placeholder="Ex: Udemy" />
-            </label>
+              <label>
+                <span>Horas *</span>
+                <input type="text" inputMode="decimal" value={assignDraft.horas} onChange={(event) => updateAssignDraft('horas', event.target.value)} />
+              </label>
 
-            <div className="trainings-form-actions field-span-2">
-              <button className="cta-button cta-primary" type="submit">Atribuir formação</button>
-              <button className="cta-button cta-ghost" type="button" onClick={() => setAssignDraft(EMPTY_ASSIGN_DRAFT)}>Limpar</button>
+              <label>
+                <span>Link</span>
+                <input type="url" value={assignDraft.link} onChange={(event) => updateAssignDraft('link', event.target.value)} placeholder="https://..." />
+              </label>
+
+              <label>
+                <span>Duração</span>
+                <input type="text" value={assignDraft.duracao} onChange={(event) => updateAssignDraft('duracao', event.target.value)} placeholder="Ex: 3 dias" />
+              </label>
+
+              <label>
+                <span>Entidade</span>
+                <input type="text" value={assignDraft.entidade} onChange={(event) => updateAssignDraft('entidade', event.target.value)} placeholder="Ex: Udemy" />
+              </label>
+
+              <div className="trainings-form-actions field-span-2">
+                <button className="cta-button cta-primary" type="submit">Atribuir formação</button>
+                <button className="cta-button cta-ghost" type="button" onClick={() => setAssignDraft(EMPTY_ASSIGN_DRAFT)}>Limpar</button>
+              </div>
+            </form>
+
+            {assignStatus && <p className="trainings-status">{assignStatus}</p>}
+          </section>
+
+          <section className="trainings-list-card">
+            <div className="trainings-list-head">
+              <h3>Formações atribuídas</h3>
+              <label>
+                <span>Pesquisar</span>
+                <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome, entidade, colaborador..." />
+              </label>
             </div>
-          </form>
 
-          {assignStatus && <p className="trainings-status">{assignStatus}</p>}
-        </section>
-      )}
+            <div className="trainings-table-wrap">
+              <table className="trainings-table" aria-label="Lista de formações">
+                <thead>
+                  <tr>
+                    <th>Formação</th>
+                    <th>Colaborador</th>
+                    <th>Link</th>
+                    <th>Horas</th>
+                    <th>Duração</th>
+                    <th>Entidade</th>
+                    <th>Data conclusão</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleRecords.length === 0 && (
+                    <tr>
+                      <td colSpan={8}>Sem formações para apresentar.</td>
+                    </tr>
+                  )}
 
-      <section className="trainings-list-card">
-        <div className="trainings-list-head">
-          <h3>{canManage ? 'Formações atribuídas' : 'Formações atribuídas a mim'}</h3>
-          <label>
-            <span>Pesquisar</span>
-            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome, entidade, colaborador..." />
-          </label>
-        </div>
+                  {visibleRecords.map((record) => (
+                    <tr key={record.id}>
+                      <td>{record.nome}</td>
+                      <td>{record.user?.username || '-'}</td>
+                      <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
+                      <td>{formatHours(record.horas)} h</td>
+                      <td>{record.duracao || '-'}</td>
+                      <td>{record.entidade || '-'}</td>
+                      <td>{record.dataConclusao || '-'}</td>
+                      <td>
+                        <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
+                          {formatTrainingStatusLabel(record.status)}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-        <div className="trainings-table-wrap">
-          <table className="trainings-table" aria-label="Lista de formações">
-            <thead>
-              <tr>
-                <th>Formação</th>
-                {canManage && <th>Colaborador</th>}
-                <th>Link</th>
-                <th>Horas</th>
-                <th>Duração</th>
-                <th>Entidade</th>
-                <th>Data conclusão</th>
-                <th>Estado</th>
-                {!canManage && <th>Ações</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {visibleRecords.length === 0 && (
-                <tr>
-                  <td colSpan={canManage ? 8 : 8}>Sem formações para apresentar.</td>
-                </tr>
-              )}
+            <div className="trainings-mobile-list">
+              {visibleRecords.length === 0 && <article className="trainings-mobile-card">Sem formações para apresentar.</article>}
 
               {visibleRecords.map((record) => (
-                <tr key={record.id}>
-                  <td>{record.nome}</td>
-                  {canManage && <td>{record.user?.username || '-'}</td>}
-                  <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
-                  <td>{formatHours(record.horas)} h</td>
-                  <td>{record.duracao || '-'}</td>
-                  <td>{record.entidade || '-'}</td>
-                  <td>{record.dataConclusao || '-'}</td>
-                  <td>{record.status || 'CONCLUIDA'}</td>
-                  {!canManage && (
+                <article key={`mobile-${record.id}`} className="trainings-mobile-card">
+                  <header>
+                    <h4>{record.nome}</h4>
+                    <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
+                      {formatTrainingStatusLabel(record.status)}
+                    </Badge>
+                  </header>
+                  <p>
+                    <span>Colaborador:</span> {record.user?.username || '-'}
+                  </p>
+                  <p>
+                    <span>Horas:</span> {formatHours(record.horas)} h
+                  </p>
+                  <p>
+                    <span>Duração:</span> {record.duracao || '-'}
+                  </p>
+                  <p>
+                    <span>Entidade:</span> {record.entidade || '-'}
+                  </p>
+                  <p>
+                    <span>Data:</span> {record.dataConclusao || '-'}
+                  </p>
+
+                  <div className="trainings-mobile-links">
+                    {record.link && (
+                      <a href={record.link} target="_blank" rel="noreferrer">Abrir link</a>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            {status && <p className="trainings-status">{status}</p>}
+          </section>
+        </div>
+      ) : (
+        <section className="trainings-list-card">
+          <div className="trainings-list-head">
+            <h3>{canManage ? 'Formações atribuídas' : 'Formações atribuídas a mim'}</h3>
+            <label>
+              <span>Pesquisar</span>
+              <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome, entidade, colaborador..." />
+            </label>
+          </div>
+
+          <div className="trainings-table-wrap">
+            <table className="trainings-table" aria-label="Lista de formações">
+              <thead>
+                <tr>
+                  <th>Formação</th>
+                  <th>Link</th>
+                  <th>Horas</th>
+                  <th>Duração</th>
+                  <th>Entidade</th>
+                  <th>Data conclusão</th>
+                  <th>Estado</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRecords.length === 0 && (
+                  <tr>
+                    <td colSpan={8}>Sem formações para apresentar.</td>
+                  </tr>
+                )}
+
+                {visibleRecords.map((record) => (
+                  <tr key={record.id}>
+                    <td>{record.nome}</td>
+                    <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
+                    <td>{formatHours(record.horas)} h</td>
+                    <td>{record.duracao || '-'}</td>
+                    <td>{record.entidade || '-'}</td>
+                    <td>{record.dataConclusao || '-'}</td>
+                    <td>
+                      <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
+                        {formatTrainingStatusLabel(record.status)}
+                      </Badge>
+                    </td>
                     <td>
                       {record.status === 'ASSIGNED' ? (
                         <div className="trainings-row-actions">
-                          <button type="button" onClick={() => void handleCompleteRecord(record.id)}>Marcar concluída</button>
+                          <button type="button" onClick={() => void handleCompleteRecord(record.id)}>Concluir</button>
                         </div>
                       ) : (
                         '-'
                       )}
                     </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-        <div className="trainings-mobile-list">
-          {visibleRecords.length === 0 && <article className="trainings-mobile-card">Sem formações para apresentar.</article>}
+          <div className="trainings-mobile-list">
+            {visibleRecords.length === 0 && <article className="trainings-mobile-card">Sem formações para apresentar.</article>}
 
-          {visibleRecords.map((record) => (
-            <article key={`mobile-${record.id}`} className="trainings-mobile-card">
-              <header>
-                <h4>{record.nome}</h4>
-                <strong>{record.status || 'CONCLUIDA'}</strong>
-              </header>
-              {canManage && (
+            {visibleRecords.map((record) => (
+              <article key={`mobile-${record.id}`} className="trainings-mobile-card">
+                <header>
+                  <h4>{record.nome}</h4>
+                  <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
+                    {formatTrainingStatusLabel(record.status)}
+                  </Badge>
+                </header>
                 <p>
-                  <span>Colaborador:</span> {record.user?.username || '-'}
+                  <span>Horas:</span> {formatHours(record.horas)} h
                 </p>
-              )}
-              <p>
-                <span>Horas:</span> {formatHours(record.horas)} h
-              </p>
-              <p>
-                <span>Duração:</span> {record.duracao || '-'}
-              </p>
-              <p>
-                <span>Entidade:</span> {record.entidade || '-'}
-              </p>
-              <p>
-                <span>Data:</span> {record.dataConclusao || '-'}
-              </p>
+                <p>
+                  <span>Duração:</span> {record.duracao || '-'}
+                </p>
+                <p>
+                  <span>Entidade:</span> {record.entidade || '-'}
+                </p>
+                <p>
+                  <span>Data:</span> {record.dataConclusao || '-'}
+                </p>
 
-              <div className="trainings-mobile-links">
-                {record.link && (
-                  <a href={record.link} target="_blank" rel="noreferrer">Abrir link</a>
-                )}
-              </div>
-
-              {!canManage && record.status === 'ASSIGNED' && (
-                <div className="trainings-row-actions">
-                  <button type="button" onClick={() => void handleCompleteRecord(record.id)}>Marcar concluída</button>
+                <div className="trainings-mobile-links">
+                  {record.link && (
+                    <a href={record.link} target="_blank" rel="noreferrer">Abrir link</a>
+                  )}
                 </div>
-              )}
-            </article>
-          ))}
-        </div>
 
-        {status && <p className="trainings-status">{status}</p>}
-      </section>
+                {record.status === 'ASSIGNED' && (
+                  <div className="trainings-row-actions">
+                    <button type="button" onClick={() => void handleCompleteRecord(record.id)}>Concluir</button>
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+
+          {status && <p className="trainings-status">{status}</p>}
+        </section>
+      )}
     </section>
   );
 }

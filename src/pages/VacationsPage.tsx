@@ -1,6 +1,8 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase } from '../portal/api';
 import { usePortal } from '../portal/context';
+import { formatVacationStatusLabel, getVacationStatusTone } from '../portal/labels';
+import Badge from '../components/ui/Badge';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -218,6 +220,10 @@ function getPartialDayLabel(partialDay?: VacationPartialDay) {
   return '';
 }
 
+function formatShortDate(value: string) {
+  return new Intl.DateTimeFormat('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(toLocalDate(value));
+}
+
 function buildMonthGrid(year: number, monthIndex: number) {
   const first = new Date(year, monthIndex, 1);
   const last = new Date(year, monthIndex + 1, 0);
@@ -255,6 +261,8 @@ export default function VacationsPage() {
   const [status, setStatus] = useState('');
   const [teamContexts, setTeamContexts] = useState<TeamContext[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const currentMonthRef = useRef<HTMLElement | null>(null);
+  const calendarAutoScrolledRef = useRef<string>('');
 
   // Cache keys to prevent duplicate requests
   const cacheRef = useRef<{
@@ -311,6 +319,33 @@ export default function VacationsPage() {
     }));
   }, [calendarData]);
 
+  const calendarMonthIndexToFocus = useMemo(() => {
+    if (!calendarData) {
+      return -1;
+    }
+
+    const now = new Date();
+    if (calendarData.year === now.getFullYear()) {
+      return now.getMonth();
+    }
+
+    return 0;
+  }, [calendarData]);
+
+  useEffect(() => {
+    if (activeTab !== 'calendar' || !calendarData || !currentMonthRef.current) {
+      return;
+    }
+
+    const key = `${calendarData.year}-${calendarMonthIndexToFocus}`;
+    if (calendarAutoScrolledRef.current === key) {
+      return;
+    }
+
+    calendarAutoScrolledRef.current = key;
+    currentMonthRef.current.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'auto' });
+  }, [activeTab, calendarData, calendarMonthIndexToFocus]);
+
   useEffect(() => {
     // Load overview and calendar only once
     if (!cacheRef.current.overviewLoaded) {
@@ -335,14 +370,14 @@ export default function VacationsPage() {
   async function loadMine() {
     const data = await apiRequestCached<VacationRecord[]>('/vacations/me', {
       headers: getAuthHeaders(),
-    }, 10000);
+    }, 60000);
     setRecords(data);
   }
 
   async function loadOverview() {
     const data = await apiRequestCached<VacationOverview>('/vacations/overview', {
       headers: getAuthHeaders(),
-    }, 20000);
+    }, 60000);
     setOverview(data);
   }
 
@@ -350,21 +385,21 @@ export default function VacationsPage() {
     const year = new Date().getFullYear();
     const data = await apiRequestCached<CalendarPayload>(`/vacations/calendar?year=${year}`, {
       headers: getAuthHeaders(),
-    }, 20000);
+    }, 60000);
     setCalendarData(data);
   }
 
   async function loadApprovalQueue() {
     const data = await apiRequestCached<VacationRecord[]>('/vacations/requests', {
       headers: getAuthHeaders(),
-    }, 10000);
+    }, 45000);
     setApprovalQueue(data);
   }
 
   async function loadTeamContexts() {
     const data = await apiRequestCached<TeamContext[]>('/users/me/teams', {
       headers: getAuthHeaders(),
-    }, 30000);
+    }, 120000);
 
     setTeamContexts(data);
     setDraft((current) => ({
@@ -627,6 +662,17 @@ export default function VacationsPage() {
           <p>Painel preparado para perfil de {roleNoun}, com contexto por equipa/subequipa e aprovação em cadeia.</p>
         </div>
 
+        <div className="trainings-hours-summary">
+          <article>
+            <span>Saldo disponível</span>
+            <strong>{remainingVacationDays.toLocaleString('pt-PT')} dias</strong>
+          </article>
+          <article>
+            <span>Total em análise</span>
+            <strong>{totalVacationDays.toLocaleString('pt-PT')} dias</strong>
+          </article>
+        </div>
+
     
       </header>
 
@@ -684,7 +730,7 @@ export default function VacationsPage() {
 
       {activeTab === 'calendar' && calendarData && (
         <section className="trainings-list-card">
-          <div className="vacations-legend" aria-label="Legenda do calendário">
+          <div className="vacations-legend vacations-legend--sticky" aria-label="Legenda do calendário">
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--holiday" />Feriado</span>
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--weekend" />Fim de semana</span>
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--absence" />Ausência</span>
@@ -695,7 +741,13 @@ export default function VacationsPage() {
 
           <div className="vacations-year-grid">
             {yearMonths.map((month) => (
-              <article key={month.month} className="vacations-month-card">
+              <article
+                key={month.month}
+                className="vacations-month-card"
+                ref={month.monthIndex === calendarMonthIndexToFocus ? (node) => {
+                  currentMonthRef.current = node;
+                } : undefined}
+              >
                 <header>
                   <h4>{month.month}</h4>
                 </header>
@@ -821,35 +873,35 @@ export default function VacationsPage() {
               <table className="trainings-table" aria-label="Lista de pedidos">
                 <thead>
                   <tr>
-                    <th>Tipo</th>
-                    <th>Motivo</th>
-                    <th>Início</th>
-                    <th>Fim</th>
+                    <th>Pedido</th>
+                    <th>Período</th>
                     <th>Dias</th>
-                    <th>Estado</th>
                     <th>Equipa</th>
-                    <th>Versão</th>
-                    <th>Observações</th>
+                    <th>Estado</th>
+                    <th>Resumo</th>
                     <th>Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedRecords.length === 0 && (
                     <tr>
-                      <td colSpan={10}>Sem pedidos submetidos.</td>
+                      <td colSpan={7}>Sem pedidos submetidos.</td>
                     </tr>
                   )}
                   {sortedRecords.map((record) => (
-                    <tr key={record.id}>
-                      <td>{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</td>
-                      <td>{record.requestType === 'VACATION' ? '-' : record.observacoes || 'Ausência'}</td>
-                      <td>{record.dataInicio}</td>
-                      <td>{record.dataFim}</td>
+                    <tr key={record.id} className={`vacation-history-row vacation-history-row--${record.status.toLowerCase()}`}>
+                      <td>
+                        <strong>{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</strong>
+                      </td>
+                      <td>{formatShortDate(record.dataInicio)} - {formatShortDate(record.dataFim)}</td>
                       <td>{calculateDuration(record)}</td>
-                      <td>{record.status}</td>
                       <td>{record.contextTeam?.name || '-'}</td>
-                      <td>{record.versionNumber || 1}</td>
-                      <td>{record.observacoes || '-'}</td>
+                      <td>
+                        <Badge tone={getVacationStatusTone(record.status) === 'approved' ? 'success' : getVacationStatusTone(record.status) === 'pending' ? 'warning' : getVacationStatusTone(record.status) === 'rejected' ? 'danger' : 'neutral'}>
+                          {formatVacationStatusLabel(record.status)}
+                        </Badge>
+                      </td>
+                      <td>{record.observacoes || 'Sem observações'} · V{record.versionNumber || 1}</td>
                       <td>
                         {record.status === 'PENDING' || record.status === 'APPROVED' ? (
                           <div className="trainings-row-actions">
