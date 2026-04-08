@@ -103,10 +103,6 @@ router.post('/trainings', requireAuth, async (req: Request, res: Response) => {
 
 router.post('/trainings/assign', requireAuth, async (req: Request, res: Response) => {
   try {
-    if (!['MANAGER', 'COORDENADOR', 'ADMIN'].includes(req.authUser!.role)) {
-      return res.status(403).json({ message: 'Sem permissões para atribuir formações.' });
-    }
-
     const validation = assignTrainingSchema.safeParse(req.body);
 
     if (!validation.success) {
@@ -114,6 +110,14 @@ router.post('/trainings/assign', requireAuth, async (req: Request, res: Response
     }
 
     const data = validation.data;
+
+    const canAssignOthers = ['MANAGER', 'COORDENADOR', 'ADMIN'].includes(req.authUser!.role);
+    const isSelfAssign = data.userId === req.authUser!.id;
+
+    if (!canAssignOthers && !isSelfAssign) {
+      return res.status(403).json({ message: 'Sem permissões para atribuir formações a terceiros.' });
+    }
+
     const collaborator = await prisma.user.findUnique({
       where: { id: data.userId },
       select: { id: true, username: true },

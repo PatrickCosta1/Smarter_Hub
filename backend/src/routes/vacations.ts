@@ -13,6 +13,8 @@ const vacationSchema = z
     observacoes: z.string().default(''),
     requestType: z.enum(['VACATION', 'ABSENCE_MEDICAL', 'ABSENCE_TRAINING']).default('VACATION'),
     attachmentLink: z.string().default(''),
+    contextTeamId: z.string().optional(),
+    partialDay: z.enum(['FULL', 'AM', 'PM']).default('FULL'),
   })
   .superRefine((data, ctx) => {
     if (data.dataInicio > data.dataFim) {
@@ -34,7 +36,35 @@ const vacationSchema = z
         message: 'Ausência médica (SNS24) está limitada a 3 dias.',
       });
     }
+
+    if (data.partialDay !== 'FULL') {
+      if (data.requestType !== 'VACATION') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['partialDay'],
+          message: 'Meio-dia só está disponível para pedidos de férias.',
+        });
+      }
+
+      if (data.dataInicio !== data.dataFim) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['dataFim'],
+          message: 'Pedidos de meio-dia devem ter início e fim no mesmo dia.',
+        });
+      }
+    }
   });
+
+const approveRejectSchema = z.object({
+  reason: z.string().optional(),
+});
+
+const APPROVAL_PENDING = 'PENDING';
+const APPROVAL_WAITING = 'WAITING';
+const APPROVAL_APPROVED = 'APPROVED';
+const APPROVAL_REJECTED = 'REJECTED';
+const APPROVAL_SKIPPED = 'SKIPPED';
 
 function toLocalDate(dateText: string) {
   return new Date(`${dateText}T00:00:00`);
@@ -57,6 +87,30 @@ function enumerateDates(startText: string, endText: string) {
   }
 
   return days;
+}
+
+function hasDateOverlap(startA: string, endA: string, startB: string, endB: string) {
+  return !(endA < startB || endB < startA);
+}
+
+function vacationDaysForMetrics(record: { requestType: string; dataInicio: string; dataFim: string; partialDay?: 'FULL' | 'AM' | 'PM' }) {
+  if (record.requestType !== 'VACATION') {
+    return enumerateDates(record.dataInicio, record.dataFim).length;
+  }
+
+  if (record.partialDay && record.partialDay !== 'FULL') {
+    return 0.5;
+  }
+
+  return enumerateDates(record.dataInicio, record.dataFim).length;
+}
+
+function vacationDailyWeight(record: { dataInicio: string; partialDay?: 'FULL' | 'AM' | 'PM' }, iso: string) {
+  if (!record.partialDay || record.partialDay === 'FULL') {
+    return 1;
+  }
+
+  return record.dataInicio === iso ? 0.5 : 1;
 }
 
 function easterDate(year: number) {
@@ -162,86 +216,324 @@ function brVacationDaysByAbsences(absences: number) {
   return 0;
 }
 
-async function resolveApprovers(userId: string) {
+async function resolveContextTeamId(userId: string, explicitTeamId?: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { teamId: true },
+  });
+
+  const activeMemberships = await prisma.teamMembership.findMany({
+    where: { userId, isActive: true },
+    select: { teamId: true },
+  });
+
+  const membershipTeamIds = activeMemberships.map((item) => item.teamId);
+  const eligibleTeamIds = new Set<string>(membershipTeamIds);
+
+  if (user?.teamId) {
+    eligibleTeamIds.add(user.teamId);
+  }
+
+  if (explicitTeamId) {
+    if (eligibleTeamIds.has(explicitTeamId)) {
+      return explicitTeamId;
+    }
+
+    return null;
+  }
+
+  if (membershipTeamIds.length === 1) {
+    return membershipTeamIds[0];
+  }
+
+  if (user?.teamId) {
+    return user.teamId;
+  }
+
+  return membershipTeamIds[0] ?? null;
+}
+
+async function resolveApprovalGroups(userId: string, contextTeamId: string) {
   const requester = await prisma.user.findUnique({
     where: { id: userId },
     select: {
       id: true,
       role: true,
-      team: {
-        select: {
-          id: true,
-          managerId: true,
-          coordinatorId: true,
-        },
-      },
     },
   });
 
   if (!requester) {
-    return [] as string[];
+    return [] as Array<{ level: number; approverIds: string[] }>;
   }
 
-  if (requester.role === 'COLABORADOR') {
-    return requester.team?.managerId ? [requester.team.managerId] : [];
+  type TeamHierarchyNode = { id: string; managerId: string | null; coordinatorId: string | null; parentTeamId: string | null };
+
+  const hierarchy: TeamHierarchyNode[] = [];
+  const visited = new Set<string>();
+  let cursorTeamId: string | null = contextTeamId;
+
+  while (cursorTeamId && !visited.has(cursorTeamId)) {
+    visited.add(cursorTeamId);
+    const team: TeamHierarchyNode | null = await prisma.team.findUnique({
+      where: { id: cursorTeamId },
+      select: {
+        id: true,
+        managerId: true,
+        coordinatorId: true,
+        parentTeamId: true,
+      },
+    });
+
+    if (!team) {
+      break;
+    }
+
+    hierarchy.push(team);
+    cursorTeamId = team.parentTeamId;
   }
 
-  if (requester.role === 'MANAGER') {
-    return requester.team?.coordinatorId ? [requester.team.coordinatorId] : [];
+  if (hierarchy.length === 0) {
+    return [] as Array<{ level: number; approverIds: string[] }>;
   }
 
-  if (requester.role === 'COORDENADOR') {
+  const groups: Array<{ level: number; approverIds: string[] }> = [];
+  const seenApprovers = new Set<string>();
+
+  function pushLevel(candidates: Array<string | null | undefined>) {
+    const approverIds = candidates
+      .filter((id): id is string => Boolean(id && id !== userId && !seenApprovers.has(id)));
+
+    if (approverIds.length === 0) {
+      return;
+    }
+
+    for (const id of approverIds) {
+      seenApprovers.add(id);
+    }
+
+    groups.push({
+      level: groups.length + 1,
+      approverIds,
+    });
+  }
+
+  if (requester.role !== 'COORDENADOR') {
+    for (const team of hierarchy) {
+      const membershipApprovers = await prisma.teamMembership.findMany({
+        where: {
+          teamId: team.id,
+          isActive: true,
+          isApprover: true,
+          approvalLevel: { not: null },
+        },
+        select: {
+          userId: true,
+          approvalLevel: true,
+        },
+      });
+
+      const localLevels = new Map<number, string[]>();
+      for (const item of membershipApprovers) {
+        if (!item.approvalLevel) {
+          continue;
+        }
+
+        if (!localLevels.has(item.approvalLevel)) {
+          localLevels.set(item.approvalLevel, []);
+        }
+
+        localLevels.get(item.approvalLevel)!.push(item.userId);
+      }
+
+      const sortedLocalLevels = Array.from(localLevels.keys()).sort((a, b) => a - b);
+      if (sortedLocalLevels.length > 0) {
+        for (const localLevel of sortedLocalLevels) {
+          pushLevel(localLevels.get(localLevel) ?? []);
+        }
+      } else if (requester.role === 'COLABORADOR') {
+        pushLevel([team.managerId]);
+      }
+
+      if (requester.role === 'COLABORADOR' || requester.role === 'MANAGER') {
+        pushLevel([team.coordinatorId]);
+      }
+    }
+  }
+
+  if (requester.role === 'COORDENADOR' || groups.length === 0) {
     const admins = await prisma.user.findMany({
-      where: { role: 'ADMIN' },
+      where: { role: 'ADMIN', id: { not: userId } },
       select: { id: true },
       orderBy: { createdAt: 'asc' },
     });
 
-    return admins.map((item) => item.id);
+    if (admins.length > 0) {
+      pushLevel(admins.map((item) => item.id));
+    }
   }
 
-  if (requester.role === 'ADMIN') {
-    const admins = await prisma.user.findMany({
-      where: { role: 'ADMIN', id: { not: requester.id } },
-      select: { id: true },
-      orderBy: { createdAt: 'asc' },
-    });
-
-    return admins.map((item) => item.id);
-  }
-
-  return [];
+  return groups;
 }
 
-async function canReviewRequest(requestId: string, reviewerId: string, reviewerRole: string) {
-  if (reviewerRole === 'ADMIN') {
-    return true;
-  }
+async function enforceOneThirdCapacity(
+  contextTeamId: string,
+  dataInicio: string,
+  dataFim: string,
+  partialDay: 'FULL' | 'AM' | 'PM',
+  excludeVacationId?: string,
+) {
+  const teamMemberCount = await prisma.teamMembership.count({
+    where: { teamId: contextTeamId, isActive: true },
+  });
 
-  const request = await prisma.vacation.findUnique({
-    where: { id: requestId },
+  const fallbackCount = teamMemberCount === 0
+    ? await prisma.user.count({ where: { teamId: contextTeamId } })
+    : teamMemberCount;
+
+  const totalMembers = Math.max(1, fallbackCount);
+  const maxSimultaneous = Math.max(1, Math.floor(totalMembers / 3));
+
+  const overlapping = await prisma.vacation.findMany({
+    where: {
+      contextTeamId,
+      requestType: 'VACATION',
+      status: 'APPROVED',
+      ...(excludeVacationId ? { id: { not: excludeVacationId } } : {}),
+    },
+    select: {
+      dataInicio: true,
+      dataFim: true,
+      partialDay: true,
+    },
+  });
+
+  const targetDates = enumerateDates(dataInicio, dataFim);
+
+  for (const iso of targetDates) {
+    let usedCapacity = 0;
+    for (const item of overlapping) {
+      if (hasDateOverlap(iso, iso, item.dataInicio, item.dataFim)) {
+        usedCapacity += vacationDailyWeight(item, iso);
+      }
+    }
+
+    const requestedCapacity = vacationDailyWeight({ dataInicio, partialDay }, iso);
+
+    if (usedCapacity + requestedCapacity > maxSimultaneous) {
+      throw new Error(`Capacidade da equipa excedida em ${iso}. Limite: ${maxSimultaneous} colaborador(es) em férias simultâneas.`);
+    }
+  }
+}
+
+async function finalizeVacationApproval(vacationId: string, reviewerId: string, reviewerRole: string) {
+  const vacation = await prisma.vacation.findUnique({
+    where: { id: vacationId },
     include: {
+      approvals: true,
       user: {
-        include: {
-          team: true,
+        select: {
+          id: true,
+          profile: { select: { workCountry: true } },
         },
       },
     },
   });
 
-  if (!request) {
+  if (!vacation || vacation.status !== 'PENDING') {
     return false;
   }
 
-  if (reviewerRole === 'MANAGER') {
-    return request.user.role === 'COLABORADOR' && request.user.team?.managerId === reviewerId;
+  const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
+  if (reviewerRole === 'ADMIN' && isPt) {
+    await prisma.$transaction([
+      prisma.vacation.update({
+        where: { id: vacationId },
+        data: {
+          status: 'APPROVED',
+          reviewedById: reviewerId,
+          reviewedAt: new Date(),
+          reviewReason: 'Aprovado por exceção (PT).',
+          approvedByRole: reviewerRole,
+        },
+      }),
+      prisma.vacationApproval.updateMany({
+        where: {
+          vacationId,
+          status: { in: [APPROVAL_PENDING, APPROVAL_WAITING] },
+        },
+        data: {
+          status: APPROVAL_SKIPPED,
+          decidedAt: new Date(),
+          reason: 'Ignorado por aprovação excecional de admin (PT).',
+        },
+      }),
+    ]);
+
+    return true;
   }
 
-  if (reviewerRole === 'COORDENADOR') {
-    return request.user.role === 'MANAGER' && request.user.team?.coordinatorId === reviewerId;
+  const myStep = vacation.approvals.find((item) => item.approverId === reviewerId && item.status === APPROVAL_PENDING);
+  if (!myStep) {
+    return false;
   }
 
-  return false;
+  await prisma.vacationApproval.update({
+    where: { id: myStep.id },
+    data: {
+      status: APPROVAL_APPROVED,
+      decidedAt: new Date(),
+      reason: 'Aprovado.',
+    },
+  });
+
+  const refreshed = await prisma.vacation.findUnique({
+    where: { id: vacationId },
+    include: { approvals: true },
+  });
+
+  if (!refreshed) {
+    return false;
+  }
+
+  const currentLevel = myStep.approvalLevel;
+  const sameLevel = refreshed.approvals.filter((item) => item.approvalLevel === currentLevel);
+  const isLevelDone = sameLevel.every((item) => item.status === APPROVAL_APPROVED || item.status === APPROVAL_SKIPPED);
+
+  if (!isLevelDone) {
+    return true;
+  }
+
+  const nextLevel = refreshed.approvals
+    .filter((item) => item.approvalLevel > currentLevel)
+    .reduce((acc, item) => Math.min(acc, item.approvalLevel), Number.POSITIVE_INFINITY);
+
+  if (Number.isFinite(nextLevel)) {
+    await prisma.vacationApproval.updateMany({
+      where: {
+        vacationId,
+        approvalLevel: nextLevel,
+        status: APPROVAL_WAITING,
+      },
+      data: {
+        status: APPROVAL_PENDING,
+      },
+    });
+
+    return true;
+  }
+
+  await prisma.vacation.update({
+    where: { id: vacationId },
+    data: {
+      status: 'APPROVED',
+      reviewedById: reviewerId,
+      reviewedAt: new Date(),
+      reviewReason: 'Pedido aprovado em todas as linhas.',
+      approvedByRole: reviewerRole,
+    },
+  });
+
+  return true;
 }
 
 router.get('/vacations/me', requireAuth, async (req: Request, res: Response) => {
@@ -250,7 +542,21 @@ router.get('/vacations/me', requireAuth, async (req: Request, res: Response) => 
 
     const vacations = await prisma.vacation.findMany({
       where: { userId },
-      orderBy: [{ dataInicio: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        contextTeam: { select: { id: true, name: true } },
+        approvals: {
+          select: {
+            id: true,
+            approverId: true,
+            approvalLevel: true,
+            status: true,
+            decidedAt: true,
+            reason: true,
+          },
+          orderBy: [{ approvalLevel: 'asc' }, { createdAt: 'asc' }],
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }],
     });
 
     res.json(vacations);
@@ -275,7 +581,7 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
     if (country === 'PT') {
       const approvedVacationDays = vacations
         .filter((item) => item.status === 'APPROVED' && item.requestType === 'VACATION')
-        .reduce((sum, item) => sum + enumerateDates(item.dataInicio, item.dataFim).length, 0);
+        .reduce((sum, item) => sum + vacationDaysForMetrics(item), 0);
 
       return res.json({
         country: 'PT',
@@ -285,6 +591,7 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
           extraDays: ['Aniversário', '24/12', '31/12', 'Terça-feira de Carnaval', 'São João (se aplicável)'],
           mandatoryConsecutiveDays: 10,
           carryOver: true,
+          maxTeamShare: '1/3',
         },
         approvedVacationDays,
       });
@@ -309,6 +616,7 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
         canSellDays: 10,
         noStartTwoDaysBeforeHoliday: true,
         noticeDays: 30,
+        maxTeamShare: '1/3',
       },
       calculation: {
         monthsWorked,
@@ -351,7 +659,7 @@ router.get('/vacations/calendar', requireAuth, async (req: Request, res: Respons
     const approvedDays = approved.flatMap((item) => enumerateDates(item.dataInicio, item.dataFim));
     const pendingDays = pending.flatMap((item) => enumerateDates(item.dataInicio, item.dataFim));
     const absencesDays = vacations
-      .filter((item) => item.requestType !== 'VACATION')
+      .filter((item) => item.requestType !== 'VACATION' && item.status !== 'CANCELLED')
       .flatMap((item) => enumerateDates(item.dataInicio, item.dataFim));
 
     const extras = [
@@ -404,20 +712,54 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
     }
 
     const data = validation.data;
+    const contextTeamId = await resolveContextTeamId(userId, data.contextTeamId);
 
-    const vacation = await prisma.vacation.create({
-      data: {
-        userId,
-        dataInicio: data.dataInicio,
-        dataFim: data.dataFim,
-        observacoes: data.observacoes,
-        requestType: data.requestType,
-        attachmentLink: data.attachmentLink,
-        status: 'PENDING',
-      },
+    if (!contextTeamId) {
+      return res.status(400).json({ error: 'Não foi possível determinar a equipa/subequipa do pedido.' });
+    }
+
+    if (data.requestType === 'VACATION') {
+      await enforceOneThirdCapacity(contextTeamId, data.dataInicio, data.dataFim, data.partialDay);
+    }
+
+    const approvalGroups = await resolveApprovalGroups(userId, contextTeamId);
+    if (approvalGroups.length === 0) {
+      return res.status(400).json({ error: 'Não existem aprovadores configurados para esta equipa.' });
+    }
+
+    const vacation = await prisma.$transaction(async (tx) => {
+      const created = await tx.vacation.create({
+        data: {
+          userId,
+          contextTeamId,
+          dataInicio: data.dataInicio,
+          dataFim: data.dataFim,
+          observacoes: data.observacoes,
+          requestType: data.requestType,
+          partialDay: data.partialDay,
+          attachmentLink: data.attachmentLink,
+          status: 'PENDING',
+          versionNumber: 1,
+        },
+      });
+
+      for (const group of approvalGroups) {
+        for (const approverId of group.approverIds) {
+          await tx.vacationApproval.create({
+            data: {
+              vacationId: created.id,
+              approverId,
+              approvalLevel: group.level,
+              status: group.level === approvalGroups[0].level ? APPROVAL_PENDING : APPROVAL_WAITING,
+            },
+          });
+        }
+      }
+
+      return created;
     });
 
-    const approverIds = await resolveApprovers(userId);
+    const approverIds = approvalGroups.flatMap((item) => item.approverIds);
     if (approverIds.length > 0) {
       await notifyUsers(
         prisma,
@@ -430,7 +772,7 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
     res.status(201).json(vacation);
   } catch (error) {
     console.error('[POST /vacations]', error);
-    res.status(500).json({ error: 'Falha ao registar pedido.' });
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Falha ao registar pedido.' });
   }
 });
 
@@ -442,27 +784,20 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
     return res.status(403).json({ message: 'Sem permissões para consultar pedidos.' });
   }
 
-  const where =
-    role === 'ADMIN'
-      ? { status: 'PENDING' as const }
-      : role === 'MANAGER'
-        ? {
-            status: 'PENDING' as const,
-            user: {
-              role: 'COLABORADOR' as const,
-              team: { managerId: userId },
-            },
-          }
+  const pendingByStep = await prisma.vacation.findMany({
+    where: {
+      status: 'PENDING',
+      ...(role === 'ADMIN'
+        ? {}
         : {
-            status: 'PENDING' as const,
-            user: {
-              role: 'MANAGER' as const,
-              team: { coordinatorId: userId },
+            approvals: {
+              some: {
+                approverId: userId,
+                status: APPROVAL_PENDING,
+              },
             },
-          };
-
-  const vacations = await prisma.vacation.findMany({
-    where,
+          }),
+    },
     include: {
       user: {
         select: {
@@ -474,11 +809,19 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
           profile: { select: { workCountry: true } },
         },
       },
+      contextTeam: { select: { id: true, name: true } },
+      approvals: {
+        select: {
+          approverId: true,
+          approvalLevel: true,
+          status: true,
+        },
+      },
     },
     orderBy: [{ createdAt: 'desc' }],
   });
 
-  return res.json(vacations);
+  return res.json(pendingByStep);
 });
 
 router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Response) => {
@@ -489,28 +832,49 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
   }
 
   const id = typeof req.params.id === 'string' ? req.params.id : '';
-  const allowed = await canReviewRequest(id, req.authUser!.id, role);
 
-  if (!allowed) {
-    return res.status(403).json({ message: 'Este pedido não pertence ao teu nível de aprovação.' });
-  }
+  const vacation = await prisma.vacation.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      userId: true,
+      status: true,
+      requestType: true,
+      dataInicio: true,
+      dataFim: true,
+      contextTeamId: true,
+      partialDay: true,
+      user: {
+        select: {
+          id: true,
+          profile: { select: { workCountry: true } },
+        },
+      },
+      approvals: true,
+    },
+  });
 
-  const vacation = await prisma.vacation.findFirst({ where: { id, status: 'PENDING' } });
-
-  if (!vacation) {
+  if (!vacation || vacation.status !== 'PENDING') {
     return res.status(404).json({ message: 'Pedido não encontrado.' });
   }
 
-  await prisma.vacation.update({
-    where: { id },
-    data: {
-      status: 'APPROVED',
-      reviewedById: req.authUser!.id,
-      reviewedAt: new Date(),
-      reviewReason: 'Pedido aprovado.',
-      approvedByRole: role,
-    },
-  });
+  const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
+  const canApproveByStep = vacation.approvals.some((item) => item.approverId === req.authUser!.id && item.status === APPROVAL_PENDING);
+  const canApproveByException = role === 'ADMIN' && isPt;
+
+  if (!canApproveByStep && !canApproveByException) {
+    return res.status(403).json({ message: 'Este pedido não pertence ao teu nível de aprovação.' });
+  }
+
+  if (vacation.requestType === 'VACATION' && vacation.contextTeamId) {
+    await enforceOneThirdCapacity(vacation.contextTeamId, vacation.dataInicio, vacation.dataFim, vacation.partialDay, vacation.id);
+  }
+
+  const completed = await finalizeVacationApproval(id, req.authUser!.id, role);
+
+  if (!completed) {
+    return res.status(400).json({ message: 'Não foi possível finalizar esta aprovação.' });
+  }
 
   await prisma.notification.create({
     data: {
@@ -530,30 +894,64 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
     return res.status(403).json({ message: 'Sem permissões para recusar pedidos.' });
   }
 
-  const id = typeof req.params.id === 'string' ? req.params.id : '';
-  const allowed = await canReviewRequest(id, req.authUser!.id, role);
-
-  if (!allowed) {
-    return res.status(403).json({ message: 'Este pedido não pertence ao teu nível de aprovação.' });
+  const validation = approveRejectSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({ message: validation.error.issues[0].message });
   }
 
-  const reason = typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim() : 'Pedido recusado.';
-  const vacation = await prisma.vacation.findFirst({ where: { id, status: 'PENDING' } });
+  const id = typeof req.params.id === 'string' ? req.params.id : '';
+  const reason = typeof validation.data.reason === 'string' && validation.data.reason.trim()
+    ? validation.data.reason.trim()
+    : 'Pedido recusado.';
 
-  if (!vacation) {
+  const vacation = await prisma.vacation.findUnique({
+    where: { id },
+    include: {
+      user: {
+        select: {
+          id: true,
+          profile: { select: { workCountry: true } },
+        },
+      },
+      approvals: true,
+    },
+  });
+
+  if (!vacation || vacation.status !== 'PENDING') {
     return res.status(404).json({ message: 'Pedido não encontrado.' });
   }
 
-  await prisma.vacation.update({
-    where: { id },
-    data: {
-      status: 'REJECTED',
-      reviewedById: req.authUser!.id,
-      reviewedAt: new Date(),
-      reviewReason: reason,
-      approvedByRole: role,
-    },
-  });
+  const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
+  const canRejectByStep = vacation.approvals.some((item) => item.approverId === req.authUser!.id && item.status === APPROVAL_PENDING);
+  const canRejectByException = role === 'ADMIN' && isPt;
+
+  if (!canRejectByStep && !canRejectByException) {
+    return res.status(403).json({ message: 'Este pedido não pertence ao teu nível de aprovação.' });
+  }
+
+  await prisma.$transaction([
+    prisma.vacation.update({
+      where: { id },
+      data: {
+        status: 'REJECTED',
+        reviewedById: req.authUser!.id,
+        reviewedAt: new Date(),
+        reviewReason: reason,
+        approvedByRole: role,
+      },
+    }),
+    prisma.vacationApproval.updateMany({
+      where: {
+        vacationId: id,
+        status: { in: [APPROVAL_PENDING, APPROVAL_WAITING] },
+      },
+      data: {
+        status: APPROVAL_REJECTED,
+        decidedAt: new Date(),
+        reason,
+      },
+    }),
+  ]);
 
   await prisma.notification.create({
     data: {
@@ -576,29 +974,103 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
       return res.status(400).json({ error: validation.error.issues[0].message });
     }
 
-    const existing = await prisma.vacation.findFirst({ where: { id, userId, status: 'PENDING' } });
-
-    if (!existing) {
-      return res.status(404).json({ error: 'Pedido não encontrado ou já processado.' });
-    }
-
-    const data = validation.data;
-
-    const updated = await prisma.vacation.update({
-      where: { id },
-      data: {
-        dataInicio: data.dataInicio,
-        dataFim: data.dataFim,
-        observacoes: data.observacoes,
-        requestType: data.requestType,
-        attachmentLink: data.attachmentLink,
+    const existing = await prisma.vacation.findFirst({
+      where: {
+        id,
+        userId,
+        status: { in: ['PENDING', 'APPROVED'] },
+      },
+      include: {
+        contextTeam: { select: { id: true } },
       },
     });
 
-    res.json(updated);
+    if (!existing) {
+      return res.status(404).json({ error: 'Pedido não encontrado para versionamento.' });
+    }
+
+    const data = validation.data;
+    const contextTeamId = await resolveContextTeamId(userId, data.contextTeamId || existing.contextTeamId || undefined);
+
+    if (!contextTeamId) {
+      return res.status(400).json({ error: 'Não foi possível determinar a equipa/subequipa do pedido.' });
+    }
+
+    if (data.requestType === 'VACATION') {
+      await enforceOneThirdCapacity(contextTeamId, data.dataInicio, data.dataFim, data.partialDay, id);
+    }
+
+    const approvalGroups = await resolveApprovalGroups(userId, contextTeamId);
+    if (approvalGroups.length === 0) {
+      return res.status(400).json({ error: 'Não existem aprovadores configurados para esta equipa.' });
+    }
+
+    const rootId = existing.versionOfId || existing.id;
+    const maxVersion = await prisma.vacation.findFirst({
+      where: {
+        OR: [{ id: rootId }, { versionOfId: rootId }],
+      },
+      orderBy: { versionNumber: 'desc' },
+      select: { versionNumber: true },
+    });
+
+    const created = await prisma.$transaction(async (tx) => {
+      await tx.vacation.update({
+        where: { id: existing.id },
+        data: {
+          status: 'CANCELLED',
+          reviewReason: 'Pedido substituído por nova versão.',
+        },
+      });
+
+      await tx.vacationApproval.updateMany({
+        where: {
+          vacationId: existing.id,
+          status: { in: [APPROVAL_PENDING, APPROVAL_WAITING] },
+        },
+        data: {
+          status: APPROVAL_SKIPPED,
+          decidedAt: new Date(),
+          reason: 'Versão substituída.',
+        },
+      });
+
+      const nextVersion = await tx.vacation.create({
+        data: {
+          userId,
+          contextTeamId,
+          versionOfId: rootId,
+          versionNumber: (maxVersion?.versionNumber ?? 1) + 1,
+          dataInicio: data.dataInicio,
+          dataFim: data.dataFim,
+          observacoes: data.observacoes,
+          requestType: data.requestType,
+          partialDay: data.partialDay,
+          attachmentLink: data.attachmentLink,
+          status: 'PENDING',
+        },
+      });
+
+      for (const group of approvalGroups) {
+        for (const approverId of group.approverIds) {
+          await tx.vacationApproval.create({
+            data: {
+              vacationId: nextVersion.id,
+              approverId,
+              approvalLevel: group.level,
+              status: group.level === approvalGroups[0].level ? APPROVAL_PENDING : APPROVAL_WAITING,
+            },
+          });
+        }
+      }
+
+      return nextVersion;
+    });
+
+    res.json(created);
   } catch (error) {
     console.error('[PUT /vacations/:id]', error);
-    res.status(500).json({ error: 'Falha ao atualizar pedido.' });
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Falha ao atualizar pedido.' });
   }
 });
 
@@ -613,13 +1085,26 @@ router.delete('/vacations/:id', requireAuth, async (req: Request, res: Response)
       return res.status(404).json({ error: 'Pedido não encontrado ou já processado.' });
     }
 
-    await prisma.vacation.update({
-      where: { id },
-      data: {
-        status: 'CANCELLED',
-        reviewReason: 'Cancelado pelo colaborador.',
-      },
-    });
+    await prisma.$transaction([
+      prisma.vacation.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED',
+          reviewReason: 'Cancelado pelo colaborador.',
+        },
+      }),
+      prisma.vacationApproval.updateMany({
+        where: {
+          vacationId: id,
+          status: { in: [APPROVAL_PENDING, APPROVAL_WAITING] },
+        },
+        data: {
+          status: APPROVAL_SKIPPED,
+          decidedAt: new Date(),
+          reason: 'Cancelado pelo colaborador.',
+        },
+      }),
+    ]);
 
     res.json({ success: true });
   } catch (error) {

@@ -1,0 +1,208 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[portuguese]{babel}
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!55!black,
+  urlcolor=blue!55!black,
+  pdftitle={Regras, Permissões e Vistas por Perfil},
+  pdfauthor={SMARTER HUB}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{SMARTER HUB}
+\rhead{Regras por perfil}
+\cfoot{\thepage}
+
+\definecolor{titleblue}{HTML}{123F86}
+\definecolor{softblue}{HTML}{EAF2FF}
+\definecolor{softgray}{HTML}{F7F9FC}
+\definecolor{accent}{HTML}{2F7DF1}
+
+\titleformat{\section}{\large\bfseries\color{titleblue}}{}{0pt}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{titleblue}}{}{0pt}{}
+
+\renewcommand{\arraystretch}{1.25}
+\setlist[itemize]{leftmargin=1.2em, itemsep=0.25em, topsep=0.25em}
+\setlist[enumerate]{leftmargin=1.5em, itemsep=0.25em, topsep=0.25em}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\begin{document}
+
+\begin{center}
+  {\LARGE\bfseries\color{titleblue} Regras, Permissões e Vistas por Perfil}
+
+  \vspace{0.4em}
+  {\normalsize Documento de referência funcional do portal}
+\end{center}
+
+\vspace{0.5em}
+\noindent\colorbox{softblue}{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{
+\textbf{Objetivo.} Este documento resume o comportamento esperado do sistema para menus, visibilidade, aprovações e edição. Sempre que houver dúvida funcional, esta é a base a seguir.
+}}
+
+\section{Regras base}
+\begin{itemize}
+  \item Um utilizador pode pertencer a mais do que uma equipa.
+  \item Um utilizador pode ser chefe de uma equipa e participante noutra.
+  \item O pedido de férias ou ausências deve indicar a equipa ou subequipa de contexto.
+  \item A aprovação segue a cadeia dessa equipa ou subequipa.
+  \item Quando o pedido nasce numa subequipa, a cadeia deve herdar os níveis da equipa mãe até fechar a hierarquia.
+  \item Em multi-chefia, todos os aprovadores relevantes da linha devem aprovar.
+  \item Em Portugal, o admin pode aprovar por exceção e substituir a cadeia normal.
+  \item Um pedido aprovado pode ser alterado por versionamento, não por edição direta do registo final.
+  \item Deve existir histórico de decisões, versões e motivos.
+  \item Deve evitar-se ter cerca de um terço da equipa em férias em simultâneo.
+  \item Pedidos que atravessam o fim/início de ano devem aparecer nas vistas do(s) ano(s) respetivo(s).
+  \item Ausências podem usar horas e podem ter anexos pendentes sem prazo fixo.
+  \item Férias podem ser pedidas a meio dia.
+\end{itemize}
+
+\section{Matriz por perfil}
+
+\rowcolors{2}{softgray}{white}
+\begin{longtable}{p{2.4cm} p{4.4cm} p{3.2cm} p{3.0cm} p{3.2cm}}
+\toprule
+\textbf{Perfil} & \textbf{Pode ver} & \textbf{Pode criar} & \textbf{Pode aprovar} & \textbf{Pode editar} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Perfil} & \textbf{Pode ver} & \textbf{Pode criar} & \textbf{Pode aprovar} & \textbf{Pode editar} \\
+\midrule
+\endhead
+
+Colaborador & A sua ficha, notificações, formações, férias e ausências, a sua equipa e as férias dos membros dessa equipa & Pedido de férias, ausências, pedido de alteração da ficha, submissão de comprovativos, autoatribuição de formação quando permitido & Não aprova pedidos operacionais & A própria ficha, pedidos pendentes por versionamento, comprovativos, pedido de alteração de carga horária \\
+
+Manager & As equipas sob a sua responsabilidade, membros dessas equipas, férias e ausências dos subordinados, formações atribuídas, aprovações pendentes do seu nível & Atribuir formações, gerir membros dentro da sua esfera autorizada, criar pedidos no âmbito da sua gestão & Aprova férias e ausências da sua linha de chefia, conforme a cadeia da equipa e contexto & Pode editar o que estiver na sua esfera de gestão, não dados sensíveis globais nem equipas fora da sua responsabilidade \\
+
+Coordenador & Equipas sob a sua responsabilidade, férias e ausências das chefias e direção sob supervisão, aprovações pendentes do seu nível & Atribuir formações quando autorizado, apoiar gestão de equipas dentro do seu âmbito & Aprova os níveis superiores da hierarquia, incluindo chefias e direção, e atua como segunda linha quando aplicável & Pode editar apenas o que estiver dentro da sua responsabilidade funcional \\
+
+Admin & Tudo: todas as equipas, membros, férias, ausências, aprovações, fichas, formações, notificações e histórico & Criar, editar e remover equipas; gerir memberships; realocar membros; editar dados sensíveis; aprovar por exceção em PT; gerir tudo & Pode aprovar tudo, incluindo exceções de PT e substituições de cadeia quando necessário & Pode editar equipas, memberships, dados sensíveis, permissões, perfis e estrutura global \\
+
+HR (futuro) & A definir, atualmente absorvido pelo admin & A definir & A definir & A definir \\
+\bottomrule
+\end{longtable}
+
+\section{Menus por perfil}
+
+\subsection{Colaborador}
+\begin{itemize}
+  \item Home
+  \item A Minha Ficha
+  \item Equipas
+  \item Formações
+  \item Férias
+  \item Recibos
+\end{itemize}
+
+\subsection{Manager}
+\begin{itemize}
+  \item Home
+  \item A Minha Ficha
+  \item Equipas
+  \item Aprovações
+  \item Formações
+  \item Férias
+\end{itemize}
+
+\subsection{Coordenador}
+\begin{itemize}
+  \item Home
+  \item Equipas
+  \item Aprovações
+  \item A Minha Ficha
+  \item Formações
+  \item Férias
+\end{itemize}
+
+\subsection{Admin}
+\begin{itemize}
+  \item Home
+  \item A Minha Ficha
+  \item Equipas
+  \item Administração
+  \item Aprovações
+  \item Formações
+  \item Férias
+  \item Recibos
+  \item Notificações
+\end{itemize}
+
+\subsection{Convidado}
+\begin{itemize}
+  \item Home
+  \item Onboarding
+  \item Notificações
+\end{itemize}
+
+\section{Vistas obrigatórias}
+
+\subsection{Colaborador}
+\begin{itemize}
+  \item Deve ver a sua equipa.
+  \item Deve ver as férias e ausências dos membros da sua equipa.
+  \item Deve conseguir pedir e editar pedidos pendentes por versionamento.
+\end{itemize}
+
+\subsection{Manager}
+\begin{itemize}
+  \item Deve ver as equipas sob a sua responsabilidade.
+  \item Deve ver as férias e ausências dos subordinados.
+  \item Deve conseguir aprovar pedidos da sua linha de chefia.
+\end{itemize}
+
+\subsection{Coordenador}
+\begin{itemize}
+  \item Deve ver apenas as equipas sob a sua responsabilidade.
+  \item Deve aprovar a segunda linha ou os níveis superiores definidos.
+\end{itemize}
+
+\subsection{Admin}
+\begin{itemize}
+  \item Deve ver tudo.
+  \item Deve conseguir gerir equipas, memberships, utilizadores, dados sensíveis e exceções.
+\end{itemize}
+
+\section{Estados que devem ficar claros na interface}
+\begin{itemize}
+  \item Pedido pendente
+  \item Pedido aprovado
+  \item Pedido recusado
+  \item Pedido cancelado
+  \item Pedido substituído por nova versão
+  \item Linha de aprovação atual
+  \item Equipa principal
+  \item Subequipa
+  \item Membro participante
+  \item Membro chefe ou aprovador
+  \item Pedido de meio-dia (manhã ou tarde)
+\end{itemize}
+
+\section{Observações atuais}
+\begin{itemize}
+  \item HR não existe como role final neste momento.
+  \item O fluxo de administração de equipas e memberships deve ser feito por admin.
+  \item A página de equipas deve ser comum, mas mostrar conteúdo diferente por perfil.
+  \item O histórico de férias e decisões deve manter a versão anterior quando houver edição de um pedido já aprovado.
+\end{itemize}
+
+\vspace{0.5em}
+\noindent\colorbox{softblue}{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{
+\textbf{Nota prática.} Este ficheiro é o resumo funcional fechado para orientar menus, permissões e páginas. Se houver alteração ao processo, este documento deve ser atualizado antes de mexer no código.
+}}
+
+\end{document}

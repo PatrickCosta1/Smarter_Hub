@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
+import { usePortal } from '../portal/context';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -40,6 +41,7 @@ type VacationRequest = {
 };
 
 export default function RHApprovalsPage() {
+  const { userRole } = usePortal();
   const [activeTab, setActiveTab] = useState<'profiles' | 'vacations'>('profiles');
   const [profileRequests, setProfileRequests] = useState<ProfileRequest[]>([]);
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([]);
@@ -47,16 +49,32 @@ export default function RHApprovalsPage() {
   const [rejectReason, setRejectReason] = useState('');
 
   const requestCount = useMemo(() => profileRequests.length + vacationRequests.length, [profileRequests.length, vacationRequests.length]);
+  const canReviewProfiles = ['manager', 'coordenador', 'admin'].includes(userRole);
+  const canReviewVacations = ['manager', 'coordenador', 'admin'].includes(userRole);
 
   useEffect(() => {
+    if (!canReviewProfiles && canReviewVacations) {
+      setActiveTab('vacations');
+    }
+  }, [canReviewProfiles, canReviewVacations]);
+
+  useEffect(() => {
+    if (!canReviewProfiles && !canReviewVacations) {
+      return;
+    }
+
     void loadData();
-  }, []);
+  }, [canReviewProfiles, canReviewVacations]);
 
   async function loadData() {
     try {
       const [profiles, vacations] = await Promise.all([
-        apiRequestCached<ProfileRequest[]>('/profile/requests', { headers: getAuthHeaders() }, 10000),
-        apiRequestCached<VacationRequest[]>('/vacations/requests', { headers: getAuthHeaders() }, 10000),
+        canReviewProfiles
+          ? apiRequestCached<ProfileRequest[]>('/profile/requests', { headers: getAuthHeaders() }, 10000)
+          : Promise.resolve([]),
+        canReviewVacations
+          ? apiRequestCached<VacationRequest[]>('/vacations/requests', { headers: getAuthHeaders() }, 10000)
+          : Promise.resolve([]),
       ]);
 
       setProfileRequests(profiles);
@@ -64,6 +82,17 @@ export default function RHApprovalsPage() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar pedidos.');
     }
+  }
+
+  if (!canReviewProfiles && !canReviewVacations) {
+    return (
+      <section className="trainings-shell">
+        <article className="trainings-list-card">
+          <h3>Acesso restrito</h3>
+          <p>Esta página está disponível apenas para manager, coordenador e admin.</p>
+        </article>
+      </section>
+    );
   }
 
   async function approveProfileRequest(id: string) {
@@ -102,9 +131,9 @@ export default function RHApprovalsPage() {
     <section className="trainings-shell">
       <header className="trainings-hero">
         <div>
-          <p className="hero-kicker"></p>
+          <p className="hero-kicker">Aprovações</p>
           <h2>Aprovações</h2>
-          <p>Revê pedidos de perfil e pedidos de férias pendentes.</p>
+          <p>Analisa e decide os pedidos pendentes do teu nível de responsabilidade.</p>
         </div>
 
         <div className="trainings-hours-summary">
@@ -116,15 +145,19 @@ export default function RHApprovalsPage() {
       </header>
 
       <div className="rh-tabs">
-        <button type="button" className={activeTab === 'profiles' ? 'is-active' : ''} onClick={() => setActiveTab('profiles')}>
-          Pedidos de perfil
-        </button>
-        <button type="button" className={activeTab === 'vacations' ? 'is-active' : ''} onClick={() => setActiveTab('vacations')}>
-          Pedidos de férias
-        </button>
+        {canReviewProfiles && (
+          <button type="button" className={activeTab === 'profiles' ? 'is-active' : ''} onClick={() => setActiveTab('profiles')}>
+            Alterações de ficha ({profileRequests.length})
+          </button>
+        )}
+        {canReviewVacations && (
+          <button type="button" className={activeTab === 'vacations' ? 'is-active' : ''} onClick={() => setActiveTab('vacations')}>
+            Férias e ausências ({vacationRequests.length})
+          </button>
+        )}
       </div>
 
-      {activeTab === 'profiles' && (
+      {activeTab === 'profiles' && canReviewProfiles && (
         <section className="trainings-list-card">
           <div className="trainings-list-head">
             <h3>Pedidos de alteração de ficha</h3>
@@ -133,7 +166,7 @@ export default function RHApprovalsPage() {
               type="text"
               value={rejectReason}
               onChange={(event) => setRejectReason(event.target.value)}
-              placeholder="Motivo de recusa (opcional)"
+              placeholder="Motivo da rejeição (opcional)"
             />
           </div>
 
@@ -148,7 +181,7 @@ export default function RHApprovalsPage() {
                 <p>{request.changesSummary}</p>
                 <div className="trainings-row-actions">
                   <button type="button" onClick={() => void approveProfileRequest(request.id)}>Aprovar</button>
-                  <button type="button" onClick={() => void rejectProfileRequest(request.id)}>Recusar</button>
+                  <button type="button" onClick={() => void rejectProfileRequest(request.id)}>Rejeitar</button>
                 </div>
               </article>
             ))}
@@ -156,16 +189,16 @@ export default function RHApprovalsPage() {
         </section>
       )}
 
-      {activeTab === 'vacations' && (
+      {activeTab === 'vacations' && canReviewVacations && (
         <section className="trainings-list-card">
           <div className="trainings-list-head">
-            <h3>Pedidos de férias</h3>
+            <h3>Pedidos de férias e ausências</h3>
             <input
               className="rh-reason-input"
               type="text"
               value={rejectReason}
               onChange={(event) => setRejectReason(event.target.value)}
-              placeholder="Motivo de recusa (opcional)"
+              placeholder="Motivo da rejeição (opcional)"
             />
           </div>
 
@@ -181,7 +214,7 @@ export default function RHApprovalsPage() {
                 <p>{request.observacoes || 'Sem observações.'}</p>
                 <div className="trainings-row-actions">
                   <button type="button" onClick={() => void approveVacationRequest(request.id)}>Aprovar</button>
-                  <button type="button" onClick={() => void rejectVacationRequest(request.id)}>Recusar</button>
+                  <button type="button" onClick={() => void rejectVacationRequest(request.id)}>Rejeitar</button>
                 </div>
               </article>
             ))}

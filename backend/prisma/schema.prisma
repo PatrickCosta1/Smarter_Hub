@@ -26,6 +26,12 @@ enum VacationRequestType {
   ABSENCE_TRAINING
 }
 
+enum VacationPartialDay {
+  FULL
+  AM
+  PM
+}
+
 enum VacationStatus {
   PENDING
   APPROVED
@@ -37,13 +43,20 @@ model Team {
   id            String      @id @default(cuid())
   name          String      @unique
   country       WorkCountry @default(PT)
-  managerId     String?     @unique
+  managerId     String?
   coordinatorId String?
+  parentTeamId  String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   members       User[]      @relation("TeamMembers")
+  memberships   TeamMembership[]
   manager       User?       @relation("TeamManager", fields: [managerId], references: [id], onDelete: SetNull)
   coordinator   User?       @relation("TeamCoordinator", fields: [coordinatorId], references: [id], onDelete: SetNull)
+  parentTeam    Team?       @relation("SubTeams", fields: [parentTeamId], references: [id], onDelete: SetNull)
+  subTeams      Team[]      @relation("SubTeams")
+  vacationRequests Vacation[] @relation("VacationContextTeam")
+
+  @@index([parentTeamId])
 }
 
 model User {
@@ -56,7 +69,8 @@ model User {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   team          Team?          @relation("TeamMembers", fields: [teamId], references: [id], onDelete: SetNull)
-  managedTeam   Team?          @relation("TeamManager")
+  teamMemberships TeamMembership[]
+  managedTeams  Team[]         @relation("TeamManager")
   coordinatedTeams Team[]      @relation("TeamCoordinator")
   profile       Profile?
   notifications Notification[]
@@ -64,8 +78,27 @@ model User {
   assignedTrainings Training[]   @relation("TrainingAssigner")
   vacations     Vacation[]       @relation("VacationUser")
   reviewedVacations Vacation[]    @relation("VacationReviewer")
+  vacationApprovalSteps VacationApproval[]
   profileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestUser")
   reviewedProfileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestReviewer")
+}
+
+model TeamMembership {
+  id            String   @id @default(cuid())
+  userId        String
+  teamId        String
+  membershipRole String  @default("PARTICIPANT")
+  isApprover    Boolean  @default(false)
+  approvalLevel Int?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@index([teamId, isActive])
+  @@index([userId, isActive])
 }
 
 model Profile {
@@ -152,8 +185,12 @@ model Training {
 model Vacation {
   id           String   @id @default(cuid())
   userId       String
+  contextTeamId String?
+  versionOfId  String?
+  versionNumber Int      @default(1)
   dataInicio   String
   dataFim      String
+  partialDay   VacationPartialDay @default(FULL)
   observacoes  String   @default("")
   requestType  VacationRequestType @default(VACATION)
   attachmentLink String @default("")
@@ -166,10 +203,34 @@ model Vacation {
   updatedAt    DateTime @updatedAt
   user         User     @relation("VacationUser", fields: [userId], references: [id], onDelete: Cascade)
   reviewedBy   User?    @relation("VacationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  contextTeam  Team?    @relation("VacationContextTeam", fields: [contextTeamId], references: [id], onDelete: SetNull)
+  versionOf    Vacation? @relation("VacationVersions", fields: [versionOfId], references: [id], onDelete: SetNull)
+  versions     Vacation[] @relation("VacationVersions")
+  approvals    VacationApproval[]
 
   @@index([userId])
   @@index([status])
   @@index([userId, status])
+  @@index([contextTeamId])
+  @@index([versionOfId])
+}
+
+model VacationApproval {
+  id          String   @id @default(cuid())
+  vacationId  String
+  approverId  String
+  approvalLevel Int
+  status      String   @default("PENDING")
+  decidedAt   DateTime?
+  reason      String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  vacation    Vacation @relation(fields: [vacationId], references: [id], onDelete: Cascade)
+  approver    User     @relation(fields: [approverId], references: [id], onDelete: Cascade)
+
+  @@unique([vacationId, approverId])
+  @@index([approverId, status])
+  @@index([vacationId, approvalLevel, status])
 }
 
 model ProfileChangeRequest {

@@ -14,13 +14,19 @@ type VacationRequestType = 'VACATION' | 'ABSENCE_MEDICAL' | 'ABSENCE_TRAINING';
 type RequestKind = 'VACATION' | 'ABSENCE';
 
 type AbsenceReason = 'MEDICAL' | 'TRAINING' | 'OTHER';
+type VacationPartialDay = 'FULL' | 'AM' | 'PM';
 
 type VacationRecord = {
   id: string;
+  contextTeamId?: string | null;
+  contextTeam?: { id: string; name: string } | null;
+  versionOfId?: string | null;
+  versionNumber?: number;
   dataInicio: string;
   dataFim: string;
   observacoes: string;
   requestType: VacationRequestType;
+  partialDay?: VacationPartialDay;
   attachmentLink: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
   createdAt: string;
@@ -31,6 +37,20 @@ type VacationRecord = {
     role: string;
     team?: { id: string; name: string } | null;
   };
+  approvals?: Array<{
+    approverId: string;
+    approvalLevel: number;
+    status: string;
+  }>;
+};
+
+type TeamContext = {
+  teamId: string;
+  teamName: string;
+  membershipRole: string;
+  isApprover: boolean;
+  approvalLevel: number | null;
+  isPrimary: boolean;
 };
 
 type VacationOverview = {
@@ -66,6 +86,8 @@ type VacationDraft = {
   dataFim: string;
   observacoes: string;
   attachmentLink: string;
+  contextTeamId: string;
+  partialDay: VacationPartialDay;
 };
 
 type DraftErrors = Partial<Record<keyof VacationDraft, string>>;
@@ -80,6 +102,8 @@ const EMPTY_DRAFT: VacationDraft = {
   dataFim: '',
   observacoes: '',
   attachmentLink: '',
+  contextTeamId: '',
+  partialDay: 'FULL',
 };
 
 const MONTHS = [
@@ -113,6 +137,14 @@ function calculateDays(record: Pick<VacationRecord, 'dataInicio' | 'dataFim'>) {
   return Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
 }
 
+function calculateDuration(record: Pick<VacationRecord, 'dataInicio' | 'dataFim' | 'requestType' | 'partialDay'>) {
+  if (record.requestType === 'VACATION' && record.partialDay && record.partialDay !== 'FULL') {
+    return 0.5;
+  }
+
+  return calculateDays(record);
+}
+
 function buildValidationErrors(draft: VacationDraft): DraftErrors {
   const errors: DraftErrors = {};
 
@@ -141,6 +173,10 @@ function buildValidationErrors(draft: VacationDraft): DraftErrors {
 
   if (draft.requestKind === 'ABSENCE' && draft.absenceReason === 'OTHER' && !draft.absenceReasonText.trim()) {
     errors.absenceReasonText = 'Indica o motivo da ausência.';
+  }
+
+  if (draft.requestKind === 'VACATION' && draft.partialDay !== 'FULL' && draft.dataInicio !== draft.dataFim) {
+    errors.dataFim = 'Pedido de meio-dia deve ter início e fim no mesmo dia.';
   }
 
   return errors;
@@ -176,6 +212,12 @@ function getVacationTypeTag(requestType: VacationRequestType) {
   return 'training';
 }
 
+function getPartialDayLabel(partialDay?: VacationPartialDay) {
+  if (partialDay === 'AM') return ' (meio-dia manhã)';
+  if (partialDay === 'PM') return ' (meio-dia tarde)';
+  return '';
+}
+
 function buildMonthGrid(year: number, monthIndex: number) {
   const first = new Date(year, monthIndex, 1);
   const last = new Date(year, monthIndex + 1, 0);
@@ -201,7 +243,7 @@ function buildMonthGrid(year: number, monthIndex: number) {
 
 export default function VacationsPage() {
   const { userRole, profile } = usePortal();
-  const canApprove = userRole === 'admin';
+  const canApprove = userRole === 'admin' || userRole === 'manager' || userRole === 'coordenador';
 
   const [activeTab, setActiveTab] = useState<Subtab>('overview');
   const [draft, setDraft] = useState<VacationDraft>(EMPTY_DRAFT);
@@ -211,6 +253,8 @@ export default function VacationsPage() {
   const [overview, setOverview] = useState<VacationOverview | null>(null);
   const [calendarData, setCalendarData] = useState<CalendarPayload | null>(null);
   const [status, setStatus] = useState('');
+  const [teamContexts, setTeamContexts] = useState<TeamContext[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Cache keys to prevent duplicate requests
   const cacheRef = useRef<{
@@ -228,11 +272,11 @@ export default function VacationsPage() {
   const overviewStats = useMemo(() => {
     const approvedVacationDays = sortedRecords
       .filter((item) => item.status === 'APPROVED' && item.requestType === 'VACATION')
-      .reduce((sum, item) => sum + calculateDays(item), 0);
+      .reduce((sum, item) => sum + calculateDuration(item), 0);
 
     const pendingVacationDays = sortedRecords
       .filter((item) => item.status === 'PENDING' && item.requestType === 'VACATION')
-      .reduce((sum, item) => sum + calculateDays(item), 0);
+      .reduce((sum, item) => sum + calculateDuration(item), 0);
 
     const approvedAbsenceDays = sortedRecords
       .filter((item) => item.status === 'APPROVED' && item.requestType !== 'VACATION')
@@ -255,6 +299,8 @@ export default function VacationsPage() {
 
   const remainingVacationDays = Math.max(overviewStats.entitlement - overviewStats.approvedVacationDays, 0);
   const totalVacationDays = overviewStats.approvedVacationDays + overviewStats.pendingVacationDays;
+  const showApprovalsTab = canApprove;
+  const roleNoun = userRole === 'admin' ? 'administração' : userRole === 'coordenador' ? 'coordenação' : userRole === 'manager' ? 'gestão' : 'colaborador';
 
   const yearMonths = useMemo(() => {
     const year = calendarData?.year ?? new Date().getFullYear();
@@ -283,6 +329,7 @@ export default function VacationsPage() {
       cacheRef.current.approvalQueueLoaded = true;
       void loadApprovalQueue();
     }
+    void loadTeamContexts();
   }, [canApprove]);
 
   async function loadMine() {
@@ -314,8 +361,24 @@ export default function VacationsPage() {
     setApprovalQueue(data);
   }
 
+  async function loadTeamContexts() {
+    const data = await apiRequestCached<TeamContext[]>('/users/me/teams', {
+      headers: getAuthHeaders(),
+    }, 30000);
+
+    setTeamContexts(data);
+    setDraft((current) => ({
+      ...current,
+      contextTeamId: current.contextTeamId || data.find((item) => item.isPrimary)?.teamId || data[0]?.teamId || '',
+    }));
+  }
+
   function resetForm() {
-    setDraft(EMPTY_DRAFT);
+    setDraft({
+      ...EMPTY_DRAFT,
+      contextTeamId: teamContexts.find((item) => item.isPrimary)?.teamId || teamContexts[0]?.teamId || '',
+    });
+    setEditingId(null);
     setDraftErrors({});
   }
 
@@ -337,6 +400,7 @@ export default function VacationsPage() {
       ...current,
       requestKind: value,
       absenceReason: value === 'VACATION' ? current.absenceReason : current.absenceReason,
+      partialDay: value === 'VACATION' ? current.partialDay : 'FULL',
     }));
   }
 
@@ -400,11 +464,13 @@ export default function VacationsPage() {
       observacoes,
       requestType,
       attachmentLink: draft.attachmentLink,
+      contextTeamId: draft.contextTeamId || undefined,
+      partialDay: requestType === 'VACATION' ? draft.partialDay : 'FULL',
     };
 
     try {
-      await apiRequest('/vacations', {
-        method: 'POST',
+      await apiRequest(editingId ? `/vacations/${editingId}` : '/vacations', {
+        method: editingId ? 'PUT' : 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       });
@@ -412,10 +478,35 @@ export default function VacationsPage() {
       clearApiCache('/vacations');
       await Promise.all([loadMine(), loadOverview(), loadCalendar()]);
       resetForm();
-      setStatus('Pedido submetido com sucesso.');
+      setStatus(editingId ? 'Pedido atualizado por versionamento com sucesso.' : 'Pedido submetido com sucesso.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao submeter pedido.');
     }
+  }
+
+  function startEdit(record: VacationRecord) {
+    const inferredKind: RequestKind = record.requestType === 'VACATION' ? 'VACATION' : 'ABSENCE';
+    const inferredAbsenceReason: AbsenceReason =
+      record.requestType === 'ABSENCE_MEDICAL'
+        ? 'MEDICAL'
+        : record.requestType === 'ABSENCE_TRAINING'
+          ? 'TRAINING'
+          : 'OTHER';
+
+    setEditingId(record.id);
+    setDraft({
+      requestKind: inferredKind,
+      absenceReason: inferredAbsenceReason,
+      absenceReasonText: '',
+      dataInicio: record.dataInicio,
+      dataFim: record.dataFim,
+      observacoes: record.observacoes || '',
+      attachmentLink: record.attachmentLink || '',
+      contextTeamId: record.contextTeamId || teamContexts.find((item) => item.isPrimary)?.teamId || teamContexts[0]?.teamId || '',
+      partialDay: record.partialDay || 'FULL',
+    });
+    setActiveTab('requests');
+    setStatus('Modo edição ativo. Ao submeter, será criada uma nova versão do pedido.');
   }
 
   async function handleCancelPending(id: string) {
@@ -533,17 +624,21 @@ export default function VacationsPage() {
         <div>
           <p className="hero-kicker">Férias</p>
           <h2>Gestão anual de férias e ausências</h2>
-          <p>Consulte o saldo anual, o calendário completo e os pedidos de férias ou ausência.</p>
+          <p>Painel preparado para perfil de {roleNoun}, com contexto por equipa/subequipa e aprovação em cadeia.</p>
         </div>
 
     
       </header>
 
       <nav className="rh-tabs">
-        <button type="button" className={activeTab === 'overview' ? 'is-active' : ''} onClick={() => setActiveTab('overview')}>Visão Geral</button>
+        <button type="button" className={activeTab === 'overview' ? 'is-active' : ''} onClick={() => setActiveTab('overview')}>Resumo</button>
         <button type="button" className={activeTab === 'calendar' ? 'is-active' : ''} onClick={() => setActiveTab('calendar')}>Calendário</button>
-        <button type="button" className={activeTab === 'requests' ? 'is-active' : ''} onClick={() => setActiveTab('requests')}>Pedidos</button>
-        {canApprove && <button type="button" className={activeTab === 'approvals' ? 'is-active' : ''} onClick={() => setActiveTab('approvals')}>Aprovações</button>}
+        <button type="button" className={activeTab === 'requests' ? 'is-active' : ''} onClick={() => setActiveTab('requests')}>Os meus pedidos</button>
+        {showApprovalsTab && (
+          <button type="button" className={activeTab === 'approvals' ? 'is-active' : ''} onClick={() => setActiveTab('approvals')}>
+            Fila de aprovação ({approvalQueue.length})
+          </button>
+        )}
       </nav>
 
       {activeTab === 'overview' && overview && (
@@ -622,7 +717,7 @@ export default function VacationsPage() {
         <>
           <section className="trainings-form-card">
             <div className="trainings-form-head">
-              <h3>Novo pedido</h3>
+              <h3>{editingId ? 'Editar pedido por versionamento' : 'Novo pedido de férias/ausência'}</h3>
             </div>
 
             <form className="trainings-form" onSubmit={handleSubmit} noValidate>
@@ -661,6 +756,29 @@ export default function VacationsPage() {
               )}
 
               <label>
+                <span>Equipa/Subequipa *</span>
+                <select value={draft.contextTeamId} onChange={(event) => handleDraftChange('contextTeamId', event.target.value)}>
+                  <option value="">Selecionar equipa</option>
+                  {teamContexts.map((team) => (
+                    <option key={team.teamId} value={team.teamId}>
+                      {team.teamName}{team.isPrimary ? ' (principal)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {draft.requestKind === 'VACATION' && (
+                <label>
+                  <span>Duração *</span>
+                  <select value={draft.partialDay} onChange={(event) => handleDraftChange('partialDay', event.target.value)}>
+                    <option value="FULL">Dia completo</option>
+                    <option value="AM">Meio-dia (manhã)</option>
+                    <option value="PM">Meio-dia (tarde)</option>
+                  </select>
+                </label>
+              )}
+
+              <label>
                 <span>Data de início *</span>
                 <input type="date" value={draft.dataInicio} onChange={(event) => handleDraftChange('dataInicio', event.target.value)} />
                 {draftErrors.dataInicio && <small>{draftErrors.dataInicio}</small>}
@@ -688,15 +806,15 @@ export default function VacationsPage() {
               </label>
 
               <div className="trainings-form-actions field-span-2">
-                <button className="cta-button cta-primary" type="submit">Submeter pedido</button>
-                <button className="cta-button cta-ghost" type="button" onClick={resetForm}>Limpar</button>
+                <button className="cta-button cta-primary" type="submit">{editingId ? 'Guardar nova versão' : 'Enviar pedido'}</button>
+                <button className="cta-button cta-ghost" type="button" onClick={resetForm}>{editingId ? 'Cancelar edição' : 'Limpar'}</button>
               </div>
             </form>
           </section>
 
           <section className="trainings-list-card">
             <div className="trainings-list-head">
-              <h3>Pedidos submetidos</h3>
+              <h3>Histórico de pedidos</h3>
             </div>
 
             <div className="trainings-table-wrap">
@@ -709,6 +827,8 @@ export default function VacationsPage() {
                     <th>Fim</th>
                     <th>Dias</th>
                     <th>Estado</th>
+                    <th>Equipa</th>
+                    <th>Versão</th>
                     <th>Observações</th>
                     <th>Ações</th>
                   </tr>
@@ -716,22 +836,25 @@ export default function VacationsPage() {
                 <tbody>
                   {sortedRecords.length === 0 && (
                     <tr>
-                      <td colSpan={8}>Sem pedidos submetidos.</td>
+                      <td colSpan={10}>Sem pedidos submetidos.</td>
                     </tr>
                   )}
                   {sortedRecords.map((record) => (
                     <tr key={record.id}>
-                      <td>{getVacationTypeLabel(record.requestType)}</td>
+                      <td>{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</td>
                       <td>{record.requestType === 'VACATION' ? '-' : record.observacoes || 'Ausência'}</td>
                       <td>{record.dataInicio}</td>
                       <td>{record.dataFim}</td>
-                      <td>{calculateDays(record)}</td>
+                      <td>{calculateDuration(record)}</td>
                       <td>{record.status}</td>
+                      <td>{record.contextTeam?.name || '-'}</td>
+                      <td>{record.versionNumber || 1}</td>
                       <td>{record.observacoes || '-'}</td>
                       <td>
-                        {record.status === 'PENDING' ? (
+                        {record.status === 'PENDING' || record.status === 'APPROVED' ? (
                           <div className="trainings-row-actions">
-                            <button type="button" onClick={() => void handleCancelPending(record.id)}>Cancelar</button>
+                            <button type="button" onClick={() => startEdit(record)}>Editar</button>
+                            {record.status === 'PENDING' && <button type="button" onClick={() => void handleCancelPending(record.id)}>Anular</button>}
                           </div>
                         ) : (
                           '-'
@@ -749,7 +872,7 @@ export default function VacationsPage() {
       {activeTab === 'approvals' && canApprove && (
         <section className="trainings-list-card">
           <div className="trainings-list-head">
-            <h3>Pedidos pendentes para aprovação</h3>
+            <h3>Fila de pedidos pendentes</h3>
           </div>
 
           <div className="trainings-mobile-list" style={{ display: 'grid' }}>
@@ -759,14 +882,15 @@ export default function VacationsPage() {
               <article key={item.id} className="trainings-mobile-card">
                 <header>
                   <h4>{item.user?.username || '-'}</h4>
-                  <strong>{item.requestType === 'VACATION' ? 'Férias' : item.requestType === 'ABSENCE_MEDICAL' ? 'Ausência médica' : 'Ausência formação'}</strong>
+                  <strong>{item.requestType === 'VACATION' ? 'Férias' : item.requestType === 'ABSENCE_MEDICAL' ? 'Ausência médica' : 'Ausência formação'}{getPartialDayLabel(item.partialDay)}</strong>
                 </header>
                 <p><span>Período:</span> {item.dataInicio} até {item.dataFim}</p>
-                <p><span>Equipa:</span> {item.user?.team?.name || '-'}</p>
+                <p><span>Equipa:</span> {item.contextTeam?.name || item.user?.team?.name || '-'}</p>
+                <p><span>Linha atual:</span> {item.approvals?.find((step) => step.status === 'PENDING')?.approvalLevel ?? '-'}</p>
                 <p><span>Observações:</span> {item.observacoes || '-'}</p>
                 <div className="trainings-row-actions">
                   <button type="button" onClick={() => void reviewRequest(item.id, 'approve')}>Aprovar</button>
-                  <button type="button" onClick={() => void reviewRequest(item.id, 'reject')}>Recusar</button>
+                  <button type="button" onClick={() => void reviewRequest(item.id, 'reject')}>Rejeitar</button>
                 </div>
               </article>
             ))}
