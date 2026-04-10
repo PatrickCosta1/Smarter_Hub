@@ -200,6 +200,144 @@ HR (futuro) & A definir, atualmente absorvido pelo admin & A definir & A definir
   \item O histórico de férias e decisões deve manter a versão anterior quando houver edição de um pedido já aprovado.
 \end{itemize}
 
+\section{Visão global da plataforma}
+\subsection{Missão e objetivo de negócio}
+\begin{itemize}
+  \item Centralizar a gestão de colaboradores, equipas, aprovações, férias, ausências, formações e notificações num único portal.
+  \item Reduzir retrabalho operacional e dependência de comunicação informal para processos de RH e chefia.
+  \item Garantir rastreabilidade completa de decisões, com histórico e auditoria para suporte de compliance.
+\end{itemize}
+
+\subsection{Princípios de desenho}
+\begin{itemize}
+  \item \textbf{Segurança por permissão}: acesso baseado em role + permissões granulares + restrições por equipa/país/nível.
+  \item \textbf{Versionamento funcional}: alterações em pedidos já aprovados geram nova versão em vez de sobrescrever histórico.
+  \item \textbf{Auditabilidade}: decisões relevantes devem produzir trilha de eventos verificável.
+  \item \textbf{Eficiência operacional}: reduzir redundância em armazenamento sem perder governança.
+\end{itemize}
+
+\section{Arquitetura funcional e técnica}
+\subsection{Camadas principais}
+\begin{itemize}
+  \item \textbf{Frontend}: aplicação React para operação por perfil.
+  \item \textbf{Backend}: API HTTP com regras de negócio, autorização e orquestração dos fluxos.
+  \item \textbf{Persistência}: PostgreSQL com modelação de utilizadores, permissões, férias, aprovações, equipas e auditoria.
+  \item \textbf{ORM}: Prisma para acesso a dados e evolução de schema.
+\end{itemize}
+
+\subsection{Módulos de domínio}
+\begin{itemize}
+  \item \textbf{Identidade e acesso}: autenticação, sessão, permissões e escopo.
+  \item \textbf{Estrutura organizacional}: equipas, subequipas, memberships e chefias.
+  \item \textbf{Férias e ausências}: pedidos, validações, calendário, capacidade e aprovação.
+  \item \textbf{Perfil}: ficha colaborador, pedidos de alteração, aprovação e histórico.
+  \item \textbf{Formações}: atribuição, estado de conclusão e consulta.
+  \item \textbf{Notificações}: geração, leitura, limpeza e encaminhamento de ação.
+  \item \textbf{Auditoria}: eventos de concessão/revogação de permissões e decisões.
+\end{itemize}
+
+\section{Fluxos ponta a ponta}
+\subsection{Fluxo A: criação de utilizador}
+\begin{enumerate}
+  \item Admin cria utilizador (nome, email, username, password, país).
+  \item Sistema cria conta e ficha base com dados iniciais.
+  \item Sistema aplica permissões base de colaborador quando aplicável.
+  \item Conta fica disponível para login e gestão de equipa.
+\end{enumerate}
+
+\subsection{Fluxo B: gestão de permissões}
+\begin{enumerate}
+  \item Admin ou gestor autorizado abre a ficha de permissões do alvo.
+  \item Ativa/desativa permissões individuais com restrições opcionais.
+  \item Pode conceder/revogar acesso total em modo compacto.
+  \item Sistema regista auditoria de eventos de permissão para rastreabilidade.
+\end{enumerate}
+
+\subsection{Fluxo C: pedido de férias}
+\begin{enumerate}
+  \item Colaborador escolhe período e equipa de contexto.
+  \item Sistema valida dias úteis, feriados, política por país e capacidade da equipa.
+  \item Pedido é criado como PENDENTE e entra na cadeia de aprovação por níveis.
+  \item Cada nível aprova/recusa conforme escopo e responsabilidade.
+  \item Estado final é aprovado, recusado, cancelado ou substituído por nova versão.
+\end{enumerate}
+
+\subsection{Fluxo D: alteração de ficha}
+\begin{enumerate}
+  \item Colaborador submete alteração de dados da ficha.
+  \item Sistema cria pedido pendente com resumo de mudanças.
+  \item Responsável aprova/recusa e regista motivo.
+  \item Sistema mantém histórico de decisão para consulta futura.
+\end{enumerate}
+
+\subsection{Fluxo E: notificações operacionais}
+\begin{enumerate}
+  \item Eventos de negócio disparam notificações para utilizadores relevantes.
+  \item Utilizador consulta lista, marca como lida, remove item ou limpa tudo.
+  \item Em fluxos com ação, notificação encaminha para página de decisão.
+\end{enumerate}
+
+\section{Regras de integridade e qualidade de dados}
+\begin{itemize}
+  \item Integridade referencial entre utilizadores, equipas, pedidos e aprovações.
+  \item Estados de pedido sempre explícitos e consistentes em todas as vistas.
+  \item Edição de pedido aprovado ocorre por versionamento, não por sobrescrita.
+  \item Auditoria deve manter autor, alvo, ação, motivo e timestamp.
+\end{itemize}
+
+\section{Operação e governança}
+\subsection{Ambientes}
+\begin{itemize}
+  \item \textbf{Desenvolvimento}: iteração rápida, seed controlado e validação técnica.
+  \item \textbf{Produção}: mudanças rastreadas por migrações versionadas e checklist de release.
+\end{itemize}
+
+\subsection{Critérios mínimos de release}
+\begin{itemize}
+  \item Build frontend e backend sem erro.
+  \item Testes unitários e integrações críticas a passar.
+  \item E2E crítico executado com sucesso.
+  \item Revisão de impacto em permissões, férias e auditoria.
+\end{itemize}
+
+\section{Plano de otimização futura (não executar agora)}
+\subsection{Prioridade alta}
+\begin{enumerate}
+  \item \textbf{Migrações robustas para produção}: consolidar cadeia versionada e validar replay limpo em ambiente novo.
+  \item \textbf{Hardening de autenticação}: rate limit por IP e utilizador para reduzir risco de brute force.
+  \item \textbf{Qualidade E2E}: separar suites por domínio e aumentar cobertura de cenários negativos.
+\end{enumerate}
+
+\subsection{Prioridade média}
+\begin{enumerate}
+  \item \textbf{Auditoria escalável}: política de retenção e arquivo para eventos antigos, mantendo consulta rápida no histórico recente.
+  \item \textbf{Observabilidade}: métricas de latência e erro por rota crítica (auth, férias, permissões, aprovações).
+  \item \textbf{Governança de regras}: catálogo formal de regras por país com testes automáticos obrigatórios.
+\end{enumerate}
+
+\subsection{Prioridade baixa}
+\begin{enumerate}
+  \item \textbf{Consolidação documental}: manter este documento como referência única de produto e arquitetura.
+  \item \textbf{Checklists de operação}: runbooks para seed, recuperação, troubleshooting e verificação pós-release.
+\end{enumerate}
+
+\section{Definição de pronto para próximas implementações}
+\begin{itemize}
+  \item Toda nova funcionalidade deve declarar impacto em: perfil, permissão, fluxo, auditoria e testes.
+  \item Alteração de regra de negócio só entra com atualização deste documento.
+  \item Mudança estrutural de dados só entra com migração versionada e validação de replay.
+  \item Fluxos críticos devem ter cobertura mínima em unit/integration/E2E.
+\end{itemize}
+
+\section{Checklist executivo}
+\begin{itemize}
+  \item \textbf{Produto}: menus e capacidades por perfil coerentes.
+  \item \textbf{Engenharia}: regras centrais encapsuladas e testadas.
+  \item \textbf{Dados}: histórico preservado, sem perda de auditabilidade.
+  \item \textbf{Operação}: pipeline de mudança controlado e repetível.
+  \item \textbf{Escala}: desenho preparado para crescimento sem explosão de retrabalho.
+\end{itemize}
+
 \vspace{0.5em}
 \noindent\colorbox{softblue}{\parbox{\dimexpr\linewidth-2\fboxsep\relax}{
 \textbf{Nota prática.} Este ficheiro é o resumo funcional fechado para orientar menus, permissões e páginas. Se houver alteração ao processo, este documento deve ser atualizado antes de mexer no código.

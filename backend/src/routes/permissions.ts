@@ -47,6 +47,11 @@ const DEFAULT_EMPLOYEE_PERMISSION_CODES = [
   'download_receipt',
 ] as const;
 
+export const __permissionsTestables = {
+  permissionAssignmentSchema,
+  accessTotalSchema,
+};
+
 async function resolvePermission(input: { permissionId?: string; permissionCode?: string }) {
   if (input.permissionId) {
     return prisma.permission.findUnique({
@@ -368,8 +373,8 @@ router.patch('/users/:id/access-total', requireAuth, async (req, res) => {
     return res.status(400).json({ message: payload.error.issues[0].message });
   }
 
-  const [firstPermission, defaultEmployeePermissions] = await Promise.all([
-    prisma.permission.findFirst({ select: { id: true }, orderBy: { code: 'asc' } }),
+  const [allPermissions, defaultEmployeePermissions] = await Promise.all([
+    prisma.permission.findMany({ select: { id: true } }),
     prisma.permission.findMany({
       where: { code: { in: [...DEFAULT_EMPLOYEE_PERMISSION_CODES] } },
       select: { id: true },
@@ -380,7 +385,11 @@ router.patch('/users/:id/access-total', requireAuth, async (req, res) => {
     await prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: targetUserId },
-        data: { hasAccessTotal: true },
+        data: {
+          hasAccessTotal: true,
+          accessTotalGrantedById: req.authUser!.id,
+          accessTotalGrantedAt: new Date(),
+        },
       });
 
       // Compact mode: once access total is enabled, explicit per-permission rows become unnecessary.
@@ -388,15 +397,15 @@ router.patch('/users/:id/access-total', requireAuth, async (req, res) => {
         where: { userId: targetUserId },
       });
 
-      if (firstPermission) {
-        await tx.permissionGrant.create({
-          data: {
+      if (allPermissions.length > 0) {
+        await tx.permissionGrant.createMany({
+          data: allPermissions.map((permission) => ({
             actorUserId: req.authUser!.id,
             targetUserId,
-            permissionId: firstPermission.id,
+            permissionId: permission.id,
             action: 'GRANT',
-            reason: payload.data.reason?.trim() || 'Acesso total concedido (modo compacto).',
-          },
+            reason: payload.data.reason?.trim() || 'Acesso total concedido (modo compacto, auditoria expandida).',
+          })),
         });
       }
     });
@@ -409,7 +418,11 @@ router.patch('/users/:id/access-total', requireAuth, async (req, res) => {
     await prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: targetUserId },
-        data: { hasAccessTotal: false },
+        data: {
+          hasAccessTotal: false,
+          accessTotalGrantedById: null,
+          accessTotalGrantedAt: null,
+        },
       });
 
       // Remove o modo compacto e repõe permissões padrão de funcionário.
@@ -444,15 +457,15 @@ router.patch('/users/:id/access-total', requireAuth, async (req, res) => {
         });
       }
 
-      if (firstPermission) {
-        await tx.permissionGrant.create({
-          data: {
+      if (allPermissions.length > 0) {
+        await tx.permissionGrant.createMany({
+          data: allPermissions.map((permission) => ({
             actorUserId: req.authUser!.id,
             targetUserId,
-            permissionId: firstPermission.id,
+            permissionId: permission.id,
             action: 'REVOKE',
-            reason: payload.data.reason?.trim() || 'Acesso total revogado (modo compacto).',
-          },
+            reason: payload.data.reason?.trim() || 'Acesso total revogado (modo compacto, auditoria expandida).',
+          })),
         });
       }
     });

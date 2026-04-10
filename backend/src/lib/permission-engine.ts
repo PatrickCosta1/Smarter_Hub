@@ -89,6 +89,22 @@ export async function canRevokeAccessTotal(actor: Pick<AuthUser, 'id' | 'isRootA
     return true;
   }
 
+  const targetUser = await prisma.user.findUnique({
+    where: { id: targetUserId },
+    select: {
+      hasAccessTotal: true,
+      accessTotalGrantedById: true,
+    },
+  });
+
+  if (!targetUser?.hasAccessTotal) {
+    return false;
+  }
+
+  if (targetUser.accessTotalGrantedById) {
+    return targetUser.accessTotalGrantedById === actor.id;
+  }
+
   const assignments = await prisma.userPermission.findMany({
     where: {
       userId: targetUserId,
@@ -100,7 +116,20 @@ export async function canRevokeAccessTotal(actor: Pick<AuthUser, 'id' | 'isRootA
   });
 
   if (assignments.length === 0) {
-    return false;
+    const latestAccessTotalGrant = await prisma.permissionGrant.findFirst({
+      where: {
+        targetUserId,
+        action: 'GRANT',
+        reason: {
+          contains: 'Acesso total concedido',
+          mode: 'insensitive',
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { actorUserId: true },
+    });
+
+    return latestAccessTotalGrant?.actorUserId === actor.id;
   }
 
   return assignments.every((assignment) => assignment.grantedById === actor.id);

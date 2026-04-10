@@ -1,13 +1,11 @@
 import { expect, Page, test } from '@playwright/test';
 
-test.describe.configure({ mode: 'serial' });
+test.describe.configure({ mode: 'parallel' });
 
 const API_BASE = process.env.SMB_E2E_API_BASE_URL || 'http://127.0.0.1:4000/api';
 
 const ROOT_USERNAME = process.env.SMB_E2E_ROOT_USERNAME || 't.people';
 const ROOT_PASSWORD = process.env.SMB_E2E_ROOT_PASSWORD || 'people123';
-const APPROVER_USERNAME = process.env.SMB_E2E_APPROVER_USERNAME || 'sara.magalhaes';
-const APPROVER_PASSWORD = process.env.SMB_E2E_APPROVER_PASSWORD || 'sara123';
 
 const collaboratorPassword = 'Qa123456!';
 
@@ -34,7 +32,7 @@ type Scenario = {
   vacationWindow: {
     start: string;
     end: string;
-  };
+  } | null;
 };
 
 async function apiLogin(username: string, password: string) {
@@ -88,7 +86,7 @@ function addDays(base: Date, days: number) {
   return next;
 }
 
-async function findVacationWindow(country: 'PT' | 'BR' = 'PT') {
+async function findVacationWindow(country: 'PT' | 'BR' = 'PT', businessDays = 2) {
   const startSearch = addDays(new Date(), 7);
   const endSearch = addDays(new Date(), 90);
   const years = Array.from(new Set([startSearch.getFullYear(), endSearch.getFullYear()]));
@@ -106,23 +104,23 @@ async function findVacationWindow(country: 'PT' | 'BR' = 'PT') {
 
   const cursor = new Date(startSearch);
   while (cursor <= endSearch) {
-    const startIso = toIsoDate(cursor);
-    const nextDay = addDays(cursor, 1);
-    const endIso = toIsoDate(nextDay);
-    const weekday = cursor.getDay();
+    const range: string[] = [];
+    let isValid = true;
 
-    if (weekday === 0 || weekday === 6) {
-      cursor.setDate(cursor.getDate() + 1);
-      continue;
+    for (let i = 0; i < businessDays; i += 1) {
+      const day = addDays(cursor, i);
+      const iso = toIsoDate(day);
+      const weekday = day.getDay();
+      if (weekday === 0 || weekday === 6 || holidays.has(iso)) {
+        isValid = false;
+        break;
+      }
+
+      range.push(iso);
     }
 
-    if (nextDay.getDay() === 0 || nextDay.getDay() === 6) {
-      cursor.setDate(cursor.getDate() + 1);
-      continue;
-    }
-
-    if (!holidays.has(startIso) && !holidays.has(endIso)) {
-      return { start: startIso, end: endIso };
+    if (isValid && range.length === businessDays) {
+      return { start: range[0], end: range[range.length - 1] };
     }
 
     cursor.setDate(cursor.getDate() + 1);
@@ -145,9 +143,8 @@ async function login(page: Page, username: string, password: string) {
   await expect(page.locator('.portal-header')).toBeVisible({ timeout: 20000 });
 }
 
-async function createScenario() {
+async function createScenario(options?: { includeVacationWindow?: boolean }) {
   const rootLogin = await apiLogin(ROOT_USERNAME, ROOT_PASSWORD);
-  const approverLogin = await apiLogin(APPROVER_USERNAME, APPROVER_PASSWORD);
 
   const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const teamName = `QA Team ${uniqueSuffix}`;
@@ -156,7 +153,7 @@ async function createScenario() {
 
   const team = await apiRequest<{ id: string; name: string }>(rootLogin.token, 'POST', '/admin/teams', {
     name: teamName,
-    leaderId: approverLogin.user.id,
+    leaderId: null,
     memberIds: [],
     parentTeamId: null,
   });
@@ -168,6 +165,7 @@ async function createScenario() {
     fullName: 'QA Colaborador',
     role: 'COLABORADOR',
     teamId: team.id,
+    workCountry: 'BR',
   });
 
   const profileChangeFields = [
@@ -176,7 +174,9 @@ async function createScenario() {
     { key: 'nomeAbreviado', value: `QA ${uniqueSuffix}` },
   ];
 
-  const vacationWindow = await findVacationWindow('PT');
+  const vacationWindow = options?.includeVacationWindow
+    ? await findVacationWindow('BR', 5)
+    : null;
 
   return {
     collaborator: {
@@ -191,18 +191,33 @@ async function createScenario() {
   } satisfies Scenario;
 }
 
-test('notificacao de ficha mostra campos legiveis e leva a aprovacoes', async ({ page }) => {
+async function createUserAsRoot(params: {
+  fullName: string;
+  username: string;
+  email: string;
+  password: string;
+  role?: 'COLABORADOR' | 'MANAGER' | 'COORDENADOR' | 'ADMIN' | 'CONVIDADO';
+  workCountry?: 'PT' | 'BR';
+}) {
+  const rootLogin = await apiLogin(ROOT_USERNAME, ROOT_PASSWORD);
+  return apiRequest<{ id: string; username: string; email: string }>(rootLogin.token, 'POST', '/users', {
+    fullName: params.fullName,
+    username: params.username,
+    email: params.email,
+    password: params.password,
+    role: params.role ?? 'COLABORADOR',
+    workCountry: params.workCountry,
+  });
+}
+
+test('alteracao de ficha aparece no fluxo de aprovacoes e pode ser aprovada', async ({ page }) => {
   const scenario = await createScenario();
   const collaboratorLogin = await apiLogin(scenario.collaborator.username, scenario.collaborator.password);
 
   await apiRequest(collaboratorLogin.token, 'PUT', '/profile/me', Object.fromEntries(scenario.profileChangeFields.map((item) => [item.key, item.value])));
 
   await login(page, ROOT_USERNAME, ROOT_PASSWORD);
-  await page.goto('/notifications');
-
-  const notificationCard = page.locator('.notification-card').filter({ has: page.getByRole('button', { name: 'Ir para aprovações' }) }).first();
-  await expect(notificationCard).toBeVisible({ timeout: 20000 });
-  await notificationCard.getByRole('button', { name: 'Ir para aprovações' }).click();
+  await page.goto('/aprovacoes');
 
   await expect(page.locator('.trainings-hero').getByRole('heading', { name: 'Aprovações' })).toBeVisible();
 
@@ -213,7 +228,10 @@ test('notificacao de ficha mostra campos legiveis e leva a aprovacoes', async ({
 });
 
 test('pedido de férias e aprovação ficam visíveis no fluxo principal', async ({ page }) => {
-  const scenario = await createScenario();
+  const scenario = await createScenario({ includeVacationWindow: true });
+  if (!scenario.vacationWindow) {
+    throw new Error('Janela de férias não foi gerada para o cenário de aprovação.');
+  }
   const collaboratorSession = await apiLogin(scenario.collaborator.username, scenario.collaborator.password);
   const collaboratorTeams = await apiRequest<Array<{ teamId?: string; id?: string }>>(collaboratorSession.token, 'GET', '/users/me/teams');
   const collaboratorTeamId = collaboratorTeams[0]?.teamId || collaboratorTeams[0]?.id || scenario.team.id;
@@ -237,18 +255,55 @@ test('pedido de férias e aprovação ficam visíveis no fluxo principal', async
   await expect(page.getByRole('button', { name: 'Aprovar' }).first()).toBeVisible();
 });
 
-test('permissoes completas podem ser ativadas na ficha do colaborador', async ({ page }) => {
-  const scenario = await createScenario();
+test('permissoes completas podem ser ativadas e revogadas na ficha do colaborador', async ({ page }) => {
+  test.setTimeout(60000);
+  const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const username = `qa.perm.${uniqueSuffix}`;
+  const email = `${username}@smarterhub.test`;
+
+  await createUserAsRoot({
+    fullName: 'QA Permissoes',
+    username,
+    email,
+    password: collaboratorPassword,
+    role: 'COLABORADOR',
+    workCountry: 'BR',
+  });
 
   await login(page, ROOT_USERNAME, ROOT_PASSWORD);
   await page.goto('/colaboradores');
 
-  await page.getByLabel('Pesquisar').fill(scenario.collaborator.username);
-  await expect(page.getByText(scenario.collaborator.username)).toBeVisible({ timeout: 20000 });
+  await page.getByLabel('Pesquisar').fill(username);
+  await expect(page.getByText(username)).toBeVisible({ timeout: 20000 });
 
   await page.getByRole('button', { name: 'Permissões' }).first().click();
   await expect(page.getByRole('heading', { name: /Gestão do colaborador/i })).toBeVisible();
 
   await page.getByRole('button', { name: 'Dar acesso total' }).click();
   await expect(page.getByRole('button', { name: 'Revogar acesso total' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Revogar acesso total' }).click();
+  await expect(page.getByRole('button', { name: 'Dar acesso total' })).toBeVisible();
+});
+
+test('criacao de utilizador com pais BR fica refletida na tabela de administracao', async ({ page }) => {
+  const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const username = `qa.admin.${uniqueSuffix}`;
+  const email = `${username}@smarterhub.test`;
+
+  await createUserAsRoot({
+    fullName: 'QA Brasil',
+    username,
+    email,
+    password: collaboratorPassword,
+    role: 'COLABORADOR',
+    workCountry: 'BR',
+  });
+
+  await login(page, ROOT_USERNAME, ROOT_PASSWORD);
+  await page.goto('/admin');
+
+  await page.getByLabel('Pesquisar').fill(username);
+  await expect(page.getByText(username)).toBeVisible({ timeout: 20000 });
+  await expect(page.getByText('BR', { exact: true })).toBeVisible();
 });

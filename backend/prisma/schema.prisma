@@ -83,6 +83,8 @@ model User {
   isActive      Boolean        @default(true)
   isRootAccess  Boolean        @default(false)
   hasAccessTotal Boolean       @default(false)
+  accessTotalGrantedById String?
+  accessTotalGrantedAt DateTime?
   deactivatedAt DateTime?
   teamId        String?
   createdAt     DateTime       @default(now())
@@ -102,8 +104,12 @@ model User {
   reviewedProfileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestReviewer")
   permissionAssignments UserPermission[] @relation("PermissionTargetUser")
   permissionAssignmentsGranted UserPermission[] @relation("PermissionGrantAuthor")
+  accessTotalGrantedBy User?  @relation("AccessTotalGrantAuthor", fields: [accessTotalGrantedById], references: [id], onDelete: SetNull)
+  accessTotalGrantedTo User[] @relation("AccessTotalGrantAuthor")
   permissionGrantEventsAuthored PermissionGrant[] @relation("PermissionGrantActor")
   permissionGrantEventsReceived PermissionGrant[] @relation("PermissionGrantTarget")
+
+  @@index([accessTotalGrantedById])
 }
 
 model TeamMembership {
