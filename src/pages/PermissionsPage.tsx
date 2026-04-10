@@ -7,6 +7,7 @@ import Button from '../components/ui/Button';
 import DataTable from '../components/ui/DataTable';
 import Modal from '../components/ui/Modal';
 import Skeleton from '../components/ui/Skeleton';
+import EmptyState from '../components/ui/EmptyState';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -512,7 +513,12 @@ export default function PermissionsPage() {
                 ))}
               </div>
             )}
-            {!isDetailsLoading && categoryPermissions.length === 0 && <p className="permissions-empty-state">Sem permissões nesta categoria.</p>}
+            {!isDetailsLoading && categoryPermissions.length === 0 && (
+              <EmptyState
+                title="Sem permissões nesta categoria."
+                message="Seleciona outra categoria ou atribui permissões para começar."
+              />
+            )}
 
             {!isDetailsLoading && categoryPermissions.map((permission) => {
               const draft = drafts[permission.id] ?? buildDraftFromAssignment(permission);
@@ -665,7 +671,12 @@ export default function PermissionsPage() {
                 {entry.reason && <p>{entry.reason}</p>}
               </article>
             ))}
-            {(audit?.grants ?? []).length === 0 && <p>Sem eventos de auditoria para este utilizador.</p>}
+            {(audit?.grants ?? []).length === 0 && (
+              <EmptyState
+                title="Sem eventos de auditoria para este utilizador."
+                message="Quando houver concessões ou revogações, os registos aparecem aqui."
+              />
+            )}
           </div>
         )}
       </Modal>

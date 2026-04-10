@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
 import { usePortal } from '../portal/context';
+import { MICROCOPY, resolveErrorMessage } from '../portal/microcopy';
 import { formatVacationStatusLabel, getVacationStatusTone } from '../portal/labels';
 import Badge from '../components/ui/Badge';
 import Skeleton from '../components/ui/Skeleton';
+import LoadingInline from '../components/ui/LoadingInline';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
 import Toast from '../components/ui/Toast';
@@ -127,7 +129,7 @@ export default function RHApprovalsPage() {
       await action();
       showToast('success', successMessage);
     } catch (error) {
-      showToast('error', error instanceof Error ? error.message : fallbackErrorMessage);
+      showToast('error', resolveErrorMessage(error, fallbackErrorMessage));
     } finally {
       setPendingActionKey(null);
     }
@@ -148,7 +150,7 @@ export default function RHApprovalsPage() {
       setProfileRequests(profiles);
       setVacationRequests(vacations);
     } catch (error) {
-      showToast('error', error instanceof Error ? error.message : 'Falha ao carregar pedidos.');
+      showToast('error', resolveErrorMessage(error, MICROCOPY.approvals.loadRequestsError));
     } finally {
       setIsLoadingData(false);
     }
@@ -166,7 +168,7 @@ export default function RHApprovalsPage() {
   }
 
   async function approveProfileRequest(request: ProfileRequest) {
-    await runAction(`approve-profile-${request.id}`, `Pedido de ${getDisplayName(request.user)} aprovado.`, 'Falha ao aprovar pedido.', async () => {
+    await runAction(`approve-profile-${request.id}`, MICROCOPY.approvals.approveProfileSuccess(getDisplayName(request.user)), MICROCOPY.approvals.approveProfileError, async () => {
       await apiRequest(`/profile/requests/${request.id}/approve`, { method: 'POST', headers: getAuthHeaders() });
       clearApiCache('/profile/requests');
       setProfileRequests((current) => current.filter((item) => item.id !== request.id));
@@ -177,7 +179,7 @@ export default function RHApprovalsPage() {
   }
 
   async function rejectProfileRequest(request: ProfileRequest) {
-    await runAction(`reject-profile-${request.id}`, `Pedido de ${getDisplayName(request.user)} recusado.`, 'Falha ao recusar pedido.', async () => {
+    await runAction(`reject-profile-${request.id}`, MICROCOPY.approvals.rejectProfileSuccess(getDisplayName(request.user)), MICROCOPY.approvals.rejectProfileError, async () => {
       await apiRequest(`/profile/requests/${request.id}/reject`, {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -192,7 +194,7 @@ export default function RHApprovalsPage() {
   }
 
   async function approveVacationRequest(request: VacationRequest) {
-    await runAction(`approve-vacation-${request.id}`, `Pedido de ${getDisplayName(request.user)} aprovado.`, 'Falha ao aprovar pedido.', async () => {
+    await runAction(`approve-vacation-${request.id}`, MICROCOPY.approvals.approveVacationSuccess(getDisplayName(request.user)), MICROCOPY.approvals.approveVacationError, async () => {
       await apiRequest(`/vacations/${request.id}/approve`, { method: 'POST', headers: getAuthHeaders() });
       clearApiCache('/vacations');
       setVacationRequests((current) => current.filter((item) => item.id !== request.id));
@@ -200,7 +202,7 @@ export default function RHApprovalsPage() {
   }
 
   async function rejectVacationRequest(request: VacationRequest) {
-    await runAction(`reject-vacation-${request.id}`, `Pedido de ${getDisplayName(request.user)} recusado.`, 'Falha ao recusar pedido.', async () => {
+    await runAction(`reject-vacation-${request.id}`, MICROCOPY.approvals.rejectVacationSuccess(getDisplayName(request.user)), MICROCOPY.approvals.rejectVacationError, async () => {
       await apiRequest(`/vacations/${request.id}/reject`, {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -231,7 +233,7 @@ export default function RHApprovalsPage() {
         <div className="trainings-hours-summary">
           <article>
             <span>Pedidos em aberto</span>
-            <strong>{isLoadingData ? <span className="loading-line loading-line--metric" /> : requestCount}</strong>
+            <strong>{isLoadingData ? <LoadingInline variant="metric" /> : requestCount}</strong>
           </article>
         </div>
       </header>

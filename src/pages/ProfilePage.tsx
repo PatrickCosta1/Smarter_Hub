@@ -12,6 +12,7 @@ import {
 } from '../portal/data';
 import { getApiBase, getBackendBase, authHeaders } from '../portal/api';
 import { usePortal } from '../portal/context';
+import { useFeedbackToast } from '../portal/useFeedbackToast';
 import { ProfileData, ProfileFieldError } from '../portal/types';
 import Button from '../components/ui/Button';
 
@@ -131,11 +132,7 @@ export default function ProfilePage() {
     contract: false,
   });
   const [profileErrors, setProfileErrors] = useState<ProfileFieldError>({});
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string; visible: boolean }>({
-    type: 'success',
-    message: '',
-    visible: false,
-  });
+  const { toast, showToast } = useFeedbackToast(3400);
   const [isSaving, setIsSaving] = useState(false);
   const [currentSection, setCurrentSection] = useState<SectionKey>('personal');
 
@@ -159,13 +156,6 @@ export default function ProfilePage() {
   useEffect(() => {
     setDraftProfile(profile);
   }, [profile]);
-
-  function showToast(type: 'success' | 'error', message: string) {
-    setToast({ type, message, visible: true });
-    window.setTimeout(() => {
-      setToast((current) => ({ ...current, visible: false }));
-    }, 3400);
-  }
 
   function handleProfileChange(field: keyof ProfileData, value: string) {
     setDraftProfile((current) => {
@@ -703,8 +693,8 @@ export default function ProfilePage() {
       </section>
 
       {toast.visible && (
-        <aside className={`portal-toast portal-toast--${toast.type}`} role="status" aria-live="polite">
-          <strong>{toast.type === 'success' ? 'Sucesso' : 'Atenção'}</strong>
+        <aside className={`portal-toast portal-toast--${toast.tone === 'error' ? 'error' : 'success'}`} role="status" aria-live="polite">
+          <strong>{toast.tone === 'success' ? 'Sucesso' : toast.tone === 'error' ? 'Atenção' : 'Informação'}</strong>
           <span>{toast.message}</span>
         </aside>
       )}

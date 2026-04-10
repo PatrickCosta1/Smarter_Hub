@@ -331,7 +331,7 @@ export default function AdminPage() {
 
       <section className="trainings-list-card">
         <div className="trainings-list-head">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div className="modal-footer-split">
             <h3>Utilizadores</h3>
             {canCreateUser && (
               <Button type="button" variant="primary" size="sm" onClick={openCreateModal}>Novo utilizador</Button>
@@ -416,9 +416,9 @@ export default function AdminPage() {
           />
         </div>
 
-        <div className="trainings-form-actions" style={{ justifyContent: 'space-between' }}>
+        <div className="trainings-form-actions trainings-form-actions--between">
           <small>Página {currentPage} de {totalPages} · {filteredUsers.length} resultado(s)</small>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="trainings-form-actions__group">
             <Button type="button" variant="ghost" onClick={() => setCurrentPage((value) => Math.max(1, value - 1))} disabled={currentPage === 1}>◀</Button>
             <Button type="button" variant="ghost" onClick={() => setCurrentPage((value) => Math.min(totalPages, value + 1))} disabled={currentPage === totalPages}>▶</Button>
           </div>
@@ -432,7 +432,7 @@ export default function AdminPage() {
           onClose={closeEditModal}
           width="min(680px, 94vw)"
           footer={
-            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', gap: 12 }}>
+            <div className="modal-footer-split">
               <Button type="button" variant="ghost" onClick={closeEditModal}>Cancelar</Button>
               <Button type="button" variant="primary" isLoading={isSavingCredentials} onClick={() => void saveCredentials()}>Guardar alterações</Button>
             </div>
@@ -479,7 +479,7 @@ export default function AdminPage() {
           onClose={closeCreateModal}
           width="min(700px, 94vw)"
           footer={
-            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', gap: 12 }}>
+            <div className="modal-footer-split">
               <Button type="button" variant="ghost" onClick={closeCreateModal}>Cancelar</Button>
               <Button type="button" variant="primary" isLoading={isCreatingUser} onClick={() => void createUser()}>Criar utilizador</Button>
             </div>

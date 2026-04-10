@@ -4,6 +4,7 @@ import { apiRequestCached, authHeaders } from '../portal/api';
 import { usePortal } from '../portal/context';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
+import LoadingInline from '../components/ui/LoadingInline';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -74,10 +75,10 @@ export default function HomePage() {
       <section className="home-hero">
         <div className="home-main">
           <p className="hero-kicker">Portal interno</p>
-          <h1>{isLoadingSummary ? <span className="loading-line loading-line--title" /> : `Olá, ${displayName}!`}</h1>
+          <h1>{isLoadingSummary ? <LoadingInline variant="title" /> : `Olá, ${displayName}!`}</h1>
           <p>
             {isLoadingSummary ? (
-              <span className="loading-line loading-line--body" />
+              <LoadingInline variant="body" />
             ) : isTPeople
               ? 'Centro executivo com foco em decisões e operação.'
               : isManagerFlow
@@ -88,15 +89,15 @@ export default function HomePage() {
           <div className="home-metrics">
             <article>
               <span>Pendências</span>
-              <strong>{isLoadingSummary ? <span className="loading-line loading-line--metric" /> : totalPending}</strong>
+              <strong>{isLoadingSummary ? <LoadingInline variant="metric" /> : totalPending}</strong>
             </article>
             <article>
               <span>Notificações</span>
-              <strong>{isLoadingSummary ? <span className="loading-line loading-line--metric" /> : unreadNotifications}</strong>
+              <strong>{isLoadingSummary ? <LoadingInline variant="metric" /> : unreadNotifications}</strong>
             </article>
             <article>
               <span>Formações ativas</span>
-              <strong>{isLoadingSummary ? <span className="loading-line loading-line--metric" /> : assignedTrainings}</strong>
+              <strong>{isLoadingSummary ? <LoadingInline variant="metric" /> : assignedTrainings}</strong>
             </article>
           </div>
 
@@ -129,14 +130,14 @@ export default function HomePage() {
         {isLoadingSummary ? (
           <>
             <Card as="article" className="home-card home-card--loading">
-              <span className="loading-line loading-line--card-title" />
-              <span className="loading-line loading-line--card-body" />
-              <span className="loading-line loading-line--button" />
+              <LoadingInline variant="cardTitle" />
+              <LoadingInline variant="cardBody" />
+              <LoadingInline variant="button" />
             </Card>
             <Card as="article" className="home-card home-card--loading">
-              <span className="loading-line loading-line--card-title" />
-              <span className="loading-line loading-line--card-body" />
-              <span className="loading-line loading-line--button" />
+              <LoadingInline variant="cardTitle" />
+              <LoadingInline variant="cardBody" />
+              <LoadingInline variant="button" />
             </Card>
           </>
         ) : isTPeople || isManagerFlow ? (

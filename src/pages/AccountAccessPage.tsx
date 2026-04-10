@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
+import { MICROCOPY, resolveErrorMessage } from '../portal/microcopy';
 import { formatRoleLabel } from '../portal/labels';
+import { useFeedbackToast } from '../portal/useFeedbackToast';
 import TextInput from '../components/ui/TextInput';
 import Button from '../components/ui/Button';
 import Toast from '../components/ui/Toast';
@@ -23,7 +25,7 @@ export default function AccountAccessPage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
-  const [status, setStatus] = useState('');
+  const { toast, showToast } = useFeedbackToast();
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export default function AccountAccessPage() {
       setEmail(data.user.email);
       setRole(data.user.role);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Falha ao carregar dados da conta.');
+      showToast('error', resolveErrorMessage(error, MICROCOPY.accountAccess.loadError));
     }
   }
 
@@ -50,22 +52,22 @@ export default function AccountAccessPage() {
     event.preventDefault();
 
     if (!currentPassword.trim()) {
-      setStatus('Indica a password atual.');
+      showToast('error', MICROCOPY.accountAccess.currentPasswordRequired);
       return;
     }
 
     if (newPassword && newPassword.length < 4) {
-      setStatus('A nova password deve ter pelo menos 4 caracteres.');
+      showToast('error', MICROCOPY.accountAccess.newPasswordMinLength);
       return;
     }
 
     if (newPassword && newPassword !== confirmNewPassword) {
-      setStatus('A confirmação da nova password não coincide.');
+      showToast('error', MICROCOPY.accountAccess.passwordConfirmationMismatch);
       return;
     }
 
     setIsSaving(true);
-    setStatus('A guardar alterações de acesso...');
+    showToast('info', MICROCOPY.accountAccess.savingInfo);
 
     const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
 
@@ -91,9 +93,9 @@ export default function AccountAccessPage() {
       setNewPassword('');
       setConfirmNewPassword('');
       setUsername(response.user.username);
-      setStatus('Dados de acesso atualizados com sucesso.');
+      showToast('success', MICROCOPY.accountAccess.updateSuccess);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Falha ao atualizar dados de acesso.');
+      showToast('error', resolveErrorMessage(error, MICROCOPY.accountAccess.updateError));
     } finally {
       setIsSaving(false);
     }
@@ -133,7 +135,7 @@ export default function AccountAccessPage() {
           </div>
         </form>
 
-        <Toast show={Boolean(status)} tone={status.toLowerCase().includes('sucesso') ? 'success' : 'info'} message={status} />
+        <Toast show={toast.visible} tone={toast.tone} message={toast.message} />
       </section>
     </section>
   );

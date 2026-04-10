@@ -1,0 +1,11 @@
+id,item,valor_negocio,criticidade_temporal,reducao_risco,esforco,wsjf,prioridade,status,observacoes
+UX-001,Criar EmptyState padrao reutilizavel,8,8,9,3,8.33,P1,concluido,Aplicado em Notifications/ManagerTeams/Permissions/Collaborators
+UX-003,Eliminar padroes manuais de botao e usar Button unificado,9,8,8,4,6.25,P2,concluido,Aplicado em TrainingsPage e ManagerTeamsPage
+UX-008,Definir contrato de confirmacao para acao critica,10,9,10,6,4.83,P3,concluido,Confirmacao aplicada em estado de conta e conclusao de formacao
+UX-002,Padronizar contrato de feedback toast/status,9,8,9,6,4.33,P4,concluido,useFeedbackToast aplicado em Notifications/Profile/AccountAccess
+UX-007,Unificar padrao de loading por contexto,8,7,8,6,3.83,P5,concluido,LoadingInline aplicado em Home e RHApprovals; base unificada criada
+UX-009,Padronizar verbos e mensagens de erro/sucesso,8,7,7,6,3.67,P6,concluido,Microcopy central aplicada em AccountAccess/Notifications/RHApprovals
+UX-010,Checklist minimo de acessibilidade em modais e forms,9,7,8,7,3.43,P7,concluido,Modal com trap de foco + retorno de foco + aria-labelledby + focus-visible global
+UX-004,Migrar estilos inline recorrentes para classes CSS,7,6,6,6,3.17,P8,concluido,Classes reutilizaveis de layout aplicadas em Colaboradores/Notificacoes/Equipas/Admin/Formacoes
+UX-006,Consolidar escala de cores de texto/muted/estado,7,6,6,7,2.71,P9,concluido,Tokens semanticos globais aplicados em redesign/ui (texto + estados)
+UX-005,Alinhar ReceiptsPage ao padrao visual do sistema,6,5,5,5,3.20,P10,proximo,Executar apos estabilizar base

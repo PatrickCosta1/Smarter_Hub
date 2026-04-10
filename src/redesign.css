@@ -220,6 +220,15 @@
   margin-left: 2px;
 }
 
+.icon-button.has-unread {
+  animation: hub-bell-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes hub-bell-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 141, 95, 0); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 141, 95, 0.18); }
+}
+
 .trainings-list-head h3 {
   letter-spacing: -0.01em;
 }
@@ -507,8 +516,13 @@
   flex-wrap: wrap;
 }
 
-.trainings-form-actions .cta-button {
-  width: auto;
+.trainings-form-actions--between {
+  justify-content: space-between;
+}
+
+.trainings-form-actions__group {
+  display: flex;
+  gap: 8px;
 }
 
 .rh-collaborator-results {
@@ -643,7 +657,6 @@
 }
 
 .trainings-row-actions button,
-.cta-button,
 .ui-button,
 .quick-action-btn,
 .topbar-link,
@@ -652,7 +665,6 @@
 }
 
 .trainings-row-actions button:hover,
-.cta-button:hover,
 .ui-button:hover,
 .quick-action-btn:hover,
 .topbar-link:hover,
@@ -754,6 +766,24 @@
   --hub-text-3: #607792;
   --hub-elev-1: 0 6px 18px rgba(14, 36, 72, 0.08);
   --hub-elev-2: 0 10px 24px rgba(14, 36, 72, 0.1);
+  --color-text-primary: var(--hub-text-1);
+  --color-text-secondary: var(--hub-text-2);
+  --color-text-muted: var(--hub-text-3);
+  --color-state-success: #0c6b40;
+  --color-state-success-bg: #e7f8f1;
+  --color-state-success-border: #bdebd7;
+  --color-state-warning: #8c5c04;
+  --color-state-warning-bg: #fff4df;
+  --color-state-warning-border: #f6ddb0;
+  --color-state-danger: #8f2b2b;
+  --color-state-danger-bg: #fdeaea;
+  --color-state-danger-border: #f4c3c3;
+  --color-state-info: #2559a0;
+  --color-state-info-bg: #eaf3ff;
+  --color-state-info-border: #c8ddff;
+  --color-state-neutral: #4f678d;
+  --color-state-neutral-bg: #f1f6fd;
+  --color-state-neutral-border: #d5e1f2;
 }
 
 .app-shell {
@@ -894,6 +924,178 @@
 .notifications-subtitle,
 .home-note {
   color: var(--hub-text-2);
+}
+
+.notifications-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.notifications-title-wrap {
+  min-width: 0;
+}
+
+.notifications-hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 16px 18px;
+}
+
+.notifications-hero::after {
+  content: '';
+  position: absolute;
+  right: -80px;
+  top: -70px;
+  width: 210px;
+  height: 210px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(120, 191, 255, 0.28), rgba(120, 191, 255, 0));
+  pointer-events: none;
+}
+
+.notifications-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.notifications-stats div {
+  min-width: 92px;
+  border: 1px solid #caddff;
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: linear-gradient(170deg, #fafdff, #edf5ff);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.notifications-stats span {
+  color: #5d7ca8;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.notifications-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.notifications-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 999px;
+  background: rgba(225, 238, 255, 0.9);
+  border: 1px solid #c7dbff;
+}
+
+.notification-filter {
+  min-height: 31px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #25589c;
+  font-size: 0.79rem;
+  font-weight: 800;
+}
+
+.notification-filter:hover {
+  border-color: #b7d1fd;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.notification-filter.is-active {
+  color: #0f4da5;
+  border-color: #8db8fb;
+  background: linear-gradient(135deg, #ffffff, #e9f3ff);
+  box-shadow: 0 6px 12px rgba(42, 102, 199, 0.14);
+}
+
+.notifications-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 9px;
+}
+
+.notification-card.is-unread {
+  border-color: #90baf8;
+  box-shadow: 0 12px 24px rgba(14, 65, 145, 0.18);
+}
+
+.notification-card.is-unread::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #1672f4, #6dc3ff);
+}
+
+.notification-card__leading {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid #b7d0f7;
+  background: #edf5ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #2a6ec7;
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.notification-card.is-unread .notification-card__leading {
+  border-color: #86b2f3;
+  background: #dbeaff;
+  color: #125ec2;
+}
+
+.notification-card h3 {
+  margin: 0;
+  color: #123f86;
+  font-size: 0.94rem;
+  font-family: 'Sora', sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notification-card button {
+  min-height: 30px;
+  border-radius: 10px;
+  padding: 0 11px;
+  border: 1px solid #9fc3fd;
+  background: #eaf3ff;
+  color: #1859b2;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.notification-card--empty {
+  grid-template-columns: 1fr;
+  row-gap: 8px;
+  border-style: dashed;
+  border-color: #c3d8fb;
+  background: linear-gradient(180deg, #f7fbff, #edf5ff);
+  box-shadow: none;
+}
+
+.notification-card--empty h3 {
+  margin: 0;
 }
 
 .home-grid {
@@ -1060,13 +1262,19 @@
 }
 
 .notification-card {
+  position: relative;
+  overflow: hidden;
+  display: grid;
   border-radius: var(--hub-radius-md);
-  border-color: var(--hub-line-1);
+  border: 1px solid var(--hub-line-1);
   background: var(--hub-surface-1);
   box-shadow: none;
   grid-template-columns: 28px minmax(0, 1fr) auto;
-  gap: 14px;
+  column-gap: 10px;
+  row-gap: 4px;
+  padding: 10px 12px;
   align-items: start;
+  transition: transform 220ms ease, box-shadow 220ms ease, border-color 180ms ease;
 }
 
 .notification-card:hover {
@@ -1197,6 +1405,8 @@
 }
 
 .notification-card__main {
+  min-width: 0;
+  display: grid;
   gap: 8px;
 }
 
@@ -1217,11 +1427,64 @@
 }
 
 .notification-card__meta {
+  display: flex;
+  align-items: center;
   justify-content: flex-start;
+  gap: 10px;
+}
+
+.notification-card__meta strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #e6f1ff;
+  color: #20569c;
+  font-size: 0.67rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .notification-card__meta span {
-  color: #607792;
+  color: var(--color-text-muted);
+}
+
+.modal-footer-split {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+}
+
+.modal-footer-split--wrap {
+  flex-wrap: wrap;
+}
+
+.modal-footer-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.modal-footer-actions--compact {
+  gap: 8px;
+}
+
+.modal-footer-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.modal-footer-tag {
+  color: var(--hub-text-1);
+}
+
+.modal-footer-note {
+  color: var(--hub-text-3);
+  font-size: 0.9rem;
 }
 
 .vacations-overview-grid--loading,
@@ -1625,8 +1888,34 @@
   gap: 6px;
 }
 
+.profile-hero .completion-card--highlight {
+  animation-delay: 120ms;
+}
+
+.profile-hero .completion-card p,
+.profile-hero .completion-card small {
+  margin: 0;
+  color: var(--elite-muted);
+}
+
 .profile-hero .completion-card strong {
   font-size: clamp(1.45rem, 2.2vw, 1.9rem);
+}
+
+.profile-hero .completion-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #d8e6ff;
+}
+
+.profile-hero .completion-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #1672f4, #72c1ff);
+  transition: width 300ms ease;
 }
 
 .profile-grid {
@@ -1687,7 +1976,6 @@
 }
 
 .ui-button,
-.cta-button,
 .topbar-link,
 .icon-button,
 .rh-tabs button {
@@ -1696,21 +1984,20 @@
 }
 
 .ui-button--primary,
-.cta-primary {
+.ui-button--primary {
   background: #111827;
   border: 1px solid #111827;
   color: #ffffff;
 }
 
 .ui-button--primary:hover,
-.cta-primary:hover {
+.ui-button--primary:hover {
   background: #0f172a;
   border-color: #0f172a;
 }
 
 .ui-button--secondary,
 .ui-button--ghost,
-.cta-ghost,
 .icon-button,
 .topbar-link {
   background: #ffffff;
@@ -3293,14 +3580,14 @@
 }
 
 .ui-button--primary,
-.cta-primary {
+.ui-button--primary {
   background: #000000;
   color: #ffffff;
   box-shadow: 0 3px 8px rgba(31, 79, 153, 0.18);
 }
 
 .ui-button--primary:hover,
-.cta-primary:hover {
+.ui-button--primary:hover {
   background: #1a468a;
   border-color: #1a468a;
   box-shadow: 0 5px 12px rgba(31, 79, 153, 0.2);

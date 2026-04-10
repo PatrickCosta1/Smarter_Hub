@@ -7,6 +7,7 @@ import DataTable from '../components/ui/DataTable';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Skeleton from '../components/ui/Skeleton';
+import EmptyState from '../components/ui/EmptyState';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 const PERMISSION_CATEGORIES = ['SYSTEM', 'USERS', 'TEAMS', 'VACATIONS', 'TRAININGS', 'PROFILE', 'RECEIPTS', 'NOTIFICATIONS'] as const;
@@ -227,6 +228,7 @@ export default function CollaboratorsPage() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [activeConfirmTarget, setActiveConfirmTarget] = useState<CollaboratorRow | null>(null);
   const [selectedRow, setSelectedRow] = useState<CollaboratorRow | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [detailsTab, setDetailsTab] = useState<'ficha' | 'permissoes' | 'estado'>('ficha');
@@ -359,6 +361,19 @@ export default function CollaboratorsPage() {
     } finally {
       setBusyUserId(null);
     }
+  }
+
+  function openActiveConfirm(item: CollaboratorRow) {
+    setActiveConfirmTarget(item);
+  }
+
+  async function confirmToggleActive() {
+    if (!activeConfirmTarget) {
+      return;
+    }
+
+    await toggleActive(activeConfirmTarget);
+    setActiveConfirmTarget(null);
   }
 
   async function openDetails(item: CollaboratorRow, initialTab: 'ficha' | 'permissoes' | 'estado' = 'ficha') {
@@ -539,17 +554,6 @@ export default function CollaboratorsPage() {
           <h2>Gestão transversal de colaboradores</h2>
           <p>Consulta, filtra e ativa/desativa sem perder histórico de dados.</p>
         </div>
-
-        <div className="trainings-hours-summary">
-          <article>
-            <span>Total</span>
-            <strong>{visibleTotal}</strong>
-          </article>
-          <article>
-            <span>Página</span>
-            <strong>{page}/{totalPages}</strong>
-          </article>
-        </div>
       </header>
 
       <section className="trainings-list-card">
@@ -659,7 +663,7 @@ export default function CollaboratorsPage() {
                     size="sm"
                     variant={item.isActive ? 'danger' : 'secondary'}
                     isLoading={busyUserId === item.id}
-                    onClick={() => void toggleActive(item)}
+                    onClick={() => openActiveConfirm(item)}
                     disabled={!canManageActive}
                   >
                     {item.isActive ? 'Desativar' : 'Reativar'}
@@ -678,9 +682,9 @@ export default function CollaboratorsPage() {
           />
         </div>
 
-        <div className="trainings-form-actions" style={{ justifyContent: 'space-between' }}>
+        <div className="trainings-form-actions trainings-form-actions--between">
           <small>Resultados: {visibleTotal}</small>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="trainings-form-actions__group">
             <Button type="button" variant="ghost" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page <= 1}>Anterior</Button>
             <Button type="button" variant="ghost" onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={page >= totalPages}>Seguinte</Button>
           </div>
@@ -694,7 +698,7 @@ export default function CollaboratorsPage() {
         width="min(1360px, 97vw)"
         showCloseButton={false}
         footer={
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, width: '100%' }}>
+          <div className="modal-footer-split">
             <small>Fluxo unificado: ficha, permissões e estado de conta.</small>
             <Button type="button" variant="ghost" onClick={() => setIsDetailsOpen(false)}>Fechar</Button>
           </div>
@@ -833,7 +837,12 @@ export default function CollaboratorsPage() {
                   </label>
 
                   <div className="collab-permissions-items">
-                    {filteredCategoryPermissions.length === 0 && <p>Sem permissões nesta categoria.</p>}
+                    {filteredCategoryPermissions.length === 0 && (
+                      <EmptyState
+                        title="Sem permissões nesta categoria."
+                        message="Escolhe outra categoria para continuar a configuração."
+                      />
+                    )}
                     {filteredCategoryPermissions.map((permission) => {
                       const draft = permissionDrafts[permission.id] ?? buildDraftFromAssignment(permission);
                       const effectiveEnabled = selectedUserAccessTotal || draft.enabled;
@@ -1040,7 +1049,7 @@ export default function CollaboratorsPage() {
                 <Button
                   type="button"
                   variant={selectedRow.isActive ? 'danger' : 'secondary'}
-                  onClick={() => void toggleActive(selectedRow)}
+                  onClick={() => openActiveConfirm(selectedRow)}
                   disabled={!canManageActive || selectedRow.username === 't.people'}
                 >
                   {selectedRow.isActive ? 'Desativar conta' : 'Reativar conta'}
@@ -1052,13 +1061,43 @@ export default function CollaboratorsPage() {
       </Modal>
 
       <Modal
+        open={Boolean(activeConfirmTarget)}
+        title={activeConfirmTarget?.isActive ? 'Confirmar desativação' : 'Confirmar reativação'}
+        onClose={() => setActiveConfirmTarget(null)}
+        width="min(640px, 92vw)"
+        showCloseButton={false}
+        footer={
+          <div className="modal-footer-split">
+            <Button type="button" variant="ghost" onClick={() => setActiveConfirmTarget(null)}>Cancelar</Button>
+            <Button
+              type="button"
+              variant={activeConfirmTarget?.isActive ? 'danger' : 'primary'}
+              isLoading={Boolean(activeConfirmTarget && busyUserId === activeConfirmTarget.id)}
+              disabled={Boolean(activeConfirmTarget && busyUserId === activeConfirmTarget.id)}
+              onClick={() => void confirmToggleActive()}
+            >
+              Confirmar
+            </Button>
+          </div>
+        }
+      >
+        <div className="permissions-access-modal">
+          <p>
+            {activeConfirmTarget?.isActive
+              ? `Isto vai desativar a conta de ${getDisplayName(activeConfirmTarget)}.`
+              : `Isto vai reativar a conta de ${activeConfirmTarget ? getDisplayName(activeConfirmTarget) : 'este colaborador'}.`}
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
         open={accessTotalModalOpen}
         title={accessTotalAction === 'grant' ? 'Dar acesso total' : 'Revogar acesso total'}
         onClose={() => setAccessTotalModalOpen(false)}
         width="min(720px, 92vw)"
         showCloseButton={false}
         footer={
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, width: '100%' }}>
+          <div className="modal-footer-split">
             <Button type="button" variant="ghost" onClick={() => setAccessTotalModalOpen(false)}>Cancelar</Button>
             <Button
               type="button"

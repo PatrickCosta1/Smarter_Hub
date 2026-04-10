@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePortal } from '../portal/context';
+import { MICROCOPY, resolveErrorMessage } from '../portal/microcopy';
+import { useFeedbackToast } from '../portal/useFeedbackToast';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
+import EmptyState from '../components/ui/EmptyState';
 import Toast from '../components/ui/Toast';
 
 type FilterMode = 'all' | 'unread' | 'read';
@@ -266,11 +269,7 @@ export default function NotificationsPage() {
   const [notificationToDelete, setNotificationToDelete] = useState<string | null>(null);
   const [confirmDeleteAllOpen, setConfirmDeleteAllOpen] = useState(false);
   const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ tone: 'success' | 'error' | 'info'; message: string; visible: boolean }>({
-    tone: 'info',
-    message: '',
-    visible: false,
-  });
+  const { toast, showToast } = useFeedbackToast();
 
   const sortedNotifications = useMemo(
     () => [...notifications].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
@@ -300,22 +299,6 @@ export default function NotificationsPage() {
     [notifications, selectedNotificationId],
   );
 
-  useEffect(() => {
-    if (!toast.visible) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setToast((current) => ({ ...current, visible: false }));
-    }, 2800);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [toast.visible]);
-
-  function showToast(tone: 'success' | 'error' | 'info', message: string) {
-    setToast({ tone, message, visible: true });
-  }
-
   async function runNotificationAction(actionKey: string, successMessage: string, fallbackErrorMessage: string, action: () => Promise<void>) {
     setPendingActionKey(actionKey);
 
@@ -324,7 +307,7 @@ export default function NotificationsPage() {
       showToast('success', successMessage);
       return true;
     } catch (error) {
-      showToast('error', error instanceof Error ? error.message : fallbackErrorMessage);
+      showToast('error', resolveErrorMessage(error, fallbackErrorMessage));
       return false;
     } finally {
       setPendingActionKey(null);
@@ -419,7 +402,7 @@ export default function NotificationsPage() {
             type="button"
             isLoading={pendingActionKey === 'mark-all-notifications'}
             disabled={Boolean(pendingActionKey)}
-            onClick={() => void runNotificationAction('mark-all-notifications', 'Todas as notificações foram marcadas como lidas.', 'Falha ao marcar notificações como lidas.', async () => {
+            onClick={() => void runNotificationAction('mark-all-notifications', MICROCOPY.notifications.markAllReadSuccess, MICROCOPY.notifications.markAllReadError, async () => {
               await markAllNotificationsRead();
             })}
           >
@@ -431,9 +414,10 @@ export default function NotificationsPage() {
 
       <div className="notifications-list">
         {visibleNotifications.length === 0 && (
-          <article className="notification-card notification-card--empty">
-            <h3>Sem notificações para si.</h3>
-          </article>
+          <EmptyState
+            title="Sem notificações para si."
+            message="Quando houver novidades, elas aparecem aqui automaticamente."
+          />
         )}
 
         {visibleNotifications.map((notification) => {
@@ -472,7 +456,7 @@ export default function NotificationsPage() {
                           return;
                         }
 
-                        void runNotificationAction(`mark-notification-${notification.id}`, 'Notificação marcada como lida.', 'Falha ao marcar notificação.', async () => {
+                        void runNotificationAction(`mark-notification-${notification.id}`, MICROCOPY.notifications.markReadSuccess, MICROCOPY.notifications.markReadError, async () => {
                           await markNotificationRead(notification.id);
                           navigate(details.action!.path);
                         });
@@ -501,7 +485,7 @@ export default function NotificationsPage() {
                         type="button"
                         isLoading={pendingActionKey === `mark-notification-${notification.id}`}
                         disabled={Boolean(pendingActionKey)}
-                        onClick={() => void runNotificationAction(`mark-notification-${notification.id}`, 'Notificação marcada como lida.', 'Falha ao marcar notificação.', async () => {
+                        onClick={() => void runNotificationAction(`mark-notification-${notification.id}`, MICROCOPY.notifications.markReadSuccess, MICROCOPY.notifications.markReadError, async () => {
                           await markNotificationRead(notification.id);
                         })}
                       >
@@ -533,12 +517,12 @@ export default function NotificationsPage() {
         width="min(720px, 94vw)"
         showCloseButton={false}
         footer={selectedNotification ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 12 }}>
-            <div style={{ display: 'grid', gap: 4 }}>
-              <strong style={{ color: 'var(--hub-text-1)' }}>{selectedDetails?.tag}</strong>
-              <span style={{ color: 'var(--hub-text-3)', fontSize: '0.9rem' }}>{formatRelativeDate(selectedNotification.createdAt)}</span>
+          <div className="modal-footer-split">
+            <div className="modal-footer-meta">
+              <strong className="modal-footer-tag">{selectedDetails?.tag}</strong>
+              <span className="modal-footer-note">{formatRelativeDate(selectedNotification.createdAt)}</span>
             </div>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <div className="modal-footer-actions">
               {!selectedNotification.isRead && (
                 <Button
                   type="button"
@@ -546,7 +530,7 @@ export default function NotificationsPage() {
                   isLoading={pendingActionKey === `mark-notification-${selectedNotification.id}`}
                   disabled={Boolean(pendingActionKey)}
                   onClick={async () => {
-                    const succeeded = await runNotificationAction(`mark-notification-${selectedNotification.id}`, 'Notificação marcada como lida.', 'Falha ao marcar notificação.', async () => {
+                    const succeeded = await runNotificationAction(`mark-notification-${selectedNotification.id}`, MICROCOPY.notifications.markReadSuccess, MICROCOPY.notifications.markReadError, async () => {
                       await markNotificationRead(selectedNotification.id);
                     });
 
@@ -639,9 +623,9 @@ export default function NotificationsPage() {
         width="min(560px, 94vw)"
         showCloseButton={false}
         footer={(
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 12 }}>
-            <span style={{ color: 'var(--hub-text-3)', fontSize: '0.9rem' }}>Esta ação remove todas as notificações da conta.</span>
-            <div style={{ display: 'flex', gap: 10 }}>
+          <div className="modal-footer-split">
+            <span className="modal-footer-note">Esta ação remove todas as notificações da conta.</span>
+            <div className="modal-footer-actions">
               <Button type="button" variant="ghost" onClick={closeDeleteAll}>Cancelar</Button>
               <Button
                 type="button"
@@ -649,7 +633,7 @@ export default function NotificationsPage() {
                 isLoading={pendingActionKey === 'delete-all-notifications'}
                 disabled={Boolean(pendingActionKey)}
                 onClick={async () => {
-                  const succeeded = await runNotificationAction('delete-all-notifications', 'Todas as notificações foram apagadas.', 'Falha ao apagar notificações.', async () => {
+                  const succeeded = await runNotificationAction('delete-all-notifications', MICROCOPY.notifications.deleteAllSuccess, MICROCOPY.notifications.deleteAllError, async () => {
                     await deleteAllNotifications();
                   });
 
@@ -680,9 +664,9 @@ export default function NotificationsPage() {
         width="min(560px, 94vw)"
         showCloseButton={false}
         footer={notificationToDeleteItem ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 12 }}>
-            <span style={{ color: 'var(--hub-text-3)', fontSize: '0.9rem' }}>Esta ação remove a notificação apenas da tua conta.</span>
-            <div style={{ display: 'flex', gap: 10 }}>
+          <div className="modal-footer-split">
+            <span className="modal-footer-note">Esta ação remove a notificação apenas da tua conta.</span>
+            <div className="modal-footer-actions">
               <Button type="button" variant="ghost" onClick={closeDeleteNotification}>Cancelar</Button>
               <Button
                 type="button"
@@ -690,7 +674,7 @@ export default function NotificationsPage() {
                 isLoading={pendingActionKey === `delete-notification-${notificationToDeleteItem.id}`}
                 disabled={Boolean(pendingActionKey)}
                 onClick={async () => {
-                  const succeeded = await runNotificationAction(`delete-notification-${notificationToDeleteItem.id}`, 'Notificação apagada.', 'Falha ao apagar notificação.', async () => {
+                  const succeeded = await runNotificationAction(`delete-notification-${notificationToDeleteItem.id}`, MICROCOPY.notifications.deleteOneSuccess, MICROCOPY.notifications.deleteOneError, async () => {
                     await deleteNotification(notificationToDeleteItem.id);
                   });
 

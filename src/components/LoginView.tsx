@@ -4,6 +4,7 @@ import { usePortal } from '../portal/context';
 import Button from './ui/Button';
 import TextInput from './ui/TextInput';
 import Toast from './ui/Toast';
+import './LoginView.css';
 
 type FormErrors = {
   username?: string;
@@ -105,7 +106,7 @@ export default function LoginView() {
         <section className="auth-card" aria-labelledby="login-title">
           <div className="auth-card__brand">
             <div className="brand-mark" aria-label="Tlantic">
-              <img src="/logo.png" alt="Tlantic" />
+              <img src="/logo.png" alt="Tlantic" width={1123} height={651} decoding="async" />
             </div>
           </div>
 

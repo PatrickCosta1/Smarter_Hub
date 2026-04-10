@@ -88,7 +88,7 @@ export default function PortalLayout() {
       <section className="app-layout app-layout--modern">
         <aside className="portal-sidebar" aria-label="Navegação principal">
           <div className="portal-sidebar__brand">
-            <img src="/logo.png" alt="Tlantic" />
+            <img src="/logo.png" alt="Tlantic" width={1123} height={651} decoding="async" />
           </div>
 
           <label className="portal-sidebar__search">

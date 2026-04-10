@@ -3,6 +3,8 @@ import { usePortal } from '../portal/context';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
 import { formatRoleLabel, formatTrainingStatusLabel, getTrainingStatusTone } from '../portal/labels';
 import Badge from '../components/ui/Badge';
+import Button from '../components/ui/Button';
+import Modal from '../components/ui/Modal';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -127,6 +129,7 @@ export default function TrainingsPage() {
   const [isSearchingCollaborators, setIsSearchingCollaborators] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isAssignedModalOpen, setIsAssignedModalOpen] = useState(false);
+  const [completeConfirmRecordId, setCompleteConfirmRecordId] = useState<string | null>(null);
   const [recentAssigned, setRecentAssigned] = useState<RecentAssignedItem[]>([]);
 
   const sortedRecords = useMemo(
@@ -277,6 +280,19 @@ export default function TrainingsPage() {
     }
   }
 
+  function openCompleteConfirm(recordId: string) {
+    setCompleteConfirmRecordId(recordId);
+  }
+
+  async function confirmCompleteRecord() {
+    if (!completeConfirmRecordId) {
+      return;
+    }
+
+    await handleCompleteRecord(completeConfirmRecordId);
+    setCompleteConfirmRecordId(null);
+  }
+
   return (
     <section className="trainings-shell">
       <header className="trainings-hero">
@@ -307,13 +323,13 @@ export default function TrainingsPage() {
           <section className="trainings-list-card trainings-launchpad">
             <article>
               <h3>Atribuir nova formação</h3>
-              <p>Abre o formulário num popup focado para atribuir formações sem ruído visual.</p>
-              <button className="cta-button cta-primary" type="button" onClick={() => setIsAssignModalOpen(true)}>Abrir formulário</button>
+              <p>Abre o formulário para atribuir formações.</p>
+              <Button type="button" variant="primary" onClick={() => setIsAssignModalOpen(true)}>Abrir formulário</Button>
             </article>
             <article>
               <h3>Formações atribuídas</h3>
-              <p>Abre a tabela completa num popup com pesquisa e filtros rápidos.</p>
-              <button className="cta-button cta-secondary" type="button" onClick={() => setIsAssignedModalOpen(true)}>Abrir lista</button>
+              <p>Abre a tabela completa com pesquisa e filtros rápidos.</p>
+              <Button type="button" variant="secondary" onClick={() => setIsAssignedModalOpen(true)}>Abrir lista</Button>
             </article>
           </section>
 
@@ -322,7 +338,7 @@ export default function TrainingsPage() {
               <section className="quick-modal trainings-modal" onClick={(event) => event.stopPropagation()} aria-modal="true" role="dialog" aria-label="Atribuir nova formação">
                 <div className="quick-modal__head">
                   <h3>Atribuir nova formação</h3>
-                  <button className="cta-button cta-ghost" type="button" onClick={() => setIsAssignModalOpen(false)}>Fechar</button>
+                  <Button type="button" variant="ghost" onClick={() => setIsAssignModalOpen(false)}>Fechar</Button>
                 </div>
 
                 <form className="trainings-form" onSubmit={handleAssignTraining} noValidate>
@@ -393,8 +409,8 @@ export default function TrainingsPage() {
                   </label>
 
                   <div className="trainings-form-actions field-span-2">
-                    <button className="cta-button cta-primary" type="submit">Atribuir formação</button>
-                    <button className="cta-button cta-ghost" type="button" onClick={() => setAssignDraft(EMPTY_ASSIGN_DRAFT)}>Limpar</button>
+                    <Button type="submit" variant="primary">Atribuir formação</Button>
+                    <Button type="button" variant="ghost" onClick={() => setAssignDraft(EMPTY_ASSIGN_DRAFT)}>Limpar</Button>
                   </div>
                 </form>
 
@@ -423,7 +439,7 @@ export default function TrainingsPage() {
               <section className="quick-modal trainings-modal trainings-modal--wide" onClick={(event) => event.stopPropagation()} aria-modal="true" role="dialog" aria-label="Formações atribuídas">
                 <div className="quick-modal__head">
                   <h3>Formações atribuídas</h3>
-                  <button className="cta-button cta-ghost" type="button" onClick={() => setIsAssignedModalOpen(false)}>Fechar</button>
+                  <Button type="button" variant="ghost" onClick={() => setIsAssignedModalOpen(false)}>Fechar</Button>
                 </div>
 
                 <div className="trainings-list-head">
@@ -530,7 +546,7 @@ export default function TrainingsPage() {
                     <td>
                       {record.status === 'ASSIGNED' ? (
                         <div className="trainings-row-actions">
-                          <button type="button" onClick={() => void handleCompleteRecord(record.id)}>Concluir</button>
+                          <Button type="button" size="sm" variant="secondary" onClick={() => openCompleteConfirm(record.id)}>Concluir</Button>
                         </div>
                       ) : (
                         '-'
@@ -577,12 +593,31 @@ export default function TrainingsPage() {
 
                 {record.status === 'ASSIGNED' && (
                   <div className="trainings-row-actions">
-                    <button type="button" onClick={() => void handleCompleteRecord(record.id)}>Concluir</button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => openCompleteConfirm(record.id)}>Concluir</Button>
                   </div>
                 )}
               </article>
             ))}
           </div>
+
+          <Modal
+            open={Boolean(completeConfirmRecordId)}
+            title="Confirmar conclusão"
+            onClose={() => setCompleteConfirmRecordId(null)}
+            width="min(640px, 92vw)"
+            showCloseButton={false}
+            footer={
+              <div className="modal-footer-split">
+                <Button type="button" variant="ghost" onClick={() => setCompleteConfirmRecordId(null)}>Cancelar</Button>
+                <Button type="button" variant="primary" onClick={() => void confirmCompleteRecord()}>Confirmar</Button>
+              </div>
+            }
+          >
+            <div className="permissions-access-modal">
+              <p>Esta ação vai marcar a formação como concluída.</p>
+              <p className="permissions-access-warning">A alteração só é aplicada depois de confirmares.</p>
+            </div>
+          </Modal>
 
           {status && <p className="trainings-status">{status}</p>}
         </section>

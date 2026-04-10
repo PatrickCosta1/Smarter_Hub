@@ -1,0 +1,13 @@
+pagina,hierarquia_visual,consistencia_componentes,estados_interacao,clareza_fluxo,confirmacao_acao_critica,feedback_sucesso_erro,empty_state,loading_state,acessibilidade_basica,responsividade,total_0_20,severidade
+HomePage.tsx,,,,,,,,,,,,
+ProfilePage.tsx,,,,,,,,,,,,
+ManagerTeamsPage.tsx,,,,,,,,,,,,
+CollaboratorsPage.tsx,,,,,,,,,,,,
+AdminPage.tsx,,,,,,,,,,,,
+RHApprovalsPage.tsx,,,,,,,,,,,,
+TrainingsPage.tsx,,,,,,,,,,,,
+VacationsPage.tsx,,,,,,,,,,,,
+NotificationsPage.tsx,,,,,,,,,,,,
+PermissionsPage.tsx,,,,,,,,,,,,
+ReceiptsPage.tsx,,,,,,,,,,,,
+AccountAccessPage.tsx,,,,,,,,,,,,

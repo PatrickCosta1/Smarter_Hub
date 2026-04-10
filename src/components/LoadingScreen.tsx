@@ -5,7 +5,7 @@ export default function LoadingScreen() {
     <main className="loading-screen">
       <div className="loading-container">
         <div className="loading-logo-wrapper">
-          <img src="/logo.png" alt="Smarter Hub" className="loading-logo" />
+          <img src="/logo.png" alt="Smarter Hub" className="loading-logo" width={1123} height={651} decoding="async" />
         </div>
 
         <p className="loading-title">Smarter Hub</p>

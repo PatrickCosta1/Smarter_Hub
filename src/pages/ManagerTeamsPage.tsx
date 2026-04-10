@@ -5,6 +5,7 @@ import { formatRoleLabel } from '../portal/labels';
 import Skeleton from '../components/ui/Skeleton';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
+import EmptyState from '../components/ui/EmptyState';
 import Toast from '../components/ui/Toast';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
@@ -688,7 +689,12 @@ export default function ManagerTeamsPage() {
               <Skeleton lines={3} />
             </article>
           )}
-          {!loading && teams.length === 0 && <article className="trainings-mobile-card">Sem equipas visíveis para este perfil.</article>}
+          {!loading && teams.length === 0 && (
+            <EmptyState
+              title="Sem equipas visíveis para este perfil."
+              message="Assim que existirem equipas no teu âmbito, elas aparecem aqui."
+            />
+          )}
           {!loading && teams.map((team) => (
             <button
               key={team.id}
@@ -763,7 +769,12 @@ export default function ManagerTeamsPage() {
                 </div>
 
                 <section className="manager-team-members-list manager-team-members-list--structured">
-                  {selectedTeamMembers.length === 0 && <p>Sem membros nesta equipa.</p>}
+                  {selectedTeamMembers.length === 0 && (
+                    <EmptyState
+                      title="Sem membros nesta equipa."
+                      message="Adiciona colaboradores para começar a gerir esta equipa."
+                    />
+                  )}
 
                   {selectedTeamMembers.map((person) => (
                     <article key={`${selectedTeam.id}-${person.id}`} className="manager-team-member-item">
@@ -785,7 +796,12 @@ export default function ManagerTeamsPage() {
 
             {!loadingDetail && teamModalTab === 'vacations' && (
               <section className="manager-team-vacations-board">
-                {upcomingVacations.length === 0 && <p>Sem férias futuras ou em curso neste momento.</p>}
+                {upcomingVacations.length === 0 && (
+                  <EmptyState
+                    title="Sem férias futuras ou em curso neste momento."
+                    message="Quando houver pedidos aprovados no período, serão listados aqui."
+                  />
+                )}
 
                 {upcomingVacations.map((item) => (
                   <article key={item.vacation.id} className="manager-team-vacation-item manager-team-vacation-item--wide">
@@ -821,7 +837,7 @@ export default function ManagerTeamsPage() {
         onClose={() => setIsNewTeamModalOpen(false)}
         width="min(760px, 94vw)"
         footer={
-          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', gap: 12 }}>
+          <div className="modal-footer-split">
             <Button type="button" variant="ghost" onClick={() => setIsNewTeamModalOpen(false)}>Cancelar</Button>
             <Button type="button" variant="primary" isLoading={isSavingTeam} onClick={() => void saveTeam()}>Criar equipa</Button>
           </div>
@@ -836,7 +852,7 @@ export default function ManagerTeamsPage() {
           <label>
             <span>Chefe de equipa</span>
             <div className="team-picker-inline">
-              <button type="button" className="cta-button cta-secondary" onClick={() => openPicker('leader')}>Escolher</button>
+              <Button type="button" variant="secondary" size="sm" onClick={() => openPicker('leader')}>Escolher</Button>
               <strong>{selectedLeader ? getProfileDisplayName(selectedLeader) : 'Sem chefe selecionado'}</strong>
             </div>
           </label>
@@ -844,7 +860,7 @@ export default function ManagerTeamsPage() {
           <label>
             <span>Membros participantes</span>
             <div className="team-picker-inline">
-              <button type="button" className="cta-button cta-secondary" onClick={() => openPicker('members')}>Escolher</button>
+              <Button type="button" variant="secondary" size="sm" onClick={() => openPicker('members')}>Escolher</Button>
               <strong>{selectedMembers.length} selecionado(s)</strong>
             </div>
             {selectedMembers.length > 0 && (
@@ -876,7 +892,7 @@ export default function ManagerTeamsPage() {
         onClose={() => setIsPickerOpen(false)}
         width="min(980px, 96vw)"
         footer={
-          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', gap: 12 }}>
+          <div className="modal-footer-split">
             <small>{filteredPickerOptions.length} resultado(s)</small>
             <Button type="button" variant="ghost" onClick={() => setIsPickerOpen(false)}>Fechar</Button>
           </div>
@@ -933,7 +949,7 @@ export default function ManagerTeamsPage() {
         onClose={() => setIsManageTeamModalOpen(false)}
         width="min(1040px, 96vw)"
         footer={
-          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', gap: 12, flexWrap: 'wrap' }}>
+          <div className="modal-footer-split modal-footer-split--wrap">
             <Button type="button" variant="ghost" onClick={() => setIsManageTeamModalOpen(false)}>Cancelar</Button>
             {(canEditTeam || canManageTeamMembers) && (
               <Button type="button" variant="primary" isLoading={isSavingTeam} onClick={() => void updateTeam()}>Guardar alterações</Button>
@@ -1066,7 +1082,7 @@ export default function ManagerTeamsPage() {
         onClose={() => setIsDeleteTeamConfirmOpen(false)}
         width="min(520px, 92vw)"
         footer={
-          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', gap: 12 }}>
+          <div className="modal-footer-split">
             <Button type="button" variant="ghost" onClick={() => setIsDeleteTeamConfirmOpen(false)}>Cancelar</Button>
             <Button type="button" variant="danger" isLoading={isDeletingTeam} onClick={() => void deleteSelectedTeam()}>Sim, remover equipa</Button>
           </div>
