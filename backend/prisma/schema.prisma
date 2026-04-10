@@ -32,6 +32,22 @@ enum VacationPartialDay {
   PM
 }
 
+enum PermissionCategory {
+  SYSTEM
+  USERS
+  TEAMS
+  VACATIONS
+  TRAININGS
+  PROFILE
+  RECEIPTS
+  NOTIFICATIONS
+}
+
+enum PermissionGrantAction {
+  GRANT
+  REVOKE
+}
+
 enum VacationStatus {
   PENDING
   APPROVED
@@ -65,6 +81,9 @@ model User {
   email         String         @unique
   passwordHash  String
   role          Role           @default(COLABORADOR)
+  isActive      Boolean        @default(true)
+  isRootAccess  Boolean        @default(false)
+  deactivatedAt DateTime?
   teamId        String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -81,6 +100,10 @@ model User {
   vacationApprovalSteps VacationApproval[]
   profileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestUser")
   reviewedProfileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestReviewer")
+  permissionAssignments UserPermission[] @relation("PermissionTargetUser")
+  permissionAssignmentsGranted UserPermission[] @relation("PermissionGrantAuthor")
+  permissionGrantEventsAuthored PermissionGrant[] @relation("PermissionGrantActor")
+  permissionGrantEventsReceived PermissionGrant[] @relation("PermissionGrantTarget")
 }
 
 model TeamMembership {
@@ -246,4 +269,58 @@ model ProfileChangeRequest {
   updatedAt     DateTime @updatedAt
   user          User     @relation("ProfileChangeRequestUser", fields: [userId], references: [id], onDelete: Cascade)
   reviewedBy    User?    @relation("ProfileChangeRequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+}
+
+model Permission {
+  id                  String             @id @default(cuid())
+  code                String             @unique
+  label               String
+  description         String
+  category            PermissionCategory
+  requiresRestrictions Boolean            @default(false)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  userPermissions     UserPermission[]
+  grants              PermissionGrant[]
+}
+
+model UserPermission {
+  id                    String   @id @default(cuid())
+  userId                String
+  permissionId          String
+  isEnabled             Boolean  @default(true)
+  restrictedToTeams     String[] @default([])
+  restrictedToCountries String[] @default([])
+  restrictedToLevels    String[] @default([])
+  customRestrictions    Json?
+  notes                 String?
+  grantedById           String?
+  grantedAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  user                  User     @relation("PermissionTargetUser", fields: [userId], references: [id], onDelete: Cascade)
+  permission            Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  grantedBy             User?    @relation("PermissionGrantAuthor", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, permissionId])
+  @@index([userId])
+  @@index([permissionId])
+  @@index([grantedById])
+}
+
+model PermissionGrant {
+  id            String              @id @default(cuid())
+  actorUserId   String?
+  targetUserId   String?
+  permissionId  String
+  action        PermissionGrantAction
+  reason        String?
+  createdAt     DateTime            @default(now())
+  actorUser     User?               @relation("PermissionGrantActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  targetUser    User?               @relation("PermissionGrantTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  permission    Permission          @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@index([actorUserId])
+  @@index([targetUserId])
+  @@index([permissionId])
+  @@index([createdAt])
 }

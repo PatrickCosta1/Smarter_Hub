@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
-import { notifyUsers, notifyUsersByRole } from '../lib/notifications.js';
+import { buildUserWhereFromScope, canAccessUserByPermission, getPermissionScope, hasPermission } from '../lib/permission-engine.js';
+import { notifyUsers, notifyUsersByPermission } from '../lib/notifications.js';
 
 const router = Router();
 
@@ -28,8 +29,29 @@ router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => 
   try {
     const userId = req.authUser!.id;
 
+    if (!await hasPermission(userId, 'view_trainings')) {
+      return res.status(403).json({ error: 'Sem permissões para consultar formações.' });
+    }
+
     const trainings = await prisma.training.findMany({
       where: { userId },
+      include: {
+        assignedBy: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            role: true,
+            profile: {
+              select: {
+                nomeAbreviado: true,
+                primeiroNome: true,
+                apelido: true,
+              },
+            },
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -41,12 +63,22 @@ router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => 
 });
 
 router.get('/trainings/assigned', requireAuth, async (req: Request, res: Response) => {
-  if (!['MANAGER', 'COORDENADOR', 'ADMIN'].includes(req.authUser!.role)) {
+  if (!await hasPermission(req.authUser!.id, 'view_all_trainings')) {
     return res.status(403).json({ message: 'Sem permissões para consultar formações atribuídas.' });
   }
 
+  const scope = await getPermissionScope(req.authUser!.id, 'view_all_trainings');
+  if (!scope) {
+    return res.status(403).json({ message: 'Sem permissões para consultar formações atribuídas.' });
+  }
+
+  const userScopeWhere = buildUserWhereFromScope(scope);
+
   const trainings = await prisma.training.findMany({
-    where: { assignedByUserId: { not: null } },
+    where: {
+      assignedByUserId: { not: null },
+      ...(userScopeWhere ? { user: userScopeWhere } : {}),
+    },
     include: {
       user: {
         select: {
@@ -62,6 +94,13 @@ router.get('/trainings/assigned', requireAuth, async (req: Request, res: Respons
           username: true,
           email: true,
           role: true,
+          profile: {
+            select: {
+              nomeAbreviado: true,
+              primeiroNome: true,
+              apelido: true,
+            },
+          },
         },
       },
     },
@@ -74,6 +113,10 @@ router.get('/trainings/assigned', requireAuth, async (req: Request, res: Respons
 router.post('/trainings', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
+    if (!await hasPermission(userId, 'request_training')) {
+      return res.status(403).json({ error: 'Sem permissões para registar formação.' });
+    }
+
     const validation = createTrainingSchema.safeParse(req.body);
 
     if (!validation.success) {
@@ -111,11 +154,18 @@ router.post('/trainings/assign', requireAuth, async (req: Request, res: Response
 
     const data = validation.data;
 
-    const canAssignOthers = ['MANAGER', 'COORDENADOR', 'ADMIN'].includes(req.authUser!.role);
+    const canAssignOthers = await hasPermission(req.authUser!.id, 'assign_training');
     const isSelfAssign = data.userId === req.authUser!.id;
 
-    if (!canAssignOthers && !isSelfAssign) {
+    if (!canAssignOthers && !(isSelfAssign && await hasPermission(req.authUser!.id, 'request_training'))) {
       return res.status(403).json({ message: 'Sem permissões para atribuir formações a terceiros.' });
+    }
+
+    if (canAssignOthers && !isSelfAssign) {
+      const canAssignTarget = await canAccessUserByPermission(req.authUser!.id, 'assign_training', data.userId);
+      if (!canAssignTarget) {
+        return res.status(403).json({ message: 'Sem permissões para atribuir formação a este colaborador com as restrições atuais.' });
+      }
     }
 
     const collaborator = await prisma.user.findUnique({
@@ -153,6 +203,10 @@ router.post('/trainings/assign', requireAuth, async (req: Request, res: Response
 router.post('/trainings/:id/complete', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
+    if (!await hasPermission(userId, 'mark_training_completed')) {
+      return res.status(403).json({ error: 'Sem permissões para concluir formação.' });
+    }
+
     const id = typeof req.params.id === 'string' ? req.params.id : '';
 
     const training = await prisma.training.findFirst({
@@ -176,7 +230,7 @@ router.post('/trainings/:id/complete', requireAuth, async (req: Request, res: Re
       },
     });
 
-    await notifyUsersByRole(prisma, ['MANAGER', 'COORDENADOR', 'ADMIN'], 'Formação concluída', `${req.authUser!.username} marcou uma formação como concluída.`);
+    await notifyUsersByPermission(prisma, ['view_all_trainings', 'assign_training'], 'Formação concluída', `${req.authUser!.username} marcou uma formação como concluída.`);
 
     return res.json(updated);
   } catch (error) {
@@ -188,6 +242,10 @@ router.post('/trainings/:id/complete', requireAuth, async (req: Request, res: Re
 router.put('/trainings/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
+    if (!await hasPermission(userId, 'request_training')) {
+      return res.status(403).json({ error: 'Sem permissões para atualizar formação.' });
+    }
+
     const id = typeof req.params.id === 'string' ? req.params.id : '';
     const validation = createTrainingSchema.safeParse(req.body);
 
@@ -227,6 +285,10 @@ router.put('/trainings/:id', requireAuth, async (req: Request, res: Response) =>
 router.delete('/trainings/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
+    if (!await hasPermission(userId, 'request_training')) {
+      return res.status(403).json({ error: 'Sem permissões para remover formação.' });
+    }
+
     const id = typeof req.params.id === 'string' ? req.params.id : '';
 
     const training = await prisma.training.findFirst({

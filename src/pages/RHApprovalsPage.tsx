@@ -3,6 +3,7 @@ import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../por
 import { usePortal } from '../portal/context';
 import { formatVacationStatusLabel, getVacationStatusTone } from '../portal/labels';
 import Badge from '../components/ui/Badge';
+import Skeleton from '../components/ui/Skeleton';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -23,6 +24,11 @@ type ProfileRequest = {
     username: string;
     email: string;
     role: string;
+    profile?: {
+      nomeAbreviado?: string;
+      primeiroNome?: string;
+      apelido?: string;
+    } | null;
   };
 };
 
@@ -39,20 +45,36 @@ type VacationRequest = {
     username: string;
     email: string;
     role: string;
+    profile?: {
+      nomeAbreviado?: string;
+      primeiroNome?: string;
+      apelido?: string;
+    } | null;
   };
 };
 
+function getDisplayName(user?: { username: string; profile?: { nomeAbreviado?: string; primeiroNome?: string; apelido?: string } | null } | null) {
+  const shortName = user?.profile?.nomeAbreviado?.trim();
+  if (shortName) {
+    return shortName;
+  }
+
+  const fullName = `${user?.profile?.primeiroNome ?? ''} ${user?.profile?.apelido ?? ''}`.trim();
+  return fullName || user?.username || '-';
+}
+
 export default function RHApprovalsPage() {
-  const { userRole } = usePortal();
+  const { hasPermission, isRootAccess } = usePortal();
   const [activeTab, setActiveTab] = useState<'profiles' | 'vacations'>('profiles');
   const [profileRequests, setProfileRequests] = useState<ProfileRequest[]>([]);
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([]);
   const [status, setStatus] = useState('');
   const [rejectReason, setRejectReason] = useState('');
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
   const requestCount = useMemo(() => profileRequests.length + vacationRequests.length, [profileRequests.length, vacationRequests.length]);
-  const canReviewProfiles = ['manager', 'coordenador', 'admin'].includes(userRole);
-  const canReviewVacations = ['manager', 'coordenador', 'admin'].includes(userRole);
+  const canReviewProfiles = isRootAccess || hasPermission('approve_profile_change');
+  const canReviewVacations = isRootAccess || hasPermission('approve_vacation') || hasPermission('reject_vacation') || hasPermission('view_all_vacations');
 
   useEffect(() => {
     if (!canReviewProfiles && canReviewVacations) {
@@ -69,6 +91,7 @@ export default function RHApprovalsPage() {
   }, [canReviewProfiles, canReviewVacations]);
 
   async function loadData() {
+    setIsLoadingData(true);
     try {
       const [profiles, vacations] = await Promise.all([
         canReviewProfiles
@@ -83,6 +106,8 @@ export default function RHApprovalsPage() {
       setVacationRequests(vacations);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar pedidos.');
+    } finally {
+      setIsLoadingData(false);
     }
   }
 
@@ -141,7 +166,7 @@ export default function RHApprovalsPage() {
         <div className="trainings-hours-summary">
           <article>
             <span>Pedidos em aberto</span>
-            <strong>{requestCount}</strong>
+            <strong>{isLoadingData ? <span className="loading-line loading-line--metric" /> : requestCount}</strong>
           </article>
         </div>
       </header>
@@ -149,12 +174,12 @@ export default function RHApprovalsPage() {
       <div className="rh-tabs">
         {canReviewProfiles && (
           <button type="button" className={activeTab === 'profiles' ? 'is-active' : ''} onClick={() => setActiveTab('profiles')}>
-            Alterações de ficha ({profileRequests.length})
+            Alterações de ficha ({isLoadingData ? '...' : profileRequests.length})
           </button>
         )}
         {canReviewVacations && (
           <button type="button" className={activeTab === 'vacations' ? 'is-active' : ''} onClick={() => setActiveTab('vacations')}>
-            Férias e ausências ({vacationRequests.length})
+            Férias e ausências ({isLoadingData ? '...' : vacationRequests.length})
           </button>
         )}
       </div>
@@ -173,22 +198,36 @@ export default function RHApprovalsPage() {
           </div>
 
           <div className="rh-request-list">
-            {profileRequests.length === 0 && <article className="trainings-mobile-card">Sem pedidos pendentes.</article>}
-            {profileRequests.map((request) => (
-              <article key={request.id} className="trainings-mobile-card">
-                <header>
-                  <h4>{request.user.username}</h4>
-                  <Badge tone={getVacationStatusTone(request.status) === 'approved' ? 'success' : getVacationStatusTone(request.status) === 'pending' ? 'warning' : getVacationStatusTone(request.status) === 'rejected' ? 'danger' : 'neutral'}>
-                    {formatVacationStatusLabel(request.status)}
-                  </Badge>
-                </header>
-                <p>{request.changesSummary}</p>
-                <div className="trainings-row-actions">
-                  <button type="button" onClick={() => void approveProfileRequest(request.id)}>Aprovar</button>
-                  <button type="button" onClick={() => void rejectProfileRequest(request.id)}>Rejeitar</button>
-                </div>
-              </article>
-            ))}
+            {isLoadingData ? (
+              Array.from({ length: 3 }).map((_, index) => (
+                <article key={index} className="trainings-mobile-card">
+                  <Skeleton lines={2} />
+                  <Skeleton lines={2} />
+                  <div className="trainings-row-actions">
+                    <Skeleton lines={1} />
+                    <Skeleton lines={1} />
+                  </div>
+                </article>
+              ))
+            ) : profileRequests.length === 0 ? (
+              <article className="trainings-mobile-card">Sem pedidos pendentes.</article>
+            ) : (
+              profileRequests.map((request) => (
+                <article key={request.id} className="trainings-mobile-card">
+                  <header>
+                    <h4>{getDisplayName(request.user)}</h4>
+                    <Badge tone={getVacationStatusTone(request.status) === 'approved' ? 'success' : getVacationStatusTone(request.status) === 'pending' ? 'warning' : getVacationStatusTone(request.status) === 'rejected' ? 'danger' : 'neutral'}>
+                      {formatVacationStatusLabel(request.status)}
+                    </Badge>
+                  </header>
+                  <p>{request.changesSummary}</p>
+                  <div className="trainings-row-actions">
+                    <button type="button" onClick={() => void approveProfileRequest(request.id)}>Aprovar</button>
+                    <button type="button" onClick={() => void rejectProfileRequest(request.id)}>Rejeitar</button>
+                  </div>
+                </article>
+              ))
+            )}
           </div>
         </section>
       )}
@@ -207,23 +246,37 @@ export default function RHApprovalsPage() {
           </div>
 
           <div className="rh-request-list">
-            {vacationRequests.length === 0 && <article className="trainings-mobile-card">Sem pedidos pendentes.</article>}
-            {vacationRequests.map((request) => (
-              <article key={request.id} className="trainings-mobile-card">
-                <header>
-                  <h4>{request.user.username}</h4>
-                  <Badge tone={getVacationStatusTone(request.status) === 'approved' ? 'success' : getVacationStatusTone(request.status) === 'pending' ? 'warning' : getVacationStatusTone(request.status) === 'rejected' ? 'danger' : 'neutral'}>
-                    {formatVacationStatusLabel(request.status)}
-                  </Badge>
-                </header>
-                <p>{request.dataInicio} - {request.dataFim}</p>
-                <p>{request.observacoes || 'Sem observações.'}</p>
-                <div className="trainings-row-actions">
-                  <button type="button" onClick={() => void approveVacationRequest(request.id)}>Aprovar</button>
-                  <button type="button" onClick={() => void rejectVacationRequest(request.id)}>Rejeitar</button>
-                </div>
-              </article>
-            ))}
+            {isLoadingData ? (
+              Array.from({ length: 3 }).map((_, index) => (
+                <article key={index} className="trainings-mobile-card">
+                  <Skeleton lines={2} />
+                  <Skeleton lines={2} />
+                  <div className="trainings-row-actions">
+                    <Skeleton lines={1} />
+                    <Skeleton lines={1} />
+                  </div>
+                </article>
+              ))
+            ) : vacationRequests.length === 0 ? (
+              <article className="trainings-mobile-card">Sem pedidos pendentes.</article>
+            ) : (
+              vacationRequests.map((request) => (
+                <article key={request.id} className="trainings-mobile-card">
+                  <header>
+                    <h4>{getDisplayName(request.user)}</h4>
+                    <Badge tone={getVacationStatusTone(request.status) === 'approved' ? 'success' : getVacationStatusTone(request.status) === 'pending' ? 'warning' : getVacationStatusTone(request.status) === 'rejected' ? 'danger' : 'neutral'}>
+                      {formatVacationStatusLabel(request.status)}
+                    </Badge>
+                  </header>
+                  <p>{request.dataInicio} - {request.dataFim}</p>
+                  <p>{request.observacoes || 'Sem observações.'}</p>
+                  <div className="trainings-row-actions">
+                    <button type="button" onClick={() => void approveVacationRequest(request.id)}>Aprovar</button>
+                    <button type="button" onClick={() => void rejectVacationRequest(request.id)}>Rejeitar</button>
+                  </div>
+                </article>
+              ))
+            )}
           </div>
         </section>
       )}

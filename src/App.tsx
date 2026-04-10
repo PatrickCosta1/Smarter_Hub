@@ -12,12 +12,14 @@ import TrainingsPage from './pages/TrainingsPage';
 import VacationsPage from './pages/VacationsPage';
 import AdminPage from './pages/AdminPage';
 import ManagerTeamsPage from './pages/ManagerTeamsPage';
+import CollaboratorsPage from './pages/CollaboratorsPage';
 import { PortalProvider, usePortal } from './portal/context';
 
 function AppRoutes() {
-  const { isAuthenticated, isLoadingSession } = usePortal();
+  const { isAuthenticated, isLoadingSession, isLoadingPortalData, currentUser } = usePortal();
+  const isTPeople = currentUser?.username === 't.people';
 
-  if (isLoadingSession) {
+  if (isLoadingSession || isLoadingPortalData) {
     return <LoadingScreen />;
   }
 
@@ -34,12 +36,13 @@ function AppRoutes() {
       <Route path="/" element={<PortalLayout />}>
         <Route index element={<HomePage />} />
         <Route path="perfil" element={<AccountAccessPage />} />
-        <Route path="profile" element={<ProfilePage />} />
+        <Route path="profile" element={isTPeople ? <Navigate to="/" replace /> : <ProfilePage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="aprovacoes" element={<RHApprovalsPage />} />
         <Route path="equipas" element={<ManagerTeamsPage />} />
+        <Route path="colaboradores" element={<CollaboratorsPage />} />
         <Route path="formacoes" element={<TrainingsPage />} />
-        <Route path="ferias" element={<VacationsPage />} />
+        <Route path="ferias" element={isTPeople ? <Navigate to="/" replace /> : <VacationsPage />} />
         <Route path="recibos" element={<ReceiptsPage />} />
         <Route path="admin" element={<AdminPage />} />
       </Route>

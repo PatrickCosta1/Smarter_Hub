@@ -3,6 +3,8 @@ import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase } 
 import { usePortal } from '../portal/context';
 import { formatVacationStatusLabel, getVacationStatusTone } from '../portal/labels';
 import Badge from '../components/ui/Badge';
+import Button from '../components/ui/Button';
+import Toast from '../components/ui/Toast';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -38,6 +40,11 @@ type VacationRecord = {
     username: string;
     role: string;
     team?: { id: string; name: string } | null;
+    profile?: {
+      nomeAbreviado?: string;
+      primeiroNome?: string;
+      apelido?: string;
+    } | null;
   };
   approvals?: Array<{
     approverId: string;
@@ -94,7 +101,7 @@ type VacationDraft = {
 
 type DraftErrors = Partial<Record<keyof VacationDraft, string>>;
 
-type Subtab = 'overview' | 'calendar' | 'requests' | 'approvals';
+type Subtab = 'overview' | 'calendar' | 'requests';
 
 const EMPTY_DRAFT: VacationDraft = {
   requestKind: 'VACATION',
@@ -248,17 +255,21 @@ function buildMonthGrid(year: number, monthIndex: number) {
 }
 
 export default function VacationsPage() {
-  const { userRole, profile } = usePortal();
-  const canApprove = userRole === 'admin' || userRole === 'manager' || userRole === 'coordenador';
+  const { profile, hasPermission, isRootAccess } = usePortal();
 
   const [activeTab, setActiveTab] = useState<Subtab>('overview');
   const [draft, setDraft] = useState<VacationDraft>(EMPTY_DRAFT);
   const [draftErrors, setDraftErrors] = useState<DraftErrors>({});
   const [records, setRecords] = useState<VacationRecord[]>([]);
-  const [approvalQueue, setApprovalQueue] = useState<VacationRecord[]>([]);
   const [overview, setOverview] = useState<VacationOverview | null>(null);
   const [calendarData, setCalendarData] = useState<CalendarPayload | null>(null);
-  const [status, setStatus] = useState('');
+  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [toast, setToast] = useState<{ tone: 'success' | 'error' | 'info'; message: string; visible: boolean }>({
+    tone: 'info',
+    message: '',
+    visible: false,
+  });
   const [teamContexts, setTeamContexts] = useState<TeamContext[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const currentMonthRef = useRef<HTMLElement | null>(null);
@@ -269,7 +280,6 @@ export default function VacationsPage() {
     recordsLoaded?: boolean;
     overviewLoaded?: boolean;
     calendarLoaded?: boolean;
-    approvalQueueLoaded?: boolean;
   }>({});
 
   const sortedRecords = useMemo(
@@ -306,10 +316,6 @@ export default function VacationsPage() {
   }, [overview, sortedRecords]);
 
   const remainingVacationDays = Math.max(overviewStats.entitlement - overviewStats.approvedVacationDays, 0);
-  const totalVacationDays = overviewStats.approvedVacationDays + overviewStats.pendingVacationDays;
-  const showApprovalsTab = canApprove;
-  const roleNoun = userRole === 'admin' ? 'administração' : userRole === 'coordenador' ? 'coordenação' : userRole === 'manager' ? 'gestão' : 'colaborador';
-
   const yearMonths = useMemo(() => {
     const year = calendarData?.year ?? new Date().getFullYear();
     return MONTHS.map((month, monthIndex) => ({
@@ -343,29 +349,52 @@ export default function VacationsPage() {
     }
 
     calendarAutoScrolledRef.current = key;
-    currentMonthRef.current.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'auto' });
+    currentMonthRef.current.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'smooth' });
   }, [activeTab, calendarData, calendarMonthIndexToFocus]);
 
   useEffect(() => {
-    // Load overview and calendar only once
-    if (!cacheRef.current.overviewLoaded) {
-      cacheRef.current.overviewLoaded = true;
-      void loadOverview();
-    }
-    if (!cacheRef.current.calendarLoaded) {
-      cacheRef.current.calendarLoaded = true;
-      void loadCalendar();
-    }
-    if (!cacheRef.current.recordsLoaded) {
-      cacheRef.current.recordsLoaded = true;
-      void loadMine();
-    }
-    if (canApprove && !cacheRef.current.approvalQueueLoaded) {
-      cacheRef.current.approvalQueueLoaded = true;
-      void loadApprovalQueue();
-    }
-    void loadTeamContexts();
-  }, [canApprove]);
+    let cancelled = false;
+
+    void (async () => {
+      setIsLoadingData(true);
+
+      const tasks: Array<Promise<unknown>> = [];
+
+      if (!cacheRef.current.overviewLoaded) {
+        cacheRef.current.overviewLoaded = true;
+        tasks.push(loadOverview());
+      }
+      if (!cacheRef.current.calendarLoaded) {
+        cacheRef.current.calendarLoaded = true;
+        tasks.push(loadCalendar());
+      }
+      if (!cacheRef.current.recordsLoaded) {
+        cacheRef.current.recordsLoaded = true;
+        tasks.push(loadMine());
+      }
+
+      tasks.push(loadTeamContexts());
+
+      try {
+        await Promise.all(tasks.map((task) => task.catch(() => undefined)));
+      } finally {
+        if (!cancelled) {
+          setIsLoadingData(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function showToast(tone: 'success' | 'error' | 'info', message: string) {
+    setToast({ tone, message, visible: true });
+    window.setTimeout(() => {
+      setToast((current) => ({ ...current, visible: false }));
+    }, 3200);
+  }
 
   async function loadMine() {
     const data = await apiRequestCached<VacationRecord[]>('/vacations/me', {
@@ -387,13 +416,6 @@ export default function VacationsPage() {
       headers: getAuthHeaders(),
     }, 60000);
     setCalendarData(data);
-  }
-
-  async function loadApprovalQueue() {
-    const data = await apiRequestCached<VacationRecord[]>('/vacations/requests', {
-      headers: getAuthHeaders(),
-    }, 45000);
-    setApprovalQueue(data);
   }
 
   async function loadTeamContexts() {
@@ -450,7 +472,7 @@ export default function VacationsPage() {
     const formData = new FormData();
     formData.append('file', file);
 
-    setStatus('A carregar comprovativo...');
+    showToast('info', 'A carregar comprovativo...');
 
     try {
       const response = await fetch(`${getApiBase()}/files/upload`, {
@@ -466,9 +488,9 @@ export default function VacationsPage() {
 
       const payload = (await response.json()) as { linkPath?: string; link?: string };
       handleDraftChange('attachmentLink', payload.linkPath || payload.link || '');
-      setStatus('Comprovativo associado ao pedido.');
+      showToast('success', 'Comprovativo associado ao pedido.');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Falha ao carregar comprovativo.');
+      showToast('error', error instanceof Error ? error.message : 'Falha ao carregar comprovativo.');
     }
   }
 
@@ -478,7 +500,7 @@ export default function VacationsPage() {
     const errors = buildValidationErrors(draft);
     if (Object.keys(errors).length > 0) {
       setDraftErrors(errors);
-      setStatus('Existem erros no formulário.');
+      showToast('error', 'Existem erros no formulário.');
       return;
     }
 
@@ -499,11 +521,12 @@ export default function VacationsPage() {
       observacoes,
       requestType,
       attachmentLink: draft.attachmentLink,
-      contextTeamId: draft.contextTeamId || undefined,
+      contextTeamId: draft.contextTeamId || teamContexts.find((item) => item.isPrimary)?.teamId || teamContexts[0]?.teamId || undefined,
       partialDay: requestType === 'VACATION' ? draft.partialDay : 'FULL',
     };
 
     try {
+      setIsSubmitting(true);
       await apiRequest(editingId ? `/vacations/${editingId}` : '/vacations', {
         method: editingId ? 'PUT' : 'POST',
         headers: getAuthHeaders(),
@@ -513,9 +536,11 @@ export default function VacationsPage() {
       clearApiCache('/vacations');
       await Promise.all([loadMine(), loadOverview(), loadCalendar()]);
       resetForm();
-      setStatus(editingId ? 'Pedido atualizado por versionamento com sucesso.' : 'Pedido submetido com sucesso.');
+      showToast('success', editingId ? 'Pedido atualizado por versionamento com sucesso.' : 'Pedido submetido com sucesso e enviado para aprovação.');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Falha ao submeter pedido.');
+      showToast('error', error instanceof Error ? error.message : 'Falha ao submeter pedido.');
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -541,7 +566,7 @@ export default function VacationsPage() {
       partialDay: record.partialDay || 'FULL',
     });
     setActiveTab('requests');
-    setStatus('Modo edição ativo. Ao submeter, será criada uma nova versão do pedido.');
+    showToast('info', 'Modo edição ativo. Ao submeter, será criada uma nova versão do pedido.');
   }
 
   async function handleCancelPending(id: string) {
@@ -553,23 +578,9 @@ export default function VacationsPage() {
 
       clearApiCache('/vacations');
       await Promise.all([loadMine(), loadOverview(), loadCalendar()]);
-      setStatus('Pedido cancelado.');
+      showToast('success', 'Pedido cancelado.');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Falha ao cancelar pedido.');
-    }
-  }
-
-  async function reviewRequest(id: string, action: 'approve' | 'reject') {
-    try {
-      await apiRequest(`/vacations/${id}/${action}`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-      });
-      clearApiCache('/vacations');
-      await loadApprovalQueue();
-      setStatus(action === 'approve' ? 'Pedido aprovado.' : 'Pedido recusado.');
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Falha ao rever pedido.');
+      showToast('error', error instanceof Error ? error.message : 'Falha ao cancelar pedido.');
     }
   }
 
@@ -659,19 +670,9 @@ export default function VacationsPage() {
         <div>
           <p className="hero-kicker">Férias</p>
           <h2>Gestão anual de férias e ausências</h2>
-          <p>Painel preparado para perfil de {roleNoun}, com contexto por equipa/subequipa e aprovação em cadeia.</p>
         </div>
 
-        <div className="trainings-hours-summary">
-          <article>
-            <span>Saldo disponível</span>
-            <strong>{remainingVacationDays.toLocaleString('pt-PT')} dias</strong>
-          </article>
-          <article>
-            <span>Total em análise</span>
-            <strong>{totalVacationDays.toLocaleString('pt-PT')} dias</strong>
-          </article>
-        </div>
+        
 
     
       </header>
@@ -680,55 +681,62 @@ export default function VacationsPage() {
         <button type="button" className={activeTab === 'overview' ? 'is-active' : ''} onClick={() => setActiveTab('overview')}>Resumo</button>
         <button type="button" className={activeTab === 'calendar' ? 'is-active' : ''} onClick={() => setActiveTab('calendar')}>Calendário</button>
         <button type="button" className={activeTab === 'requests' ? 'is-active' : ''} onClick={() => setActiveTab('requests')}>Os meus pedidos</button>
-        {showApprovalsTab && (
-          <button type="button" className={activeTab === 'approvals' ? 'is-active' : ''} onClick={() => setActiveTab('approvals')}>
-            Fila de aprovação ({approvalQueue.length})
-          </button>
-        )}
       </nav>
 
-      {activeTab === 'overview' && overview && (
+      {activeTab === 'overview' && (isLoadingData || overview) && (
         <section className="trainings-list-card">
           <div className="trainings-list-head">
             <h3>Resumo anual</h3>
           </div>
 
-          <div className="vacations-overview-grid">
-            <article>
-              <span>Saldo anual</span>
-              <strong>{overviewStats.entitlement.toLocaleString('pt-PT')} dias</strong>
-              <small>Base disponível para o ano em curso.</small>
-            </article>
-            <article>
-              <span>Já gastaste</span>
-              <strong>{overviewStats.approvedVacationDays.toLocaleString('pt-PT')} dias</strong>
-              <small>Pedidos de férias já aprovados.</small>
-            </article>
-            <article>
-              <span>Tem para gastar</span>
-              <strong>{remainingVacationDays.toLocaleString('pt-PT')} dias</strong>
-              <small>Saldo ainda disponível.</small>
-            </article>
-            <article>
-              <span>Pedidos pendentes</span>
-              <strong>{overviewStats.pendingVacationDays.toLocaleString('pt-PT')} dias</strong>
-              <small>Férias à espera de aprovação.</small>
-            </article>
-            <article>
-              <span>Ausências aprovadas</span>
-              <strong>{overviewStats.approvedAbsenceDays.toLocaleString('pt-PT')} dias</strong>
-              <small>Ausências médicas, de formação ou outras já tratadas.</small>
-            </article>
-            <article>
-              <span>Dias extra automáticos</span>
-              <strong>{calendarData?.extraDays.length ?? 0}</strong>
-              <small>Aniversário, feriados locais e outras regras.</small>
-            </article>
-          </div>
+          {isLoadingData ? (
+            <div className="vacations-overview-grid vacations-overview-grid--loading">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <article key={index} className="home-card home-card--loading">
+                  <span className="loading-line loading-line--card-title" />
+                  <span className="loading-line loading-line--card-body" />
+                  <span className="loading-line loading-line--button" />
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="vacations-overview-grid">
+              <article>
+                <span>Saldo anual</span>
+                <strong>{overviewStats.entitlement.toLocaleString('pt-PT')} dias</strong>
+                <small>Base disponível para o ano em curso.</small>
+              </article>
+              <article>
+                <span>Já gastaste</span>
+                <strong>{overviewStats.approvedVacationDays.toLocaleString('pt-PT')} dias</strong>
+                <small>Pedidos de férias já aprovados.</small>
+              </article>
+              <article>
+                <span>Tem para gastar</span>
+                <strong>{remainingVacationDays.toLocaleString('pt-PT')} dias</strong>
+                <small>Saldo ainda disponível.</small>
+              </article>
+              <article>
+                <span>Pedidos pendentes</span>
+                <strong>{overviewStats.pendingVacationDays.toLocaleString('pt-PT')} dias</strong>
+                <small>Férias à espera de aprovação.</small>
+              </article>
+              <article>
+                <span>Ausências aprovadas</span>
+                <strong>{overviewStats.approvedAbsenceDays.toLocaleString('pt-PT')} dias</strong>
+                <small>Ausências já aprovadas.</small>
+              </article>
+              <article>
+                <span>Dias extra automáticos</span>
+                <strong>{calendarData?.extraDays.length ?? 0}</strong>
+                <small>Aniversário, feriados locais e outras regras.</small>
+              </article>
+            </div>
+          )}
         </section>
       )}
 
-      {activeTab === 'calendar' && calendarData && (
+      {activeTab === 'calendar' && (isLoadingData || calendarData) && (
         <section className="trainings-list-card">
           <div className="vacations-legend vacations-legend--sticky" aria-label="Legenda do calendário">
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--holiday" />Feriado</span>
@@ -739,29 +747,41 @@ export default function VacationsPage() {
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--extra" />Dia extra automático</span>
           </div>
 
-          <div className="vacations-year-grid">
-            {yearMonths.map((month) => (
-              <article
-                key={month.month}
-                className="vacations-month-card"
-                ref={month.monthIndex === calendarMonthIndexToFocus ? (node) => {
-                  currentMonthRef.current = node;
-                } : undefined}
-              >
-                <header>
-                  <h4>{month.month}</h4>
-                </header>
+          {isLoadingData ? (
+            <div className="vacations-year-grid vacations-year-grid--loading">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <article key={index} className="vacations-month-card home-card--loading">
+                  <span className="loading-line loading-line--card-title" />
+                  <span className="loading-line loading-line--card-body" />
+                  <span className="loading-line loading-line--card-body" />
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="vacations-year-grid">
+              {yearMonths.map((month) => (
+                <article
+                  key={month.month}
+                  className="vacations-month-card"
+                  ref={month.monthIndex === calendarMonthIndexToFocus ? (node) => {
+                    currentMonthRef.current = node;
+                  } : undefined}
+                >
+                  <header>
+                    <h4>{month.month}</h4>
+                  </header>
 
-                <div className="vacations-month-grid">
-                  {['S', 'T', 'Q', 'Q', 'S', 'S', 'D'].map((label, index) => (
-                    <strong key={`${month.month}-${label}-${index}`}>{label}</strong>
-                  ))}
+                  <div className="vacations-month-grid">
+                    {['S', 'T', 'Q', 'Q', 'S', 'S', 'D'].map((label, index) => (
+                      <strong key={`${month.month}-${label}-${index}`}>{label}</strong>
+                    ))}
 
-                  {month.cells.map((cell, idx) => renderDayCell(cell.iso, cell.day, `${month.month}-${cell.iso || 'blank'}-${idx}`))}
-                </div>
-              </article>
-            ))}
-          </div>
+                    {month.cells.map((cell, idx) => renderDayCell(cell.iso, cell.day, `${month.month}-${cell.iso || 'blank'}-${idx}`))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -807,18 +827,6 @@ export default function VacationsPage() {
                 </>
               )}
 
-              <label>
-                <span>Equipa/Subequipa *</span>
-                <select value={draft.contextTeamId} onChange={(event) => handleDraftChange('contextTeamId', event.target.value)}>
-                  <option value="">Selecionar equipa</option>
-                  {teamContexts.map((team) => (
-                    <option key={team.teamId} value={team.teamId}>
-                      {team.teamName}{team.isPrimary ? ' (principal)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
               {draft.requestKind === 'VACATION' && (
                 <label>
                   <span>Duração *</span>
@@ -858,8 +866,8 @@ export default function VacationsPage() {
               </label>
 
               <div className="trainings-form-actions field-span-2">
-                <button className="cta-button cta-primary" type="submit">{editingId ? 'Guardar nova versão' : 'Enviar pedido'}</button>
-                <button className="cta-button cta-ghost" type="button" onClick={resetForm}>{editingId ? 'Cancelar edição' : 'Limpar'}</button>
+                <Button type="submit" variant="primary" isLoading={isSubmitting}>{editingId ? 'Guardar nova versão' : 'Enviar pedido'}</Button>
+                <Button type="button" variant="ghost" onClick={resetForm} disabled={isSubmitting}>{editingId ? 'Cancelar edição' : 'Limpar'}</Button>
               </div>
             </form>
           </section>
@@ -921,36 +929,9 @@ export default function VacationsPage() {
         </>
       )}
 
-      {activeTab === 'approvals' && canApprove && (
-        <section className="trainings-list-card">
-          <div className="trainings-list-head">
-            <h3>Fila de pedidos pendentes</h3>
-          </div>
-
-          <div className="trainings-mobile-list" style={{ display: 'grid' }}>
-            {approvalQueue.length === 0 && <article className="trainings-mobile-card">Sem pedidos pendentes para o teu nível de aprovação.</article>}
-
-            {approvalQueue.map((item) => (
-              <article key={item.id} className="trainings-mobile-card">
-                <header>
-                  <h4>{item.user?.username || '-'}</h4>
-                  <strong>{item.requestType === 'VACATION' ? 'Férias' : item.requestType === 'ABSENCE_MEDICAL' ? 'Ausência médica' : 'Ausência formação'}{getPartialDayLabel(item.partialDay)}</strong>
-                </header>
-                <p><span>Período:</span> {item.dataInicio} até {item.dataFim}</p>
-                <p><span>Equipa:</span> {item.contextTeam?.name || item.user?.team?.name || '-'}</p>
-                <p><span>Linha atual:</span> {item.approvals?.find((step) => step.status === 'PENDING')?.approvalLevel ?? '-'}</p>
-                <p><span>Observações:</span> {item.observacoes || '-'}</p>
-                <div className="trainings-row-actions">
-                  <button type="button" onClick={() => void reviewRequest(item.id, 'approve')}>Aprovar</button>
-                  <button type="button" onClick={() => void reviewRequest(item.id, 'reject')}>Rejeitar</button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {status && <p className="trainings-status">{status}</p>}
+      <div className="vacations-toast" aria-live="polite">
+        <Toast show={toast.visible} tone={toast.tone} message={toast.message} />
+      </div>
     </section>
   );
 }

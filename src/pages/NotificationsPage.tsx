@@ -3,8 +3,21 @@ import { useNavigate } from 'react-router-dom';
 import { usePortal } from '../portal/context';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
+import Modal from '../components/ui/Modal';
 
 type FilterMode = 'all' | 'unread' | 'read';
+
+type NotificationAction = {
+  label: string;
+  path: string;
+};
+
+type NotificationDetails = {
+  title: string;
+  message: string;
+  tag: string;
+  action?: NotificationAction;
+};
 
 function buildFriendlyMessage(title: string, message: string) {
   const normalized = `${title} ${message}`.toLowerCase();
@@ -12,7 +25,7 @@ function buildFriendlyMessage(title: string, message: string) {
   if (normalized.includes('férias') && normalized.includes('aprov')) {
     return {
       title: 'Pedido de férias aprovado',
-      message: 'O pedido foi validado pelo RH. Já pode avançar com o planeamento da equipa.',
+      message: 'O pedido foi validado pelo RH.',
       tag: 'Férias',
     };
   }
@@ -20,7 +33,7 @@ function buildFriendlyMessage(title: string, message: string) {
   if (normalized.includes('férias') && normalized.includes('recus')) {
     return {
       title: 'Pedido de férias recusado',
-      message: 'O pedido foi recusado. Consulte o motivo e ajuste as datas para nova submissão.',
+      message: 'O pedido foi recusado.',
       tag: 'Férias',
     };
   }
@@ -41,6 +54,14 @@ function buildFriendlyMessage(title: string, message: string) {
     };
   }
 
+  if (normalized.includes('pedido de alteração submetido')) {
+    return {
+      title: 'Pedido de alteração submetido',
+      message: 'O teu pedido de alteração de ficha foi enviado para validação.',
+      tag: 'Ficha',
+    };
+  }
+
   if (normalized.includes('formação') && normalized.includes('atribu')) {
     return {
       title: 'Nova formação atribuída',
@@ -54,6 +75,121 @@ function buildFriendlyMessage(title: string, message: string) {
       title: 'Formação concluída',
       message: 'A conclusão foi registada com sucesso e enviada para acompanhamento do RH.',
       tag: 'Formação',
+    };
+  }
+
+  return {
+    title: title || 'Atualização interna',
+    message: message || 'Tem uma nova atualização no portal.',
+    tag: 'Portal',
+  };
+}
+
+const technicalFieldLabels: Record<string, string> = {
+  primeiroNome: 'Primeiro nome',
+  apelido: 'Apelido',
+  nomeAbreviado: 'Nome abreviado',
+  habilitacoesLiterarias: 'Habilitações literárias',
+  dataInicioContrato: 'Data de início do contrato',
+  dataFimContrato: 'Data de fim do contrato',
+  tipoContrato: 'Tipo de contrato',
+  regimeHorario: 'Regime horário',
+  cargo: 'Cargo',
+  funcao: 'Função',
+  emailPessoal: 'Email pessoal',
+  telemovel: 'Telemóvel',
+  numeroDependentes: 'Número de dependentes',
+  anoPrimeiroDesconto: 'Ano do primeiro desconto',
+};
+
+function humanizeTechnicalText(text: string) {
+  return Object.entries(technicalFieldLabels).reduce((currentText, [raw, label]) => {
+    const matcher = new RegExp(raw, 'g');
+    return currentText.replace(matcher, label);
+  }, text);
+}
+
+function buildNotificationDetails(title: string, message: string): NotificationDetails {
+  const normalized = `${title} ${message}`.toLowerCase();
+
+  if (normalized.includes('pedido de alteração de ficha') && (normalized.includes('submeteu') || normalized.includes('pedido pendente'))) {
+    return {
+      title: 'Novo pedido de alteração de ficha',
+      message: 'Existe um pedido pendente de aprovação. Abra a página de aprovações para analisar o pedido.',
+      tag: 'Ficha',
+      action: { label: 'Ir para aprovações', path: '/aprovacoes' },
+    };
+  }
+
+  if (normalized.includes('pedido de alteração submetido')) {
+    return {
+      title: 'Pedido de alteração submetido',
+      message: 'O teu pedido foi enviado para aprovação. Pode acompanhar o estado na ficha.',
+      tag: 'Ficha',
+      action: { label: 'Abrir a minha ficha', path: '/profile' },
+    };
+  }
+
+  if (normalized.includes('ficha') && normalized.includes('aprov')) {
+    return {
+      title: 'Pedido de alteração aprovado',
+      message: 'As alterações da ficha foram aprovadas e a ficha já foi atualizada.',
+      tag: 'Ficha',
+      action: { label: 'Abrir a minha ficha', path: '/profile' },
+    };
+  }
+
+  if (normalized.includes('ficha') && normalized.includes('recus')) {
+    return {
+      title: 'Pedido de alteração recusado',
+      message: 'O pedido foi recusado. Consulte o motivo e volte a submeter se necessário.',
+      tag: 'Ficha',
+      action: { label: 'Abrir a minha ficha', path: '/profile' },
+    };
+  }
+
+  if (normalized.includes('novo pedido de férias') || normalized.includes('novo pedido de ausência')) {
+    return {
+      title: 'Pedido operacional pendente',
+      message: 'Existe um pedido novo para validação. Abra a página de aprovações para tratar o fluxo.',
+      tag: 'Férias',
+      action: { label: 'Ir para aprovações', path: '/aprovacoes' },
+    };
+  }
+
+  if (normalized.includes('férias') && normalized.includes('aprov')) {
+    return {
+      title: 'Pedido de férias aprovado',
+      message: 'O pedido foi aprovado. Pode consultar o calendário ou continuar o planeamento.',
+      tag: 'Férias',
+      action: { label: 'Abrir férias', path: '/ferias' },
+    };
+  }
+
+  if (normalized.includes('férias') && normalized.includes('recus')) {
+    return {
+      title: 'Pedido de férias recusado',
+      message: 'O pedido foi recusado. Consulte a informação detalhada na área de férias.',
+      tag: 'Férias',
+      action: { label: 'Abrir férias', path: '/ferias' },
+    };
+  }
+
+  if (normalized.includes('formação') && normalized.includes('atribu')) {
+    return {
+      title: 'Nova formação atribuída',
+      message: 'Tem uma nova formação atribuída. Abra a página de formações para ver o detalhe.',
+      tag: 'Formação',
+      action: { label: 'Abrir formações', path: '/formacoes' },
+    };
+  }
+
+  if (normalized.includes('formação') && normalized.includes('conclu')) {
+    return {
+      title: 'Formação concluída',
+      message: 'A conclusão da formação foi registada com sucesso.',
+      tag: 'Formação',
+      action: { label: 'Abrir formações', path: '/formacoes' },
     };
   }
 
@@ -86,9 +222,11 @@ function formatRelativeDate(dateText: string) {
 }
 
 export default function NotificationsPage() {
-  const { notifications, markAllNotificationsRead, markNotificationRead, unreadNotifications } = usePortal();
+  const { notifications, markAllNotificationsRead, markNotificationRead, deleteNotification, unreadNotifications } = usePortal();
   const navigate = useNavigate();
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
+  const [selectedNotificationId, setSelectedNotificationId] = useState<string | null>(null);
+  const [notificationToDelete, setNotificationToDelete] = useState<string | null>(null);
 
   const sortedNotifications = useMemo(
     () => [...notifications].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
@@ -112,6 +250,46 @@ export default function NotificationsPage() {
     unreadNotifications > 0
       ? `${unreadNotifications} ${unreadNotifications === 1 ? 'alerta pendente' : 'alertas pendentes'}.`
       : 'Sem alertas pendentes.';
+
+  const selectedNotification = useMemo(
+    () => notifications.find((item) => item.id === selectedNotificationId) || null,
+    [notifications, selectedNotificationId],
+  );
+
+  const selectedDetails = useMemo(
+    () => selectedNotification ? buildNotificationDetails(selectedNotification.title, selectedNotification.message) : null,
+    [selectedNotification],
+  );
+
+  const notificationToDeleteItem = useMemo(
+    () => notifications.find((item) => item.id === notificationToDelete) || null,
+    [notificationToDelete, notifications],
+  );
+
+  function openNotification(notificationId: string) {
+    const notification = notifications.find((item) => item.id === notificationId);
+    if (!notification) {
+      return;
+    }
+
+    setSelectedNotificationId(notificationId);
+
+    if (!notification.isRead) {
+      void markNotificationRead(notificationId);
+    }
+  }
+
+  function closeNotificationDetails() {
+    setSelectedNotificationId(null);
+  }
+
+  function openDeleteNotification(notificationId: string) {
+    setNotificationToDelete(notificationId);
+  }
+
+  function closeDeleteNotification() {
+    setNotificationToDelete(null);
+  }
 
   return (
     <section className="notifications-shell">
@@ -165,7 +343,7 @@ export default function NotificationsPage() {
         )}
 
         {visibleNotifications.map((notification) => {
-          const friendly = buildFriendlyMessage(notification.title, notification.message);
+          const friendly = buildFriendlyMessage(humanizeTechnicalText(notification.title), humanizeTechnicalText(notification.message));
 
           return (
             <article key={notification.id} className={`notification-card${notification.isRead ? '' : ' is-unread'}`}>
@@ -184,14 +362,125 @@ export default function NotificationsPage() {
               </div>
 
               <div className="notification-card__actions">
+                <Button size="sm" variant="secondary" type="button" onClick={() => openNotification(notification.id)}>Ver detalhes</Button>
                 {!notification.isRead && (
                   <Button size="sm" variant="secondary" type="button" onClick={() => void markNotificationRead(notification.id)}>Marcar como tratada</Button>
                 )}
+                <Button size="sm" variant="ghost" type="button" onClick={() => openDeleteNotification(notification.id)}>Apagar</Button>
               </div>
             </article>
           );
         })}
       </div>
+
+      <Modal
+        open={Boolean(selectedNotification)}
+        title={selectedDetails?.title || 'Detalhe da notificação'}
+        onClose={closeNotificationDetails}
+        width="min(720px, 94vw)"
+        showCloseButton={false}
+        footer={selectedNotification ? (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 12 }}>
+            <div style={{ display: 'grid', gap: 4 }}>
+              <strong style={{ color: 'var(--hub-text-1)' }}>{selectedDetails?.tag}</strong>
+              <span style={{ color: 'var(--hub-text-3)', fontSize: '0.9rem' }}>{formatRelativeDate(selectedNotification.createdAt)}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {selectedDetails?.action && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={() => {
+                    navigate(selectedDetails.action!.path);
+                    closeNotificationDetails();
+                  }}
+                >
+                  {selectedDetails.action.label}
+                </Button>
+              )}
+              {!selectedNotification.isRead && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    void markNotificationRead(selectedNotification.id);
+                    closeNotificationDetails();
+                  }}
+                >
+                  Marcar como tratada
+                </Button>
+              )}
+              <Button type="button" variant="ghost" onClick={closeNotificationDetails}>Fechar</Button>
+            </div>
+          </div>
+        ) : undefined}
+      >
+        {selectedNotification && selectedDetails && (
+          <div className="notification-detail">
+            <div className="notification-detail__meta">
+              <Badge tone={selectedNotification.isRead ? 'neutral' : 'info'}>{selectedNotification.isRead ? 'Tratada' : 'Nova'}</Badge>
+              <span>{selectedDetails.tag}</span>
+              <span>{formatRelativeDate(selectedNotification.createdAt)}</span>
+            </div>
+
+            <p className="notification-detail__summary">{selectedDetails.message}</p>
+
+            <div className="notification-detail__panel">
+              <strong>Mensagem original</strong>
+              <p>{selectedNotification.message}</p>
+            </div>
+
+            {selectedDetails.action && (
+              <div className="notification-detail__panel notification-detail__panel--action">
+                <strong>Ação sugerida</strong>
+                <p>Existe uma ação direta associada a esta notificação.</p>
+                <Button type="button" variant="primary" onClick={() => {
+                  navigate(selectedDetails.action!.path);
+                  closeNotificationDetails();
+                }}>
+                  {selectedDetails.action.label}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(notificationToDeleteItem)}
+        title="Apagar notificação"
+        onClose={closeDeleteNotification}
+        width="min(560px, 94vw)"
+        showCloseButton={false}
+        footer={notificationToDeleteItem ? (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 12 }}>
+            <span style={{ color: 'var(--hub-text-3)', fontSize: '0.9rem' }}>Esta ação remove a notificação apenas da tua conta.</span>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Button type="button" variant="ghost" onClick={closeDeleteNotification}>Cancelar</Button>
+              <Button
+                type="button"
+                variant="danger"
+                onClick={() => {
+                  void deleteNotification(notificationToDeleteItem.id);
+                  closeDeleteNotification();
+                }}
+              >
+                Apagar notificação
+              </Button>
+            </div>
+          </div>
+        ) : undefined}
+      >
+        {notificationToDeleteItem && (
+          <div className="notification-detail">
+            <p className="notification-detail__summary">Tem a certeza que quer apagar esta notificação?</p>
+            <div className="notification-detail__panel">
+              <strong>{humanizeTechnicalText(notificationToDeleteItem.title)}</strong>
+              <p>{humanizeTechnicalText(notificationToDeleteItem.message)}</p>
+            </div>
+          </div>
+        )}
+      </Modal>
     </section>
   );
 }

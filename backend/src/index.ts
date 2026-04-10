@@ -6,6 +6,7 @@ import { ZodError } from "zod";
 
 import { authRouter } from "./routes/auth.js";
 import { filesRouter } from "./routes/files.js";
+import { permissionsRouter } from "./routes/permissions.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { profileRouter } from "./routes/profile.js";
 import { receiptsRouter } from "./routes/receipts.js";
@@ -70,6 +71,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api", authRouter);
 app.use("/api", usersRouter);
+app.use("/api", permissionsRouter);
 app.use("/api", filesRouter);
 app.use("/api", profileRouter);
 app.use("/api", trainingsRouter);

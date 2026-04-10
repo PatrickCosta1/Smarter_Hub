@@ -50,8 +50,17 @@ function renderFileLink(value: string) {
   );
 }
 
-function validateProfile(profile: ProfileData): ProfileFieldError {
+function validateProfile(profile: ProfileData, canEditContract: boolean = true): ProfileFieldError {
   const errors: ProfileFieldError = {};
+
+  const contractFields: Array<keyof ProfileData> = [
+    'cargo',
+    'funcao',
+    'dataInicioContrato',
+    'remuneracao',
+    'tipoContrato',
+    'regimeHorario',
+  ];
 
   const requiredKeys: Array<keyof ProfileData> = [
     'primeiroNome',
@@ -81,12 +90,7 @@ function validateProfile(profile: ProfileData): ProfileFieldError {
     'contactoEmergenciaNome',
     'contactoEmergenciaParentesco',
     'contactoEmergenciaNumero',
-    'cargo',
-    'funcao',
-    'dataInicioContrato',
-    'remuneracao',
-    'tipoContrato',
-    'regimeHorario',
+    ...(canEditContract ? contractFields : []),
   ];
 
   requiredKeys.forEach((key) => {
@@ -115,7 +119,7 @@ function validateProfile(profile: ProfileData): ProfileFieldError {
 }
 
 export default function ProfilePage() {
-  const { profile, saveProfile, userRole } = usePortal();
+  const { profile, saveProfile, hasPermission, isRootAccess } = usePortal();
 
   const [draftProfile, setDraftProfile] = useState<ProfileData>(profile);
   const [editingSections, setEditingSections] = useState<Record<SectionKey, boolean>>({
@@ -135,8 +139,12 @@ export default function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [currentSection, setCurrentSection] = useState<SectionKey>('personal');
 
-  const canEdit = userRole !== 'convidado';
-  const canEditContract = userRole === 'manager' || userRole === 'coordenador' || userRole === 'admin';
+  const canEdit =
+    isRootAccess
+    || hasPermission('edit_profile')
+    || hasPermission('request_profile_change')
+    || hasPermission('edit_other_profile');
+  const canEditContract = isRootAccess || hasPermission('edit_other_profile');
   const requestMode = !canEditContract;
 
   const profileCompletion = useMemo(() => {
@@ -263,7 +271,7 @@ export default function ProfilePage() {
       return;
     }
 
-    const errors = validateProfile(draftProfile);
+    const errors = validateProfile(draftProfile, canEditContract);
     setProfileErrors(errors);
 
     if (Object.keys(errors).length > 0) {

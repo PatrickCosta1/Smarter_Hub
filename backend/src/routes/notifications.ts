@@ -39,4 +39,15 @@ router.patch("/notifications/read-all", requireAuth, async (req, res) => {
   return res.json({ updated: result.count });
 });
 
+router.delete('/notifications/:id', requireAuth, async (req, res) => {
+  const id = String(req.params.id);
+  const userId = req.authUser!.id;
+
+  const result = await prisma.notification.deleteMany({
+    where: { id, userId },
+  });
+
+  return res.json({ deleted: result.count });
+});
+
 export { router as notificationsRouter };

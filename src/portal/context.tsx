@@ -69,7 +69,13 @@ function normalizeProfileData(input: unknown): ProfileData {
 type PortalContextValue = {
   isAuthenticated: boolean;
   isLoadingSession: boolean;
+  isLoadingPortalData: boolean;
+  currentUser: AuthUser | null;
   userRole: UserRole;
+  isRootAccess: boolean;
+  isAccessTotal: boolean;
+  permissions: string[];
+  hasPermission: (code: string) => boolean;
   unreadNotifications: number;
   profile: ProfileData;
   notifications: PortalNotification[];
@@ -77,11 +83,25 @@ type PortalContextValue = {
   logout: () => void;
   markAllNotificationsRead: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
+  deleteNotification: (id: string) => Promise<void>;
   setProfile: (profile: ProfileData) => void;
   saveProfile: (profile: ProfileData) => Promise<{ success: boolean; message?: string }>;
 };
 
 const PortalContext = createContext<PortalContextValue | null>(null);
+
+type UserPermissionsResponse = {
+  user?: {
+    isRootAccess?: boolean;
+  };
+  accessTotal?: boolean;
+  permissions?: Array<{
+    code: string;
+    assignment?: {
+      isEnabled?: boolean;
+    } | null;
+  }>;
+};
 
 function mapBackendRole(role: AuthUser['role']): UserRole {
   if (role === 'ADMIN') {
@@ -107,24 +127,57 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   const [authToken, setAuthToken] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingSession, setIsLoadingSession] = useState(true);
+  const [isLoadingPortalData, setIsLoadingPortalData] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [userRole, setUserRole] = useState<UserRole>('colaborador');
+  const [isRootAccess, setIsRootAccess] = useState(false);
+  const [isAccessTotal, setIsAccessTotal] = useState(false);
+  const [permissions, setPermissions] = useState<string[]>([]);
   const [notifications, setNotifications] = useState<PortalNotification[]>([]);
   const [profile, setProfileState] = useState<ProfileData>(initialProfileData);
 
   const unreadNotifications = useMemo(() => notifications.filter((item) => !item.isRead).length, [notifications]);
 
   const loadPortalData = useCallback(async (token: string) => {
-    const [profileData, notificationsData] = await Promise.all([
-      apiRequestCached<ProfileData>('/profile/me', {
-        headers: authHeaders(token),
-      }, 30000),
-      apiRequestCached<PortalNotification[]>('/notifications/me', {
-        headers: authHeaders(token),
-      }, 10000),
-    ]);
+    setIsLoadingPortalData(true);
 
-    setProfileState(normalizeProfileData(profileData));
-    setNotifications(notificationsData);
+    try {
+      const [profileData, notificationsData] = await Promise.all([
+        apiRequestCached<ProfileData>('/profile/me', {
+          headers: authHeaders(token),
+        }, 30000),
+        apiRequestCached<PortalNotification[]>('/notifications/me', {
+          headers: authHeaders(token),
+        }, 10000),
+      ]);
+
+      setProfileState(normalizeProfileData(profileData));
+      setNotifications(notificationsData);
+    } finally {
+      setIsLoadingPortalData(false);
+    }
+  }, []);
+
+  const loadAccessData = useCallback(async (token: string, user: AuthUser) => {
+    const fallbackRootAccess = Boolean(user.isRootAccess);
+
+    try {
+      const response = await apiRequest<UserPermissionsResponse>(`/users/${user.id}/permissions`, {
+        headers: authHeaders(token),
+      });
+
+      const permissionCodes = (response.permissions ?? [])
+        .filter((item) => item.assignment?.isEnabled)
+        .map((item) => item.code);
+
+      setPermissions(permissionCodes);
+      setIsRootAccess(Boolean(response.user?.isRootAccess ?? fallbackRootAccess));
+      setIsAccessTotal(Boolean(response.accessTotal));
+    } catch {
+      setPermissions([]);
+      setIsRootAccess(fallbackRootAccess);
+      setIsAccessTotal(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -143,7 +196,9 @@ export function PortalProvider({ children }: { children: ReactNode }) {
           headers: authHeaders(existingToken),
         });
 
+        setCurrentUser(response.user);
         setUserRole(mapBackendRole(response.user.role));
+        await loadAccessData(existingToken, response.user);
         await loadPortalData(existingToken);
         setIsAuthenticated(true);
       } catch {
@@ -153,7 +208,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
         setIsLoadingSession(false);
       }
     })();
-  }, [loadPortalData]);
+  }, [loadAccessData, loadPortalData]);
 
   const login = useCallback(async (username: string, password: string) => {
     try {
@@ -165,7 +220,9 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       const token = response.token;
       window.localStorage.setItem(STORAGE_TOKEN_KEY, token);
       setAuthToken(token);
+      setCurrentUser(response.user);
       setUserRole(mapBackendRole(response.user.role));
+      await loadAccessData(token, response.user);
       await loadPortalData(token);
       setIsAuthenticated(true);
 
@@ -174,16 +231,28 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       const message = error instanceof Error ? error.message : 'Erro de autenticacao.';
       return { success: false, message };
     }
-  }, [loadPortalData]);
+  }, [loadAccessData, loadPortalData]);
 
   const logout = useCallback(() => {
     window.localStorage.removeItem(STORAGE_TOKEN_KEY);
     clearApiCache();
     setAuthToken('');
     setIsAuthenticated(false);
+    setCurrentUser(null);
+    setIsRootAccess(false);
+    setIsAccessTotal(false);
+    setPermissions([]);
     setNotifications([]);
     setProfileState(initialProfileData);
   }, []);
+
+  const hasPermission = useCallback((code: string) => {
+    if (isRootAccess) {
+      return true;
+    }
+
+    return permissions.includes(code);
+  }, [isRootAccess, permissions]);
 
   const setProfile = useCallback((profileData: ProfileData) => {
     setProfileState(normalizeProfileData(profileData));
@@ -204,6 +273,9 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       });
 
       if (response && typeof response === 'object' && 'pending' in response && response.pending) {
+        clearApiCache('/profile/requests/me');
+        clearApiCache('/profile/requests');
+        clearApiCache('/notifications/me');
         return { success: true, message: response.message || 'Pedido enviado para aprovação.' };
       }
 
@@ -241,11 +313,30 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     setNotifications((current) => current.map((item) => (item.id === id ? { ...item, isRead: true } : item)));
   }, [authToken]);
 
+  const deleteNotification = useCallback(async (id: string) => {
+    if (!authToken) {
+      return;
+    }
+
+    await apiRequest<{ deleted: number }>(`/notifications/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders(authToken),
+    });
+
+    setNotifications((current) => current.filter((item) => item.id !== id));
+  }, [authToken]);
+
   const value = useMemo(
     () => ({
       isAuthenticated,
       isLoadingSession,
+      isLoadingPortalData,
+      currentUser,
       userRole,
+      isRootAccess,
+      isAccessTotal,
+      permissions,
+      hasPermission,
       unreadNotifications,
       profile,
       notifications,
@@ -253,10 +344,11 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       logout,
       markAllNotificationsRead,
       markNotificationRead,
+      deleteNotification,
       setProfile,
       saveProfile,
     }),
-    [isAuthenticated, isLoadingSession, login, logout, markAllNotificationsRead, markNotificationRead, notifications, profile, saveProfile, setProfile, unreadNotifications, userRole],
+    [currentUser, deleteNotification, hasPermission, isAccessTotal, isAuthenticated, isLoadingPortalData, isLoadingSession, isRootAccess, login, logout, markAllNotificationsRead, markNotificationRead, notifications, permissions, profile, saveProfile, setProfile, unreadNotifications, userRole],
   );
 
   return <PortalContext.Provider value={value}>{children}</PortalContext.Provider>;

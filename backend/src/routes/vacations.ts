@@ -1,8 +1,16 @@
 import { Request, Response, Router } from 'express';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
+import {
+  buildUserWhereFromScope,
+  canAccessUserByPermission,
+  getPermissionScope,
+  hasPermission,
+  isAccessTotal,
+} from '../lib/permission-engine.js';
 import { requireAuth } from '../middleware/auth.js';
-import { notifyUsers } from '../lib/notifications.js';
+import { notifyUsersByPermission } from '../lib/notifications.js';
 
 const router = Router();
 
@@ -258,7 +266,6 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string) {
     where: { id: userId },
     select: {
       id: true,
-      role: true,
     },
   });
 
@@ -317,58 +324,67 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string) {
     });
   }
 
-  if (requester.role !== 'COORDENADOR') {
-    for (const team of hierarchy) {
-      const membershipApprovers = await prisma.teamMembership.findMany({
-        where: {
-          teamId: team.id,
-          isActive: true,
-          isApprover: true,
-          approvalLevel: { not: null },
-        },
-        select: {
-          userId: true,
-          approvalLevel: true,
-        },
-      });
+  for (const team of hierarchy) {
+    const membershipApprovers = await prisma.teamMembership.findMany({
+      where: {
+        teamId: team.id,
+        isActive: true,
+        isApprover: true,
+        approvalLevel: { not: null },
+      },
+      select: {
+        userId: true,
+        approvalLevel: true,
+      },
+    });
 
-      const localLevels = new Map<number, string[]>();
-      for (const item of membershipApprovers) {
-        if (!item.approvalLevel) {
-          continue;
-        }
-
-        if (!localLevels.has(item.approvalLevel)) {
-          localLevels.set(item.approvalLevel, []);
-        }
-
-        localLevels.get(item.approvalLevel)!.push(item.userId);
+    const localLevels = new Map<number, string[]>();
+    for (const item of membershipApprovers) {
+      if (!item.approvalLevel) {
+        continue;
       }
 
-      const sortedLocalLevels = Array.from(localLevels.keys()).sort((a, b) => a - b);
-      if (sortedLocalLevels.length > 0) {
-        for (const localLevel of sortedLocalLevels) {
-          pushLevel(localLevels.get(localLevel) ?? []);
-        }
-      } else if (requester.role === 'COLABORADOR') {
-        pushLevel([team.managerId]);
+      if (!localLevels.has(item.approvalLevel)) {
+        localLevels.set(item.approvalLevel, []);
       }
 
-      if (requester.role === 'COLABORADOR' || requester.role === 'MANAGER') {
-        pushLevel([team.coordinatorId]);
+      localLevels.get(item.approvalLevel)!.push(item.userId);
+    }
+
+    const sortedLocalLevels = Array.from(localLevels.keys()).sort((a, b) => a - b);
+    if (sortedLocalLevels.length > 0) {
+      for (const localLevel of sortedLocalLevels) {
+        pushLevel(localLevels.get(localLevel) ?? []);
       }
+    } else {
+      pushLevel([team.managerId, team.coordinatorId]);
     }
   }
 
-  if (requester.role === 'COORDENADOR' || groups.length === 0) {
-    const admins = await prisma.user.findMany({
-      where: { role: 'ADMIN', id: { not: userId } },
+  if (groups.length === 0) {
+    const globalApprovers = await prisma.user.findMany({
+      where: {
+        id: { not: userId },
+        OR: [
+          { isRootAccess: true },
+          {
+            permissionAssignments: {
+              some: {
+                isEnabled: true,
+                permission: {
+                  code: 'approve_vacation',
+                },
+              },
+            },
+          },
+        ],
+      },
       select: { id: true },
       orderBy: { createdAt: 'asc' },
     });
 
-    if (admins.length > 0) {
-      pushLevel(admins.map((item) => item.id));
+    if (globalApprovers.length > 0) {
+      pushLevel(globalApprovers.map((item) => item.id));
     }
   }
 
@@ -425,7 +441,7 @@ async function enforceOneThirdCapacity(
   }
 }
 
-async function finalizeVacationApproval(vacationId: string, reviewerId: string, reviewerRole: string) {
+async function finalizeVacationApproval(vacationId: string, reviewerId: string, canBypassApprovalChain: boolean) {
   const vacation = await prisma.vacation.findUnique({
     where: { id: vacationId },
     include: {
@@ -444,7 +460,7 @@ async function finalizeVacationApproval(vacationId: string, reviewerId: string, 
   }
 
   const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
-  if (reviewerRole === 'ADMIN' && isPt) {
+  if (canBypassApprovalChain && isPt) {
     await prisma.$transaction([
       prisma.vacation.update({
         where: { id: vacationId },
@@ -453,7 +469,6 @@ async function finalizeVacationApproval(vacationId: string, reviewerId: string, 
           reviewedById: reviewerId,
           reviewedAt: new Date(),
           reviewReason: 'Aprovado por exceção (PT).',
-          approvedByRole: reviewerRole,
         },
       }),
       prisma.vacationApproval.updateMany({
@@ -529,7 +544,6 @@ async function finalizeVacationApproval(vacationId: string, reviewerId: string, 
       reviewedById: reviewerId,
       reviewedAt: new Date(),
       reviewReason: 'Pedido aprovado em todas as linhas.',
-      approvedByRole: reviewerRole,
     },
   });
 
@@ -759,13 +773,13 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
       return created;
     });
 
-    const approverIds = approvalGroups.flatMap((item) => item.approverIds);
-    if (approverIds.length > 0) {
-      await notifyUsers(
+    if (approvalGroups.length > 0) {
+      const requestLabel = data.requestType === 'VACATION' ? 'pedido de férias' : 'pedido de ausência';
+      await notifyUsersByPermission(
         prisma,
-        approverIds,
+        ['approve_vacation'],
         data.requestType === 'VACATION' ? 'Novo pedido de férias' : 'Novo pedido de ausência',
-        `${req.authUser!.username} submeteu um pedido pendente de aprovação.`,
+        `${req.authUser!.username} submeteu um ${requestLabel} para o período ${data.dataInicio} a ${data.dataFim}.`,
       );
     }
 
@@ -777,27 +791,50 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
 });
 
 router.get('/vacations/requests', requireAuth, async (req: Request, res: Response) => {
-  const role = req.authUser!.role;
   const userId = req.authUser!.id;
+  const [canApproveVacation, canRejectVacation, canViewAllVacations, isFullAccess, viewAllScope] = await Promise.all([
+    hasPermission(userId, 'approve_vacation'),
+    hasPermission(userId, 'reject_vacation'),
+    hasPermission(userId, 'view_all_vacations'),
+    isAccessTotal(userId),
+    getPermissionScope(userId, 'view_all_vacations'),
+  ]);
 
-  if (!['MANAGER', 'COORDENADOR', 'ADMIN'].includes(role)) {
+  const canViewPendingVacations = canApproveVacation
+    || canRejectVacation
+    || canViewAllVacations
+    || req.authUser!.isRootAccess
+    || isFullAccess;
+
+  if (!canViewPendingVacations) {
     return res.status(403).json({ message: 'Sem permissões para consultar pedidos.' });
   }
 
-  const pendingByStep = await prisma.vacation.findMany({
-    where: {
-      status: 'PENDING',
-      ...(role === 'ADMIN'
-        ? {}
-        : {
+  const canViewAllGlobally = Boolean(canViewAllVacations && viewAllScope?.isGlobal);
+  const where: Prisma.VacationWhereInput = req.authUser!.isRootAccess || isFullAccess || canViewAllGlobally
+    ? { status: 'PENDING' }
+    : {
+        status: 'PENDING',
+        OR: [
+          {
             approvals: {
               some: {
                 approverId: userId,
                 status: APPROVAL_PENDING,
               },
             },
-          }),
-    },
+          },
+          ...(canViewAllVacations && viewAllScope
+            ? (() => {
+                const userWhere = buildUserWhereFromScope(viewAllScope) as Prisma.UserWhereInput | null;
+                return userWhere ? [{ user: userWhere }] : [];
+              })()
+            : []),
+        ],
+      };
+
+  const pendingByStep = await prisma.vacation.findMany({
+    where,
     include: {
       user: {
         select: {
@@ -806,7 +843,7 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
           email: true,
           role: true,
           team: { select: { id: true, name: true } },
-          profile: { select: { workCountry: true } },
+          profile: { select: { workCountry: true, nomeAbreviado: true, primeiroNome: true, apelido: true } },
         },
       },
       contextTeam: { select: { id: true, name: true } },
@@ -825,9 +862,13 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
 });
 
 router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Response) => {
-  const role = req.authUser!.role;
+  const userId = req.authUser!.id;
+  const [canApproveVacation, isFullAccess] = await Promise.all([
+    hasPermission(userId, 'approve_vacation'),
+    isAccessTotal(userId),
+  ]);
 
-  if (!['MANAGER', 'COORDENADOR', 'ADMIN'].includes(role)) {
+  if (!canApproveVacation) {
     return res.status(403).json({ message: 'Sem permissões para aprovar pedidos.' });
   }
 
@@ -860,7 +901,14 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
 
   const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
   const canApproveByStep = vacation.approvals.some((item) => item.approverId === req.authUser!.id && item.status === APPROVAL_PENDING);
-  const canApproveByException = role === 'ADMIN' && isPt;
+  const canApproveByException = isPt && (req.authUser!.isRootAccess || isFullAccess);
+  const canApproveWithinRestrictions = req.authUser!.isRootAccess
+    || isFullAccess
+    || await canAccessUserByPermission(userId, 'approve_vacation', vacation.userId);
+
+  if (!canApproveWithinRestrictions && !canApproveByException) {
+    return res.status(403).json({ message: 'Sem permissões para aprovar este pedido com as restrições atuais.' });
+  }
 
   if (!canApproveByStep && !canApproveByException) {
     return res.status(403).json({ message: 'Este pedido não pertence ao teu nível de aprovação.' });
@@ -870,7 +918,7 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
     await enforceOneThirdCapacity(vacation.contextTeamId, vacation.dataInicio, vacation.dataFim, vacation.partialDay, vacation.id);
   }
 
-  const completed = await finalizeVacationApproval(id, req.authUser!.id, role);
+  const completed = await finalizeVacationApproval(id, req.authUser!.id, canApproveByException);
 
   if (!completed) {
     return res.status(400).json({ message: 'Não foi possível finalizar esta aprovação.' });
@@ -879,8 +927,10 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
   await prisma.notification.create({
     data: {
       userId: vacation.userId,
-      title: 'Pedido aprovado',
-      message: 'O teu pedido foi aprovado.',
+      title: vacation.requestType === 'VACATION' ? 'Pedido de férias aprovado' : 'Pedido de ausência aprovado',
+      message: vacation.requestType === 'VACATION'
+        ? 'O teu pedido de férias foi aprovado. Podes consultar o detalhe no portal.'
+        : 'O teu pedido de ausência foi aprovado. Podes consultar o detalhe no portal.',
     },
   });
 
@@ -888,9 +938,13 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
 });
 
 router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Response) => {
-  const role = req.authUser!.role;
+  const userId = req.authUser!.id;
+  const [canRejectVacation, isFullAccess] = await Promise.all([
+    hasPermission(userId, 'reject_vacation'),
+    isAccessTotal(userId),
+  ]);
 
-  if (!['MANAGER', 'COORDENADOR', 'ADMIN'].includes(role)) {
+  if (!canRejectVacation) {
     return res.status(403).json({ message: 'Sem permissões para recusar pedidos.' });
   }
 
@@ -923,7 +977,14 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
 
   const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
   const canRejectByStep = vacation.approvals.some((item) => item.approverId === req.authUser!.id && item.status === APPROVAL_PENDING);
-  const canRejectByException = role === 'ADMIN' && isPt;
+  const canRejectByException = isPt && (req.authUser!.isRootAccess || isFullAccess);
+  const canRejectWithinRestrictions = req.authUser!.isRootAccess
+    || isFullAccess
+    || await canAccessUserByPermission(userId, 'reject_vacation', vacation.userId);
+
+  if (!canRejectWithinRestrictions && !canRejectByException) {
+    return res.status(403).json({ message: 'Sem permissões para recusar este pedido com as restrições atuais.' });
+  }
 
   if (!canRejectByStep && !canRejectByException) {
     return res.status(403).json({ message: 'Este pedido não pertence ao teu nível de aprovação.' });
@@ -937,7 +998,6 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
         reviewedById: req.authUser!.id,
         reviewedAt: new Date(),
         reviewReason: reason,
-        approvedByRole: role,
       },
     }),
     prisma.vacationApproval.updateMany({
@@ -956,7 +1016,7 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
   await prisma.notification.create({
     data: {
       userId: vacation.userId,
-      title: 'Pedido recusado',
+      title: vacation.requestType === 'VACATION' ? 'Pedido de férias recusado' : 'Pedido de ausência recusado',
       message: `O teu pedido foi recusado. ${reason}`,
     },
   });

@@ -5,10 +5,13 @@ export type AuthUser = {
   username: string;
   email: string;
   role: Role;
+  isActive: boolean;
+  isRootAccess: boolean;
 };
 
 export type JwtPayload = {
   sub: string;
   username: string;
   role: Role;
+  isRootAccess: boolean;
 };

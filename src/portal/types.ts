@@ -1,6 +1,6 @@
 export type UserRole = 'colaborador' | 'manager' | 'coordenador' | 'admin' | 'convidado';
 
-export type PortalPage = 'home' | 'profile' | 'perfil' | 'notifications' | 'aprovacoes' | 'equipas' | 'formacoes' | 'ferias' | 'recibos' | 'admin';
+export type PortalPage = 'home' | 'profile' | 'perfil' | 'notifications' | 'aprovacoes' | 'equipas' | 'formacoes' | 'ferias' | 'recibos' | 'admin' | 'colaboradores';
 
 export type MenuItem = {
   id: string;
@@ -67,4 +67,6 @@ export type AuthUser = {
   username: string;
   email: string;
   role: 'COLABORADOR' | 'MANAGER' | 'COORDENADOR' | 'ADMIN' | 'CONVIDADO';
+  isActive?: boolean;
+  isRootAccess?: boolean;
 };

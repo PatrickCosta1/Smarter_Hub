@@ -1,8 +1,17 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 
 import { prisma } from '../lib/prisma.js';
+import {
+  buildUserWhereFromScope,
+  canAccessUserByPermission,
+  canManagePermissions,
+  getPermissionScope,
+  hasPermission,
+  isAccessTotal,
+} from '../lib/permission-engine.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
@@ -23,6 +32,20 @@ const updateAdminUserSchema = z.object({
   teamId: z.string().nullable().optional(),
   workCountry: countrySchema.optional(),
   localidade: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
+
+const updateUserActiveSchema = z.object({
+  isActive: z.boolean(),
+});
+
+const updateAdminUserCredentialsSchema = z.object({
+  username: z.string().min(3).optional(),
+  email: z.string().email().optional(),
+  password: z.string().min(4).optional(),
+}).refine((data) => Boolean(data.username || data.email || data.password), {
+  message: 'Indica pelo menos um campo para atualizar.',
+  path: ['username'],
 });
 
 const updateAdminMembershipsSchema = z.object({
@@ -38,8 +61,8 @@ const updateAdminMembershipsSchema = z.object({
 const adminTeamSchema = z.object({
   name: z.string().min(2),
   country: countrySchema.default('PT'),
-  managerId: z.string().nullable().optional(),
-  coordinatorId: z.string().nullable().optional(),
+  leaderId: z.string().nullable().optional(),
+  memberIds: z.array(z.string().min(1)).optional().default([]),
   parentTeamId: z.string().nullable().optional(),
 });
 
@@ -49,12 +72,201 @@ const managerTeamMemberUpdateSchema = z.object({
   funcao: z.string().optional(),
 });
 
-function requireAdmin(reqRole: string) {
-  return reqRole === 'ADMIN';
+const AUTO_DEFAULT_EMPLOYEE_NOTE = '[AUTO_PRESET_DEFAULT_EMPLOYEE]';
+const AUTO_TEAM_LEADER_NOTE = '[AUTO_PRESET_TEAM_LEADER]';
+
+const DEFAULT_EMPLOYEE_PERMISSION_CODES = [
+  'view_profile',
+  'request_profile_change',
+  'view_notifications',
+  'request_vacation',
+  'view_own_vacations',
+  'request_training',
+  'view_trainings',
+  'view_receipts',
+  'download_receipt',
+] as const;
+
+const TEAM_LEADER_PERMISSION_CODES = [
+  'view_teams',
+  'manage_team_members',
+  'view_team_vacations',
+  'approve_vacation',
+  'reject_vacation',
+  'assign_training',
+] as const;
+
+async function upsertPresetPermissions(params: {
+  userId: string;
+  actorUserId?: string;
+  codes: readonly string[];
+  note: string;
+  restrictedToTeams?: string[];
+  restrictedToCountries?: Array<'PT' | 'BR'>;
+  restrictedToLevels?: string[];
+}) {
+  const permissions = await prisma.permission.findMany({
+    where: { code: { in: [...params.codes] } },
+    select: { id: true },
+  });
+
+  if (permissions.length === 0) {
+    return;
+  }
+
+  for (const permission of permissions) {
+    await prisma.userPermission.upsert({
+      where: {
+        userId_permissionId: {
+          userId: params.userId,
+          permissionId: permission.id,
+        },
+      },
+      create: {
+        userId: params.userId,
+        permissionId: permission.id,
+        isEnabled: true,
+        restrictedToTeams: params.restrictedToTeams ?? [],
+        restrictedToCountries: params.restrictedToCountries ?? [],
+        restrictedToLevels: params.restrictedToLevels ?? [],
+        notes: params.note,
+        grantedById: params.actorUserId,
+      },
+      update: {
+        isEnabled: true,
+        restrictedToTeams: params.restrictedToTeams ?? [],
+        restrictedToCountries: params.restrictedToCountries ?? [],
+        restrictedToLevels: params.restrictedToLevels ?? [],
+        notes: params.note,
+        grantedById: params.actorUserId,
+      },
+    });
+  }
+}
+
+async function disablePresetPermissions(userId: string, codes: readonly string[], actorUserId?: string) {
+  const permissions = await prisma.permission.findMany({
+    where: { code: { in: [...codes] } },
+    select: { id: true },
+  });
+
+  if (permissions.length === 0) {
+    return;
+  }
+
+  await prisma.userPermission.updateMany({
+    where: {
+      userId,
+      permissionId: { in: permissions.map((item) => item.id) },
+    },
+    data: {
+      isEnabled: false,
+      grantedById: actorUserId,
+    },
+  });
+}
+
+async function syncTeamLeaderPreset(userId: string, actorUserId?: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, isRootAccess: true },
+  });
+
+  if (!user) {
+    return;
+  }
+
+  // Quem tem acesso total/root não deve ser limitado pelo preset de chefe.
+  if (user.isRootAccess || await isAccessTotal(userId)) {
+    return;
+  }
+
+  const ledTeams = await prisma.team.findMany({
+    where: { managerId: userId },
+    select: { id: true },
+  });
+
+  const ledTeamIds = ledTeams.map((team) => team.id);
+
+  if (ledTeamIds.length === 0) {
+    await disablePresetPermissions(userId, TEAM_LEADER_PERMISSION_CODES, actorUserId);
+    return;
+  }
+
+  await upsertPresetPermissions({
+    userId,
+    actorUserId,
+    codes: TEAM_LEADER_PERMISSION_CODES,
+    note: AUTO_TEAM_LEADER_NOTE,
+    restrictedToTeams: ledTeamIds,
+  });
+}
+
+function parseBooleanQuery(value: unknown) {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'sim', 'yes'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'nao', 'não', 'no'].includes(normalized)) {
+    return false;
+  }
+
+  return undefined;
+}
+
+async function resolveTeamScopeForUser(userId: string, isRootAccess: boolean) {
+  const [scope, isFullAccess, user] = await Promise.all([
+    getPermissionScope(userId, 'view_teams'),
+    isAccessTotal(userId),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        teamId: true,
+        teamMemberships: {
+          where: { isActive: true },
+          select: { teamId: true },
+        },
+      },
+    }),
+  ]);
+
+  const hasTeamViewPermission = Boolean(scope);
+  const restrictedTeamsForView = scope?.restrictedToTeams ?? null;
+
+  const ownTeamIds = new Set<string>();
+  if (user?.teamId) {
+    ownTeamIds.add(user.teamId);
+  }
+  for (const membership of user?.teamMemberships ?? []) {
+    ownTeamIds.add(membership.teamId);
+  }
+
+  const canViewGlobally = isRootAccess || isFullAccess || (hasTeamViewPermission && restrictedTeamsForView === null);
+  if (canViewGlobally) {
+    return { isGlobal: true, teamIds: [] as string[] };
+  }
+
+  const allowed = new Set<string>([...ownTeamIds]);
+  if (hasTeamViewPermission && restrictedTeamsForView && restrictedTeamsForView.length > 0) {
+    for (const teamId of restrictedTeamsForView) {
+      allowed.add(teamId);
+    }
+  }
+
+  return { isGlobal: false, teamIds: [...allowed] };
 }
 
 router.get('/users', requireAuth, async (req, res) => {
-  if (!['MANAGER', 'COORDENADOR', 'ADMIN'].includes(req.authUser!.role)) {
+  if (!await hasPermission(req.authUser!.id, 'view_user_list')) {
+    return res.status(403).json({ message: 'Sem permissões para consultar utilizadores.' });
+  }
+
+  const scope = await getPermissionScope(req.authUser!.id, 'view_user_list');
+  if (!scope) {
     return res.status(403).json({ message: 'Sem permissões para consultar utilizadores.' });
   }
 
@@ -63,8 +275,8 @@ router.get('/users', requireAuth, async (req, res) => {
   const parsedLimit = Number(typeof req.query.limit === 'string' ? req.query.limit : '40');
   const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 40;
 
-  const users = await prisma.user.findMany({
-    where: {
+  const baseWhere: Prisma.UserWhereInput = {
+      isActive: true,
       ...(email ? { email } : {}),
       role: {
         in: ['COLABORADOR', 'MANAGER', 'COORDENADOR'],
@@ -81,45 +293,15 @@ router.get('/users', requireAuth, async (req, res) => {
             ],
           }
         : {}),
-      ...(req.authUser!.role === 'MANAGER'
-        ? {
-            OR: [
-              {
-                team: {
-                  managerId: req.authUser!.id,
-                },
-              },
-              {
-                teamMemberships: {
-                  some: {
-                    isActive: true,
-                    team: { managerId: req.authUser!.id },
-                  },
-                },
-              },
-            ],
-          }
-        : {}),
-      ...(req.authUser!.role === 'COORDENADOR'
-        ? {
-            OR: [
-              {
-                team: {
-                  coordinatorId: req.authUser!.id,
-                },
-              },
-              {
-                teamMemberships: {
-                  some: {
-                    isActive: true,
-                    team: { coordinatorId: req.authUser!.id },
-                  },
-                },
-              },
-            ],
-          }
-        : {}),
-    },
+    };
+
+  const scopeWhere = buildUserWhereFromScope(scope) as Prisma.UserWhereInput | null;
+  const where: Prisma.UserWhereInput = scopeWhere
+    ? { AND: [baseWhere, scopeWhere] }
+    : baseWhere;
+
+  const users = await prisma.user.findMany({
+    where,
     select: {
       id: true,
       username: true,
@@ -137,8 +319,12 @@ router.get('/users', requireAuth, async (req, res) => {
           team: { select: { id: true, name: true } },
         },
       },
+      managedTeams: {
+        select: { id: true, name: true },
+      },
       profile: {
         select: {
+          nomeAbreviado: true,
           primeiroNome: true,
           apelido: true,
           cargo: true,
@@ -154,7 +340,186 @@ router.get('/users', requireAuth, async (req, res) => {
     },
   });
 
-  return res.json(users);
+  const normalizedUsers = users.map((user) => ({
+    ...user,
+    team: user.team ?? user.teamMemberships[0]?.team ?? user.managedTeams[0] ?? null,
+    teamRole: (user.team ? user.team.id : user.teamMemberships[0]?.team?.id ?? user.managedTeams[0]?.id)
+      && user.managedTeams.some((team) => team.id === (user.team ? user.team.id : user.teamMemberships[0]?.team?.id ?? user.managedTeams[0]?.id))
+      ? 'LEADER'
+      : user.team || user.teamMemberships[0]?.team || user.managedTeams[0]
+        ? 'MEMBER'
+        : null,
+  }));
+
+  return res.json(normalizedUsers);
+});
+
+router.get('/users/collaborators', requireAuth, async (req, res) => {
+    const scope = await getPermissionScope(req.authUser!.id, 'view_user_list');
+    if (!scope) {
+      return res.status(403).json({ message: 'Sem permissões para consultar colaboradores.' });
+    }
+
+  if (!await hasPermission(req.authUser!.id, 'view_user_list')) {
+    return res.status(403).json({ message: 'Sem permissões para consultar colaboradores.' });
+  }
+
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  const role = typeof req.query.role === 'string' ? req.query.role.trim().toUpperCase() : '';
+  const teamId = typeof req.query.teamId === 'string' ? req.query.teamId.trim() : '';
+  const workCountry = typeof req.query.workCountry === 'string' ? req.query.workCountry.trim().toUpperCase() : '';
+  const active = parseBooleanQuery(req.query.active);
+  const sortBy = typeof req.query.sortBy === 'string' ? req.query.sortBy : 'createdAt';
+  const sortDirection = typeof req.query.sortDirection === 'string' && req.query.sortDirection.toLowerCase() === 'asc' ? 'asc' : 'desc';
+  const page = Math.max(1, Number(typeof req.query.page === 'string' ? req.query.page : '1') || 1);
+  const pageSize = Math.min(100, Math.max(1, Number(typeof req.query.pageSize === 'string' ? req.query.pageSize : '20') || 20));
+  const parsedRole = roleSchema.safeParse(role);
+
+  const andConditions: Prisma.UserWhereInput[] = [];
+  if (teamId) {
+    andConditions.push({
+      OR: [
+        { teamId },
+        { teamMemberships: { some: { teamId, isActive: true } } },
+      ],
+    });
+  }
+
+  if (q) {
+    andConditions.push({
+      OR: [
+        { username: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { profile: { nomeAbreviado: { contains: q, mode: 'insensitive' } } },
+        { profile: { primeiroNome: { contains: q, mode: 'insensitive' } } },
+        { profile: { apelido: { contains: q, mode: 'insensitive' } } },
+        { profile: { cargo: { contains: q, mode: 'insensitive' } } },
+        { profile: { funcao: { contains: q, mode: 'insensitive' } } },
+      ],
+    });
+  }
+
+  const orderByMap: Record<string, { [key: string]: 'asc' | 'desc' }> = {
+    createdAt: { createdAt: sortDirection },
+    updatedAt: { updatedAt: sortDirection },
+    username: { username: sortDirection },
+    email: { email: sortDirection },
+    role: { role: sortDirection },
+  };
+
+  const where: Prisma.UserWhereInput = {
+    role: parsedRole.success ? parsedRole.data : { in: ['COLABORADOR', 'MANAGER', 'COORDENADOR', 'ADMIN'] },
+    ...(workCountry && countrySchema.safeParse(workCountry).success ? { profile: { workCountry: workCountry as 'PT' | 'BR' } } : {}),
+    ...(typeof active === 'boolean' ? { isActive: active } : {}),
+    ...(andConditions.length > 0 ? { AND: andConditions } : {}),
+  };
+
+  const scopeWhere = buildUserWhereFromScope(scope) as Prisma.UserWhereInput | null;
+  const scopedWhere: Prisma.UserWhereInput = scopeWhere
+    ? { AND: [where, scopeWhere] }
+    : where;
+
+  const [total, rows] = await Promise.all([
+    prisma.user.count({ where: scopedWhere }),
+    prisma.user.findMany({
+      where: scopedWhere,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      orderBy: orderByMap[sortBy] || orderByMap.createdAt,
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        isActive: true,
+        deactivatedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        teamId: true,
+        team: { select: { id: true, name: true } },
+        teamMemberships: {
+          where: { isActive: true },
+          select: {
+            teamId: true,
+            membershipRole: true,
+            team: { select: { id: true, name: true } },
+          },
+        },
+        managedTeams: {
+          select: { id: true, name: true },
+        },
+        profile: {
+          select: {
+            nomeAbreviado: true,
+            primeiroNome: true,
+            apelido: true,
+            cargo: true,
+            funcao: true,
+            workCountry: true,
+            localidade: true,
+          },
+        },
+      },
+    }),
+  ]);
+
+  const normalizedRows = rows.map((user) => ({
+    ...user,
+    team: user.team ?? user.teamMemberships[0]?.team ?? user.managedTeams[0] ?? null,
+    teamRole: (user.team ? user.team.id : user.teamMemberships[0]?.team?.id ?? user.managedTeams[0]?.id)
+      && user.managedTeams.some((team) => team.id === (user.team ? user.team.id : user.teamMemberships[0]?.team?.id ?? user.managedTeams[0]?.id))
+      ? 'LEADER'
+      : user.team || user.teamMemberships[0]?.team || user.managedTeams[0]
+        ? 'MEMBER'
+        : null,
+  }));
+
+  return res.json({ total, page, pageSize, rows: normalizedRows });
+});
+
+router.patch('/users/:id/active', requireAuth, async (req, res) => {
+  if (!await hasPermission(req.authUser!.id, 'manage_user_active')) {
+    return res.status(403).json({ message: 'Sem permissões para alterar estado de colaboradores.' });
+  }
+
+  const userId = String(req.params.id || '');
+  const payload = updateUserActiveSchema.safeParse(req.body);
+
+  if (!payload.success) {
+    return res.status(400).json({ message: payload.error.issues[0].message });
+  }
+
+  if (req.authUser!.id === userId && payload.data.isActive === false) {
+    return res.status(400).json({ message: 'Não é permitido desativar a tua própria conta.' });
+  }
+
+  const existing = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, isActive: true } });
+  if (!existing) {
+    return res.status(404).json({ message: 'Utilizador não encontrado.' });
+  }
+
+  if (!req.authUser!.isRootAccess && !await isAccessTotal(req.authUser!.id)) {
+    const canManageTarget = await canAccessUserByPermission(req.authUser!.id, 'manage_user_active', userId);
+    if (!canManageTarget) {
+      return res.status(403).json({ message: 'Sem permissões para alterar este colaborador com as restrições atuais.' });
+    }
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      isActive: payload.data.isActive,
+      deactivatedAt: payload.data.isActive ? null : new Date(),
+    },
+    select: {
+      id: true,
+      isActive: true,
+      deactivatedAt: true,
+      updatedAt: true,
+    },
+  });
+
+  return res.json(updated);
 });
 
 router.get('/users/me/teams', requireAuth, async (req, res) => {
@@ -223,17 +588,26 @@ router.get('/users/me/teams', requireAuth, async (req, res) => {
 });
 
 router.get('/teams', requireAuth, async (req, res) => {
-  if (!['COORDENADOR', 'ADMIN', 'MANAGER'].includes(req.authUser!.role)) {
+  if (!await hasPermission(req.authUser!.id, 'view_teams')) {
+    return res.status(403).json({ message: 'Sem permissões para consultar equipas.' });
+  }
+
+  const scope = await getPermissionScope(req.authUser!.id, 'view_teams');
+  if (!scope) {
     return res.status(403).json({ message: 'Sem permissões para consultar equipas.' });
   }
 
   const teams = await prisma.team.findMany({
-    where:
-      req.authUser!.role === 'MANAGER'
-        ? { managerId: req.authUser!.id }
-        : req.authUser!.role === 'COORDENADOR'
-          ? { coordinatorId: req.authUser!.id }
-          : undefined,
+    where: scope.isGlobal
+      ? undefined
+      : {
+          ...(scope.restrictedToTeams && scope.restrictedToTeams.length > 0
+            ? { id: { in: scope.restrictedToTeams } }
+            : {}),
+          ...(scope.restrictedToCountries && scope.restrictedToCountries.length > 0
+            ? { country: { in: scope.restrictedToCountries } }
+            : {}),
+        },
     select: {
       id: true,
       name: true,
@@ -259,37 +633,19 @@ router.get('/teams', requireAuth, async (req, res) => {
 });
 
 router.get('/teams/me', requireAuth, async (req, res) => {
-  const role = req.authUser!.role;
   const userId = req.authUser!.id;
   const detailsMode = typeof req.query.details === 'string' ? req.query.details.toLowerCase() : 'full';
   const includeMembers = detailsMode !== 'none';
   const year = Number(typeof req.query.year === 'string' ? req.query.year : new Date().getFullYear());
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
+  const teamScope = await resolveTeamScopeForUser(userId, req.authUser!.isRootAccess);
 
-  const teamWhere =
-    role === 'ADMIN'
-      ? undefined
-      : role === 'MANAGER'
-        ? {
-            OR: [
-              { managerId: userId },
-              { memberships: { some: { userId, isActive: true } } },
-            ],
-          }
-        : role === 'COORDENADOR'
-          ? {
-              OR: [
-                { coordinatorId: userId },
-                { memberships: { some: { userId, isActive: true } } },
-              ],
-            }
-          : {
-              OR: [
-                { memberships: { some: { userId, isActive: true } } },
-                { members: { some: { id: userId } } },
-              ],
-            };
+  const teamWhere: Prisma.TeamWhereInput | undefined = teamScope.isGlobal
+    ? undefined
+    : teamScope.teamIds.length > 0
+      ? { id: { in: teamScope.teamIds } }
+      : { id: '__no_team_scope__' };
 
   if (!includeMembers) {
     const teams = await prisma.team.findMany({
@@ -303,14 +659,14 @@ router.get('/teams/me', requireAuth, async (req, res) => {
           select: {
             id: true,
             username: true,
-            profile: { select: { primeiroNome: true, apelido: true } },
+            profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
           },
         },
         coordinator: {
           select: {
             id: true,
             username: true,
-            profile: { select: { primeiroNome: true, apelido: true } },
+            profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
           },
         },
         parentTeam: { select: { id: true, name: true } },
@@ -341,14 +697,14 @@ router.get('/teams/me', requireAuth, async (req, res) => {
         select: {
           id: true,
           username: true,
-          profile: { select: { primeiroNome: true, apelido: true } },
+          profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
         },
       },
       coordinator: {
         select: {
           id: true,
           username: true,
-          profile: { select: { primeiroNome: true, apelido: true } },
+          profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
         },
       },
       parentTeam: { select: { id: true, name: true } },
@@ -368,6 +724,7 @@ router.get('/teams/me', requireAuth, async (req, res) => {
               teamId: true,
               profile: {
                 select: {
+                  nomeAbreviado: true,
                   primeiroNome: true,
                   apelido: true,
                   cargo: true,
@@ -427,39 +784,17 @@ router.get('/teams/me', requireAuth, async (req, res) => {
 });
 
 router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
-  const role = req.authUser!.role;
   const userId = req.authUser!.id;
   const teamId = String(req.params.teamId || '');
   const year = Number(typeof req.query.year === 'string' ? req.query.year : new Date().getFullYear());
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
+  const teamScope = await resolveTeamScopeForUser(userId, req.authUser!.isRootAccess);
+  if (!teamScope.isGlobal && !teamScope.teamIds.includes(teamId)) {
+    return res.status(403).json({ message: 'Sem permissões para consultar esta equipa.' });
+  }
 
-  const teamWhere =
-    role === 'ADMIN'
-      ? { id: teamId }
-      : role === 'MANAGER'
-        ? {
-            id: teamId,
-            OR: [
-              { managerId: userId },
-              { memberships: { some: { userId, isActive: true } } },
-            ],
-          }
-        : role === 'COORDENADOR'
-          ? {
-              id: teamId,
-              OR: [
-                { coordinatorId: userId },
-                { memberships: { some: { userId, isActive: true } } },
-              ],
-            }
-          : {
-              id: teamId,
-              OR: [
-                { memberships: { some: { userId, isActive: true } } },
-                { members: { some: { id: userId } } },
-              ],
-            };
+  const teamWhere: Prisma.TeamWhereInput = { id: teamId };
 
   const team = await prisma.team.findFirst({
     where: teamWhere,
@@ -474,14 +809,14 @@ router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
         select: {
           id: true,
           username: true,
-          profile: { select: { primeiroNome: true, apelido: true } },
+          profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
         },
       },
       coordinator: {
         select: {
           id: true,
           username: true,
-          profile: { select: { primeiroNome: true, apelido: true } },
+          profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
         },
       },
       parentTeam: { select: { id: true, name: true } },
@@ -501,6 +836,7 @@ router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
               teamId: true,
               profile: {
                 select: {
+                  nomeAbreviado: true,
                   primeiroNome: true,
                   apelido: true,
                   cargo: true,
@@ -563,8 +899,8 @@ router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
 });
 
 router.patch('/manager/team-members/:id', requireAuth, async (req, res) => {
-  if (req.authUser!.role !== 'MANAGER') {
-    return res.status(403).json({ message: 'Apenas manager pode gerir membros da equipa.' });
+  if (!await hasPermission(req.authUser!.id, 'manage_team_members')) {
+    return res.status(403).json({ message: 'Sem permissões para gerir membros da equipa.' });
   }
 
   const targetUserId = String(req.params.id || '');
@@ -595,22 +931,46 @@ router.patch('/manager/team-members/:id', requireAuth, async (req, res) => {
     return res.status(400).json({ message: 'Só é possível gerir utilizadores com role COLABORADOR.' });
   }
 
-  const currentTeamAllowed =
-    targetUser.team?.managerId === req.authUser!.id ||
-    targetUser.teamMemberships.some((item) => item.team.managerId === req.authUser!.id);
+  const [scope, fullAccess] = await Promise.all([
+    getPermissionScope(req.authUser!.id, 'manage_team_members'),
+    isAccessTotal(req.authUser!.id),
+  ]);
+
+  if (!scope) {
+    return res.status(403).json({ message: 'Sem permissões para gerir membros da equipa.' });
+  }
+
+  const canManageAllTeams = req.authUser!.isRootAccess || fullAccess || scope.isGlobal;
+  const isManageableTeam = (teamId?: string | null, country?: 'PT' | 'BR') => {
+    if (canManageAllTeams) {
+      return true;
+    }
+
+    const teamAllowed = !scope.restrictedToTeams || scope.restrictedToTeams.length === 0 || (Boolean(teamId) && scope.restrictedToTeams.includes(String(teamId)));
+    const countryAllowed = !scope.restrictedToCountries
+      || scope.restrictedToCountries.length === 0
+      || (country ? scope.restrictedToCountries.includes(country) : false);
+
+    return teamAllowed && countryAllowed;
+  };
+
+  const currentTeamAllowed = await canAccessUserByPermission(req.authUser!.id, 'manage_team_members', targetUserId)
+    || isManageableTeam(targetUser.teamId, targetUser.team?.country ?? undefined)
+    || targetUser.teamMemberships.some((item) => isManageableTeam(item.teamId, item.team.country));
   if (!currentTeamAllowed) {
-    return res.status(403).json({ message: 'Este colaborador não pertence à tua equipa.' });
+    return res.status(403).json({ message: 'Este colaborador está fora do teu escopo de gestão.' });
   }
 
   let nextTeamId: string | null | undefined = data.teamId;
 
   if (nextTeamId !== undefined && nextTeamId !== null) {
-    const nextTeam = await prisma.team.findFirst({
-      where: { id: nextTeamId, managerId: req.authUser!.id },
-      select: { id: true },
-    });
+    const nextTeam = await prisma.team.findFirst({ where: { id: nextTeamId }, select: { id: true, country: true } });
 
     if (!nextTeam) {
+      return res.status(404).json({ message: 'Equipa de destino não encontrada.' });
+    }
+
+    if (!isManageableTeam(nextTeam.id, nextTeam.country)) {
       return res.status(403).json({ message: 'Só podes mover para equipas geridas por ti.' });
     }
   }
@@ -671,11 +1031,19 @@ router.patch('/manager/team-members/:id', requireAuth, async (req, res) => {
 });
 
 router.get('/admin/users', requireAuth, async (req, res) => {
-  if (!requireAdmin(req.authUser!.role)) {
+  if (!await canManagePermissions(req.authUser!)) {
     return res.status(403).json({ message: 'Apenas admin pode gerir perfis.' });
   }
 
+  const scope = await getPermissionScope(req.authUser!.id, 'manage_permissions');
+  if (!scope) {
+    return res.status(403).json({ message: 'Sem permissões para gerir perfis.' });
+  }
+
+  const scopeWhere = buildUserWhereFromScope(scope) as Prisma.UserWhereInput | null;
+
   const users = await prisma.user.findMany({
+    ...(scopeWhere ? { where: scopeWhere } : {}),
     include: {
       team: { select: { id: true, name: true } },
       teamMemberships: {
@@ -686,6 +1054,7 @@ router.get('/admin/users', requireAuth, async (req, res) => {
       },
       profile: {
         select: {
+          nomeAbreviado: true,
           primeiroNome: true,
           apelido: true,
           workCountry: true,
@@ -701,6 +1070,15 @@ router.get('/admin/users', requireAuth, async (req, res) => {
     username: user.username,
     email: user.email,
     role: user.role,
+    isRootAccess: user.isRootAccess,
+    isActive: user.isActive,
+    profile: user.profile
+      ? {
+          nomeAbreviado: user.profile.nomeAbreviado,
+          primeiroNome: user.profile.primeiroNome,
+          apelido: user.profile.apelido,
+        }
+      : null,
     teamId: user.teamId,
     teamName: user.team?.name ?? null,
     teams: user.teamMemberships.map((item) => ({
@@ -716,20 +1094,39 @@ router.get('/admin/users', requireAuth, async (req, res) => {
 });
 
 router.get('/admin/teams', requireAuth, async (req, res) => {
-  if (!requireAdmin(req.authUser!.role)) {
+  if (!await hasPermission(req.authUser!.id, 'view_teams')) {
     return res.status(403).json({ message: 'Apenas admin pode gerir equipas.' });
   }
 
+  const scope = await getPermissionScope(req.authUser!.id, 'view_teams');
+  if (!scope) {
+    return res.status(403).json({ message: 'Sem permissões para gerir equipas.' });
+  }
+
+  const teamWhere: Prisma.TeamWhereInput = {
+    ...(scope.restrictedToTeams && scope.restrictedToTeams.length > 0
+      ? { id: { in: scope.restrictedToTeams } }
+      : {}),
+    ...(scope.restrictedToCountries && scope.restrictedToCountries.length > 0
+      ? { country: { in: scope.restrictedToCountries } }
+      : {}),
+  };
+
   const teams = await prisma.team.findMany({
+    ...(scope.isGlobal ? {} : { where: teamWhere }),
     select: {
       id: true,
       name: true,
       country: true,
       managerId: true,
-      coordinatorId: true,
       parentTeamId: true,
-      manager: { select: { id: true, username: true } },
-      coordinator: { select: { id: true, username: true } },
+      manager: {
+        select: {
+          id: true,
+          username: true,
+          profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
+        },
+      },
       parentTeam: { select: { id: true, name: true } },
       _count: { select: { members: true, memberships: true, subTeams: true } },
     },
@@ -738,6 +1135,8 @@ router.get('/admin/teams', requireAuth, async (req, res) => {
 
   return res.json(teams.map((team) => ({
     ...team,
+    leaderId: team.managerId ?? null,
+    leader: team.manager ?? null,
     _count: {
       members: Math.max(team._count.members, team._count.memberships),
       memberships: team._count.memberships,
@@ -747,7 +1146,7 @@ router.get('/admin/teams', requireAuth, async (req, res) => {
 });
 
 router.post('/admin/teams', requireAuth, async (req, res) => {
-  if (!requireAdmin(req.authUser!.role)) {
+  if (!await hasPermission(req.authUser!.id, 'create_team')) {
     return res.status(403).json({ message: 'Apenas admin pode criar equipas.' });
   }
 
@@ -756,21 +1155,78 @@ router.post('/admin/teams', requireAuth, async (req, res) => {
     return res.status(400).json({ message: payload.error.issues[0].message });
   }
 
-  const team = await prisma.team.create({
-    data: {
-      name: payload.data.name.trim(),
-      country: payload.data.country,
-      managerId: payload.data.managerId ?? null,
-      coordinatorId: payload.data.coordinatorId ?? null,
-      parentTeamId: payload.data.parentTeamId ?? null,
-    },
+  const leaderId = payload.data.leaderId ?? null;
+  const memberIds = Array.from(new Set(payload.data.memberIds ?? []));
+
+  if (leaderId && memberIds.includes(leaderId)) {
+    return res.status(400).json({ message: 'O chefe de equipa não pode ser membro participante da mesma equipa.' });
+  }
+
+  const usersToValidate = [
+    ...(leaderId ? [leaderId] : []),
+    ...memberIds,
+  ];
+
+  if (usersToValidate.length > 0) {
+    const candidates = await prisma.user.findMany({
+      where: { id: { in: usersToValidate } },
+      select: { id: true, username: true, isActive: true },
+    });
+
+    const byId = new Map(candidates.map((item) => [item.id, item]));
+
+    for (const userId of usersToValidate) {
+      const user = byId.get(userId);
+      if (!user) {
+        return res.status(400).json({ message: 'Um dos utilizadores selecionados não existe.' });
+      }
+      if (!user.isActive) {
+        return res.status(400).json({ message: `O utilizador ${user.username} está inativo e não pode ser associado à equipa.` });
+      }
+      if (user.username === 't.people') {
+        return res.status(400).json({ message: 'A conta t.people não pode ser associada como chefe ou membro de equipa.' });
+      }
+    }
+  }
+
+  const team = await prisma.$transaction(async (tx) => {
+    const createdTeam = await tx.team.create({
+      data: {
+        // A lógica atual usa um único chefe de equipa.
+        // Mantemos managerId como campo persistido e limpamos coordinatorId.
+        managerId: leaderId,
+        coordinatorId: null,
+        name: payload.data.name.trim(),
+        country: payload.data.country,
+        parentTeamId: payload.data.parentTeamId ?? null,
+      },
+    });
+
+    if (memberIds.length > 0) {
+      await tx.teamMembership.createMany({
+        data: memberIds.map((userId) => ({
+          userId,
+          teamId: createdTeam.id,
+          membershipRole: 'PARTICIPANT',
+          isApprover: false,
+          isActive: true,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    return createdTeam;
   });
+
+  if (leaderId) {
+    await syncTeamLeaderPreset(leaderId, req.authUser!.id);
+  }
 
   return res.status(201).json(team);
 });
 
 router.patch('/admin/teams/:id', requireAuth, async (req, res) => {
-  if (!requireAdmin(req.authUser!.role)) {
+  if (!await hasPermission(req.authUser!.id, 'edit_team')) {
     return res.status(403).json({ message: 'Apenas admin pode editar equipas.' });
   }
 
@@ -786,26 +1242,46 @@ router.patch('/admin/teams/:id', requireAuth, async (req, res) => {
     return res.status(404).json({ message: 'Equipa não encontrada.' });
   }
 
+  const previousLeaderId = existing.managerId ?? null;
+  const nextLeaderId = payload.data.leaderId !== undefined
+    ? payload.data.leaderId
+    : previousLeaderId;
+
   const updated = await prisma.team.update({
     where: { id: teamId },
     data: {
       ...(payload.data.name ? { name: payload.data.name.trim() } : {}),
       ...(payload.data.country ? { country: payload.data.country } : {}),
-      ...(payload.data.managerId !== undefined ? { managerId: payload.data.managerId } : {}),
-      ...(payload.data.coordinatorId !== undefined ? { coordinatorId: payload.data.coordinatorId } : {}),
+      ...(
+        payload.data.leaderId !== undefined
+          ? { managerId: payload.data.leaderId, coordinatorId: null }
+          : {}
+      ),
       ...(payload.data.parentTeamId !== undefined ? { parentTeamId: payload.data.parentTeamId } : {}),
     },
   });
+
+  if (previousLeaderId && previousLeaderId !== nextLeaderId) {
+    await syncTeamLeaderPreset(previousLeaderId, req.authUser!.id);
+  }
+  if (nextLeaderId) {
+    await syncTeamLeaderPreset(nextLeaderId, req.authUser!.id);
+  }
 
   return res.json(updated);
 });
 
 router.delete('/admin/teams/:id', requireAuth, async (req, res) => {
-  if (!requireAdmin(req.authUser!.role)) {
+  if (!await hasPermission(req.authUser!.id, 'delete_team')) {
     return res.status(403).json({ message: 'Apenas admin pode remover equipas.' });
   }
 
   const teamId = String(req.params.id || '');
+
+  const existing = await prisma.team.findUnique({
+    where: { id: teamId },
+    select: { managerId: true },
+  });
 
   await prisma.$transaction([
     prisma.teamMembership.deleteMany({ where: { teamId } }),
@@ -814,11 +1290,16 @@ router.delete('/admin/teams/:id', requireAuth, async (req, res) => {
     prisma.team.delete({ where: { id: teamId } }),
   ]);
 
+  const previousLeaderId = existing?.managerId ?? null;
+  if (previousLeaderId) {
+    await syncTeamLeaderPreset(previousLeaderId, req.authUser!.id);
+  }
+
   return res.json({ success: true });
 });
 
 router.patch('/admin/users/:id', requireAuth, async (req, res) => {
-  if (!requireAdmin(req.authUser!.role)) {
+  if (!await hasPermission(req.authUser!.id, 'edit_user')) {
     return res.status(403).json({ message: 'Apenas admin pode gerir perfis.' });
   }
 
@@ -840,11 +1321,18 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
     data.teamId = null;
   }
 
+  if (req.authUser!.id === userId && data.isActive === false) {
+    return res.status(400).json({ message: 'Não é permitido desativar a tua própria conta.' });
+  }
+
   const updatedUser = await prisma.user.update({
     where: { id: userId },
     data: {
       ...(data.role ? { role: data.role } : {}),
       ...(data.teamId !== undefined ? { teamId: data.teamId } : {}),
+      ...(data.isActive !== undefined
+        ? { isActive: data.isActive, deactivatedAt: data.isActive ? null : new Date() }
+        : {}),
     },
   });
 
@@ -893,11 +1381,83 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
     id: updatedUser.id,
     role: updatedUser.role,
     teamId: updatedUser.teamId,
+    isActive: updatedUser.isActive,
   });
 });
 
+router.patch('/admin/users/:id/credentials', requireAuth, async (req, res) => {
+  if (req.authUser?.username !== 't.people') {
+    return res.status(403).json({ message: 'Apenas t.people pode editar credenciais de utilizadores.' });
+  }
+
+  const userId = String(req.params.id || '');
+  const payload = updateAdminUserCredentialsSchema.safeParse(req.body);
+
+  if (!payload.success) {
+    return res.status(400).json({ message: payload.error.issues[0].message });
+  }
+
+  const existing = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, username: true, email: true },
+  });
+
+  if (!existing) {
+    return res.status(404).json({ message: 'Utilizador não encontrado.' });
+  }
+
+  const nextUsername = payload.data.username?.trim().toLowerCase();
+  const nextEmail = payload.data.email?.trim().toLowerCase();
+
+  if (nextUsername || nextEmail) {
+    const duplicate = await prisma.user.findFirst({
+      where: {
+        id: { not: userId },
+        OR: [
+          ...(nextUsername ? [{ username: nextUsername }] : []),
+          ...(nextEmail ? [{ email: nextEmail }] : []),
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (duplicate) {
+      return res.status(409).json({ message: 'Username ou email já está em uso por outro utilizador.' });
+    }
+  }
+
+  const data: {
+    username?: string;
+    email?: string;
+    passwordHash?: string;
+  } = {};
+
+  if (nextUsername) {
+    data.username = nextUsername;
+  }
+  if (nextEmail) {
+    data.email = nextEmail;
+  }
+  if (payload.data.password) {
+    data.passwordHash = await bcrypt.hash(payload.data.password, 10);
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data,
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      updatedAt: true,
+    },
+  });
+
+  return res.json(updated);
+});
+
 router.patch('/admin/users/:id/memberships', requireAuth, async (req, res) => {
-  if (!requireAdmin(req.authUser!.role)) {
+  if (!await hasPermission(req.authUser!.id, 'manage_team_members')) {
     return res.status(403).json({ message: 'Apenas admin pode gerir memberships.' });
   }
 
@@ -958,10 +1518,24 @@ router.patch('/admin/users/:id/memberships', requireAuth, async (req, res) => {
   return res.json({ success: true });
 });
 
-router.post('/users', async (req, res, next) => {
+router.post('/users', requireAuth, async (req, res, next) => {
   try {
+    if (!await hasPermission(req.authUser!.id, 'create_user')) {
+      return res.status(403).json({ message: 'Sem permissões para criar utilizadores.' });
+    }
+
     const data = createUserSchema.parse(req.body);
     const passwordHash = await bcrypt.hash(data.password, 10);
+
+    // Parse fullName into firstName, lastName, and shortName
+    const nameParts = data.fullName.trim().split(/\s+/).filter(Boolean);
+    const firstName = nameParts[0] || data.fullName;
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+    const shortName = `${firstName}${lastName ? ` ${lastName}` : ''}`.trim();
+
+    // Get current date as dataInicioContrato default
+    const today = new Date();
+    const dataInicioContrato = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
     const user = await prisma.user.create({
       data: {
@@ -984,7 +1558,15 @@ router.post('/users', async (req, res, next) => {
           : {}),
         profile: {
           create: {
-            primeiroNome: data.fullName,
+            primeiroNome: firstName,
+            apelido: lastName,
+            nomeAbreviado: shortName,
+            emailPessoal: data.email,
+            dataInicioContrato,
+            tipoContrato: '',
+            regimeHorario: '',
+            cargo: '',
+            funcao: '',
           },
         },
       },
@@ -992,6 +1574,14 @@ router.post('/users', async (req, res, next) => {
         profile: true,
       },
     });
+
+    if ((data.role ?? 'COLABORADOR') === 'COLABORADOR') {
+      await upsertPresetPermissions({
+        userId: user.id,
+        codes: DEFAULT_EMPLOYEE_PERMISSION_CODES,
+        note: AUTO_DEFAULT_EMPLOYEE_NOTE,
+      });
+    }
 
     const { passwordHash: _ignored, ...safeUser } = user;
 

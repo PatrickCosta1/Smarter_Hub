@@ -14,192 +14,145 @@ function getAuthHeaders() {
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { profile, unreadNotifications, userRole } = usePortal();
-  const isManagerFlow = userRole === 'manager' || userRole === 'coordenador' || userRole === 'admin';
-  const displayName = `${profile.primeiroNome} ${profile.apelido}`.trim() || profile.primeiroNome || 'Colaborador';
+  const { profile, unreadNotifications, hasPermission, isRootAccess, currentUser } = usePortal();
+  const isTPeople = currentUser?.username === 't.people';
+  const canReviewApprovals = isRootAccess || hasPermission('approve_profile_change') || hasPermission('approve_vacation') || hasPermission('reject_vacation');
+  const canManageTrainings = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
+  const canManageCollaborators = isRootAccess || hasPermission('view_user_list') || hasPermission('manage_user_active') || hasPermission('manage_permissions');
+  const isManagerFlow = canReviewApprovals || canManageTrainings || canManageCollaborators;
+  const displayName = isTPeople
+    ? 'T People'
+    : `${profile.primeiroNome} ${profile.apelido}`.trim() || profile.primeiroNome || 'Colaborador';
   const [pendingProfileRequests, setPendingProfileRequests] = useState(0);
   const [pendingVacationRequests, setPendingVacationRequests] = useState(0);
   const [assignedTrainings, setAssignedTrainings] = useState(0);
-
-  const profileCompletion = Math.round((Object.values(profile).filter((item) => item.trim().length > 0).length / Object.values(profile).length) * 100);
-  const coreMissingCount = useMemo(() => {
-    const coreFields = [
-      profile.telemovel,
-      profile.endereco,
-      profile.localidade,
-      profile.codigoPostal,
-      profile.nif,
-      profile.iban,
-      profile.contactoEmergenciaNome,
-      profile.contactoEmergenciaNumero,
-    ];
-
-    return coreFields.filter((value) => !value || !value.trim()).length;
-  }, [
-    profile.codigoPostal,
-    profile.contactoEmergenciaNome,
-    profile.contactoEmergenciaNumero,
-    profile.endereco,
-    profile.iban,
-    profile.localidade,
-    profile.nif,
-    profile.telemovel,
-  ]);
+  const [ownPendingProfileRequest, setOwnPendingProfileRequest] = useState(false);
+  const [isLoadingSummary, setIsLoadingSummary] = useState(true);
 
   const totalPending = useMemo(
-    () => pendingProfileRequests + pendingVacationRequests,
-    [pendingProfileRequests, pendingVacationRequests],
+    () => (isManagerFlow ? pendingProfileRequests + pendingVacationRequests : Number(ownPendingProfileRequest)),
+    [isManagerFlow, ownPendingProfileRequest, pendingProfileRequests, pendingVacationRequests],
   );
 
-  const quickSummaryRows = useMemo(() => {
-    const nowLabel = new Intl.DateTimeFormat('pt-PT', { hour: '2-digit', minute: '2-digit' }).format(new Date());
-
-    if (isManagerFlow) {
-      const pressure = totalPending >= 6 ? 'Alta pressão operacional' : totalPending >= 3 ? 'Pressão moderada' : 'Fluxo estável';
-      const backlogFocus = pendingVacationRequests > pendingProfileRequests ? 'Férias em prioridade' : 'Fichas em prioridade';
-
-      return [
-        {
-          label: 'Pulso operacional',
-          value: `${pressure} · ${backlogFocus}`,
-        },
-        {
-          label: 'Risco de atraso',
-          value: totalPending > 0 ? `${totalPending} pedido(s) ainda sem decisão` : 'Nenhum bloqueio ativo',
-        },
-        {
-          label: 'Cadência da equipa',
-          value: `${assignedTrainings} formação(ões) ativas · atualização ${nowLabel}`,
-        },
-      ];
-    }
-
-    const profileGuidance =
-      coreMissingCount > 3
-        ? 'Prioridade: completar contactos e dados fiscais'
-        : coreMissingCount > 0
-          ? `${coreMissingCount} campo(s) essenciais por validar`
-          : 'Dados essenciais completos';
-
-    return [
-      {
-        label: 'Próxima decisão',
-        value: profileCompletion < 100 ? profileGuidance : 'Ficha em estado de revisão final',
-      },
-      {
-        label: 'Sinal de comunicação',
-        value: unreadNotifications > 0 ? `${unreadNotifications} notificação(ões) por tratar` : 'Canal limpo, sem alertas',
-      },
-      {
-        label: 'Ritmo de atualização',
-        value: `Última sincronização às ${nowLabel}`,
-      },
-    ];
-  }, [
-    assignedTrainings,
-    coreMissingCount,
-    isManagerFlow,
-    pendingProfileRequests,
-    pendingVacationRequests,
-    profileCompletion,
-    totalPending,
-    unreadNotifications,
-  ]);
-
   useEffect(() => {
-    if (!isManagerFlow) {
-      return;
-    }
-
     void (async () => {
-      try {
-        const [profileRequests, vacationRequests, trainings] = await Promise.all([
-          apiRequestCached<unknown[]>('/profile/requests', { headers: getAuthHeaders() }, 15000),
-          apiRequestCached<unknown[]>('/vacations/requests', { headers: getAuthHeaders() }, 15000),
-          apiRequestCached<Array<{ status?: string }>>('/trainings/assigned', { headers: getAuthHeaders() }, 15000),
-        ]);
+      setIsLoadingSummary(true);
 
-        setPendingProfileRequests(profileRequests.length);
-        setPendingVacationRequests(vacationRequests.length);
-        setAssignedTrainings(trainings.filter((item) => item.status === 'ASSIGNED').length);
+      try {
+        if (isManagerFlow || isTPeople) {
+          const [profileRequests, vacationRequests, trainings] = await Promise.all([
+            apiRequestCached<unknown[]>('/profile/requests', { headers: getAuthHeaders() }, 15000),
+            apiRequestCached<unknown[]>('/vacations/requests', { headers: getAuthHeaders() }, 15000),
+            apiRequestCached<Array<{ status?: string }>>('/trainings/assigned', { headers: getAuthHeaders() }, 15000),
+          ]);
+
+          setPendingProfileRequests(profileRequests.length);
+          setPendingVacationRequests(vacationRequests.length);
+          setAssignedTrainings(trainings.filter((item) => item.status === 'ASSIGNED').length);
+          setOwnPendingProfileRequest(false);
+          return;
+        }
+
+        const ownRequest = await apiRequestCached<{ pending?: boolean }>('/profile/requests/me', { headers: getAuthHeaders() }, 15000);
+        setOwnPendingProfileRequest(Boolean(ownRequest.pending));
+        setPendingProfileRequests(0);
+        setPendingVacationRequests(0);
+        setAssignedTrainings(0);
       } catch {
         setPendingProfileRequests(0);
         setPendingVacationRequests(0);
         setAssignedTrainings(0);
+        setOwnPendingProfileRequest(false);
+      } finally {
+        setIsLoadingSummary(false);
       }
     })();
-  }, [isManagerFlow]);
+  }, [isManagerFlow, isTPeople]);
 
   return (
     <>
       <section className="home-hero">
         <div className="home-main">
           <p className="hero-kicker">Portal interno</p>
-          <h1>Olá, {displayName}!</h1>
-          <p>{isManagerFlow ? 'Pendências, equipa e execução diária.' : 'Tudo o que precisas num único painel.'}</p>
+          <h1>{isLoadingSummary ? <span className="loading-line loading-line--title" /> : `Olá, ${displayName}!`}</h1>
+          <p>
+            {isLoadingSummary ? (
+              <span className="loading-line loading-line--body" />
+            ) : isTPeople
+              ? 'Centro executivo com foco em decisões e operação.'
+              : isManagerFlow
+                ? 'Pendências e equipa num painel objetivo.'
+                : 'Resumo direto com o essencial do dia.'}
+          </p>
 
           <div className="home-metrics">
             <article>
-              <span>{isManagerFlow ? 'Pendentes' : 'Perfil'}</span>
-              <strong>{isManagerFlow ? totalPending : `${profileCompletion}%`}</strong>
+              <span>Pendências</span>
+              <strong>{isLoadingSummary ? <span className="loading-line loading-line--metric" /> : totalPending}</strong>
             </article>
             <article>
               <span>Notificações</span>
-              <strong>{unreadNotifications}</strong>
+              <strong>{isLoadingSummary ? <span className="loading-line loading-line--metric" /> : unreadNotifications}</strong>
             </article>
             <article>
-              <span>{isManagerFlow ? 'Formações' : 'Contrato'}</span>
-              <strong>{isManagerFlow ? assignedTrainings : profile.tipoContrato}</strong>
+              <span>Formações ativas</span>
+              <strong>{isLoadingSummary ? <span className="loading-line loading-line--metric" /> : assignedTrainings}</strong>
             </article>
           </div>
 
+          {!isManagerFlow && ownPendingProfileRequest && !isLoadingSummary && (
+            <div className="home-pending-banner">
+              <strong>Pedido de alteração da ficha em análise</strong>
+              <p>O teu pedido foi submetido e está à espera de aprovação. Vais receber uma notificação quando houver decisão.</p>
+            </div>
+          )}
+
           <div className="home-actions">
-            {isManagerFlow ? (
+            {isTPeople ? (
+              <>
+                <Button variant="primary" type="button" onClick={() => navigate('/colaboradores')}>Gerir colaboradores</Button>
+                <Button variant="ghost" type="button" onClick={() => navigate('/aprovacoes')}>Ver aprovações</Button>
+              </>
+            ) : isManagerFlow ? (
               <>
                 <Button variant="primary" type="button" onClick={() => navigate('/aprovacoes')}>Ver pendências</Button>
-                <Button variant="ghost" type="button" onClick={() => navigate('/formacoes')}>Gestão de formações</Button>
+                <Button variant="ghost" type="button" onClick={() => navigate('/colaboradores')}>Colaboradores</Button>
               </>
             ) : (
               <Button variant="primary" type="button" onClick={() => navigate('/profile')}>Abrir minha ficha</Button>
             )}
           </div>
         </div>
-
-        <aside className="home-aside">
-          <h2>Resumo rápido</h2>
-          <ul>
-            {quickSummaryRows.map((row) => (
-              <li key={row.label}>
-                <span>{row.label}</span>
-                <strong>{row.value}</strong>
-              </li>
-            ))}
-          </ul>
-        </aside>
       </section>
 
       <section className="home-grid">
-        {isManagerFlow ? (
+        {isLoadingSummary ? (
+          <>
+            <Card as="article" className="home-card home-card--loading">
+              <span className="loading-line loading-line--card-title" />
+              <span className="loading-line loading-line--card-body" />
+              <span className="loading-line loading-line--button" />
+            </Card>
+            <Card as="article" className="home-card home-card--loading">
+              <span className="loading-line loading-line--card-title" />
+              <span className="loading-line loading-line--card-body" />
+              <span className="loading-line loading-line--button" />
+            </Card>
+          </>
+        ) : isTPeople || isManagerFlow ? (
           <>
             <Card as="article" className="home-card">
+              <p>Operação</p>
+              <h3>Colaboradores</h3>
+              <small>Ver ficha, permissões e estado da conta.</small>
+              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/colaboradores')}>Abrir</Button>
+            </Card>
+
+            <Card as="article" className="home-card">
               <p>Aprovações</p>
-              <h3>Pedidos de ficha e férias</h3>
-              <small>{pendingProfileRequests + pendingVacationRequests} pendentes.</small>
-              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/aprovacoes')}>Ver</Button>
-            </Card>
-
-            <Card as="article" className="home-card">
-              <p>Formação</p>
-              <h3>Plano de formação da equipa</h3>
-              <small>Gerir e concluir formações.</small>
-              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/formacoes')}>Ver</Button>
-            </Card>
-
-            <Card as="article" className="home-card">
-              <p>Comunicação</p>
-              <h3>Notificações internas</h3>
-              <small>Alertas e acompanhamento.</small>
-              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/notifications')}>Ver</Button>
+              <h3>Fila atual</h3>
+              <small>{totalPending} pendência(s) no momento.</small>
+              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/aprovacoes')}>Abrir</Button>
             </Card>
           </>
         ) : (
@@ -211,19 +164,14 @@ export default function HomePage() {
               <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/profile')}>Ver</Button>
             </Card>
 
-            <Card as="article" className="home-card">
-              <p>Comunicação</p>
-              <h3>Notificações e mensagens</h3>
-              <small>Ver avisos e mensagens.</small>
-              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/notifications')}>Ver</Button>
-            </Card>
-
-            <Card as="article" className="home-card">
-              <p>Formação</p>
-              <h3>Formações e horas</h3>
-              <small>Consultar e concluir.</small>
-              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/formacoes')}>Ver</Button>
-            </Card>
+            {ownPendingProfileRequest && (
+              <Card as="article" className="home-card home-card--highlight">
+                <p>Pendente</p>
+                <h3>Pedido de ficha em aprovação</h3>
+                <small>Existe um pedido de alteração à espera de validação.</small>
+                <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/notifications')}>Ver detalhe</Button>
+              </Card>
+            )}
           </>
         )}
       </section>

@@ -3,14 +3,16 @@
 import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
+import { PERMISSION_CATALOG } from '../src/lib/permissions.js';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient() as any;
 
 async function createUser(params: {
   username: string;
   email: string;
   password: string;
   role: 'COLABORADOR' | 'MANAGER' | 'COORDENADOR' | 'ADMIN' | 'CONVIDADO';
+  isRootAccess?: boolean;
   fullName: string;
   workCountry: 'PT' | 'BR';
   localidade: string;
@@ -20,6 +22,10 @@ async function createUser(params: {
   dataInicioContrato?: string;
 }) {
   const passwordHash = await bcrypt.hash(params.password, 10);
+  const nameParts = params.fullName.trim().split(/\s+/).filter(Boolean);
+  const firstName = nameParts[0] || params.fullName;
+  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+  const shortName = `${firstName}${lastName ? ` ${lastName}` : ''}`.trim();
 
   return prisma.user.create({
     data: {
@@ -27,12 +33,13 @@ async function createUser(params: {
       email: params.email,
       passwordHash,
       role: params.role,
+      isRootAccess: params.isRootAccess ?? false,
       teamId: params.role === 'ADMIN' ? null : params.teamId ?? null,
       profile: {
         create: {
-          primeiroNome: params.fullName,
-          apelido: '',
-          nomeAbreviado: params.fullName,
+          primeiroNome: firstName,
+          apelido: lastName,
+          nomeAbreviado: shortName,
           dataNascimento: '',
           genero: '',
           estadoCivil: '',
@@ -80,6 +87,9 @@ async function createUser(params: {
 
 async function main() {
   await prisma.$transaction([
+    prisma.permissionGrant.deleteMany(),
+    prisma.userPermission.deleteMany(),
+    prisma.permission.deleteMany(),
     prisma.vacationApproval.deleteMany(),
     prisma.vacation.deleteMany(),
     prisma.profileChangeRequest.deleteMany(),
@@ -90,6 +100,87 @@ async function main() {
     prisma.user.deleteMany(),
     prisma.team.deleteMany(),
   ]);
+
+  await prisma.permission.createMany({
+    data: PERMISSION_CATALOG.map((item) => ({
+      code: item.code,
+      label: item.label,
+      description: item.description,
+      category: item.category,
+      requiresRestrictions: item.requiresRestrictions,
+    })),
+  });
+
+  const permissions: Array<{ id: string; code: string }> = await prisma.permission.findMany({ orderBy: { code: 'asc' } });
+  const permissionByCode = new Map(permissions.map((item: { id: string; code: string }) => [item.code, item]));
+
+  const tPeople = await createUser({
+    username: 't.people',
+    email: 't.people@tlantic.com',
+    password: 'people123',
+    role: 'ADMIN',
+    isRootAccess: true,
+    fullName: 'T People',
+    workCountry: 'PT',
+    localidade: 'Porto',
+    cargo: 'People',
+    funcao: 'Administração raiz do sistema',
+  });
+
+  const sara = await createUser({
+    username: 'sara.magalhaes',
+    email: 'sara.magalhaes@tlantic.com',
+    password: 'sara123',
+    role: 'ADMIN',
+    fullName: 'Sara Magalhães',
+    workCountry: 'PT',
+    localidade: 'Porto',
+    cargo: 'CEO',
+    funcao: 'Direção geral',
+  });
+
+  await prisma.userPermission.createMany({
+    data: permissions.flatMap((permission: { id: string; code: string }) => ([
+      {
+        userId: tPeople.id,
+        permissionId: permission.id,
+        isEnabled: true,
+        grantedById: tPeople.id,
+      },
+      {
+        userId: sara.id,
+        permissionId: permission.id,
+        isEnabled: true,
+        grantedById: tPeople.id,
+      },
+    ])),
+  });
+
+  await prisma.permissionGrant.createMany({
+    data: permissions.flatMap((permission: { id: string; code: string }) => ([
+      {
+        actorUserId: tPeople.id,
+        targetUserId: tPeople.id,
+        permissionId: permission.id,
+        action: 'GRANT',
+        reason: 'Seed inicial do user raiz.',
+      },
+      {
+        actorUserId: tPeople.id,
+        targetUserId: sara.id,
+        permissionId: permission.id,
+        action: 'GRANT',
+        reason: 'Seed inicial da Sara com acesso total delegado.',
+      },
+    ])),
+  });
+
+  console.log('Seed de permissões concluído com sucesso.');
+  console.log('Utilizadores iniciais:');
+  console.log('- t.people / people123');
+  console.log('- sara.magalhaes / sara123');
+  console.log(`Permissões criadas: ${permissionByCode.size}`);
+  return;
 
   const opsPT = await prisma.team.create({ data: { name: 'Operações PT', country: 'PT' } });
   const opsNorte = await prisma.team.create({ data: { name: 'Operações PT - Norte', country: 'PT', parentTeamId: opsPT.id } });
@@ -251,28 +342,61 @@ async function main() {
         userId: colaboradoraAna.id,
         nome: 'Segurança da Informação',
         horas: 6,
-        duracao: '1 dia',
+        duracao: '10/03/2026-10/03/2026',
         entidade: 'Academia Interna',
-        status: 'CONCLUIDA',
+        status: 'COMPLETED',
+        dataConclusao: '2026-03-10',
         assignedByUserId: managerNorte.id,
       },
       {
         userId: colaboradorBruno.id,
         nome: 'Gestão de Incidentes',
         horas: 8,
-        duracao: '2 dias',
+        duracao: '22/03/2026-23/03/2026',
         entidade: 'Academia Interna',
-        status: 'CONCLUIDA',
+        status: 'COMPLETED',
+        dataConclusao: '2026-03-23',
         assignedByUserId: managerNorte.id,
       },
       {
         userId: colaboradorDiego.id,
         nome: 'Atendimento Premium',
         horas: 4,
-        duracao: '1 dia',
+        duracao: '05/02/2026-05/02/2026',
         entidade: 'Parceiro Externo',
-        status: 'CONCLUIDA',
+        status: 'COMPLETED',
+        dataConclusao: '2026-02-05',
         assignedByUserId: admin.id,
+      },
+      {
+        userId: colaboradoraCarla.id,
+        nome: 'Power BI Operacional',
+        horas: 12,
+        duracao: '15/04/2026-17/04/2026',
+        entidade: 'RH Academy',
+        status: 'ASSIGNED',
+        dataConclusao: '',
+        assignedByUserId: admin.id,
+      },
+      {
+        userId: colaboradorBruno.id,
+        nome: 'Comunicação com Cliente',
+        horas: 3,
+        duracao: '2 sessões',
+        entidade: 'Autoestudo',
+        status: 'CONCLUIDA',
+        dataConclusao: '2026-01-14',
+        assignedByUserId: null,
+      },
+      {
+        userId: colaboradoraAna.id,
+        nome: 'Excel Avançado',
+        horas: 5,
+        duracao: '29/04/2026-30/04/2026',
+        entidade: 'Academia Interna',
+        status: 'ASSIGNED',
+        dataConclusao: '',
+        assignedByUserId: managerNorte.id,
       },
     ],
   });
@@ -291,6 +415,23 @@ async function main() {
       reviewedAt: new Date(),
       reviewReason: 'Aprovado em cadeia completa.',
       approvedByRole: 'COORDENADOR',
+    },
+  });
+
+  await prisma.vacation.create({
+    data: {
+      userId: colaboradorBruno.id,
+      contextTeamId: opsNorte.id,
+      dataInicio: '2026-04-21',
+      dataFim: '2026-04-24',
+      partialDay: 'FULL',
+      requestType: 'VACATION',
+      observacoes: 'Pausa curta no mes corrente para validar calendario.',
+      status: 'APPROVED',
+      reviewedById: managerNorte.id,
+      reviewedAt: new Date(),
+      reviewReason: 'Aprovado na linha 1.',
+      approvedByRole: 'MANAGER',
     },
   });
 
@@ -415,6 +556,20 @@ async function main() {
       },
       changesSummary: 'Atualização de telemóvel e morada.',
       status: 'PENDING',
+    },
+  });
+
+  await prisma.profileChangeRequest.create({
+    data: {
+      userId: colaboradoraAna.id,
+      requestedData: {
+        iban: 'PT50000000000000000000001',
+      },
+      changesSummary: 'Atualização de IBAN para processamento salarial.',
+      status: 'REJECTED',
+      reviewedById: managerNorte.id,
+      reviewedAt: new Date(),
+      reviewReason: 'Necessário comprovativo bancário atualizado.',
     },
   });
 

@@ -12,6 +12,7 @@ export const roleMenus: Record<UserRole, MenuItem[]> = {
   coordenador: [
     { id: 'home', label: 'Home', path: '/' },
     { id: 'equipas', label: 'Equipas', path: '/equipas' },
+    { id: 'colaboradores', label: 'Colaboradores', path: '/colaboradores' },
     { id: 'aprovacoes', label: 'Aprovações', path: '/aprovacoes' },
     { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
     { id: 'formacoes', label: 'Formações', path: '/formacoes' },
@@ -29,6 +30,7 @@ export const roleMenus: Record<UserRole, MenuItem[]> = {
     { id: 'home', label: 'Home', path: '/' },
     { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
     { id: 'equipas', label: 'Equipas', path: '/equipas' },
+    { id: 'colaboradores', label: 'Colaboradores', path: '/colaboradores' },
     { id: 'admin', label: 'Administração', path: '/admin' },
     { id: 'aprovacoes', label: 'Aprovações', path: '/aprovacoes' },
     { id: 'formacoes', label: 'Formações', path: '/formacoes' },

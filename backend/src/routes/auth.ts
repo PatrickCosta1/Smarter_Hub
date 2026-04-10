@@ -34,6 +34,8 @@ router.post("/auth/login", async (req, res, next) => {
         username: true,
         email: true,
         role: true,
+        isActive: true,
+        isRootAccess: true,
         passwordHash: true
       }
     });
@@ -48,11 +50,17 @@ router.post("/auth/login", async (req, res, next) => {
       return res.status(401).json({ message: "Credenciais invalidas." });
     }
 
+    if (!user.isActive) {
+      return res.status(403).json({ message: 'Conta inativa. Contacta RH para mais informações.' });
+    }
+
     const token = signAuthToken({
       id: user.id,
       username: user.username,
       email: user.email,
-      role: user.role
+      role: user.role,
+      isActive: user.isActive,
+      isRootAccess: user.isRootAccess,
     });
 
     return res.json({
@@ -61,7 +69,9 @@ router.post("/auth/login", async (req, res, next) => {
         id: user.id,
         username: user.username,
         email: user.email,
-        role: user.role
+        role: user.role,
+        isActive: user.isActive,
+        isRootAccess: user.isRootAccess,
       }
     });
   } catch (error) {
@@ -84,6 +94,8 @@ router.patch('/auth/account', requireAuth, async (req, res, next) => {
         username: true,
         email: true,
         role: true,
+        isActive: true,
+        isRootAccess: true,
         passwordHash: true,
       },
     });
@@ -119,6 +131,8 @@ router.patch('/auth/account', requireAuth, async (req, res, next) => {
         username: true,
         email: true,
         role: true,
+        isActive: true,
+        isRootAccess: true,
       },
     });
 

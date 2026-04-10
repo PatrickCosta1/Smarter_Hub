@@ -8,9 +8,10 @@ type ModalProps = {
   children: ReactNode;
   width?: string;
   footer?: ReactNode;
+  showCloseButton?: boolean;
 };
 
-export default function Modal({ open, title, onClose, children, width, footer }: ModalProps) {
+export default function Modal({ open, title, onClose, children, width, footer, showCloseButton = true }: ModalProps) {
   useEffect(() => {
     if (!open) {
       return;
@@ -42,9 +43,11 @@ export default function Modal({ open, title, onClose, children, width, footer }:
       >
         <header className="quick-modal__head">
           <h3>{title}</h3>
-          <Button variant="ghost" size="sm" type="button" onClick={onClose} aria-label="Fechar">
-            Fechar
-          </Button>
+          {showCloseButton && (
+            <Button variant="ghost" size="sm" type="button" onClick={onClose} aria-label="Fechar">
+              Fechar
+            </Button>
+          )}
         </header>
 
         <div className="ui-modal__body">{children}</div>

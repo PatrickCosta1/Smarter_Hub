@@ -1,28 +1,56 @@
 import { useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { roleLabels, roleMenus } from '../portal/data';
+import { roleLabels } from '../portal/data';
 import { usePortal } from '../portal/context';
+import { MenuItem } from '../portal/types';
 
 export default function PortalLayout() {
-  const { userRole, unreadNotifications, logout } = usePortal();
+  const { userRole, unreadNotifications, logout, hasPermission, isRootAccess, currentUser } = usePortal();
   const navigate = useNavigate();
   const location = useLocation();
   const [menuQuery, setMenuQuery] = useState('');
+  const isTPeople = currentUser?.username === 't.people';
+
+  const roleMenus = useMemo(() => {
+    const can = (code: string) => isRootAccess || hasPermission(code);
+
+    const menu: MenuItem[] = [
+      { id: 'home', label: 'Home', path: '/' },
+      ...(!isTPeople ? [{ id: 'profile', label: 'A Minha Ficha', path: '/profile' }] : []),
+      ...(can('view_teams') || can('manage_team_members') ? [{ id: 'equipas', label: 'Equipas', path: '/equipas' }] : []),
+      ...(can('view_user_list') ? [{ id: 'colaboradores', label: 'Colaboradores', path: '/colaboradores' }] : []),
+      ...(can('edit_user') || can('create_team') || can('edit_team') || can('delete_team')
+        ? [{ id: 'admin', label: 'Administração', path: '/admin' }]
+        : []),
+      ...(can('approve_profile_change') || can('approve_vacation') || can('reject_vacation') || can('view_all_vacations')
+        ? [{ id: 'aprovacoes', label: 'Aprovações', path: '/aprovacoes' }]
+        : []),
+      ...(can('view_trainings') || can('view_all_trainings') || can('request_training') || can('assign_training')
+        ? [{ id: 'formacoes', label: 'Formações', path: '/formacoes' }]
+        : []),
+      ...(!isTPeople && (can('request_vacation') || can('view_own_vacations') || can('view_all_vacations'))
+        ? [{ id: 'ferias', label: 'Férias', path: '/ferias' }]
+        : []),
+      ...(can('view_receipts') || can('view_all_receipts') ? [{ id: 'recibos', label: 'Recibos', path: '/recibos' }] : []),
+    ];
+
+    return menu;
+  }, [hasPermission, isRootAccess, isTPeople]);
 
   const currentMenu = useMemo(
-    () => roleMenus[userRole].find((item) => item.path === location.pathname),
-    [location.pathname, userRole],
+    () => roleMenus.find((item) => item.path === location.pathname),
+    [location.pathname, roleMenus],
   );
 
   const filteredMenu = useMemo(() => {
     const normalized = menuQuery.trim().toLowerCase();
 
     if (!normalized) {
-      return roleMenus[userRole];
+      return roleMenus;
     }
 
-    return roleMenus[userRole].filter((item) => item.label.toLowerCase().includes(normalized));
-  }, [menuQuery, userRole]);
+    return roleMenus.filter((item) => item.label.toLowerCase().includes(normalized));
+  }, [menuQuery, roleMenus]);
 
   const todayLabel = useMemo(
     () => new Intl.DateTimeFormat('pt-PT', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(new Date()),
@@ -81,33 +109,6 @@ export default function PortalLayout() {
             ))}
             {filteredMenu.length === 0 && <p className="portal-nav__empty">Sem áreas para essa pesquisa.</p>}
           </nav>
-
-          <div className="portal-sidebar__footer">
-            <button
-              className={`icon-button${unreadNotifications > 0 ? ' has-unread' : ''}${location.pathname === '/notifications' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => navigate('/notifications')}
-              aria-label="Notificações"
-              title="Notificações"
-            >
-              <span aria-hidden="true">🔔</span>
-              <span>Notificações</span>
-              {unreadNotifications > 0 && <span className="icon-badge">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>}
-            </button>
-            <button
-              className={`icon-button${location.pathname === '/perfil' ? ' is-active' : ''}`}
-              type="button"
-              onClick={() => navigate('/perfil')}
-              aria-label="Perfil"
-              title="Perfil"
-            >
-              <span aria-hidden="true">👤</span>
-              <span>Perfil</span>
-            </button>
-            <button className="topbar-link" type="button" onClick={handleLogout}>
-              Sair
-            </button>
-          </div>
         </aside>
 
         <section className="portal-content">
@@ -119,6 +120,28 @@ export default function PortalLayout() {
 
             <div className="portal-header__actions">
               <span className="portal-header__chip">{globalInfoLabel}</span>
+              <button
+                className={`icon-button icon-button--header${unreadNotifications > 0 ? ' has-unread' : ''}${location.pathname === '/notifications' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => navigate('/notifications')}
+                aria-label="Notificações"
+                title="Notificações"
+              >
+                <span aria-hidden="true">🔔</span>
+                {unreadNotifications > 0 && <span className="icon-badge">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>}
+              </button>
+              <button
+                className={`icon-button icon-button--header${location.pathname === '/perfil' ? ' is-active' : ''}`}
+                type="button"
+                onClick={() => navigate(isTPeople ? '/colaboradores' : '/perfil')}
+                aria-label="Perfil"
+                title="Perfil"
+              >
+                <span aria-hidden="true">👤</span>
+              </button>
+              <button className="topbar-link" type="button" onClick={handleLogout}>
+                Sair
+              </button>
             </div>
           </header>
 

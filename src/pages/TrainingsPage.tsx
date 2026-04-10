@@ -27,6 +27,17 @@ type TrainingRecord = {
     email: string;
     role: string;
   };
+  assignedBy?: {
+    id: string;
+    username: string;
+    email: string;
+    role: string;
+    profile?: {
+      nomeAbreviado?: string;
+      primeiroNome?: string;
+      apelido?: string;
+    } | null;
+  } | null;
 };
 
 type Collaborator = {
@@ -69,9 +80,34 @@ function formatHours(value: number): string {
   return new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(value);
 }
 
+function formatAbbreviatedUserName(user?: { username: string; profile?: { nomeAbreviado?: string; primeiroNome?: string; apelido?: string } | null } | null) {
+  if (!user) {
+    return 'Próprio';
+  }
+
+  const profileShort = user.profile?.nomeAbreviado?.trim() || '';
+  if (profileShort) {
+    return profileShort;
+  }
+
+  const first = user.profile?.primeiroNome?.trim() || '';
+  const last = user.profile?.apelido?.trim() || '';
+  const fullName = `${first} ${last}`.trim();
+
+  return fullName || user.username;
+}
+
+function getTrainingOriginLabel(record: TrainingRecord) {
+  if (!record.assignedBy) {
+    return 'Próprio';
+  }
+
+  return formatAbbreviatedUserName(record.assignedBy);
+}
+
 export default function TrainingsPage() {
-  const { userRole } = usePortal();
-  const canManage = userRole === 'manager' || userRole === 'coordenador' || userRole === 'admin';
+  const { hasPermission, isRootAccess } = usePortal();
+  const canManage = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
 
   const [query, setQuery] = useState('');
   const [records, setRecords] = useState<TrainingRecord[]>([]);
@@ -82,6 +118,8 @@ export default function TrainingsPage() {
   const [collaboratorQuery, setCollaboratorQuery] = useState('');
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [isSearchingCollaborators, setIsSearchingCollaborators] = useState(false);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [isAssignedModalOpen, setIsAssignedModalOpen] = useState(false);
 
   const sortedRecords = useMemo(
     () => [...records].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
@@ -244,177 +282,169 @@ export default function TrainingsPage() {
       </header>
 
       {canManage ? (
-        <div className="trainings-manage-grid">
-          <section className="trainings-form-card">
-            <div className="trainings-form-head">
+        <>
+          <section className="trainings-list-card trainings-launchpad">
+            <article>
               <h3>Atribuir nova formação</h3>
-            </div>
-
-            <form className="trainings-form" onSubmit={handleAssignTraining} noValidate>
-              <div className="field-span-2 rh-collaborator-picker">
-                <span>Colaborador *</span>
-                <input
-                  type="search"
-                  value={collaboratorQuery}
-                  onChange={(event) => setCollaboratorQuery(event.target.value)}
-                  placeholder="Pesquisar por nome, username, email, cargo ou função..."
-                />
-
-                {selectedCollaborator ? (
-                  <div className="rh-selected-collaborator">
-                    <strong>{`${selectedCollaborator.profile?.primeiroNome ?? ''} ${selectedCollaborator.profile?.apelido ?? ''}`.trim() || selectedCollaborator.username}</strong>
-                    <span>{selectedCollaborator.email}</span>
-                    <button type="button" onClick={() => updateAssignDraft('userId', '')}>Trocar colaborador</button>
-                  </div>
-                ) : (
-                  <div className="rh-collaborator-results" role="listbox" aria-label="Resultados de colaboradores">
-                    {!isSearchingCollaborators && !collaboratorQuery.trim() && <p>Escreve para pesquisar colaboradores.</p>}
-                    {isSearchingCollaborators && <p>A pesquisar colaboradores...</p>}
-                    {!isSearchingCollaborators && collaboratorQuery.trim() && collaborators.length === 0 && <p>Sem resultados para a pesquisa.</p>}
-                    {!isSearchingCollaborators &&
-                      collaborators.map((collaborator) => {
-                        const displayName = `${collaborator.profile?.primeiroNome ?? ''} ${collaborator.profile?.apelido ?? ''}`.trim() || collaborator.username;
-
-                        return (
-                          <button
-                            key={collaborator.id}
-                            type="button"
-                            className="rh-collaborator-result"
-                            onClick={() => updateAssignDraft('userId', collaborator.id)}
-                          >
-                            <strong>{displayName}</strong>
-                            <span>{collaborator.email}</span>
-                            <small>{collaborator.profile?.cargo || formatRoleLabel(collaborator.role)}</small>
-                          </button>
-                        );
-                      })}
-                  </div>
-                )}
-              </div>
-
-              <label>
-                <span>Nome da formação *</span>
-                <input type="text" value={assignDraft.nome} onChange={(event) => updateAssignDraft('nome', event.target.value)} />
-              </label>
-
-              <label>
-                <span>Horas *</span>
-                <input type="text" inputMode="decimal" value={assignDraft.horas} onChange={(event) => updateAssignDraft('horas', event.target.value)} />
-              </label>
-
-              <label>
-                <span>Link</span>
-                <input type="url" value={assignDraft.link} onChange={(event) => updateAssignDraft('link', event.target.value)} placeholder="https://..." />
-              </label>
-
-              <label>
-                <span>Duração</span>
-                <input type="text" value={assignDraft.duracao} onChange={(event) => updateAssignDraft('duracao', event.target.value)} placeholder="Ex: 3 dias" />
-              </label>
-
-              <label>
-                <span>Entidade</span>
-                <input type="text" value={assignDraft.entidade} onChange={(event) => updateAssignDraft('entidade', event.target.value)} placeholder="Ex: Udemy" />
-              </label>
-
-              <div className="trainings-form-actions field-span-2">
-                <button className="cta-button cta-primary" type="submit">Atribuir formação</button>
-                <button className="cta-button cta-ghost" type="button" onClick={() => setAssignDraft(EMPTY_ASSIGN_DRAFT)}>Limpar</button>
-              </div>
-            </form>
-
-            {assignStatus && <p className="trainings-status">{assignStatus}</p>}
+              <p>Abre o formulário num popup focado para atribuir formações sem ruído visual.</p>
+              <button className="cta-button cta-primary" type="button" onClick={() => setIsAssignModalOpen(true)}>Abrir formulário</button>
+            </article>
+            <article>
+              <h3>Formações atribuídas</h3>
+              <p>Abre a tabela completa num popup com pesquisa e filtros rápidos.</p>
+              <button className="cta-button cta-secondary" type="button" onClick={() => setIsAssignedModalOpen(true)}>Abrir lista</button>
+            </article>
           </section>
 
-          <section className="trainings-list-card">
-            <div className="trainings-list-head">
-              <h3>Formações atribuídas</h3>
-              <label>
-                <span>Pesquisar</span>
-                <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome, entidade, colaborador..." />
-              </label>
-            </div>
+          {isAssignModalOpen && (
+            <div className="quick-overlay" onClick={() => setIsAssignModalOpen(false)}>
+              <section className="quick-modal trainings-modal" onClick={(event) => event.stopPropagation()} aria-modal="true" role="dialog" aria-label="Atribuir nova formação">
+                <div className="quick-modal__head">
+                  <h3>Atribuir nova formação</h3>
+                  <button className="cta-button cta-ghost" type="button" onClick={() => setIsAssignModalOpen(false)}>Fechar</button>
+                </div>
 
-            <div className="trainings-table-wrap">
-              <table className="trainings-table" aria-label="Lista de formações">
-                <thead>
-                  <tr>
-                    <th>Formação</th>
-                    <th>Colaborador</th>
-                    <th>Link</th>
-                    <th>Horas</th>
-                    <th>Duração</th>
-                    <th>Entidade</th>
-                    <th>Data conclusão</th>
-                    <th>Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleRecords.length === 0 && (
-                    <tr>
-                      <td colSpan={8}>Sem formações para apresentar.</td>
-                    </tr>
-                  )}
+                <form className="trainings-form" onSubmit={handleAssignTraining} noValidate>
+                  <div className="field-span-2 rh-collaborator-picker">
+                    <span>Colaborador *</span>
+                    <input
+                      type="search"
+                      value={collaboratorQuery}
+                      onChange={(event) => setCollaboratorQuery(event.target.value)}
+                      placeholder="Pesquisar por nome, username, email, cargo ou função..."
+                    />
 
-                  {visibleRecords.map((record) => (
-                    <tr key={record.id}>
-                      <td>{record.nome}</td>
-                      <td>{record.user?.username || '-'}</td>
-                      <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
-                      <td>{formatHours(record.horas)} h</td>
-                      <td>{record.duracao || '-'}</td>
-                      <td>{record.entidade || '-'}</td>
-                      <td>{record.dataConclusao || '-'}</td>
-                      <td>
-                        <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
-                          {formatTrainingStatusLabel(record.status)}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                    {selectedCollaborator ? (
+                      <div className="rh-selected-collaborator">
+                        <strong>{`${selectedCollaborator.profile?.primeiroNome ?? ''} ${selectedCollaborator.profile?.apelido ?? ''}`.trim() || selectedCollaborator.username}</strong>
+                        <span>{selectedCollaborator.email}</span>
+                        <button type="button" onClick={() => updateAssignDraft('userId', '')}>Trocar colaborador</button>
+                      </div>
+                    ) : (
+                      <div className="rh-collaborator-results" role="listbox" aria-label="Resultados de colaboradores">
+                        {!isSearchingCollaborators && !collaboratorQuery.trim() && <p>Escreve para pesquisar colaboradores.</p>}
+                        {isSearchingCollaborators && <p>A pesquisar colaboradores...</p>}
+                        {!isSearchingCollaborators && collaboratorQuery.trim() && collaborators.length === 0 && <p>Sem resultados para a pesquisa.</p>}
+                        {!isSearchingCollaborators &&
+                          collaborators.map((collaborator) => {
+                            const displayName = `${collaborator.profile?.primeiroNome ?? ''} ${collaborator.profile?.apelido ?? ''}`.trim() || collaborator.username;
 
-            <div className="trainings-mobile-list">
-              {visibleRecords.length === 0 && <article className="trainings-mobile-card">Sem formações para apresentar.</article>}
-
-              {visibleRecords.map((record) => (
-                <article key={`mobile-${record.id}`} className="trainings-mobile-card">
-                  <header>
-                    <h4>{record.nome}</h4>
-                    <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
-                      {formatTrainingStatusLabel(record.status)}
-                    </Badge>
-                  </header>
-                  <p>
-                    <span>Colaborador:</span> {record.user?.username || '-'}
-                  </p>
-                  <p>
-                    <span>Horas:</span> {formatHours(record.horas)} h
-                  </p>
-                  <p>
-                    <span>Duração:</span> {record.duracao || '-'}
-                  </p>
-                  <p>
-                    <span>Entidade:</span> {record.entidade || '-'}
-                  </p>
-                  <p>
-                    <span>Data:</span> {record.dataConclusao || '-'}
-                  </p>
-
-                  <div className="trainings-mobile-links">
-                    {record.link && (
-                      <a href={record.link} target="_blank" rel="noreferrer">Abrir link</a>
+                            return (
+                              <button
+                                key={collaborator.id}
+                                type="button"
+                                className="rh-collaborator-result"
+                                onClick={() => updateAssignDraft('userId', collaborator.id)}
+                              >
+                                <strong>{displayName}</strong>
+                                <span>{collaborator.email}</span>
+                                <small>{collaborator.profile?.cargo || formatRoleLabel(collaborator.role)}</small>
+                              </button>
+                            );
+                          })}
+                      </div>
                     )}
                   </div>
-                </article>
-              ))}
-            </div>
 
-            {status && <p className="trainings-status">{status}</p>}
-          </section>
-        </div>
+                  <label>
+                    <span>Nome da formação *</span>
+                    <input type="text" value={assignDraft.nome} onChange={(event) => updateAssignDraft('nome', event.target.value)} />
+                  </label>
+
+                  <label>
+                    <span>Horas *</span>
+                    <input type="text" inputMode="decimal" value={assignDraft.horas} onChange={(event) => updateAssignDraft('horas', event.target.value)} />
+                  </label>
+
+                  <label>
+                    <span>Link</span>
+                    <input type="url" value={assignDraft.link} onChange={(event) => updateAssignDraft('link', event.target.value)} placeholder="https://..." />
+                  </label>
+
+                  <label>
+                    <span>Duração (período da formação)</span>
+                    <input type="text" value={assignDraft.duracao} onChange={(event) => updateAssignDraft('duracao', event.target.value)} placeholder="Ex: 01/05-03/05 ou 3 sessões" />
+                  </label>
+
+                  <label>
+                    <span>Entidade</span>
+                    <input type="text" value={assignDraft.entidade} onChange={(event) => updateAssignDraft('entidade', event.target.value)} placeholder="Ex: Udemy" />
+                  </label>
+
+                  <div className="trainings-form-actions field-span-2">
+                    <button className="cta-button cta-primary" type="submit">Atribuir formação</button>
+                    <button className="cta-button cta-ghost" type="button" onClick={() => setAssignDraft(EMPTY_ASSIGN_DRAFT)}>Limpar</button>
+                  </div>
+                </form>
+
+                {assignStatus && <p className="trainings-status">{assignStatus}</p>}
+              </section>
+            </div>
+          )}
+
+          {isAssignedModalOpen && (
+            <div className="quick-overlay" onClick={() => setIsAssignedModalOpen(false)}>
+              <section className="quick-modal trainings-modal trainings-modal--wide" onClick={(event) => event.stopPropagation()} aria-modal="true" role="dialog" aria-label="Formações atribuídas">
+                <div className="quick-modal__head">
+                  <h3>Formações atribuídas</h3>
+                  <button className="cta-button cta-ghost" type="button" onClick={() => setIsAssignedModalOpen(false)}>Fechar</button>
+                </div>
+
+                <div className="trainings-list-head">
+                  <label>
+                    <span>Pesquisar</span>
+                    <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome, entidade, colaborador..." />
+                  </label>
+                </div>
+
+                <div className="trainings-table-wrap">
+                  <table className="trainings-table" aria-label="Lista de formações">
+                    <thead>
+                      <tr>
+                        <th>Formação</th>
+                        <th>Colaborador</th>
+                        <th>Origem</th>
+                        <th>Link</th>
+                        <th>Horas</th>
+                        <th>Duração</th>
+                        <th>Entidade</th>
+                        <th>Data conclusão</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleRecords.length === 0 && (
+                        <tr>
+                          <td colSpan={9}>Sem formações para apresentar.</td>
+                        </tr>
+                      )}
+
+                      {visibleRecords.map((record) => (
+                        <tr key={record.id}>
+                          <td>{record.nome}</td>
+                          <td>{record.user?.username || '-'}</td>
+                          <td>{getTrainingOriginLabel(record)}</td>
+                          <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
+                          <td>{formatHours(record.horas)} h</td>
+                          <td>{record.duracao || '-'}</td>
+                          <td>{record.entidade || '-'}</td>
+                          <td>{record.dataConclusao || '-'}</td>
+                          <td>
+                            <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
+                              {formatTrainingStatusLabel(record.status)}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {status && <p className="trainings-status">{status}</p>}
+              </section>
+            </div>
+          )}
+        </>
       ) : (
         <section className="trainings-list-card">
           <div className="trainings-list-head">
@@ -430,6 +460,7 @@ export default function TrainingsPage() {
               <thead>
                 <tr>
                   <th>Formação</th>
+                  <th>Origem</th>
                   <th>Link</th>
                   <th>Horas</th>
                   <th>Duração</th>
@@ -442,13 +473,14 @@ export default function TrainingsPage() {
               <tbody>
                 {visibleRecords.length === 0 && (
                   <tr>
-                    <td colSpan={8}>Sem formações para apresentar.</td>
+                    <td colSpan={9}>Sem formações para apresentar.</td>
                   </tr>
                 )}
 
                 {visibleRecords.map((record) => (
                   <tr key={record.id}>
                     <td>{record.nome}</td>
+                    <td>{getTrainingOriginLabel(record)}</td>
                     <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
                     <td>{formatHours(record.horas)} h</td>
                     <td>{record.duracao || '-'}</td>
@@ -485,6 +517,9 @@ export default function TrainingsPage() {
                     {formatTrainingStatusLabel(record.status)}
                   </Badge>
                 </header>
+                <p>
+                  <span>Origem:</span> {getTrainingOriginLabel(record)}
+                </p>
                 <p>
                   <span>Horas:</span> {formatHours(record.horas)} h
                 </p>

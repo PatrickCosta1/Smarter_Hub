@@ -34,12 +34,18 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         id: true,
         username: true,
         email: true,
-        role: true
+        role: true,
+        isActive: true,
+        isRootAccess: true,
       }
     });
 
     if (!user) {
       return res.status(401).json({ message: "Sessao invalida." });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({ message: 'Conta inativa. Contacta RH para mais informações.' });
     }
 
     req.authUser = user;
@@ -54,7 +60,8 @@ export function signAuthToken(user: AuthUser) {
     {
       sub: user.id,
       username: user.username,
-      role: user.role
+      role: user.role,
+      isRootAccess: user.isRootAccess,
     },
     getJwtSecret(),
     { expiresIn: "8h" }
