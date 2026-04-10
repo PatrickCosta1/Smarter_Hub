@@ -248,12 +248,12 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const hasPermission = useCallback((code: string) => {
-    if (isRootAccess) {
+    if (isRootAccess || isAccessTotal) {
       return true;
     }
 
     return permissions.includes(code);
-  }, [isRootAccess, permissions]);
+  }, [isRootAccess, isAccessTotal, permissions]);
 
   const setProfile = useCallback((profileData: ProfileData) => {
     setProfileState(normalizeProfileData(profileData));

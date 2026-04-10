@@ -159,9 +159,9 @@ function parseJsonOrNull(input: string) {
   }
 }
 
-function buildDraftFromAssignment(item: PermissionItem): PermissionDraft {
+function buildDraftFromAssignment(item: PermissionItem, forceEnabled = false): PermissionDraft {
   return {
-    enabled: item.assignment?.isEnabled ?? false,
+    enabled: forceEnabled || item.assignment?.isEnabled || false,
     restrictedToTeams: item.assignment?.restrictedToTeams?.join(', ') ?? '',
     restrictedToCountries: item.assignment?.restrictedToCountries?.join(', ') ?? '',
     restrictedToLevels: item.assignment?.restrictedToLevels?.join(', ') ?? '',
@@ -193,6 +193,7 @@ export default function PermissionsPage() {
   const [accessReason, setAccessReason] = useState('');
   const [audit, setAudit] = useState<AuditResponse | null>(null);
   const [isLoadingAudit, setIsLoadingAudit] = useState(false);
+  const [isTogglingAccessTotal, setIsTogglingAccessTotal] = useState(false);
 
   const filteredUsers = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -255,10 +256,11 @@ export default function PermissionsPage() {
     setIsDetailsLoading(true);
     try {
       const data = await apiRequestCached<PermissionsResponse>(`/users/${userId}/permissions`, { headers: getAuthHeaders() }, 10000, true);
+      const hasAccessTotal = Boolean(data.accessTotal);
       setSelectedUser(data.user);
-      setSelectedUserAccessTotal(Boolean(data.accessTotal));
+      setSelectedUserAccessTotal(hasAccessTotal);
       setPermissions(data.permissions);
-      setDrafts(Object.fromEntries(data.permissions.map((permission) => [permission.id, buildDraftFromAssignment(permission)])));
+      setDrafts(Object.fromEntries(data.permissions.map((permission) => [permission.id, buildDraftFromAssignment(permission, hasAccessTotal)])));
       setStatus('');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar permissões.');
@@ -269,6 +271,11 @@ export default function PermissionsPage() {
 
   async function savePermission(permission: PermissionItem) {
     if (!selectedUser) {
+      return;
+    }
+
+    if (accessTotal) {
+      setStatus('Desativa o acesso total para editar permissões individuais.');
       return;
     }
 
@@ -350,8 +357,9 @@ export default function PermissionsPage() {
       return;
     }
 
+    setIsTogglingAccessTotal(true);
     try {
-      await apiRequest(`/users/${selectedUser.id}/access-total`, {
+      const result = await apiRequest<{ success: boolean; accessTotal: boolean }>(`/users/${selectedUser.id}/access-total`, {
         method: 'PATCH',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -363,11 +371,14 @@ export default function PermissionsPage() {
       clearApiCache();
       setAccessTotalModalOpen(false);
       setAccessReason('');
-      await loadUsers();
-      await loadPermissions(selectedUser.id);
+      setSelectedUserAccessTotal(Boolean(result.accessTotal));
+      void loadUsers();
+      void loadPermissions(selectedUser.id);
       setStatus(accessTotalAction === 'grant' ? 'Acesso total concedido.' : 'Acesso total revogado.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao alterar acesso total.');
+    } finally {
+      setIsTogglingAccessTotal(false);
     }
   }
 
@@ -465,6 +476,7 @@ export default function PermissionsPage() {
               {selectedUser && (
                 <p>{selectedUser.email} · {selectedUser.profile?.workCountry || 'PT'} · {selectedUser.profile?.localidade || '-'}</p>
               )}
+              <p className="collab-help-inline">Dar/Revogar acesso total grava imediatamente e não depende do botão Guardar da permissão individual.</p>
             </div>
 
             <div className="permissions-main__actions">
@@ -504,11 +516,12 @@ export default function PermissionsPage() {
 
             {!isDetailsLoading && categoryPermissions.map((permission) => {
               const draft = drafts[permission.id] ?? buildDraftFromAssignment(permission);
+              const effectiveEnabled = accessTotal || draft.enabled;
               const assignedBy = permission.assignment?.grantedBy ? getDisplayName(permission.assignment.grantedBy) : 'Sistema';
               const isDirty = Boolean(permission.assignment) || draft.enabled;
 
               return (
-                <article key={permission.id} className={`permission-card${draft.enabled ? ' is-enabled' : ''}`}>
+                <article key={permission.id} className={`permission-card${effectiveEnabled ? ' is-enabled' : ''}`}>
                   <header className="permission-card__head">
                     <div>
                       <h4>{permission.label}</h4>
@@ -517,10 +530,11 @@ export default function PermissionsPage() {
                     <label className="permission-switch">
                       <input
                         type="checkbox"
-                        checked={draft.enabled}
+                        checked={effectiveEnabled}
                         onChange={(event) => setDrafts((current) => ({ ...current, [permission.id]: { ...draft, enabled: event.target.checked } }))}
+                        disabled={accessTotal}
                       />
-                      <span>{draft.enabled ? 'Ativa' : 'Inativa'}</span>
+                      <span>{effectiveEnabled ? 'Ativa' : 'Inativa'}</span>
                     </label>
                   </header>
 
@@ -540,6 +554,7 @@ export default function PermissionsPage() {
                         onChange={(event) => setDrafts((current) => ({ ...current, [permission.id]: { ...draft, restrictedToTeams: event.target.value } }))}
                         placeholder="team-1, team-2"
                         rows={2}
+                        disabled={accessTotal}
                       />
                     </label>
                     <label>
@@ -549,6 +564,7 @@ export default function PermissionsPage() {
                         onChange={(event) => setDrafts((current) => ({ ...current, [permission.id]: { ...draft, restrictedToCountries: event.target.value } }))}
                         placeholder="PT, BR"
                         rows={2}
+                        disabled={accessTotal}
                       />
                     </label>
                     <label>
@@ -558,6 +574,7 @@ export default function PermissionsPage() {
                         onChange={(event) => setDrafts((current) => ({ ...current, [permission.id]: { ...draft, restrictedToLevels: event.target.value } }))}
                         placeholder="COLABORADOR, MANAGER"
                         rows={2}
+                        disabled={accessTotal}
                       />
                     </label>
                     <label className="field-span-2">
@@ -567,6 +584,7 @@ export default function PermissionsPage() {
                         onChange={(event) => setDrafts((current) => ({ ...current, [permission.id]: { ...draft, customRestrictions: event.target.value } }))}
                         placeholder='{"maxDays": 10, "note": "Apenas urgências"}'
                         rows={3}
+                        disabled={accessTotal}
                       />
                     </label>
                     <label className="field-span-2">
@@ -576,9 +594,14 @@ export default function PermissionsPage() {
                         onChange={(event) => setDrafts((current) => ({ ...current, [permission.id]: { ...draft, notes: event.target.value } }))}
                         placeholder="Contexto ou observações sobre esta permissão"
                         rows={2}
+                        disabled={accessTotal}
                       />
                     </label>
                   </div>
+
+                  {accessTotal && (
+                    <p className="permissions-access-warning">Acesso total ativo: todas as permissões estão efetivamente ativas e a edição individual fica bloqueada.</p>
+                  )}
 
                   <div className="permission-card__footer">
                     <Button
@@ -586,6 +609,7 @@ export default function PermissionsPage() {
                       variant="primary"
                       isLoading={savingPermissionId === permission.id}
                       onClick={() => void savePermission(permission)}
+                      disabled={accessTotal}
                     >
                       Guardar
                     </Button>
@@ -593,7 +617,7 @@ export default function PermissionsPage() {
                       type="button"
                       variant="ghost"
                       onClick={() => setDrafts((current) => ({ ...current, [permission.id]: buildDraftFromAssignment(permission) }))}
-                      disabled={!isDirty}
+                      disabled={!isDirty || accessTotal}
                     >
                       Repor
                     </Button>
@@ -655,7 +679,13 @@ export default function PermissionsPage() {
         footer={
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, width: '100%' }}>
             <Button type="button" variant="ghost" onClick={() => setAccessTotalModalOpen(false)}>Cancelar</Button>
-            <Button type="button" variant={accessTotalAction === 'grant' ? 'primary' : 'danger'} onClick={() => void toggleAccessTotal()}>
+            <Button
+              type="button"
+              variant={accessTotalAction === 'grant' ? 'primary' : 'danger'}
+              isLoading={isTogglingAccessTotal}
+              disabled={isTogglingAccessTotal}
+              onClick={() => void toggleAccessTotal()}
+            >
               Confirmar
             </Button>
           </div>

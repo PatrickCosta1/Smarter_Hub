@@ -197,9 +197,9 @@ function getPermissionCategoryLabel(category: PermissionCategory) {
   }
 }
 
-function buildDraftFromAssignment(item: PermissionItem): PermissionDraft {
+function buildDraftFromAssignment(item: PermissionItem, forceEnabled = false): PermissionDraft {
   return {
-    enabled: item.assignment?.isEnabled ?? false,
+    enabled: forceEnabled || item.assignment?.isEnabled || false,
     restrictedToTeams: item.assignment?.restrictedToTeams?.join(', ') ?? '',
     restrictedToCountries: item.assignment?.restrictedToCountries?.join(', ') ?? '',
     restrictedToLevels: item.assignment?.restrictedToLevels?.join(', ') ?? '',
@@ -237,6 +237,9 @@ export default function CollaboratorsPage() {
   const [permissionDrafts, setPermissionDrafts] = useState<Record<string, PermissionDraft>>({});
   const [savingPermissionId, setSavingPermissionId] = useState<string | null>(null);
   const [isTogglingAccessTotal, setIsTogglingAccessTotal] = useState(false);
+  const [accessTotalModalOpen, setAccessTotalModalOpen] = useState(false);
+  const [accessTotalAction, setAccessTotalAction] = useState<'grant' | 'revoke'>('grant');
+  const [accessTotalReason, setAccessTotalReason] = useState('');
   const [selectedPermissionId, setSelectedPermissionId] = useState<string | null>(null);
   const [permissionSearch, setPermissionSearch] = useState('');
   const [permissionTeams, setPermissionTeams] = useState<TeamOption[]>([]);
@@ -368,9 +371,10 @@ export default function CollaboratorsPage() {
       const details = await apiRequest<UserPermissionsResponse>(`/users/${item.id}/permissions`, {
         headers: getAuthHeaders(),
       });
+      const hasAccessTotal = Boolean(details.accessTotal);
       setSelectedPermissions(details.permissions);
-      setSelectedUserAccessTotal(details.accessTotal);
-      setPermissionDrafts(Object.fromEntries(details.permissions.map((permission) => [permission.id, buildDraftFromAssignment(permission)])));
+      setSelectedUserAccessTotal(hasAccessTotal);
+      setPermissionDrafts(Object.fromEntries(details.permissions.map((permission) => [permission.id, buildDraftFromAssignment(permission, hasAccessTotal)])));
       setSelectedPermissionId(details.permissions[0]?.id ?? null);
       setPermissionSearch('');
       setPendingTeamToAdd('');
@@ -399,6 +403,11 @@ export default function CollaboratorsPage() {
 
   async function savePermission(permission: PermissionItem) {
     if (!selectedRow) {
+      return;
+    }
+
+    if (selectedUserAccessTotal) {
+      setStatus('Revoga o acesso total para editar permissões individuais.');
       return;
     }
 
@@ -450,27 +459,33 @@ export default function CollaboratorsPage() {
     }
   }
 
-  async function toggleAccessTotalForSelected(enable: boolean) {
+  async function toggleAccessTotalForSelected(enable: boolean, reason?: string) {
     if (!selectedRow) {
-      return;
+      return false;
     }
 
     if (enable === selectedUserAccessTotal) {
-      return;
+      return false;
     }
 
     setIsTogglingAccessTotal(true);
     try {
-      await apiRequest(`/users/${selectedRow.id}/access-total`, {
+      const result = await apiRequest<{ success: boolean; accessTotal: boolean }>(`/users/${selectedRow.id}/access-total`, {
         method: 'PATCH',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ isEnabled: enable }),
+        body: JSON.stringify({
+          isEnabled: enable,
+          reason: reason?.trim() || undefined,
+        }),
       });
       clearApiCache();
-      await openDetails(selectedRow, 'permissoes');
+      setSelectedUserAccessTotal(Boolean(result.accessTotal));
+      void openDetails(selectedRow, 'permissoes');
       setStatus(enable ? 'Acesso total concedido.' : 'Acesso total revogado.');
+      return true;
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao atualizar acesso total.');
+      return false;
     } finally {
       setIsTogglingAccessTotal(false);
     }
@@ -758,6 +773,7 @@ export default function CollaboratorsPage() {
                   <h4>Permissões simplificadas</h4>
                   <p>Seleciona uma permissão na lista e configura em 3 passos rápidos.</p>
                   <p className="collab-help-inline">Dica: qualquer campo de restrição deixado vazio significa sem restrição nesse critério.</p>
+                  <p className="collab-help-inline">Quando o acesso total estiver ativo, as permissões individuais ficam bloqueadas até revogares esse acesso.</p>
                 </div>
                 <div className="collaborator-permissions-actions">
                   <Button
@@ -765,7 +781,11 @@ export default function CollaboratorsPage() {
                     variant="secondary"
                     size="sm"
                     isLoading={isTogglingAccessTotal}
-                    onClick={() => void toggleAccessTotalForSelected(true)}
+                    onClick={() => {
+                      setAccessTotalAction('grant');
+                      setAccessTotalReason('');
+                      setAccessTotalModalOpen(true);
+                    }}
                     disabled={!canManagePermissions || selectedRow.username === 't.people' || selectedUserAccessTotal || isTogglingAccessTotal}
                   >
                     Dar acesso total
@@ -775,7 +795,11 @@ export default function CollaboratorsPage() {
                     variant="ghost"
                     size="sm"
                     isLoading={isTogglingAccessTotal}
-                    onClick={() => void toggleAccessTotalForSelected(false)}
+                    onClick={() => {
+                      setAccessTotalAction('revoke');
+                      setAccessTotalReason('');
+                      setAccessTotalModalOpen(true);
+                    }}
                     disabled={!canManagePermissions || selectedRow.username === 't.people' || !selectedUserAccessTotal || isTogglingAccessTotal}
                   >
                     Revogar acesso total
@@ -812,15 +836,16 @@ export default function CollaboratorsPage() {
                     {filteredCategoryPermissions.length === 0 && <p>Sem permissões nesta categoria.</p>}
                     {filteredCategoryPermissions.map((permission) => {
                       const draft = permissionDrafts[permission.id] ?? buildDraftFromAssignment(permission);
+                      const effectiveEnabled = selectedUserAccessTotal || draft.enabled;
                       return (
                         <button
                           key={permission.id}
                           type="button"
-                          className={`collab-permission-item${selectedPermission?.id === permission.id ? ' is-selected' : ''}${draft.enabled ? ' is-enabled' : ''}`}
+                          className={`collab-permission-item${selectedPermission?.id === permission.id ? ' is-selected' : ''}${effectiveEnabled ? ' is-enabled' : ''}`}
                           onClick={() => setSelectedPermissionId(permission.id)}
                         >
                           <strong>{permission.label}</strong>
-                          <span>{draft.enabled ? 'Ativa' : 'Inativa'}</span>
+                          <span>{effectiveEnabled ? 'Ativa' : 'Inativa'}</span>
                         </button>
                       );
                     })}
@@ -849,7 +874,7 @@ export default function CollaboratorsPage() {
                                 ...current,
                                 [selectedPermission.id]: { ...selectedPermissionDraft, enabled: true },
                               }))}
-                              disabled={!canManagePermissions}
+                              disabled={!canManagePermissions || selectedUserAccessTotal}
                             >
                               Ativar
                             </button>
@@ -860,11 +885,12 @@ export default function CollaboratorsPage() {
                                 ...current,
                                 [selectedPermission.id]: { ...selectedPermissionDraft, enabled: false },
                               }))}
-                              disabled={!canManagePermissions}
+                              disabled={!canManagePermissions || selectedUserAccessTotal}
                             >
                               Desativar
                             </button>
                           </div>
+                          {selectedUserAccessTotal && <small>Acesso total ativo: todas as permissões estão efetivamente ativas.</small>}
                         </section>
 
                         <section>
@@ -885,7 +911,7 @@ export default function CollaboratorsPage() {
                                         restrictedToCountries: toggleCommaItem(selectedPermissionDraft.restrictedToCountries, country),
                                       },
                                     }))}
-                                    disabled={!canManagePermissions}
+                                    disabled={!canManagePermissions || selectedUserAccessTotal}
                                   >
                                     {country}
                                   </button>
@@ -907,7 +933,7 @@ export default function CollaboratorsPage() {
                                   },
                                 }))}
                                 placeholder="Ex: etiquetas internas separadas por vírgula"
-                                disabled={!canManagePermissions}
+                                disabled={!canManagePermissions || selectedUserAccessTotal}
                               />
                               <small>Opcional: usa apenas se a tua operação tiver etiquetas de escopo próprias.</small>
                             </label>
@@ -918,7 +944,7 @@ export default function CollaboratorsPage() {
                                 <select
                                   value={pendingTeamToAdd}
                                   onChange={(event) => setPendingTeamToAdd(event.target.value)}
-                                  disabled={!canManagePermissions || availableTeamsToAdd.length === 0}
+                                  disabled={!canManagePermissions || selectedUserAccessTotal || availableTeamsToAdd.length === 0}
                                 >
                                   <option value="">Selecionar equipa</option>
                                   {availableTeamsToAdd.map((team) => (
@@ -930,7 +956,7 @@ export default function CollaboratorsPage() {
                                   size="sm"
                                   variant="secondary"
                                   onClick={() => addTeamRestriction(pendingTeamToAdd)}
-                                  disabled={!canManagePermissions || !pendingTeamToAdd}
+                                  disabled={!canManagePermissions || selectedUserAccessTotal || !pendingTeamToAdd}
                                 >
                                   Adicionar
                                 </Button>
@@ -943,7 +969,7 @@ export default function CollaboratorsPage() {
                                       type="button"
                                       className="collab-team-chip"
                                       onClick={() => removeTeamRestriction(team.id)}
-                                      disabled={!canManagePermissions}
+                                      disabled={!canManagePermissions || selectedUserAccessTotal}
                                     >
                                       {team.name} ×
                                     </button>
@@ -966,7 +992,7 @@ export default function CollaboratorsPage() {
                                   },
                                 }))}
                                 placeholder="Contexto opcional para esta permissão"
-                                disabled={!canManagePermissions}
+                                disabled={!canManagePermissions || selectedUserAccessTotal}
                               />
                             </label>
 
@@ -982,11 +1008,12 @@ export default function CollaboratorsPage() {
                               size="sm"
                               isLoading={savingPermissionId === selectedPermission.id}
                               onClick={() => void savePermission(selectedPermission)}
-                              disabled={!canManagePermissions}
+                              disabled={!canManagePermissions || selectedUserAccessTotal}
                             >
                               Guardar configuração
                             </Button>
                           </div>
+                          {selectedUserAccessTotal && <small>Para editar esta permissão individual, revoga primeiro o acesso total.</small>}
                         </section>
                       </div>
                     </article>
@@ -1022,6 +1049,44 @@ export default function CollaboratorsPage() {
             </section>
           )}
         </section>
+      </Modal>
+
+      <Modal
+        open={accessTotalModalOpen}
+        title={accessTotalAction === 'grant' ? 'Dar acesso total' : 'Revogar acesso total'}
+        onClose={() => setAccessTotalModalOpen(false)}
+        width="min(720px, 92vw)"
+        showCloseButton={false}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, width: '100%' }}>
+            <Button type="button" variant="ghost" onClick={() => setAccessTotalModalOpen(false)}>Cancelar</Button>
+            <Button
+              type="button"
+              variant={accessTotalAction === 'grant' ? 'primary' : 'danger'}
+              isLoading={isTogglingAccessTotal}
+              disabled={isTogglingAccessTotal}
+              onClick={() => {
+                void (async () => {
+                  const success = await toggleAccessTotalForSelected(accessTotalAction === 'grant', accessTotalReason);
+                  if (success) {
+                    setAccessTotalModalOpen(false);
+                    setAccessTotalReason('');
+                  }
+                })();
+              }}
+            >
+              Confirmar
+            </Button>
+          </div>
+        }
+      >
+        <div className="permissions-access-modal">
+          <p>
+            {accessTotalAction === 'grant'
+              ? 'Isto vai conceder acesso total a todas as permissões deste utilizador.'
+              : 'Isto vai revogar o acesso total e repor as permissões padrão de funcionário.'}
+          </p>
+        </div>
       </Modal>
 
       {status && <p className="trainings-status">{status}</p>}

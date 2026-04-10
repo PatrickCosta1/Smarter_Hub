@@ -425,35 +425,20 @@ router.patch('/users/:id/access-total', requireAuth, async (req, res) => {
         },
       });
 
-      // Remove o modo compacto e repõe permissões padrão de funcionário.
-      await tx.userPermission.updateMany({
+      // Remove o modo compacto e repõe permissões padrão de funcionário com operações em lote.
+      await tx.userPermission.deleteMany({
         where: { userId: targetUserId },
-        data: {
-          isEnabled: false,
-          grantedById: req.authUser!.id,
-        },
       });
 
-      for (const permission of defaultEmployeePermissions) {
-        await tx.userPermission.upsert({
-          where: {
-            userId_permissionId: {
-              userId: targetUserId,
-              permissionId: permission.id,
-            },
-          },
-          create: {
+      if (defaultEmployeePermissions.length > 0) {
+        await tx.userPermission.createMany({
+          data: defaultEmployeePermissions.map((permission) => ({
             userId: targetUserId,
             permissionId: permission.id,
             isEnabled: true,
             grantedById: req.authUser!.id,
             notes: AUTO_DEFAULT_EMPLOYEE_NOTE,
-          },
-          update: {
-            isEnabled: true,
-            grantedById: req.authUser!.id,
-            notes: AUTO_DEFAULT_EMPLOYEE_NOTE,
-          },
+          })),
         });
       }
 

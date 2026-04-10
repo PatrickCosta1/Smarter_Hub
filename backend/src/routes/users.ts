@@ -1576,13 +1576,19 @@ router.post('/users', requireAuth, async (req, res, next) => {
       },
     });
 
-    if ((data.role ?? 'COLABORADOR') === 'COLABORADOR') {
+    const createdRole = data.role ?? 'COLABORADOR';
+
+    if (createdRole !== 'CONVIDADO') {
       await upsertPresetPermissions({
         userId: user.id,
+        actorUserId: req.authUser!.id,
         codes: DEFAULT_EMPLOYEE_PERMISSION_CODES,
         note: AUTO_DEFAULT_EMPLOYEE_NOTE,
       });
     }
+
+    // Se o utilizador já estiver como líder em alguma equipa (ex.: fluxo importado), sincroniza o preset de chefe.
+    await syncTeamLeaderPreset(user.id, req.authUser!.id);
 
     const { passwordHash: _ignored, ...safeUser } = user;
 
