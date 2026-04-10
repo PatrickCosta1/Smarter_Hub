@@ -56,9 +56,8 @@ enum VacationStatus {
 }
 
 model Team {
-  id            String      @id @default(cuid())
+  id            String      @id @default(ulid())
   name          String      @unique
-  country       WorkCountry @default(PT)
   managerId     String?
   coordinatorId String?
   parentTeamId  String?
@@ -76,13 +75,14 @@ model Team {
 }
 
 model User {
-  id            String         @id @default(cuid())
+  id            String         @id @default(ulid())
   username      String         @unique
   email         String         @unique
   passwordHash  String
   role          Role           @default(COLABORADOR)
   isActive      Boolean        @default(true)
   isRootAccess  Boolean        @default(false)
+  hasAccessTotal Boolean       @default(false)
   deactivatedAt DateTime?
   teamId        String?
   createdAt     DateTime       @default(now())
@@ -107,7 +107,7 @@ model User {
 }
 
 model TeamMembership {
-  id            String   @id @default(cuid())
+  id            String   @id @default(ulid())
   userId        String
   teamId        String
   membershipRole String  @default("PARTICIPANT")
@@ -125,7 +125,7 @@ model TeamMembership {
 }
 
 model Profile {
-  id                             String   @id @default(cuid())
+  id                             String   @id @default(ulid())
   userId                         String   @unique
   primeiroNome                   String   @default("")
   apelido                        String   @default("")
@@ -178,7 +178,7 @@ model Profile {
 }
 
 model Notification {
-  id        String   @id @default(cuid())
+  id        String   @id @default(ulid())
   userId    String
   title     String
   message   String
@@ -188,7 +188,7 @@ model Notification {
 }
 
 model Training {
-  id            String   @id @default(cuid())
+  id            String   @id @default(ulid())
   userId        String
   nome          String
   link          String   @default("")
@@ -206,7 +206,7 @@ model Training {
 }
 
 model Vacation {
-  id           String   @id @default(cuid())
+  id           String   @id @default(ulid())
   userId       String
   contextTeamId String?
   versionOfId  String?
@@ -239,7 +239,7 @@ model Vacation {
 }
 
 model VacationApproval {
-  id          String   @id @default(cuid())
+  id          String   @id @default(ulid())
   vacationId  String
   approverId  String
   approvalLevel Int
@@ -257,7 +257,7 @@ model VacationApproval {
 }
 
 model ProfileChangeRequest {
-  id            String   @id @default(cuid())
+  id            String   @id @default(ulid())
   userId        String
   requestedData Json
   changesSummary String
@@ -272,7 +272,7 @@ model ProfileChangeRequest {
 }
 
 model Permission {
-  id                  String             @id @default(cuid())
+  id                  String             @id @default(ulid())
   code                String             @unique
   label               String
   description         String
@@ -285,7 +285,7 @@ model Permission {
 }
 
 model UserPermission {
-  id                    String   @id @default(cuid())
+  id                    String   @id @default(ulid())
   userId                String
   permissionId          String
   isEnabled             Boolean  @default(true)
@@ -308,7 +308,7 @@ model UserPermission {
 }
 
 model PermissionGrant {
-  id            String              @id @default(cuid())
+  id            String              @id @default(ulid())
   actorUserId   String?
   targetUserId   String?
   permissionId  String

@@ -4,6 +4,9 @@ import { usePortal } from '../portal/context';
 import { formatVacationStatusLabel, getVacationStatusTone } from '../portal/labels';
 import Badge from '../components/ui/Badge';
 import Skeleton from '../components/ui/Skeleton';
+import Modal from '../components/ui/Modal';
+import Button from '../components/ui/Button';
+import Toast from '../components/ui/Toast';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -15,9 +18,15 @@ function getAuthHeaders() {
 type ProfileRequest = {
   id: string;
   userId: string;
+  requesterName?: string;
   changesSummary: string;
   status: string;
   requestedData: Record<string, string>;
+  changeDetails?: Array<{
+    field: string;
+    oldValue: string;
+    newValue: string;
+  }>;
   createdAt: string;
   user: {
     id: string;
@@ -68,9 +77,15 @@ export default function RHApprovalsPage() {
   const [activeTab, setActiveTab] = useState<'profiles' | 'vacations'>('profiles');
   const [profileRequests, setProfileRequests] = useState<ProfileRequest[]>([]);
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([]);
-  const [status, setStatus] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [isLoadingData, setIsLoadingData] = useState(true);
+  const [selectedProfileRequest, setSelectedProfileRequest] = useState<ProfileRequest | null>(null);
+  const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ tone: 'success' | 'error' | 'info'; message: string; visible: boolean }>({
+    tone: 'info',
+    message: '',
+    visible: false,
+  });
 
   const requestCount = useMemo(() => profileRequests.length + vacationRequests.length, [profileRequests.length, vacationRequests.length]);
   const canReviewProfiles = isRootAccess || hasPermission('approve_profile_change');
@@ -90,6 +105,34 @@ export default function RHApprovalsPage() {
     void loadData();
   }, [canReviewProfiles, canReviewVacations]);
 
+  useEffect(() => {
+    if (!toast.visible) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setToast((current) => ({ ...current, visible: false }));
+    }, 3200);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [toast.visible]);
+
+  function showToast(tone: 'success' | 'error' | 'info', message: string) {
+    setToast({ tone, message, visible: true });
+  }
+
+  async function runAction(actionKey: string, successMessage: string, fallbackErrorMessage: string, action: () => Promise<void>) {
+    setPendingActionKey(actionKey);
+    try {
+      await action();
+      showToast('success', successMessage);
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : fallbackErrorMessage);
+    } finally {
+      setPendingActionKey(null);
+    }
+  }
+
   async function loadData() {
     setIsLoadingData(true);
     try {
@@ -105,7 +148,7 @@ export default function RHApprovalsPage() {
       setProfileRequests(profiles);
       setVacationRequests(vacations);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Falha ao carregar pedidos.');
+      showToast('error', error instanceof Error ? error.message : 'Falha ao carregar pedidos.');
     } finally {
       setIsLoadingData(false);
     }
@@ -122,36 +165,58 @@ export default function RHApprovalsPage() {
     );
   }
 
-  async function approveProfileRequest(id: string) {
-    await apiRequest(`/profile/requests/${id}/approve`, { method: 'POST', headers: getAuthHeaders() });
-    clearApiCache('/profile/requests');
-    setProfileRequests((current) => current.filter((item) => item.id !== id));
-  }
-
-  async function rejectProfileRequest(id: string) {
-    await apiRequest(`/profile/requests/${id}/reject`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ reason: rejectReason }),
+  async function approveProfileRequest(request: ProfileRequest) {
+    await runAction(`approve-profile-${request.id}`, `Pedido de ${getDisplayName(request.user)} aprovado.`, 'Falha ao aprovar pedido.', async () => {
+      await apiRequest(`/profile/requests/${request.id}/approve`, { method: 'POST', headers: getAuthHeaders() });
+      clearApiCache('/profile/requests');
+      setProfileRequests((current) => current.filter((item) => item.id !== request.id));
+      if (selectedProfileRequest?.id === request.id) {
+        setSelectedProfileRequest(null);
+      }
     });
-    clearApiCache('/profile/requests');
-    setProfileRequests((current) => current.filter((item) => item.id !== id));
   }
 
-  async function approveVacationRequest(id: string) {
-    await apiRequest(`/vacations/${id}/approve`, { method: 'POST', headers: getAuthHeaders() });
-    clearApiCache('/vacations');
-    setVacationRequests((current) => current.filter((item) => item.id !== id));
-  }
-
-  async function rejectVacationRequest(id: string) {
-    await apiRequest(`/vacations/${id}/reject`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ reason: rejectReason }),
+  async function rejectProfileRequest(request: ProfileRequest) {
+    await runAction(`reject-profile-${request.id}`, `Pedido de ${getDisplayName(request.user)} recusado.`, 'Falha ao recusar pedido.', async () => {
+      await apiRequest(`/profile/requests/${request.id}/reject`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ reason: rejectReason }),
+      });
+      clearApiCache('/profile/requests');
+      setProfileRequests((current) => current.filter((item) => item.id !== request.id));
+      if (selectedProfileRequest?.id === request.id) {
+        setSelectedProfileRequest(null);
+      }
     });
-    clearApiCache('/vacations');
-    setVacationRequests((current) => current.filter((item) => item.id !== id));
+  }
+
+  async function approveVacationRequest(request: VacationRequest) {
+    await runAction(`approve-vacation-${request.id}`, `Pedido de ${getDisplayName(request.user)} aprovado.`, 'Falha ao aprovar pedido.', async () => {
+      await apiRequest(`/vacations/${request.id}/approve`, { method: 'POST', headers: getAuthHeaders() });
+      clearApiCache('/vacations');
+      setVacationRequests((current) => current.filter((item) => item.id !== request.id));
+    });
+  }
+
+  async function rejectVacationRequest(request: VacationRequest) {
+    await runAction(`reject-vacation-${request.id}`, `Pedido de ${getDisplayName(request.user)} recusado.`, 'Falha ao recusar pedido.', async () => {
+      await apiRequest(`/vacations/${request.id}/reject`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ reason: rejectReason }),
+      });
+      clearApiCache('/vacations');
+      setVacationRequests((current) => current.filter((item) => item.id !== request.id));
+    });
+  }
+
+  function openProfileRequestDetails(request: ProfileRequest) {
+    setSelectedProfileRequest(request);
+  }
+
+  function closeProfileRequestDetails() {
+    setSelectedProfileRequest(null);
   }
 
   return (
@@ -213,17 +278,36 @@ export default function RHApprovalsPage() {
               <article className="trainings-mobile-card">Sem pedidos pendentes.</article>
             ) : (
               profileRequests.map((request) => (
-                <article key={request.id} className="trainings-mobile-card">
+                <article key={request.id} className="trainings-mobile-card rh-profile-card" onClick={() => openProfileRequestDetails(request)}>
                   <header>
-                    <h4>{getDisplayName(request.user)}</h4>
+                    <h4>{request.requesterName || getDisplayName(request.user)}</h4>
                     <Badge tone={getVacationStatusTone(request.status) === 'approved' ? 'success' : getVacationStatusTone(request.status) === 'pending' ? 'warning' : getVacationStatusTone(request.status) === 'rejected' ? 'danger' : 'neutral'}>
                       {formatVacationStatusLabel(request.status)}
                     </Badge>
                   </header>
                   <p>{request.changesSummary}</p>
                   <div className="trainings-row-actions">
-                    <button type="button" onClick={() => void approveProfileRequest(request.id)}>Aprovar</button>
-                    <button type="button" onClick={() => void rejectProfileRequest(request.id)}>Rejeitar</button>
+                    <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); openProfileRequestDetails(request); }}>Ver detalhe</Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="primary"
+                      isLoading={pendingActionKey === `approve-profile-${request.id}`}
+                      disabled={Boolean(pendingActionKey)}
+                      onClick={(event) => { event.stopPropagation(); void approveProfileRequest(request); }}
+                    >
+                      Aprovar
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      isLoading={pendingActionKey === `reject-profile-${request.id}`}
+                      disabled={Boolean(pendingActionKey)}
+                      onClick={(event) => { event.stopPropagation(); void rejectProfileRequest(request); }}
+                    >
+                      Rejeitar
+                    </Button>
                   </div>
                 </article>
               ))
@@ -271,8 +355,26 @@ export default function RHApprovalsPage() {
                   <p>{request.dataInicio} - {request.dataFim}</p>
                   <p>{request.observacoes || 'Sem observações.'}</p>
                   <div className="trainings-row-actions">
-                    <button type="button" onClick={() => void approveVacationRequest(request.id)}>Aprovar</button>
-                    <button type="button" onClick={() => void rejectVacationRequest(request.id)}>Rejeitar</button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="primary"
+                      isLoading={pendingActionKey === `approve-vacation-${request.id}`}
+                      disabled={Boolean(pendingActionKey)}
+                      onClick={() => void approveVacationRequest(request)}
+                    >
+                      Aprovar
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      isLoading={pendingActionKey === `reject-vacation-${request.id}`}
+                      disabled={Boolean(pendingActionKey)}
+                      onClick={() => void rejectVacationRequest(request)}
+                    >
+                      Rejeitar
+                    </Button>
                   </div>
                 </article>
               ))
@@ -281,7 +383,85 @@ export default function RHApprovalsPage() {
         </section>
       )}
 
-      {status && <p className="trainings-status">{status}</p>}
+      <Modal
+        open={Boolean(selectedProfileRequest)}
+        title="Detalhe do pedido de alteração de ficha"
+        onClose={closeProfileRequestDetails}
+        width="min(900px, 96vw)"
+        showCloseButton={false}
+        footer={selectedProfileRequest ? (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 12 }}>
+            <div style={{ color: 'var(--hub-text-3)', fontSize: '0.9rem' }}>
+              {selectedProfileRequest.requesterName || getDisplayName(selectedProfileRequest.user)}
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Button type="button" variant="ghost" size="md" onClick={closeProfileRequestDetails}>Fechar</Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                isLoading={pendingActionKey === `reject-profile-${selectedProfileRequest.id}`}
+                disabled={Boolean(pendingActionKey)}
+                onClick={() => { void rejectProfileRequest(selectedProfileRequest); }}
+              >
+                Rejeitar
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                isLoading={pendingActionKey === `approve-profile-${selectedProfileRequest.id}`}
+                disabled={Boolean(pendingActionKey)}
+                onClick={() => { void approveProfileRequest(selectedProfileRequest); }}
+              >
+                Aprovar
+              </Button>
+            </div>
+          </div>
+        ) : undefined}
+      >
+        {selectedProfileRequest && (
+          <div className="approval-profile-modal">
+            <p className="approval-profile-modal__summary">Pedido de {selectedProfileRequest.requesterName || getDisplayName(selectedProfileRequest.user)} com alterações detalhadas:</p>
+            <div className="approval-profile-modal__grid">
+              {(selectedProfileRequest.changeDetails ?? []).map((item) => (
+                <article key={`${item.field}-${item.oldValue}-${item.newValue}`} className="approval-profile-modal__item">
+                  <h4>{item.field}</h4>
+                  <div>
+                    <span>Valor atual</span>
+                    <strong>{item.oldValue}</strong>
+                  </div>
+                  <div>
+                    <span>Novo valor</span>
+                    <strong>{item.newValue}</strong>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(pendingActionKey)}
+        title="Processando ação"
+        onClose={() => undefined}
+        width="min(420px, 90vw)"
+        showCloseButton={false}
+        footer={undefined}
+      >
+        <div className="notification-detail">
+          <p className="notification-detail__summary">A operação está a ser executada.</p>
+          <div className="notification-detail__panel">
+            <strong>Por favor aguarde</strong>
+            <p>O sistema está a validar a ação e a atualizar os registos.</p>
+          </div>
+        </div>
+      </Modal>
+
+      <div className="approvals-toast" aria-live="polite">
+        <Toast show={toast.visible} tone={toast.tone} message={toast.message} />
+      </div>
     </section>
   );
 }

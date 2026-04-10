@@ -912,7 +912,6 @@ button {
 .notification-card {
   position: relative;
   overflow: hidden;
-  display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 10px;
@@ -1501,19 +1500,20 @@ button {
 
 .account-shell {
   display: grid;
-  gap: 16px;
+  gap: 18px;
   max-width: 980px;
 }
 
 .account-hero {
   border-radius: 22px;
-  padding: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  padding: 22px;
+  border: 1px solid rgba(187, 220, 255, 0.7);
   background:
-    radial-gradient(circle at 88% 10%, rgba(255, 224, 145, 0.35), rgba(255, 224, 145, 0)),
-    linear-gradient(145deg, #fff7e2, #ffe9be 45%, #ffd17f);
-  box-shadow: 0 20px 40px rgba(96, 55, 8, 0.2);
-  color: #5f3a07;
+    radial-gradient(circle at 86% 8%, rgba(169, 235, 255, 0.32), rgba(169, 235, 255, 0)),
+    radial-gradient(circle at 10% 90%, rgba(230, 245, 255, 0.5), rgba(230, 245, 255, 0)),
+    linear-gradient(145deg, #f5fbff, #e6f4ff 52%, #d7ecff);
+  box-shadow: 0 20px 40px rgba(19, 69, 136, 0.18);
+  color: #0f3568;
 }
 
 .account-kicker {
@@ -1522,7 +1522,7 @@ button {
   font-weight: 800;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: #8a5812;
+  color: #2a5f98;
 }
 
 .account-hero h1 {
@@ -1534,15 +1534,15 @@ button {
 .account-hero p {
   margin: 0;
   font-weight: 700;
-  color: #7a4e13;
+  color: #1f558f;
 }
 
 .account-card {
   border-radius: 22px;
-  padding: 18px;
-  border: 1px solid #f2d49f;
-  background: linear-gradient(170deg, #fffefb, #fff4db);
-  box-shadow: 0 16px 34px rgba(96, 55, 8, 0.16);
+  padding: 20px;
+  border: 1px solid #cfe6ff;
+  background: linear-gradient(170deg, #ffffff, #f2f9ff);
+  box-shadow: 0 16px 34px rgba(18, 62, 122, 0.15);
 }
 
 .account-meta {
@@ -1553,10 +1553,10 @@ button {
 }
 
 .account-meta div {
-  border: 1px dashed #e8be7d;
+  border: 1px dashed #9cc5ee;
   border-radius: 12px;
   padding: 9px 11px;
-  background: #fff7e8;
+  background: #f4faff;
   display: grid;
   gap: 3px;
 }
@@ -1566,11 +1566,11 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 800;
-  color: #8a5812;
+  color: #2c639b;
 }
 
 .account-meta strong {
-  color: #5f3a07;
+  color: #123f7b;
 }
 
 .account-form {
@@ -1587,29 +1587,47 @@ button {
 .account-form span {
   font-size: 0.82rem;
   font-weight: 800;
-  color: #6f430c;
+  color: #21558d;
 }
 
 .account-form input {
   width: 100%;
   min-height: 42px;
   border-radius: 12px;
-  border: 1px solid #dfb671;
+  border: 1px solid #b6d4f3;
   padding: 0 12px;
-  background: #fff9ee;
-  color: #4f3106;
+  background: #fbfeff;
+  color: #0f325f;
 }
 
 .account-form input:focus {
   outline: none;
-  border-color: #c88014;
-  box-shadow: 0 0 0 3px rgba(200, 128, 20, 0.22);
+  border-color: #2f7df1;
+  box-shadow: 0 0 0 3px rgba(47, 125, 241, 0.24);
 }
 
 .account-actions {
   grid-column: 1 / -1;
   display: flex;
   justify-content: flex-start;
+}
+
+.account-actions .ui-button {
+  min-height: 44px;
+  border-radius: 12px;
+  padding: 0 18px;
+}
+
+.account-actions .ui-button--primary {
+  border-color: #0e4ca1;
+  background: linear-gradient(135deg, #0e4ca1, #2f7df1 58%, #61b2ff);
+  box-shadow: 0 12px 24px rgba(16, 74, 150, 0.28);
+}
+
+.account-actions .ui-button--primary:hover {
+  border-color: #0b3f88;
+  background: linear-gradient(135deg, #0b3f88, #2067d3 58%, #4ba6f9);
+  box-shadow: 0 14px 28px rgba(16, 74, 150, 0.32);
 }
 
 .account-status {
@@ -1841,6 +1859,45 @@ button {
   color: #1d4f9b;
   font-size: 0.86rem;
   font-weight: 700;
+}
+
+.trainings-recent-created {
+  margin-top: 14px;
+  border: 1px solid #d4e2fb;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f7fbff;
+}
+
+.trainings-recent-created h4 {
+  margin: 0 0 8px;
+  font-size: 0.86rem;
+  color: #1c4f93;
+}
+
+.trainings-recent-created ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.trainings-recent-created li {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.8rem;
+  color: #2b558c;
+}
+
+.trainings-recent-created li strong {
+  color: #143d75;
+}
+
+.trainings-recent-created li small {
+  color: #5879a4;
 }
 
 .trainings-table-wrap {

@@ -62,6 +62,13 @@ type AssignDraft = {
   entidade: string;
 };
 
+type RecentAssignedItem = {
+  id: string;
+  nome: string;
+  collaborator: string;
+  createdAt: string;
+};
+
 const EMPTY_ASSIGN_DRAFT: AssignDraft = {
   userId: '',
   nome: '',
@@ -120,6 +127,7 @@ export default function TrainingsPage() {
   const [isSearchingCollaborators, setIsSearchingCollaborators] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isAssignedModalOpen, setIsAssignedModalOpen] = useState(false);
+  const [recentAssigned, setRecentAssigned] = useState<RecentAssignedItem[]>([]);
 
   const sortedRecords = useMemo(
     () => [...records].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
@@ -219,7 +227,11 @@ export default function TrainingsPage() {
     }
 
     try {
-      await apiRequest<TrainingRecord>('/trainings/assign', {
+      const selectedName = selectedCollaborator
+        ? `${selectedCollaborator.profile?.primeiroNome ?? ''} ${selectedCollaborator.profile?.apelido ?? ''}`.trim() || selectedCollaborator.username
+        : assignDraft.userId;
+
+      const created = await apiRequest<TrainingRecord>('/trainings/assign', {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -234,6 +246,15 @@ export default function TrainingsPage() {
 
       clearApiCache('/trainings');
       setAssignStatus('Formação atribuída com sucesso.');
+      setRecentAssigned((current) => ([
+        {
+          id: created.id,
+          nome: created.nome,
+          collaborator: selectedName,
+          createdAt: created.createdAt || new Date().toISOString(),
+        },
+        ...current,
+      ].slice(0, 8)));
       setAssignDraft(EMPTY_ASSIGN_DRAFT);
       await loadTrainings();
     } catch (error) {
@@ -378,6 +399,21 @@ export default function TrainingsPage() {
                 </form>
 
                 {assignStatus && <p className="trainings-status">{assignStatus}</p>}
+
+                {recentAssigned.length > 0 && (
+                  <section className="trainings-recent-created" aria-label="Últimas formações criadas">
+                    <h4>Últimas formações criadas</h4>
+                    <ul>
+                      {recentAssigned.map((item) => (
+                        <li key={item.id}>
+                          <strong>{item.nome}</strong>
+                          <span>{item.collaborator}</span>
+                          <small>{new Intl.DateTimeFormat('pt-PT', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(item.createdAt))}</small>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
               </section>
             </div>
           )}

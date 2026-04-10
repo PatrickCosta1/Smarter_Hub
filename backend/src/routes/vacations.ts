@@ -85,6 +85,15 @@ function dateToISO(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function formatIsoDatePt(iso: string) {
+  const [year, month, day] = iso.split('-');
+  if (!year || !month || !day) {
+    return iso;
+  }
+
+  return `${day}/${month}/${year}`;
+}
+
 function enumerateDates(startText: string, endText: string) {
   const start = toLocalDate(startText);
   const end = toLocalDate(endText);
@@ -95,6 +104,43 @@ function enumerateDates(startText: string, endText: string) {
   }
 
   return days;
+}
+
+function isWeekendIso(iso: string) {
+  const day = toLocalDate(iso).getDay();
+  return day === 0 || day === 6;
+}
+
+async function enforceVacationBusinessDays(params: {
+  requestType: 'VACATION' | 'ABSENCE_MEDICAL' | 'ABSENCE_TRAINING';
+  dataInicio: string;
+  dataFim: string;
+  country: 'PT' | 'BR';
+}) {
+  if (params.requestType !== 'VACATION') {
+    return;
+  }
+
+  const requestedDays = enumerateDates(params.dataInicio, params.dataFim);
+  if (requestedDays.some(isWeekendIso)) {
+    throw new Error('Pedidos de férias só podem incluir dias úteis. Para fim de semana/feriado, usa um pedido de ausência.');
+  }
+
+  const startYear = toLocalDate(params.dataInicio).getFullYear();
+  const endYear = toLocalDate(params.dataFim).getFullYear();
+  const years = new Set<number>([startYear, endYear]);
+  const holidaysByIso = new Set<string>();
+
+  for (const year of years) {
+    const holidays = await fetchHolidays(params.country, year);
+    for (const holiday of holidays) {
+      holidaysByIso.add(holiday.date);
+    }
+  }
+
+  if (requestedDays.some((day) => holidaysByIso.has(day))) {
+    throw new Error('Pedidos de férias só podem incluir dias úteis. Para fim de semana/feriado, usa um pedido de ausência.');
+  }
 }
 
 function hasDateOverlap(startA: string, endA: string, startB: string, endB: string) {
@@ -261,7 +307,7 @@ async function resolveContextTeamId(userId: string, explicitTeamId?: string) {
   return membershipTeamIds[0] ?? null;
 }
 
-async function resolveApprovalGroups(userId: string, contextTeamId: string) {
+async function resolveApprovalGroups(userId: string, contextTeamId: string | null) {
   const requester = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -728,11 +774,20 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
     const data = validation.data;
     const contextTeamId = await resolveContextTeamId(userId, data.contextTeamId);
 
-    if (!contextTeamId) {
-      return res.status(400).json({ error: 'Não foi possível determinar a equipa/subequipa do pedido.' });
-    }
+    const profile = await prisma.profile.findUnique({
+      where: { userId },
+      select: { workCountry: true, primeiroNome: true, apelido: true, nomeAbreviado: true },
+    });
+    const country = profile?.workCountry ?? 'PT';
 
-    if (data.requestType === 'VACATION') {
+    await enforceVacationBusinessDays({
+      requestType: data.requestType,
+      dataInicio: data.dataInicio,
+      dataFim: data.dataFim,
+      country,
+    });
+
+    if (data.requestType === 'VACATION' && contextTeamId) {
       await enforceOneThirdCapacity(contextTeamId, data.dataInicio, data.dataFim, data.partialDay);
     }
 
@@ -774,12 +829,16 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
     });
 
     if (approvalGroups.length > 0) {
-      const requestLabel = data.requestType === 'VACATION' ? 'pedido de férias' : 'pedido de ausência';
+      const requesterName = String(profile?.nomeAbreviado ?? '').trim()
+        || `${String(profile?.primeiroNome ?? '').trim()} ${String(profile?.apelido ?? '').trim()}`.trim()
+        || 'Colaborador';
+      const requestLabel = data.requestType === 'VACATION' ? 'férias' : 'ausência';
       await notifyUsersByPermission(
         prisma,
         ['approve_vacation'],
         data.requestType === 'VACATION' ? 'Novo pedido de férias' : 'Novo pedido de ausência',
-        `${req.authUser!.username} submeteu um ${requestLabel} para o período ${data.dataInicio} a ${data.dataFim}.`,
+        `${requesterName} efetuou um pedido de ${requestLabel}, de ${formatIsoDatePt(data.dataInicio)} até ${formatIsoDatePt(data.dataFim)}.`,
+        { excludeUserIds: [userId] },
       );
     }
 
@@ -812,9 +871,10 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
 
   const canViewAllGlobally = Boolean(canViewAllVacations && viewAllScope?.isGlobal);
   const where: Prisma.VacationWhereInput = req.authUser!.isRootAccess || isFullAccess || canViewAllGlobally
-    ? { status: 'PENDING' }
+    ? { status: 'PENDING', userId: { not: userId } }
     : {
         status: 'PENDING',
+      userId: { not: userId },
         OR: [
           {
             approvals: {
@@ -899,6 +959,10 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
     return res.status(404).json({ message: 'Pedido não encontrado.' });
   }
 
+  if (vacation.userId === userId) {
+    return res.status(403).json({ message: 'Não podes aprovar os teus próprios pedidos.' });
+  }
+
   const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
   const canApproveByStep = vacation.approvals.some((item) => item.approverId === req.authUser!.id && item.status === APPROVAL_PENDING);
   const canApproveByException = isPt && (req.authUser!.isRootAccess || isFullAccess);
@@ -929,8 +993,8 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
       userId: vacation.userId,
       title: vacation.requestType === 'VACATION' ? 'Pedido de férias aprovado' : 'Pedido de ausência aprovado',
       message: vacation.requestType === 'VACATION'
-        ? 'O teu pedido de férias foi aprovado. Podes consultar o detalhe no portal.'
-        : 'O teu pedido de ausência foi aprovado. Podes consultar o detalhe no portal.',
+        ? 'Pedido aprovado.'
+        : 'Pedido aprovado.',
     },
   });
 
@@ -975,6 +1039,10 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
     return res.status(404).json({ message: 'Pedido não encontrado.' });
   }
 
+  if (vacation.userId === userId) {
+    return res.status(403).json({ message: 'Não podes recusar os teus próprios pedidos.' });
+  }
+
   const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
   const canRejectByStep = vacation.approvals.some((item) => item.approverId === req.authUser!.id && item.status === APPROVAL_PENDING);
   const canRejectByException = isPt && (req.authUser!.isRootAccess || isFullAccess);
@@ -1017,7 +1085,7 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
     data: {
       userId: vacation.userId,
       title: vacation.requestType === 'VACATION' ? 'Pedido de férias recusado' : 'Pedido de ausência recusado',
-      message: `O teu pedido foi recusado. ${reason}`,
+      message: `Pedido recusado. ${reason}`,
     },
   });
 
@@ -1052,11 +1120,20 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
     const data = validation.data;
     const contextTeamId = await resolveContextTeamId(userId, data.contextTeamId || existing.contextTeamId || undefined);
 
-    if (!contextTeamId) {
-      return res.status(400).json({ error: 'Não foi possível determinar a equipa/subequipa do pedido.' });
-    }
+    const profile = await prisma.profile.findUnique({
+      where: { userId },
+      select: { workCountry: true },
+    });
+    const country = profile?.workCountry ?? 'PT';
 
-    if (data.requestType === 'VACATION') {
+    await enforceVacationBusinessDays({
+      requestType: data.requestType,
+      dataInicio: data.dataInicio,
+      dataFim: data.dataFim,
+      country,
+    });
+
+    if (data.requestType === 'VACATION' && contextTeamId) {
       await enforceOneThirdCapacity(contextTeamId, data.dataInicio, data.dataFim, data.partialDay, id);
     }
 

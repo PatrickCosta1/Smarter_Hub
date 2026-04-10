@@ -47,7 +47,6 @@ type TeamMember = {
 type TeamSummary = {
   id: string;
   name: string;
-  country: 'PT' | 'BR';
   leaderId?: string | null;
   leader?: {
     id: string;
@@ -107,7 +106,6 @@ type CollaboratorsResponse = {
 
 type TeamDraft = {
   name: string;
-  country: 'PT' | 'BR';
   leaderId: string;
   memberIds: string[];
   parentTeamId: string;
@@ -115,7 +113,6 @@ type TeamDraft = {
 
 const EMPTY_TEAM_DRAFT: TeamDraft = {
   name: '',
-  country: 'PT',
   leaderId: '',
   memberIds: [],
   parentTeamId: '',
@@ -302,7 +299,6 @@ export default function ManagerTeamsPage() {
 
     setTeamDraft({
       name: selectedTeam.name,
-      country: selectedTeam.country,
       leaderId: selectedTeam.leaderId || selectedTeam.manager?.id || selectedTeam.coordinator?.id || '',
       memberIds: selectedTeamMembers.map((member) => member.id),
       parentTeamId: selectedTeam.parentTeam?.id || '',
@@ -322,7 +318,6 @@ export default function ManagerTeamsPage() {
     const nextLeaderId = teamDraft.leaderId || '';
     const currentLeaderId = selectedTeam.leaderId || selectedTeam.manager?.id || selectedTeam.coordinator?.id || '';
     const hasBasicChanges = nextName !== selectedTeam.name
-      || teamDraft.country !== selectedTeam.country
       || nextLeaderId !== currentLeaderId;
 
     const currentMemberIds = new Set(selectedTeamMembers.map((member) => member.id));
@@ -354,7 +349,6 @@ export default function ManagerTeamsPage() {
           headers: getAuthHeaders(),
           body: JSON.stringify({
             name: nextName,
-            country: teamDraft.country,
             leaderId: teamDraft.leaderId || null,
             parentTeamId: selectedTeam.parentTeam?.id || null,
           }),
@@ -572,7 +566,6 @@ export default function ManagerTeamsPage() {
         headers: getAuthHeaders(),
         body: JSON.stringify({
           name: teamDraft.name.trim(),
-          country: teamDraft.country,
           leaderId: teamDraft.leaderId || null,
           memberIds: teamDraft.memberIds,
           parentTeamId: teamDraft.parentTeamId || null,
@@ -703,7 +696,7 @@ export default function ManagerTeamsPage() {
               className="manager-team-card"
               onClick={() => setSelectedTeamId(team.id)}
             >
-              <span className="manager-team-card__label">{team.country}</span>
+              <span className="manager-team-card__label">Equipa</span>
               <h3>{team.name}</h3>
               <p>{team._count?.members ?? 0} membro(s)</p>
               <small>{team.parentTeam ? `Subequipa de ${team.parentTeam.name}` : 'Equipa base'}</small>
@@ -841,14 +834,6 @@ export default function ManagerTeamsPage() {
           </label>
 
           <label>
-            <span>País</span>
-            <select value={teamDraft.country} onChange={(event) => setTeamDraft((current) => ({ ...current, country: event.target.value as 'PT' | 'BR' }))}>
-              <option value="PT">Portugal</option>
-              <option value="BR">Brasil</option>
-            </select>
-          </label>
-
-          <label>
             <span>Chefe de equipa</span>
             <div className="team-picker-inline">
               <button type="button" className="cta-button cta-secondary" onClick={() => openPicker('leader')}>Escolher</button>
@@ -971,18 +956,6 @@ export default function ManagerTeamsPage() {
                 disabled={!canEditTeam}
                 onChange={(event) => setTeamDraft((current) => ({ ...current, name: event.target.value }))}
               />
-            </label>
-
-            <label>
-              <span>País</span>
-              <select
-                value={teamDraft.country}
-                disabled={!canEditTeam}
-                onChange={(event) => setTeamDraft((current) => ({ ...current, country: event.target.value as 'PT' | 'BR' }))}
-              >
-                <option value="PT">Portugal</option>
-                <option value="BR">Brasil</option>
-              </select>
             </label>
 
             <label>

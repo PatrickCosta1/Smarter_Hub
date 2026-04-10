@@ -34,6 +34,19 @@ const accessTotalSchema = z.object({
   reason: z.string().optional(),
 });
 
+const AUTO_DEFAULT_EMPLOYEE_NOTE = '[AUTO_PRESET_DEFAULT_EMPLOYEE]';
+const DEFAULT_EMPLOYEE_PERMISSION_CODES = [
+  'view_profile',
+  'request_profile_change',
+  'view_notifications',
+  'request_vacation',
+  'view_own_vacations',
+  'request_training',
+  'view_trainings',
+  'view_receipts',
+  'download_receipt',
+] as const;
+
 async function resolvePermission(input: { permissionId?: string; permissionCode?: string }) {
   if (input.permissionId) {
     return prisma.permission.findUnique({
@@ -355,58 +368,37 @@ router.patch('/users/:id/access-total', requireAuth, async (req, res) => {
     return res.status(400).json({ message: payload.error.issues[0].message });
   }
 
-  const permissions = await prisma.permission.findMany({ select: { id: true } });
-  const permissionIds = permissions.map((permission) => permission.id);
-
-  if (permissionIds.length === 0) {
-    return res.json({ success: true, accessTotal: false });
-  }
+  const [firstPermission, defaultEmployeePermissions] = await Promise.all([
+    prisma.permission.findFirst({ select: { id: true }, orderBy: { code: 'asc' } }),
+    prisma.permission.findMany({
+      where: { code: { in: [...DEFAULT_EMPLOYEE_PERMISSION_CODES] } },
+      select: { id: true },
+    }),
+  ]);
 
   if (payload.data.isEnabled) {
     await prisma.$transaction(async (tx) => {
-      await tx.userPermission.updateMany({
-        where: {
-          userId: targetUserId,
-          permissionId: { in: permissionIds },
-        },
-        data: {
-          isEnabled: true,
-          grantedById: req.authUser!.id,
-        },
+      await tx.user.update({
+        where: { id: targetUserId },
+        data: { hasAccessTotal: true },
       });
 
-      const existingAssignments = await tx.userPermission.findMany({
-        where: {
-          userId: targetUserId,
-          permissionId: { in: permissionIds },
-        },
-        select: { permissionId: true },
+      // Compact mode: once access total is enabled, explicit per-permission rows become unnecessary.
+      await tx.userPermission.deleteMany({
+        where: { userId: targetUserId },
       });
 
-      const existingPermissionIds = new Set(existingAssignments.map((item) => item.permissionId));
-      const missingPermissionIds = permissionIds.filter((permissionId) => !existingPermissionIds.has(permissionId));
-
-      if (missingPermissionIds.length > 0) {
-        await tx.userPermission.createMany({
-          data: missingPermissionIds.map((permissionId) => ({
-            userId: targetUserId,
-            permissionId,
-            isEnabled: true,
-            grantedById: req.authUser!.id,
-          })),
-          skipDuplicates: true,
+      if (firstPermission) {
+        await tx.permissionGrant.create({
+          data: {
+            actorUserId: req.authUser!.id,
+            targetUserId,
+            permissionId: firstPermission.id,
+            action: 'GRANT',
+            reason: payload.data.reason?.trim() || 'Acesso total concedido (modo compacto).',
+          },
         });
       }
-
-      await tx.permissionGrant.createMany({
-        data: permissionIds.map((permissionId) => ({
-          actorUserId: req.authUser!.id,
-          targetUserId,
-          permissionId,
-          action: 'GRANT',
-          reason: payload.data.reason?.trim() || 'Acesso total concedido.',
-        })),
-      });
     });
   } else {
     const allowed = await canRevokeAccessTotal(req.authUser!, targetUserId);
@@ -414,42 +406,55 @@ router.patch('/users/:id/access-total', requireAuth, async (req, res) => {
       return res.status(403).json({ message: 'Só podes remover o acesso total que foi concedido por ti.' });
     }
 
-    const currentlyEnabled = await prisma.userPermission.findMany({
-      where: {
-        userId: targetUserId,
-        isEnabled: true,
-        permissionId: { in: permissionIds },
-      },
-      select: { permissionId: true },
-    });
-    const enabledPermissionIds = currentlyEnabled.map((item) => item.permissionId);
-
-    if (enabledPermissionIds.length === 0) {
-      return res.json({ success: true, accessTotal: false });
-    }
-
     await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: targetUserId },
+        data: { hasAccessTotal: false },
+      });
+
+      // Remove o modo compacto e repõe permissões padrão de funcionário.
       await tx.userPermission.updateMany({
-        where: {
-          userId: targetUserId,
-          permissionId: { in: enabledPermissionIds },
-          isEnabled: true,
-        },
+        where: { userId: targetUserId },
         data: {
           isEnabled: false,
           grantedById: req.authUser!.id,
         },
       });
 
-      await tx.permissionGrant.createMany({
-        data: enabledPermissionIds.map((permissionId) => ({
-          actorUserId: req.authUser!.id,
-          targetUserId,
-          permissionId,
-          action: 'REVOKE',
-          reason: payload.data.reason?.trim() || 'Acesso total revogado.',
-        })),
-      });
+      for (const permission of defaultEmployeePermissions) {
+        await tx.userPermission.upsert({
+          where: {
+            userId_permissionId: {
+              userId: targetUserId,
+              permissionId: permission.id,
+            },
+          },
+          create: {
+            userId: targetUserId,
+            permissionId: permission.id,
+            isEnabled: true,
+            grantedById: req.authUser!.id,
+            notes: AUTO_DEFAULT_EMPLOYEE_NOTE,
+          },
+          update: {
+            isEnabled: true,
+            grantedById: req.authUser!.id,
+            notes: AUTO_DEFAULT_EMPLOYEE_NOTE,
+          },
+        });
+      }
+
+      if (firstPermission) {
+        await tx.permissionGrant.create({
+          data: {
+            actorUserId: req.authUser!.id,
+            targetUserId,
+            permissionId: firstPermission.id,
+            action: 'REVOKE',
+            reason: payload.data.reason?.trim() || 'Acesso total revogado (modo compacto).',
+          },
+        });
+      }
     });
   }
 

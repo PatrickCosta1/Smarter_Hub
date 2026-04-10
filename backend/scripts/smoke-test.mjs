@@ -2,33 +2,101 @@ import assert from 'node:assert/strict';
 
 const backendBaseUrl = (process.env.SMB_BACKEND_URL || 'http://localhost:4000').replace(/\/$/, '');
 const apiBaseUrl = `${backendBaseUrl}/api`;
-const runMutations = isTruthy(process.env.SMB_SMOKE_MUTATIONS);
-const profileAction = (process.env.SMB_PROFILE_ACTION || 'reject').toLowerCase();
-const vacationAction = (process.env.SMB_VACATION_ACTION || 'approve').toLowerCase();
-const vacationRequestType = (process.env.SMB_VACATION_REQUEST_TYPE || 'ABSENCE_TRAINING').toUpperCase();
-const targetPermissionCode = process.env.SMB_TEST_PERMISSION_CODE?.trim();
+const runMutations = isTruthy(process.env.SMB_SMOKE_MUTATIONS ?? 'true');
+const targetPermissionCode = process.env.SMB_TEST_PERMISSION_CODE?.trim() || 'view_teams';
+
+const ROUTE_KEYS = [
+  'GET /health',
+  'POST /auth/login',
+  'GET /auth/me',
+  'PATCH /auth/account',
+  'POST /files/upload',
+  'GET /permissions',
+  'GET /users/:id/permissions',
+  'POST /users/:id/permissions',
+  'PATCH /users/:id/permissions/:permissionId',
+  'DELETE /users/:id/permissions/:permissionId',
+  'PATCH /users/:id/access-total',
+  'GET /audit/permission-grants',
+  'GET /profile/me',
+  'GET /profile/requests/me',
+  'PUT /profile/me',
+  'GET /profile/requests',
+  'POST /profile/requests/:id/approve',
+  'POST /profile/requests/:id/reject',
+  'GET /notifications/me',
+  'PATCH /notifications/:id/read',
+  'PATCH /notifications/read-all',
+  'DELETE /notifications/:id',
+  'ALL /receipts',
+  'GET /users',
+  'GET /users/collaborators',
+  'PATCH /users/:id/active',
+  'GET /users/me/teams',
+  'GET /teams',
+  'GET /teams/me',
+  'GET /teams/me/:teamId',
+  'PATCH /manager/team-members/:id',
+  'GET /admin/users',
+  'GET /admin/teams',
+  'POST /admin/teams',
+  'PATCH /admin/teams/:id',
+  'DELETE /admin/teams/:id',
+  'PATCH /admin/users/:id',
+  'PATCH /admin/users/:id/credentials',
+  'PATCH /admin/users/:id/memberships',
+  'POST /users',
+  'GET /trainings/me',
+  'GET /trainings/assigned',
+  'POST /trainings',
+  'POST /trainings/assign',
+  'POST /trainings/:id/complete',
+  'PUT /trainings/:id',
+  'DELETE /trainings/:id',
+  'GET /vacations/me',
+  'GET /vacations/overview',
+  'GET /vacations/calendar',
+  'POST /vacations',
+  'GET /vacations/requests',
+  'POST /vacations/:id/approve',
+  'POST /vacations/:id/reject',
+  'PUT /vacations/:id',
+  'DELETE /vacations/:id',
+];
+
+const routeCoverage = new Set();
+const results = [];
 
 const credentials = {
-  collaborator: readCredentials('SMB_TEST_COLLABORATOR_USERNAME', 'SMB_TEST_COLLABORATOR_PASSWORD'),
-  reviewer: readCredentials('SMB_TEST_REVIEWER_USERNAME', 'SMB_TEST_REVIEWER_PASSWORD'),
-  admin: readCredentials('SMB_TEST_ADMIN_USERNAME', 'SMB_TEST_ADMIN_PASSWORD'),
+  collaborator: readCredentials(
+    'SMB_TEST_COLLABORATOR_USERNAME',
+    'SMB_TEST_COLLABORATOR_PASSWORD',
+    { username: 'ana', password: 'user123' },
+  ),
+  reviewer: readCredentials(
+    'SMB_TEST_REVIEWER_USERNAME',
+    'SMB_TEST_REVIEWER_PASSWORD',
+    { username: 't.people', password: 'people123' },
+  ),
+  admin: readCredentials(
+    'SMB_TEST_ADMIN_USERNAME',
+    'SMB_TEST_ADMIN_PASSWORD',
+    { username: 't.people', password: 'people123' },
+  ),
 };
-
-const results = [];
 
 function isTruthy(value) {
   return ['1', 'true', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase());
 }
 
-function readCredentials(usernameKey, passwordKey) {
+function readCredentials(usernameKey, passwordKey, fallback) {
   const username = process.env[usernameKey]?.trim();
   const password = process.env[passwordKey]?.trim();
-
-  if (!username || !password) {
-    return null;
+  if (username && password) {
+    return { username, password };
   }
 
-  return { username, password };
+  return fallback ?? null;
 }
 
 function nowIso() {
@@ -45,7 +113,7 @@ function summarizeBody(body) {
   }
 
   if (body && typeof body === 'object') {
-    return { kind: 'object', keys: Object.keys(body).slice(0, 12) };
+    return { kind: 'object', keys: Object.keys(body).slice(0, 14) };
   }
 
   return { kind: typeof body, value: body == null ? null : String(body) };
@@ -55,13 +123,14 @@ function addResult(entry) {
   results.push(entry);
 }
 
-async function requestJson({ path, method = 'GET', token, body, expectedStatuses = [200], label }) {
+async function requestJson({ path, method = 'GET', token, body, expectedStatuses = [200], label, routeKey }) {
   const url = path.startsWith('http') ? path : `${apiBaseUrl}${path}`;
   const startedAt = Date.now();
+
   const response = await fetch(url, {
     method,
     headers: {
-      'Content-Type': 'application/json',
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -78,9 +147,7 @@ async function requestJson({ path, method = 'GET', token, body, expectedStatuses
     }
   }
 
-  const summary = summarizeBody(parsedBody);
   const durationMs = Date.now() - startedAt;
-
   log({
     level: response.ok ? 'info' : 'error',
     event: 'http',
@@ -89,15 +156,57 @@ async function requestJson({ path, method = 'GET', token, body, expectedStatuses
     url,
     status: response.status,
     durationMs,
-    response: summary,
+    routeKey,
+    response: summarizeBody(parsedBody),
   });
 
   if (!expectedStatuses.includes(response.status)) {
     const detail = typeof parsedBody === 'object' && parsedBody !== null
       ? JSON.stringify(parsedBody)
       : String(parsedBody || '');
-
     throw new Error(`${label || method} falhou com status ${response.status}. ${detail}`);
+  }
+
+  if (routeKey) {
+    routeCoverage.add(routeKey);
+  }
+
+  return parsedBody;
+}
+
+async function requestFormData({ path, token, formData, expectedStatuses = [201], label, routeKey }) {
+  const url = `${apiBaseUrl}${path}`;
+  const startedAt = Date.now();
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+
+  const parsedBody = await response.json().catch(() => null);
+  const durationMs = Date.now() - startedAt;
+
+  log({
+    level: response.ok ? 'info' : 'error',
+    event: 'http',
+    label,
+    method: 'POST',
+    url,
+    status: response.status,
+    durationMs,
+    routeKey,
+    response: summarizeBody(parsedBody),
+  });
+
+  if (!expectedStatuses.includes(response.status)) {
+    throw new Error(`${label || 'POST form-data'} falhou com status ${response.status}.`);
+  }
+
+  if (routeKey) {
+    routeCoverage.add(routeKey);
   }
 
   return parsedBody;
@@ -130,12 +239,10 @@ async function login(label, creds) {
     path: '/auth/login',
     method: 'POST',
     body: creds,
-    expectedStatuses: [200],
+    routeKey: 'POST /auth/login',
   });
 
-  assert.ok(payload && typeof payload === 'object' && 'token' in payload, `${label}: token em falta na resposta de login.`);
-  assert.ok('user' in payload, `${label}: utilizador em falta na resposta de login.`);
-
+  assert.ok(payload && payload.token && payload.user, `${label}: resposta de login inválida.`);
   return payload;
 }
 
@@ -148,361 +255,723 @@ function addDays(days) {
   return `${year}-${month}-${day}`;
 }
 
-async function runReadOnlySuite(name, creds, checks) {
-  if (!creds) {
-    log({ level: 'warn', event: 'suite:skip', suite: name, reason: 'credenciais em falta' });
-    return;
-  }
-
-  const session = await runStep(name, 'login', async () => login(name, creds));
-  if (!session) {
-    return;
-  }
-
-  const token = session.token;
-  const userId = session.user.id;
-
-  await runStep(name, 'auth/me', () => requestJson({ label: `${name} auth/me`, path: '/auth/me', token }));
-  await runStep(name, 'notifications/me', () => requestJson({ label: `${name} notifications/me`, path: '/notifications/me', token }));
-  await runStep(name, 'permissions', () => requestJson({ label: `${name} permissions`, path: '/permissions', token }));
-
-  if (checks.profile) {
-    await runStep(name, 'profile/me', () => requestJson({ label: `${name} profile/me`, path: '/profile/me', token }));
-    await runStep(name, 'profile/requests/me', () => requestJson({ label: `${name} profile/requests/me`, path: '/profile/requests/me', token }));
-  }
-
-  if (checks.teams) {
-    await runStep(name, 'users/me/teams', () => requestJson({ label: `${name} users/me/teams`, path: '/users/me/teams', token }));
-  }
-
-  if (checks.vacations) {
-    await runStep(name, 'vacations/me', () => requestJson({ label: `${name} vacations/me`, path: '/vacations/me', token }));
-    await runStep(name, 'vacations/overview', () => requestJson({ label: `${name} vacations/overview`, path: '/vacations/overview', token }));
-    await runStep(name, 'vacations/calendar', () => requestJson({ label: `${name} vacations/calendar`, path: '/vacations/calendar', token }));
-  }
-
-  if (checks.approvals) {
-    await runStep(name, 'profile/requests', () => requestJson({ label: `${name} profile/requests`, path: '/profile/requests', token }));
-    await runStep(name, 'vacations/requests', () => requestJson({ label: `${name} vacations/requests`, path: '/vacations/requests', token }));
-  }
-
-  if (checks.admin) {
-    await runStep(name, 'admin/users', () => requestJson({ label: `${name} admin/users`, path: '/admin/users', token }));
-    await runStep(name, 'admin/teams', () => requestJson({ label: `${name} admin/teams`, path: '/admin/teams', token }));
-    await runStep(name, 'users/collaborators', () => requestJson({ label: `${name} users/collaborators`, path: '/users/collaborators?page=1&pageSize=5', token }));
-    await runStep(name, 'users/self/permissions', () => requestJson({ label: `${name} users/self/permissions`, path: `/users/${userId}/permissions`, token }));
-  }
-}
-
-async function runProfileMutationSuite() {
-  if (!runMutations) {
-    log({ level: 'warn', event: 'suite:skip', suite: 'profile-mutation', reason: 'SMB_SMOKE_MUTATIONS desativado' });
-    return;
-  }
-
-  if (!credentials.collaborator || !credentials.reviewer) {
-    log({ level: 'warn', event: 'suite:skip', suite: 'profile-mutation', reason: 'faltam credenciais de colaborador e reviewer' });
-    return;
-  }
-
-  const collaboratorSession = await runStep('profile-mutation', 'collaborator login', async () => login('collaborator', credentials.collaborator));
-  const reviewerSession = await runStep('profile-mutation', 'reviewer login', async () => login('reviewer', credentials.reviewer));
-  if (!collaboratorSession || !reviewerSession) {
-    return;
-  }
-
-  const collaboratorToken = collaboratorSession.token;
-  const reviewerToken = reviewerSession.token;
-  const collaboratorUser = collaboratorSession.user;
-
-  const currentProfile = await runStep('profile-mutation', 'collaborator profile snapshot', async () => requestJson({ label: 'collaborator profile/me', path: '/profile/me', token: collaboratorToken }));
-  if (!currentProfile) {
-    return;
-  }
-
-  const nextShortName = `${String(currentProfile.nomeAbreviado || currentProfile.primeiroNome || collaboratorUser.username).trim()} QA`;
-  const profileResponse = await runStep('profile-mutation', 'submit profile change request', async () => requestJson({
-    label: 'submit profile change request',
-    path: '/profile/me',
-    method: 'PUT',
-    token: collaboratorToken,
-    body: { nomeAbreviado: nextShortName },
-    expectedStatuses: [200],
-  }));
-
-  if (!profileResponse) {
-    return;
-  }
-
-  const profileRequests = await runStep('profile-mutation', 'reviewer sees profile requests', async () => requestJson({
-    label: 'reviewer profile/requests',
-    path: '/profile/requests',
-    token: reviewerToken,
-  }));
-
-  const profileRequest = Array.isArray(profileRequests)
-    ? profileRequests.find((item) => item.userId === collaboratorUser.id && item.status === 'PENDING')
-    : null;
-
-  if (!profileRequest) {
-    log({ level: 'error', event: 'assert', suite: 'profile-mutation', step: 'find profile request', message: 'Pedido pendente não encontrado.' });
-  } else if (profileAction === 'approve') {
-    await runStep('profile-mutation', 'approve profile request', async () => requestJson({
-      label: 'approve profile request',
-      path: `/profile/requests/${profileRequest.id}/approve`,
-      method: 'POST',
-      token: reviewerToken,
-    }));
-  } else {
-    await runStep('profile-mutation', 'reject profile request', async () => requestJson({
-      label: 'reject profile request',
-      path: `/profile/requests/${profileRequest.id}/reject`,
-      method: 'POST',
-      token: reviewerToken,
-      body: { reason: 'Smoke test rejection.' },
-    }));
-  }
-
-  const collaboratorNotifications = await runStep('profile-mutation', 'collaborator notifications after review', async () => requestJson({
-    label: 'collaborator notifications/me after profile review',
-    path: '/notifications/me',
-    token: collaboratorToken,
-  }));
-
-  const targetNotification = Array.isArray(collaboratorNotifications)
-    ? collaboratorNotifications.find((item) => String(item.title || '').toLowerCase().includes('pedido de alteração de ficha'))
-    : null;
-
-  if (targetNotification) {
-    await runStep('profile-mutation', 'mark notification read', async () => requestJson({
-      label: 'mark notification read',
-      path: `/notifications/${targetNotification.id}/read`,
-      method: 'PATCH',
-      token: collaboratorToken,
-    }));
-
-    await runStep('profile-mutation', 'delete notification', async () => requestJson({
-      label: 'delete notification',
-      path: `/notifications/${targetNotification.id}`,
-      method: 'DELETE',
-      token: collaboratorToken,
-    }));
-  }
-}
-
-async function runVacationMutationSuite() {
-  if (!runMutations) {
-    log({ level: 'warn', event: 'suite:skip', suite: 'vacation-mutation', reason: 'SMB_SMOKE_MUTATIONS desativado' });
-    return;
-  }
-
-  if (!credentials.collaborator || !credentials.reviewer) {
-    log({ level: 'warn', event: 'suite:skip', suite: 'vacation-mutation', reason: 'faltam credenciais de colaborador e reviewer' });
-    return;
-  }
-
-  const collaboratorSession = await runStep('vacation-mutation', 'collaborator login', async () => login('collaborator', credentials.collaborator));
-  const reviewerSession = await runStep('vacation-mutation', 'reviewer login', async () => login('reviewer', credentials.reviewer));
-  if (!collaboratorSession || !reviewerSession) {
-    return;
-  }
-
-  const collaboratorToken = collaboratorSession.token;
-  const reviewerToken = reviewerSession.token;
-  const collaboratorUser = collaboratorSession.user;
-
-  const teams = await runStep('vacation-mutation', 'collaborator teams', async () => requestJson({
-    label: 'collaborator users/me/teams',
-    path: '/users/me/teams',
-    token: collaboratorToken,
-  }));
-
-  if (!Array.isArray(teams) || teams.length === 0) {
-    log({ level: 'warn', event: 'assert', suite: 'vacation-mutation', step: 'team lookup', message: 'Nenhuma equipa disponível para criar o pedido de férias.' });
-    return;
-  }
-
-  const contextTeamId = teams[0].teamId || teams[0].id;
-  const startDate = addDays(10);
-  const endDate = addDays(12);
-
-  const vacationCreated = await runStep('vacation-mutation', 'submit vacation request', async () => requestJson({
-    label: 'submit vacation request',
-    path: '/vacations',
-    method: 'POST',
-    token: collaboratorToken,
-    body: {
-      dataInicio: startDate,
-      dataFim: endDate,
-      observacoes: 'Smoke test de férias.',
-      requestType: vacationRequestType,
-      attachmentLink: '',
-      contextTeamId,
-      partialDay: 'FULL',
-    },
-    expectedStatuses: [201],
-  }));
-
-  if (!vacationCreated) {
-    return;
-  }
-
-  const reviewerRequests = await runStep('vacation-mutation', 'reviewer sees vacation requests', async () => requestJson({
-    label: 'reviewer vacations/requests',
-    path: '/vacations/requests',
-    token: reviewerToken,
-  }));
-
-  const vacationRequest = Array.isArray(reviewerRequests)
-    ? reviewerRequests.find((item) => item.userId === collaboratorUser.id && item.dataInicio === startDate && item.dataFim === endDate && item.requestType === vacationRequestType && item.status === 'PENDING')
-    : null;
-
-  if (!vacationRequest) {
-    log({ level: 'error', event: 'assert', suite: 'vacation-mutation', step: 'find vacation request', message: 'Pedido de férias pendente não encontrado.' });
-    return;
-  }
-
-  if (vacationAction === 'reject') {
-    await runStep('vacation-mutation', 'reject vacation request', async () => requestJson({
-      label: 'reject vacation request',
-      path: `/vacations/${vacationRequest.id}/reject`,
-      method: 'POST',
-      token: reviewerToken,
-      body: { reason: 'Smoke test rejection.' },
-    }));
-  } else {
-    await runStep('vacation-mutation', 'approve vacation request', async () => requestJson({
-      label: 'approve vacation request',
-      path: `/vacations/${vacationRequest.id}/approve`,
-      method: 'POST',
-      token: reviewerToken,
-    }));
-  }
-
-  const collaboratorNotifications = await runStep('vacation-mutation', 'collaborator notifications after vacation review', async () => requestJson({
-    label: 'collaborator notifications/me after vacation review',
-    path: '/notifications/me',
-    token: collaboratorToken,
-  }));
-
-  const targetNotification = Array.isArray(collaboratorNotifications)
-    ? collaboratorNotifications.find((item) => String(item.title || '').toLowerCase().includes('pedido de férias') || String(item.title || '').toLowerCase().includes('pedido de ausência'))
-    : null;
-
-  if (targetNotification) {
-    await runStep('vacation-mutation', 'mark vacation notification read', async () => requestJson({
-      label: 'mark vacation notification read',
-      path: `/notifications/${targetNotification.id}/read`,
-      method: 'PATCH',
-      token: collaboratorToken,
-    }));
-
-    await runStep('vacation-mutation', 'delete vacation notification', async () => requestJson({
-      label: 'delete vacation notification',
-      path: `/notifications/${targetNotification.id}`,
-      method: 'DELETE',
-      token: collaboratorToken,
-    }));
-  }
-}
-
-async function runAdminMutationSuite() {
-  if (!runMutations) {
-    return;
-  }
-
-  if (!credentials.admin) {
-    log({ level: 'warn', event: 'suite:skip', suite: 'admin-mutation', reason: 'credenciais de admin em falta' });
-    return;
-  }
-
-  const targetUserId = process.env.SMB_TEST_TARGET_USER_ID?.trim();
-  const targetPermissionId = process.env.SMB_TEST_PERMISSION_ID?.trim();
-
-  if (targetUserId && (targetPermissionId || targetPermissionCode)) {
-    const adminSession = await runStep('admin-mutation', 'admin login', async () => login('admin', credentials.admin));
-    if (!adminSession) {
-      return;
-    }
-
-    const token = adminSession.token;
-    let resolvedPermissionId = targetPermissionId || '';
-
-    if (!resolvedPermissionId && targetPermissionCode) {
-      const permissions = await runStep('admin-mutation', 'resolve permission code', async () => requestJson({
-        label: 'resolve permission code',
-        path: '/permissions',
-        token,
-      }));
-
-      if (permissions && Array.isArray(permissions.permissions)) {
-        const resolvedPermission = permissions.permissions.find((item) => item.code === targetPermissionCode);
-        resolvedPermissionId = resolvedPermission?.id || '';
-      }
-    }
-
-    if (!resolvedPermissionId) {
-      log({ level: 'warn', event: 'suite:skip', suite: 'admin-mutation', reason: 'não foi possível resolver a permissão de teste' });
-      return;
-    }
-
-    await runStep('admin-mutation', 'grant permission', async () => requestJson({
-      label: 'grant permission',
-      path: `/users/${targetUserId}/permissions`,
-      method: 'POST',
-      token,
-      body: {
-        permissionId: resolvedPermissionId,
-        isEnabled: true,
-        notes: 'Smoke test grant.',
-        reason: 'Smoke test grant.',
-      },
-    }));
-
-    await runStep('admin-mutation', 'verify granted permission', async () => requestJson({
-      label: 'verify granted permission',
-      path: `/users/${targetUserId}/permissions`,
-      token,
-    }));
-
-    await runStep('admin-mutation', 'revoke permission', async () => requestJson({
-      label: 'revoke permission',
-      path: `/users/${targetUserId}/permissions/${resolvedPermissionId}`,
-      method: 'DELETE',
-      token,
-    }));
-  }
+function uniqueSuffix() {
+  return `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 }
 
 async function main() {
-  log({ level: 'info', event: 'suite:start', backendBaseUrl, apiBaseUrl, runMutations, profileAction, vacationAction });
+  log({ level: 'info', event: 'suite:start', backendBaseUrl, apiBaseUrl, runMutations });
 
   await runStep('health', 'health check', async () => requestJson({
-    label: 'health check',
+    label: 'health',
     path: `${backendBaseUrl}/health`,
-    expectedStatuses: [200],
+    routeKey: 'GET /health',
   }));
 
-  await runReadOnlySuite('collaborator-readonly', credentials.collaborator, { profile: true, vacations: true, teams: true, approvals: false, admin: false });
-  await runReadOnlySuite('reviewer-readonly', credentials.reviewer, { profile: false, vacations: false, teams: false, approvals: true, admin: false });
-  await runReadOnlySuite('admin-readonly', credentials.admin, { profile: false, vacations: false, teams: false, approvals: true, admin: true });
+  const adminSession = await runStep('auth', 'admin login', async () => login('admin', credentials.admin));
+  const reviewerSession = await runStep('auth', 'reviewer login', async () => login('reviewer', credentials.reviewer || credentials.admin));
 
-  await runProfileMutationSuite();
-  await runVacationMutationSuite();
-  await runAdminMutationSuite();
+  if (!adminSession || !reviewerSession) {
+    throw new Error('Falha no login base (admin/reviewer) para executar a suite completa.');
+  }
+
+  const adminToken = adminSession.token;
+  const reviewerToken = reviewerSession.token;
+
+  const bootstrapTeamName = `QA Team ${uniqueSuffix()}`;
+  const bootstrapTeam = await runStep('admin', 'create bootstrap team', () => requestJson({
+    label: 'create bootstrap team',
+    path: '/admin/teams',
+    method: 'POST',
+    token: adminToken,
+    body: {
+      name: bootstrapTeamName,
+      country: 'PT',
+      memberIds: [],
+    },
+    routeKey: 'POST /admin/teams',
+    expectedStatuses: [201],
+  }));
+
+  if (!bootstrapTeam?.id) {
+    throw new Error('Falha ao criar equipa bootstrap.');
+  }
+
+  const teamId = bootstrapTeam.id;
+  let collaboratorSession = await runStep('auth', 'collaborator login', async () => {
+    const payload = await requestJson({
+      label: 'collaborator login',
+      path: '/auth/login',
+      method: 'POST',
+      body: credentials.collaborator,
+      routeKey: 'POST /auth/login',
+      expectedStatuses: [200, 401],
+    });
+
+    if (payload?.token && payload?.user) {
+      return payload;
+    }
+
+    return null;
+  });
+  let provisionedCollaboratorId = null;
+  let collaboratorPassword = credentials.collaborator?.password || '';
+
+  if (!collaboratorSession) {
+    const provisionSuffix = uniqueSuffix();
+    const provisionUsername = `smoke.collab${provisionSuffix}`;
+    const provisionPassword = 'Smoke123!';
+
+    const provisioned = await runStep('auth', 'provision collaborator user', () => requestJson({
+      label: 'provision collaborator user',
+      path: '/users',
+      method: 'POST',
+      token: adminToken,
+      body: {
+        fullName: `Smoke Collaborator ${provisionSuffix}`,
+        username: provisionUsername,
+        email: `smoke.collab${provisionSuffix}@example.com`,
+        password: provisionPassword,
+        role: 'COLABORADOR',
+        teamId,
+      },
+      routeKey: 'POST /users',
+      expectedStatuses: [201],
+    }));
+
+    if (!provisioned?.id) {
+      throw new Error('Não foi possível provisionar colaborador temporário.');
+    }
+
+    provisionedCollaboratorId = provisioned.id;
+    collaboratorPassword = provisionPassword;
+    collaboratorSession = await runStep('auth', 'collaborator login (provisioned)', async () => login('collaborator-provisioned', {
+      username: provisionUsername,
+      password: provisionPassword,
+    }));
+  }
+
+  if (!collaboratorSession) {
+    throw new Error('Falha no login de colaborador para executar a suite completa.');
+  }
+
+  const collaboratorToken = collaboratorSession.token;
+
+  await runStep('auth', 'auth/me admin', () => requestJson({ label: 'auth/me admin', path: '/auth/me', token: adminToken, routeKey: 'GET /auth/me' }));
+  await runStep('auth', 'auth/account collaborator', () => requestJson({
+    label: 'auth/account collaborator',
+    path: '/auth/account',
+    method: 'PATCH',
+    token: collaboratorToken,
+    body: {
+      username: collaboratorSession.user.username,
+      currentPassword: collaboratorPassword,
+    },
+    routeKey: 'PATCH /auth/account',
+  }));
+
+  const collaboratorTeams = await runStep('users', 'users/me/teams collaborator', () => requestJson({
+    label: 'users/me/teams collaborator',
+    path: '/users/me/teams',
+    token: collaboratorToken,
+    routeKey: 'GET /users/me/teams',
+  }));
+
+  const contextTeamId = Array.isArray(collaboratorTeams) && collaboratorTeams[0]
+    ? (collaboratorTeams[0].teamId || collaboratorTeams[0].id)
+    : teamId;
+
+  await runStep('users', 'users list', () => requestJson({ label: 'users list', path: '/users?limit=10', token: adminToken, routeKey: 'GET /users' }));
+  await runStep('users', 'users collaborators', () => requestJson({ label: 'users collaborators', path: '/users/collaborators?page=1&pageSize=10', token: adminToken, routeKey: 'GET /users/collaborators' }));
+  await runStep('users', 'teams visible list', () => requestJson({ label: 'teams visible list', path: '/teams', token: adminToken, routeKey: 'GET /teams' }));
+  await runStep('users', 'teams me list', () => requestJson({ label: 'teams me list', path: '/teams/me', token: adminToken, routeKey: 'GET /teams/me' }));
+
+  await runStep('admin', 'admin teams', () => requestJson({ label: 'admin teams', path: '/admin/teams', token: adminToken, routeKey: 'GET /admin/teams' }));
+  await runStep('admin', 'patch team', () => requestJson({
+    label: 'patch team',
+    path: `/admin/teams/${teamId}`,
+    method: 'PATCH',
+    token: adminToken,
+    body: { name: `${bootstrapTeamName} Updated` },
+    routeKey: 'PATCH /admin/teams/:id',
+  }));
+  await runStep('admin', 'teams me details by id', () => requestJson({
+    label: 'teams me details by id',
+    path: `/teams/me/${teamId}`,
+    token: adminToken,
+    routeKey: 'GET /teams/me/:teamId',
+  }));
+
+  const userSuffix = uniqueSuffix();
+  const createdUser = await runStep('admin', 'create user', () => requestJson({
+    label: 'create user',
+    path: '/users',
+    method: 'POST',
+    token: adminToken,
+    body: {
+      fullName: `Smoke User ${userSuffix}`,
+      username: `smoke.user${userSuffix}`,
+      email: `smoke.user${userSuffix}@example.com`,
+      password: 'Smoke123!',
+      role: 'COLABORADOR',
+      teamId,
+    },
+    routeKey: 'POST /users',
+    expectedStatuses: [201],
+  }));
+
+  if (!createdUser?.id) {
+    throw new Error('Falha ao criar utilizador temporário.');
+  }
+
+  const targetUserId = createdUser.id;
+
+  await runStep('admin', 'admin users', () => requestJson({ label: 'admin users', path: '/admin/users', token: adminToken, routeKey: 'GET /admin/users' }));
+
+  await runStep('admin', 'patch admin user profile', () => requestJson({
+    label: 'patch admin user profile',
+    path: `/admin/users/${targetUserId}`,
+    method: 'PATCH',
+    token: adminToken,
+    body: {
+      role: 'COLABORADOR',
+      teamId,
+      workCountry: 'PT',
+      localidade: 'Porto',
+      isActive: true,
+    },
+    routeKey: 'PATCH /admin/users/:id',
+  }));
+
+  const updatedUsername = `smoke.userx${userSuffix}`;
+  await runStep('admin', 'patch admin user credentials', () => requestJson({
+    label: 'patch admin user credentials',
+    path: `/admin/users/${targetUserId}/credentials`,
+    method: 'PATCH',
+    token: adminToken,
+    body: {
+      username: updatedUsername,
+      password: 'Smoke123!',
+    },
+    routeKey: 'PATCH /admin/users/:id/credentials',
+  }));
+
+  await runStep('admin', 'patch admin user memberships', () => requestJson({
+    label: 'patch admin user memberships',
+    path: `/admin/users/${targetUserId}/memberships`,
+    method: 'PATCH',
+    token: adminToken,
+    body: {
+      memberships: [{ teamId, membershipRole: 'PARTICIPANT', isApprover: false, isActive: true }],
+    },
+    routeKey: 'PATCH /admin/users/:id/memberships',
+  }));
+
+  await runStep('users', 'manager patch team member', () => requestJson({
+    label: 'manager patch team member',
+    path: `/manager/team-members/${targetUserId}`,
+    method: 'PATCH',
+    token: adminToken,
+    body: {
+      teamId,
+      cargo: 'Analista QA',
+      funcao: 'Automação',
+    },
+    routeKey: 'PATCH /manager/team-members/:id',
+  }));
+
+  await runStep('users', 'deactivate user', () => requestJson({
+    label: 'deactivate user',
+    path: `/users/${targetUserId}/active`,
+    method: 'PATCH',
+    token: adminToken,
+    body: { isActive: false },
+    routeKey: 'PATCH /users/:id/active',
+  }));
+
+  await runStep('users', 'reactivate user', () => requestJson({
+    label: 'reactivate user',
+    path: `/users/${targetUserId}/active`,
+    method: 'PATCH',
+    token: adminToken,
+    body: { isActive: true },
+    routeKey: 'PATCH /users/:id/active',
+  }));
+
+  await runStep('profile', 'get profile me', () => requestJson({ label: 'profile me', path: '/profile/me', token: collaboratorToken, routeKey: 'GET /profile/me' }));
+  await runStep('profile', 'get profile requests me', () => requestJson({ label: 'profile requests me', path: '/profile/requests/me', token: collaboratorToken, routeKey: 'GET /profile/requests/me' }));
+
+  const firstProfileChange = await runStep('profile', 'submit profile request (approve path)', () => requestJson({
+    label: 'submit profile request 1',
+    path: '/profile/me',
+    method: 'PUT',
+    token: collaboratorToken,
+    body: { nomeAbreviado: `Perfil QA ${uniqueSuffix()}` },
+    routeKey: 'PUT /profile/me',
+  }));
+
+  if (firstProfileChange) {
+    const pendingRequests = await runStep('profile', 'list profile requests', () => requestJson({
+      label: 'list profile requests',
+      path: '/profile/requests',
+      token: reviewerToken,
+      routeKey: 'GET /profile/requests',
+    }));
+
+    const toApprove = Array.isArray(pendingRequests)
+      ? pendingRequests.find((item) => item.userId === collaboratorSession.user.id && item.status === 'PENDING')
+      : null;
+
+    if (toApprove) {
+      await runStep('profile', 'approve profile request', () => requestJson({
+        label: 'approve profile request',
+        path: `/profile/requests/${toApprove.id}/approve`,
+        method: 'POST',
+        token: reviewerToken,
+        routeKey: 'POST /profile/requests/:id/approve',
+      }));
+    }
+  }
+
+  const secondProfileChange = await runStep('profile', 'submit profile request (reject path)', () => requestJson({
+    label: 'submit profile request 2',
+    path: '/profile/me',
+    method: 'PUT',
+    token: collaboratorToken,
+    body: { nomeAbreviado: `Perfil QB ${uniqueSuffix()}` },
+    routeKey: 'PUT /profile/me',
+  }));
+
+  if (secondProfileChange) {
+    const pendingRequests = await requestJson({
+      label: 'list profile requests 2',
+      path: '/profile/requests',
+      token: reviewerToken,
+      routeKey: 'GET /profile/requests',
+    });
+
+    const toReject = Array.isArray(pendingRequests)
+      ? pendingRequests.find((item) => item.userId === collaboratorSession.user.id && item.status === 'PENDING')
+      : null;
+
+    if (toReject) {
+      await runStep('profile', 'reject profile request', () => requestJson({
+        label: 'reject profile request',
+        path: `/profile/requests/${toReject.id}/reject`,
+        method: 'POST',
+        token: reviewerToken,
+        body: { reason: 'Smoke rejection.' },
+        routeKey: 'POST /profile/requests/:id/reject',
+      }));
+    }
+  }
+
+  await runStep('notifications', 'list notifications', () => requestJson({
+    label: 'notifications me',
+    path: '/notifications/me',
+    token: collaboratorToken,
+    routeKey: 'GET /notifications/me',
+  }));
+
+  await runStep('notifications', 'mark all read', () => requestJson({
+    label: 'notifications read all',
+    path: '/notifications/read-all',
+    method: 'PATCH',
+    token: collaboratorToken,
+    routeKey: 'PATCH /notifications/read-all',
+  }));
+
+  const notificationsAfterReadAll = await requestJson({
+    label: 'notifications after read-all',
+    path: '/notifications/me',
+    token: collaboratorToken,
+    routeKey: 'GET /notifications/me',
+  });
+
+  if (Array.isArray(notificationsAfterReadAll) && notificationsAfterReadAll[0]) {
+    const notificationId = notificationsAfterReadAll[0].id;
+    await runStep('notifications', 'mark notification read', () => requestJson({
+      label: 'mark notification read',
+      path: `/notifications/${notificationId}/read`,
+      method: 'PATCH',
+      token: collaboratorToken,
+      routeKey: 'PATCH /notifications/:id/read',
+    }));
+
+    await runStep('notifications', 'delete notification', () => requestJson({
+      label: 'delete notification',
+      path: `/notifications/${notificationId}`,
+      method: 'DELETE',
+      token: collaboratorToken,
+      routeKey: 'DELETE /notifications/:id',
+    }));
+  }
+
+  await runStep('trainings', 'create own training', () => requestJson({
+    label: 'create own training',
+    path: '/trainings',
+    method: 'POST',
+    token: collaboratorToken,
+    body: {
+      nome: `Formação Smoke ${uniqueSuffix()}`,
+      link: '',
+      horas: 2,
+      duracao: '2h',
+      entidade: 'QA Academy',
+      dataConclusao: addDays(1),
+    },
+    routeKey: 'POST /trainings',
+    expectedStatuses: [201],
+  }));
+
+  const trainingsMe = await runStep('trainings', 'list trainings me', () => requestJson({
+    label: 'list trainings me',
+    path: '/trainings/me',
+    token: collaboratorToken,
+    routeKey: 'GET /trainings/me',
+  }));
+
+  if (Array.isArray(trainingsMe) && trainingsMe[0]) {
+    const trainingId = trainingsMe[0].id;
+    await runStep('trainings', 'update own training', () => requestJson({
+      label: 'update own training',
+      path: `/trainings/${trainingId}`,
+      method: 'PUT',
+      token: collaboratorToken,
+      body: {
+        nome: `Formação Smoke Atualizada ${uniqueSuffix()}`,
+        link: '',
+        horas: 3,
+        duracao: '3h',
+        entidade: 'QA Academy',
+        dataConclusao: addDays(2),
+      },
+      routeKey: 'PUT /trainings/:id',
+    }));
+
+    await runStep('trainings', 'delete own training', () => requestJson({
+      label: 'delete own training',
+      path: `/trainings/${trainingId}`,
+      method: 'DELETE',
+      token: collaboratorToken,
+      routeKey: 'DELETE /trainings/:id',
+    }));
+  }
+
+  const assignedTraining = await runStep('trainings', 'assign training', () => requestJson({
+    label: 'assign training',
+    path: '/trainings/assign',
+    method: 'POST',
+    token: adminToken,
+    body: {
+      userId: collaboratorSession.user.id,
+      nome: `Atribuída Smoke ${uniqueSuffix()}`,
+      link: '',
+      horas: 1,
+      duracao: '1h',
+      entidade: 'RH',
+    },
+    routeKey: 'POST /trainings/assign',
+    expectedStatuses: [201],
+  }));
+
+  await runStep('trainings', 'list trainings assigned', () => requestJson({
+    label: 'list trainings assigned',
+    path: '/trainings/assigned',
+    token: adminToken,
+    routeKey: 'GET /trainings/assigned',
+  }));
+
+  if (assignedTraining?.id) {
+    await runStep('trainings', 'complete assigned training', () => requestJson({
+      label: 'complete assigned training',
+      path: `/trainings/${assignedTraining.id}/complete`,
+      method: 'POST',
+      token: collaboratorToken,
+      routeKey: 'POST /trainings/:id/complete',
+      expectedStatuses: [200, 403],
+    }));
+  }
+
+  await runStep('vacations', 'vacations me', () => requestJson({ label: 'vacations me', path: '/vacations/me', token: collaboratorToken, routeKey: 'GET /vacations/me' }));
+  await runStep('vacations', 'vacations overview', () => requestJson({ label: 'vacations overview', path: '/vacations/overview', token: collaboratorToken, routeKey: 'GET /vacations/overview' }));
+  await runStep('vacations', 'vacations calendar', () => requestJson({ label: 'vacations calendar', path: '/vacations/calendar', token: collaboratorToken, routeKey: 'GET /vacations/calendar' }));
+
+  let vacationRequestForApprove = null;
+  let vacationRequestForReject = null;
+  let vacationRequestForUpdateDelete = null;
+
+  if (runMutations && contextTeamId) {
+    vacationRequestForApprove = await runStep('vacations', 'create vacation request for approve', () => requestJson({
+      label: 'create vacation request approve',
+      path: '/vacations',
+      method: 'POST',
+      token: collaboratorToken,
+      body: {
+        dataInicio: addDays(20),
+        dataFim: addDays(21),
+        observacoes: 'Smoke approve',
+        requestType: 'ABSENCE_TRAINING',
+        attachmentLink: '',
+        contextTeamId,
+        partialDay: 'FULL',
+      },
+      routeKey: 'POST /vacations',
+      expectedStatuses: [201],
+    }));
+
+    vacationRequestForReject = await runStep('vacations', 'create vacation request for reject', () => requestJson({
+      label: 'create vacation request reject',
+      path: '/vacations',
+      method: 'POST',
+      token: collaboratorToken,
+      body: {
+        dataInicio: addDays(24),
+        dataFim: addDays(25),
+        observacoes: 'Smoke reject',
+        requestType: 'ABSENCE_MEDICAL',
+        attachmentLink: '',
+        contextTeamId,
+        partialDay: 'FULL',
+      },
+      routeKey: 'POST /vacations',
+      expectedStatuses: [201],
+    }));
+
+    vacationRequestForUpdateDelete = await runStep('vacations', 'create vacation request for update/delete', () => requestJson({
+      label: 'create vacation request update delete',
+      path: '/vacations',
+      method: 'POST',
+      token: collaboratorToken,
+      body: {
+        dataInicio: addDays(28),
+        dataFim: addDays(28),
+        observacoes: 'Smoke update delete',
+        requestType: 'ABSENCE_TRAINING',
+        attachmentLink: '',
+        contextTeamId,
+        partialDay: 'FULL',
+      },
+      routeKey: 'POST /vacations',
+      expectedStatuses: [201],
+    }));
+  }
+
+  await runStep('vacations', 'list vacations requests', () => requestJson({ label: 'vacations requests', path: '/vacations/requests', token: reviewerToken, routeKey: 'GET /vacations/requests' }));
+
+  if (vacationRequestForApprove?.id) {
+    await runStep('vacations', 'approve vacation request', () => requestJson({
+      label: 'approve vacation request',
+      path: `/vacations/${vacationRequestForApprove.id}/approve`,
+      method: 'POST',
+      token: reviewerToken,
+      routeKey: 'POST /vacations/:id/approve',
+    }));
+  }
+
+  if (vacationRequestForReject?.id) {
+    await runStep('vacations', 'reject vacation request', () => requestJson({
+      label: 'reject vacation request',
+      path: `/vacations/${vacationRequestForReject.id}/reject`,
+      method: 'POST',
+      token: reviewerToken,
+      body: { reason: 'Smoke rejection' },
+      routeKey: 'POST /vacations/:id/reject',
+    }));
+  }
+
+  if (vacationRequestForUpdateDelete?.id) {
+    const updatedVacation = await runStep('vacations', 'update vacation request', () => requestJson({
+      label: 'update vacation request',
+      path: `/vacations/${vacationRequestForUpdateDelete.id}`,
+      method: 'PUT',
+      token: collaboratorToken,
+      body: {
+        dataInicio: addDays(29),
+        dataFim: addDays(29),
+        observacoes: 'Smoke versioned',
+        requestType: 'ABSENCE_TRAINING',
+        attachmentLink: '',
+        contextTeamId,
+        partialDay: 'FULL',
+      },
+      routeKey: 'PUT /vacations/:id',
+    }));
+
+    if (updatedVacation?.id) {
+      await runStep('vacations', 'delete vacation request', () => requestJson({
+        label: 'delete vacation request',
+        path: `/vacations/${updatedVacation.id}`,
+        method: 'DELETE',
+        token: collaboratorToken,
+        routeKey: 'DELETE /vacations/:id',
+      }));
+    }
+  }
+
+  const permissionsCatalog = await runStep('permissions', 'permissions catalog', () => requestJson({
+    label: 'permissions catalog',
+    path: '/permissions',
+    token: adminToken,
+    routeKey: 'GET /permissions',
+  }));
+
+  const chosenPermission = Array.isArray(permissionsCatalog?.permissions)
+    ? permissionsCatalog.permissions.find((item) => item.code === targetPermissionCode) || permissionsCatalog.permissions[0]
+    : null;
+
+  await runStep('permissions', 'user permissions get', () => requestJson({
+    label: 'user permissions get',
+    path: `/users/${targetUserId}/permissions`,
+    token: adminToken,
+    routeKey: 'GET /users/:id/permissions',
+  }));
+
+  if (chosenPermission?.id) {
+    await runStep('permissions', 'user permissions post', () => requestJson({
+      label: 'user permissions post',
+      path: `/users/${targetUserId}/permissions`,
+      method: 'POST',
+      token: adminToken,
+      body: {
+        permissionId: chosenPermission.id,
+        isEnabled: true,
+        notes: 'Smoke assign',
+        reason: 'Smoke assign',
+      },
+      routeKey: 'POST /users/:id/permissions',
+    }));
+
+    await runStep('permissions', 'user permissions patch', () => requestJson({
+      label: 'user permissions patch',
+      path: `/users/${targetUserId}/permissions/${chosenPermission.id}`,
+      method: 'PATCH',
+      token: adminToken,
+      body: {
+        isEnabled: true,
+        notes: 'Smoke patch',
+        reason: 'Smoke patch',
+        restrictedToCountries: ['PT'],
+      },
+      routeKey: 'PATCH /users/:id/permissions/:permissionId',
+      expectedStatuses: [200, 400],
+    }));
+
+    await runStep('permissions', 'user permissions delete', () => requestJson({
+      label: 'user permissions delete',
+      path: `/users/${targetUserId}/permissions/${chosenPermission.id}`,
+      method: 'DELETE',
+      token: adminToken,
+      routeKey: 'DELETE /users/:id/permissions/:permissionId',
+    }));
+  }
+
+  await runStep('permissions', 'access total grant', () => requestJson({
+    label: 'access total grant',
+    path: `/users/${targetUserId}/access-total`,
+    method: 'PATCH',
+    token: adminToken,
+    body: { isEnabled: true, reason: 'Smoke grant' },
+    routeKey: 'PATCH /users/:id/access-total',
+  }));
+
+  await runStep('permissions', 'access total revoke', () => requestJson({
+    label: 'access total revoke',
+    path: `/users/${targetUserId}/access-total`,
+    method: 'PATCH',
+    token: adminToken,
+    body: { isEnabled: false, reason: 'Smoke revoke' },
+    routeKey: 'PATCH /users/:id/access-total',
+  }));
+
+  await runStep('permissions', 'audit permission grants', () => requestJson({
+    label: 'audit permission grants',
+    path: `/audit/permission-grants?userId=${targetUserId}&limit=20&offset=0`,
+    token: adminToken,
+    routeKey: 'GET /audit/permission-grants',
+  }));
+
+  await runStep('files', 'upload file', () => {
+    const formData = new FormData();
+    const content = new Blob(['smoke file'], { type: 'text/plain' });
+    formData.append('file', content, 'smoke.txt');
+
+    return requestFormData({
+      label: 'upload file',
+      path: '/files/upload',
+      token: collaboratorToken,
+      formData,
+      routeKey: 'POST /files/upload',
+      expectedStatuses: [201],
+    });
+  });
+
+  await runStep('receipts', 'receipts placeholder route', () => requestJson({
+    label: 'receipts placeholder route',
+    path: '/receipts',
+    token: adminToken,
+    expectedStatuses: [410, 501],
+    routeKey: 'ALL /receipts',
+  }));
+
+  await runStep('cleanup', 'detach team from temp user', () => requestJson({
+    label: 'detach team from temp user',
+    path: `/admin/users/${targetUserId}`,
+    method: 'PATCH',
+    token: adminToken,
+    body: { teamId: null, isActive: true },
+    routeKey: 'PATCH /admin/users/:id',
+  }));
+
+  await runStep('cleanup', 'delete temp team', () => requestJson({
+    label: 'delete temp team',
+    path: `/admin/teams/${teamId}`,
+    method: 'DELETE',
+    token: adminToken,
+    routeKey: 'DELETE /admin/teams/:id',
+  }));
+
+  await runStep('cleanup', 'deactivate temp user', () => requestJson({
+    label: 'deactivate temp user',
+    path: `/users/${targetUserId}/active`,
+    method: 'PATCH',
+    token: adminToken,
+    body: { isActive: false },
+    routeKey: 'PATCH /users/:id/active',
+  }));
+
+  if (provisionedCollaboratorId) {
+    await runStep('cleanup', 'deactivate provisioned collaborator', () => requestJson({
+      label: 'deactivate provisioned collaborator',
+      path: `/users/${provisionedCollaboratorId}/active`,
+      method: 'PATCH',
+      token: adminToken,
+      body: { isActive: false },
+      routeKey: 'PATCH /users/:id/active',
+    }));
+  }
+
+  const missingRoutes = ROUTE_KEYS.filter((key) => !routeCoverage.has(key));
+  if (missingRoutes.length > 0) {
+    log({ level: 'error', event: 'coverage:missing-routes', missingRoutes });
+  } else {
+    log({ level: 'info', event: 'coverage:complete', covered: routeCoverage.size });
+  }
 
   const failed = results.filter((item) => item.status === 'failed');
   const passed = results.filter((item) => item.status === 'passed');
 
   log({
-    level: failed.length > 0 ? 'error' : 'info',
+    level: failed.length > 0 || missingRoutes.length > 0 ? 'error' : 'info',
     event: 'suite:summary',
     passed: passed.length,
     failed: failed.length,
-    skipped: results.filter((item) => item.status === 'skipped').length,
+    totalRoutes: ROUTE_KEYS.length,
+    coveredRoutes: routeCoverage.size,
+    missingRoutes: missingRoutes.length,
   });
 
-  if (failed.length > 0) {
+  if (failed.length > 0 || missingRoutes.length > 0) {
     process.exitCode = 1;
   }
 }

@@ -176,6 +176,70 @@ function formatChangedKeys(keys: string[]) {
   return keys.map((key) => friendlyProfileFieldLabels[key as (typeof profileFields)[number]] ?? key).join(', ');
 }
 
+function normalizeFieldValue(value: unknown) {
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return '(vazio)';
+  }
+
+  if (text.length > 90) {
+    return `${text.slice(0, 87)}...`;
+  }
+
+  return text;
+}
+
+type ProfileChangeDetail = {
+  field: string;
+  oldValue: string;
+  newValue: string;
+};
+
+function buildProfileChangeDetails(
+  current: Record<string, unknown> | null,
+  next: Record<string, unknown>,
+  changedKeys: string[],
+): ProfileChangeDetail[] {
+  const baseline = current ?? {};
+
+  return changedKeys.map((key) => {
+    const label = friendlyProfileFieldLabels[key as (typeof profileFields)[number]] ?? key;
+    return {
+      field: label,
+      oldValue: normalizeFieldValue(baseline[key]),
+      newValue: normalizeFieldValue(next[key]),
+    };
+  });
+}
+
+function resolveRequesterDisplayName(
+  profile: { nomeAbreviado?: string | null; primeiroNome?: string | null; apelido?: string | null } | null | undefined,
+) {
+  const shortName = String(profile?.nomeAbreviado ?? '').trim();
+  if (shortName) {
+    return shortName;
+  }
+
+  const fullName = `${String(profile?.primeiroNome ?? '').trim()} ${String(profile?.apelido ?? '').trim()}`.trim();
+  if (fullName) {
+    return fullName;
+  }
+
+  return 'Colaborador';
+}
+
+function buildProfileChangeMessage(
+  requesterName: string,
+  current: Record<string, unknown> | null,
+  next: Record<string, unknown>,
+  changedKeys: string[],
+) {
+  const header = `${requesterName} efetuou um pedido de alteração de ficha.`;
+  const lines = buildProfileChangeDetails(current, next, changedKeys).map((item) => `- ${item.field}: ${item.oldValue} -> ${item.newValue}`);
+
+  return [header, ...lines].join('\n');
+}
+
 function getChangedKeys(current: Record<string, unknown> | null, next: Record<string, unknown>) {
   const baseline = current ?? {};
 
@@ -241,7 +305,14 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
         return res.status(400).json({ message: 'Não existem alterações para submeter.' });
       }
 
+      const requesterName = resolveRequesterDisplayName(currentProfile);
       const summary = `Pedido de alteração de ficha: ${formatChangedKeys(changedKeys)}`;
+      const notificationMessage = buildProfileChangeMessage(
+        requesterName,
+        currentProfile as Record<string, unknown> | null,
+        data as Record<string, unknown>,
+        changedKeys,
+      );
 
       const existingRequest = await prisma.profileChangeRequest.findFirst({
         where: { userId, status: 'PENDING' },
@@ -268,13 +339,13 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
         });
       }
 
-      await notifyUsersByPermission(prisma, ['approve_profile_change'], 'Pedido de alteração de ficha', `${req.authUser!.username} submeteu um pedido: ${summary}`);
+      await notifyUsersByPermission(prisma, ['approve_profile_change'], 'Pedido de alteração de ficha', notificationMessage);
 
       await prisma.notification.create({
         data: {
           userId,
           title: 'Pedido de alteração submetido',
-          message: 'O teu pedido de alteração de ficha foi enviado para aprovação. Vais receber uma notificação quando houver decisão.',
+          message: 'Pedido de alteração enviado para validação.',
         },
       });
 
@@ -337,7 +408,22 @@ router.get('/profile/requests', requireAuth, async (req, res) => {
     orderBy: { createdAt: 'desc' },
   });
 
-  return res.json(requests);
+  const enriched = await Promise.all(requests.map(async (request) => {
+    const currentProfile = await prisma.profile.findUnique({
+      where: { userId: request.userId },
+    });
+
+    const requestedData = (request.requestedData as Record<string, unknown>) ?? {};
+    const changedKeys = getChangedKeys(currentProfile as Record<string, unknown> | null, requestedData);
+
+    return {
+      ...request,
+      requesterName: resolveRequesterDisplayName(request.user.profile),
+      changeDetails: buildProfileChangeDetails(currentProfile as Record<string, unknown> | null, requestedData, changedKeys),
+    };
+  }));
+
+  return res.json(enriched);
 });
 
 router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
@@ -382,8 +468,8 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
   await prisma.notification.create({
     data: {
       userId: request.userId,
-      title: 'Pedido de alteração de ficha aprovado',
-      message: 'As alterações à tua ficha foram aprovadas e já ficaram disponíveis no perfil.',
+      title: 'Pedido de alteração aprovado',
+      message: 'A ficha foi atualizada.',
     },
   });
 

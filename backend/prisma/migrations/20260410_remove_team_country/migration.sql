@@ -1,0 +1,1 @@
+ALTER TABLE "Team" DROP COLUMN IF EXISTS "country";

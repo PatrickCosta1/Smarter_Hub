@@ -101,6 +101,7 @@ export default function AdminPage() {
     username: '',
     email: '',
     password: '',
+    workCountry: 'PT' as 'PT' | 'BR',
   });
 
   const PAGE_SIZE = 10;
@@ -200,13 +201,13 @@ export default function AdminPage() {
   }
 
   function openCreateModal() {
-    setNewUserDraft({ firstName: '', lastName: '', username: '', email: '', password: '' });
+    setNewUserDraft({ firstName: '', lastName: '', username: '', email: '', password: '', workCountry: 'PT' });
     setIsCreateModalOpen(true);
   }
 
   function closeCreateModal() {
     setIsCreateModalOpen(false);
-    setNewUserDraft({ firstName: '', lastName: '', username: '', email: '', password: '' });
+    setNewUserDraft({ firstName: '', lastName: '', username: '', email: '', password: '', workCountry: 'PT' });
   }
 
   async function createUser() {
@@ -216,6 +217,7 @@ export default function AdminPage() {
     const username = newUserDraft.username.trim().toLowerCase();
     const email = newUserDraft.email.trim().toLowerCase();
     const password = newUserDraft.password.trim();
+    const workCountry = newUserDraft.workCountry;
 
     if (!firstName || !lastName || !username || !email || !password) {
       setStatus('Preenche primeiro nome, apelido, email e password.');
@@ -238,6 +240,7 @@ export default function AdminPage() {
           email,
           password,
           role: 'COLABORADOR',
+          workCountry,
         }),
       });
 
@@ -531,6 +534,17 @@ export default function AdminPage() {
                 onChange={(event) => setNewUserDraft((current) => ({ ...current, password: event.target.value }))}
                 autoComplete="new-password"
               />
+            </label>
+
+            <label>
+              <span>País</span>
+              <select
+                value={newUserDraft.workCountry}
+                onChange={(event) => setNewUserDraft((current) => ({ ...current, workCountry: event.target.value as 'PT' | 'BR' }))}
+              >
+                <option value="PT">Portugal</option>
+                <option value="BR">Brasil</option>
+              </select>
             </label>
 
             <div className="field-span-2">

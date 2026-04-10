@@ -25,6 +25,7 @@ const createUserSchema = z.object({
   fullName: z.string().min(2),
   role: roleSchema.optional(),
   teamId: z.string().optional(),
+  workCountry: countrySchema.optional(),
 });
 
 const updateAdminUserSchema = z.object({
@@ -60,7 +61,6 @@ const updateAdminMembershipsSchema = z.object({
 
 const adminTeamSchema = z.object({
   name: z.string().min(2),
-  country: countrySchema.default('PT'),
   leaderId: z.string().nullable().optional(),
   memberIds: z.array(z.string().min(1)).optional().default([]),
   parentTeamId: z.string().nullable().optional(),
@@ -604,14 +604,10 @@ router.get('/teams', requireAuth, async (req, res) => {
           ...(scope.restrictedToTeams && scope.restrictedToTeams.length > 0
             ? { id: { in: scope.restrictedToTeams } }
             : {}),
-          ...(scope.restrictedToCountries && scope.restrictedToCountries.length > 0
-            ? { country: { in: scope.restrictedToCountries } }
-            : {}),
         },
     select: {
       id: true,
       name: true,
-      country: true,
       managerId: true,
       coordinatorId: true,
       manager: { select: { id: true, username: true } },
@@ -653,7 +649,6 @@ router.get('/teams/me', requireAuth, async (req, res) => {
       select: {
         id: true,
         name: true,
-        country: true,
         parentTeamId: true,
         manager: {
           select: {
@@ -689,7 +684,6 @@ router.get('/teams/me', requireAuth, async (req, res) => {
     select: {
       id: true,
       name: true,
-      country: true,
       managerId: true,
       coordinatorId: true,
       parentTeamId: true,
@@ -801,7 +795,6 @@ router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
     select: {
       id: true,
       name: true,
-      country: true,
       managerId: true,
       coordinatorId: true,
       parentTeamId: true,
@@ -941,22 +934,17 @@ router.patch('/manager/team-members/:id', requireAuth, async (req, res) => {
   }
 
   const canManageAllTeams = req.authUser!.isRootAccess || fullAccess || scope.isGlobal;
-  const isManageableTeam = (teamId?: string | null, country?: 'PT' | 'BR') => {
+  const isManageableTeam = (teamId?: string | null) => {
     if (canManageAllTeams) {
       return true;
     }
 
-    const teamAllowed = !scope.restrictedToTeams || scope.restrictedToTeams.length === 0 || (Boolean(teamId) && scope.restrictedToTeams.includes(String(teamId)));
-    const countryAllowed = !scope.restrictedToCountries
-      || scope.restrictedToCountries.length === 0
-      || (country ? scope.restrictedToCountries.includes(country) : false);
-
-    return teamAllowed && countryAllowed;
+    return !scope.restrictedToTeams || scope.restrictedToTeams.length === 0 || (Boolean(teamId) && scope.restrictedToTeams.includes(String(teamId)));
   };
 
   const currentTeamAllowed = await canAccessUserByPermission(req.authUser!.id, 'manage_team_members', targetUserId)
-    || isManageableTeam(targetUser.teamId, targetUser.team?.country ?? undefined)
-    || targetUser.teamMemberships.some((item) => isManageableTeam(item.teamId, item.team.country));
+    || isManageableTeam(targetUser.teamId)
+    || targetUser.teamMemberships.some((item) => isManageableTeam(item.teamId));
   if (!currentTeamAllowed) {
     return res.status(403).json({ message: 'Este colaborador está fora do teu escopo de gestão.' });
   }
@@ -964,13 +952,13 @@ router.patch('/manager/team-members/:id', requireAuth, async (req, res) => {
   let nextTeamId: string | null | undefined = data.teamId;
 
   if (nextTeamId !== undefined && nextTeamId !== null) {
-    const nextTeam = await prisma.team.findFirst({ where: { id: nextTeamId }, select: { id: true, country: true } });
+    const nextTeam = await prisma.team.findFirst({ where: { id: nextTeamId }, select: { id: true } });
 
     if (!nextTeam) {
       return res.status(404).json({ message: 'Equipa de destino não encontrada.' });
     }
 
-    if (!isManageableTeam(nextTeam.id, nextTeam.country)) {
+    if (!isManageableTeam(nextTeam.id)) {
       return res.status(403).json({ message: 'Só podes mover para equipas geridas por ti.' });
     }
   }
@@ -1107,9 +1095,6 @@ router.get('/admin/teams', requireAuth, async (req, res) => {
     ...(scope.restrictedToTeams && scope.restrictedToTeams.length > 0
       ? { id: { in: scope.restrictedToTeams } }
       : {}),
-    ...(scope.restrictedToCountries && scope.restrictedToCountries.length > 0
-      ? { country: { in: scope.restrictedToCountries } }
-      : {}),
   };
 
   const teams = await prisma.team.findMany({
@@ -1117,7 +1102,6 @@ router.get('/admin/teams', requireAuth, async (req, res) => {
     select: {
       id: true,
       name: true,
-      country: true,
       managerId: true,
       parentTeamId: true,
       manager: {
@@ -1197,8 +1181,16 @@ router.post('/admin/teams', requireAuth, async (req, res) => {
         managerId: leaderId,
         coordinatorId: null,
         name: payload.data.name.trim(),
-        country: payload.data.country,
         parentTeamId: payload.data.parentTeamId ?? null,
+      },
+      select: {
+        id: true,
+        name: true,
+        managerId: true,
+        coordinatorId: true,
+        parentTeamId: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 
@@ -1251,13 +1243,21 @@ router.patch('/admin/teams/:id', requireAuth, async (req, res) => {
     where: { id: teamId },
     data: {
       ...(payload.data.name ? { name: payload.data.name.trim() } : {}),
-      ...(payload.data.country ? { country: payload.data.country } : {}),
       ...(
         payload.data.leaderId !== undefined
           ? { managerId: payload.data.leaderId, coordinatorId: null }
           : {}
       ),
       ...(payload.data.parentTeamId !== undefined ? { parentTeamId: payload.data.parentTeamId } : {}),
+    },
+    select: {
+      id: true,
+      name: true,
+      managerId: true,
+      coordinatorId: true,
+      parentTeamId: true,
+      createdAt: true,
+      updatedAt: true,
     },
   });
 
@@ -1567,6 +1567,7 @@ router.post('/users', requireAuth, async (req, res, next) => {
             regimeHorario: '',
             cargo: '',
             funcao: '',
+            workCountry: data.workCountry ?? 'PT',
           },
         },
       },

@@ -24,14 +24,14 @@ export function isRootAccess(user: Pick<AuthUser, 'isRootAccess'>) {
 export async function hasPermission(userId: string, permissionCode: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, isRootAccess: true },
+    select: { id: true, isRootAccess: true, hasAccessTotal: true },
   });
 
   if (!user) {
     return false;
   }
 
-  if (user.isRootAccess) {
+  if (user.isRootAccess || user.hasAccessTotal) {
     return true;
   }
 
@@ -85,6 +85,10 @@ export async function canRevokeAccessTotal(actor: Pick<AuthUser, 'id' | 'isRootA
     return true;
   }
 
+  if (await isAccessTotal(actor.id)) {
+    return true;
+  }
+
   const assignments = await prisma.userPermission.findMany({
     where: {
       userId: targetUserId,
@@ -103,6 +107,19 @@ export async function canRevokeAccessTotal(actor: Pick<AuthUser, 'id' | 'isRootA
 }
 
 export async function isAccessTotal(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { isRootAccess: true, hasAccessTotal: true },
+  });
+
+  if (!user) {
+    return false;
+  }
+
+  if (user.isRootAccess || user.hasAccessTotal) {
+    return true;
+  }
+
   const [totalPermissions, enabledAssignments] = await Promise.all([
     prisma.permission.count(),
     prisma.userPermission.count({
@@ -129,14 +146,14 @@ export function normalizePermissionRestrictionPayload(payload: PermissionRestric
 export async function getRestrictedTeamsForPermission(userId: string, permissionCode: string): Promise<string[] | null> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, isRootAccess: true },
+    select: { id: true, isRootAccess: true, hasAccessTotal: true },
   });
 
   if (!user) {
     return [];
   }
 
-  if (user.isRootAccess) {
+  if (user.isRootAccess || user.hasAccessTotal) {
     return null;
   }
 
@@ -195,14 +212,14 @@ function parseCustomRestrictions(customRestrictions: unknown) {
 export async function getPermissionScope(userId: string, permissionCode: string): Promise<PermissionScope | null> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, isRootAccess: true },
+    select: { id: true, isRootAccess: true, hasAccessTotal: true },
   });
 
   if (!user) {
     return null;
   }
 
-  if (user.isRootAccess) {
+  if (user.isRootAccess || user.hasAccessTotal) {
     return {
       isGlobal: true,
       restrictedToTeams: null,

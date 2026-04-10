@@ -84,6 +84,7 @@ type PortalContextValue = {
   markAllNotificationsRead: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
   deleteNotification: (id: string) => Promise<void>;
+  deleteAllNotifications: () => Promise<void>;
   setProfile: (profile: ProfileData) => void;
   saveProfile: (profile: ProfileData) => Promise<{ success: boolean; message?: string }>;
 };
@@ -326,6 +327,19 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     setNotifications((current) => current.filter((item) => item.id !== id));
   }, [authToken]);
 
+  const deleteAllNotifications = useCallback(async () => {
+    if (!authToken) {
+      return;
+    }
+
+    await apiRequest<{ deleted: number }>('/notifications', {
+      method: 'DELETE',
+      headers: authHeaders(authToken),
+    });
+
+    setNotifications([]);
+  }, [authToken]);
+
   const value = useMemo(
     () => ({
       isAuthenticated,
@@ -345,10 +359,11 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       markAllNotificationsRead,
       markNotificationRead,
       deleteNotification,
+      deleteAllNotifications,
       setProfile,
       saveProfile,
     }),
-    [currentUser, deleteNotification, hasPermission, isAccessTotal, isAuthenticated, isLoadingPortalData, isLoadingSession, isRootAccess, login, logout, markAllNotificationsRead, markNotificationRead, notifications, permissions, profile, saveProfile, setProfile, unreadNotifications, userRole],
+    [currentUser, deleteAllNotifications, deleteNotification, hasPermission, isAccessTotal, isAuthenticated, isLoadingPortalData, isLoadingSession, isRootAccess, login, logout, markAllNotificationsRead, markNotificationRead, notifications, permissions, profile, saveProfile, setProfile, unreadNotifications, userRole],
   );
 
   return <PortalContext.Provider value={value}>{children}</PortalContext.Provider>;

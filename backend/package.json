@@ -12,7 +12,7 @@
     "start:render": "node scripts/render-start.mjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:push": "prisma db push",
+    "prisma:push": "prisma db push --accept-data-loss",
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "db:up": "docker compose up -d",

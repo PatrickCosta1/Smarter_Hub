@@ -178,6 +178,7 @@ export default function PermissionsPage() {
   const [selectedUserId, setSelectedUserId] = useState('');
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [permissions, setPermissions] = useState<PermissionItem[]>([]);
+  const [selectedUserAccessTotal, setSelectedUserAccessTotal] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, PermissionDraft>>({});
   const [search, setSearch] = useState('');
   const [userFilter, setUserFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE' | 'ROOT'>('ALL');
@@ -211,7 +212,7 @@ export default function PermissionsPage() {
   }, [search, userFilter, users]);
 
   const categoryPermissions = useMemo(() => permissions.filter((item) => item.category === category), [permissions, category]);
-  const accessTotal = selectedUser?.isRootAccess ? true : Boolean(permissions.length > 0 && permissions.every((permission) => permission.assignment?.isEnabled));
+  const accessTotal = selectedUser?.isRootAccess ? true : selectedUserAccessTotal;
 
   useEffect(() => {
     if (!canAccess) {
@@ -255,6 +256,7 @@ export default function PermissionsPage() {
     try {
       const data = await apiRequestCached<PermissionsResponse>(`/users/${userId}/permissions`, { headers: getAuthHeaders() }, 10000, true);
       setSelectedUser(data.user);
+      setSelectedUserAccessTotal(Boolean(data.accessTotal));
       setPermissions(data.permissions);
       setDrafts(Object.fromEntries(data.permissions.map((permission) => [permission.id, buildDraftFromAssignment(permission)])));
       setStatus('');

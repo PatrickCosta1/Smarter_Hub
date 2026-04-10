@@ -26,11 +26,14 @@ export async function notifyUsersByPermission(
   permissionCodes: string[],
   title: string,
   message: string,
+  options?: { excludeUserIds?: string[] },
 ) {
   const codes = Array.from(new Set(permissionCodes.map((code) => code.trim()).filter(Boolean)));
   if (codes.length === 0) {
     return;
   }
+
+  const excluded = new Set((options?.excludeUserIds ?? []).filter(Boolean));
 
   const recipients = await prisma.user.findMany({
     where: {
@@ -51,12 +54,14 @@ export async function notifyUsersByPermission(
     select: { id: true },
   });
 
-  if (recipients.length === 0) {
+  const filteredRecipients = recipients.filter((recipient) => !excluded.has(recipient.id));
+
+  if (filteredRecipients.length === 0) {
     return;
   }
 
   await prisma.notification.createMany({
-    data: recipients.map((recipient) => ({
+    data: filteredRecipients.map((recipient) => ({
       userId: recipient.id,
       title,
       message,
