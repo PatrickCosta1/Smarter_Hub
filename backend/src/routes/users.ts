@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
@@ -20,7 +21,6 @@ const countrySchema = z.enum(['PT', 'BR']);
 
 const createUserSchema = z.object({
   username: z.string().min(3),
-  password: z.string().min(4),
   email: z.string().email(),
   fullName: z.string().min(2),
   role: roleSchema.optional(),
@@ -43,8 +43,7 @@ const updateUserActiveSchema = z.object({
 const updateAdminUserCredentialsSchema = z.object({
   username: z.string().min(3).optional(),
   email: z.string().email().optional(),
-  password: z.string().min(4).optional(),
-}).refine((data) => Boolean(data.username || data.email || data.password), {
+}).refine((data) => Boolean(data.username || data.email), {
   message: 'Indica pelo menos um campo para atualizar.',
   path: ['username'],
 });
@@ -1385,6 +1384,41 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
   });
 });
 
+router.delete('/admin/users/:id', requireAuth, async (req, res) => {
+  if (!await hasPermission(req.authUser!.id, 'edit_user')) {
+    return res.status(403).json({ message: 'Apenas admin pode apagar utilizadores.' });
+  }
+
+  const userId = String(req.params.id || '');
+  const existing = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, isRootAccess: true },
+  });
+
+  if (!existing) {
+    return res.status(404).json({ message: 'Utilizador não encontrado.' });
+  }
+
+  if (req.authUser!.id === userId) {
+    return res.status(400).json({ message: 'Não é permitido apagar a tua própria conta.' });
+  }
+
+  if (existing.isRootAccess && !req.authUser!.isRootAccess) {
+    return res.status(403).json({ message: 'Sem permissões para apagar este utilizador.' });
+  }
+
+  if (!req.authUser!.isRootAccess && !await isAccessTotal(req.authUser!.id)) {
+    const canManageTarget = await canAccessUserByPermission(req.authUser!.id, 'edit_user', userId);
+    if (!canManageTarget) {
+      return res.status(403).json({ message: 'Sem permissões para apagar este utilizador com as restrições atuais.' });
+    }
+  }
+
+  await prisma.user.delete({ where: { id: userId } });
+
+  return res.json({ success: true });
+});
+
 router.patch('/admin/users/:id/credentials', requireAuth, async (req, res) => {
   if (req.authUser?.username !== 't.people') {
     return res.status(403).json({ message: 'Apenas t.people pode editar credenciais de utilizadores.' });
@@ -1429,7 +1463,6 @@ router.patch('/admin/users/:id/credentials', requireAuth, async (req, res) => {
   const data: {
     username?: string;
     email?: string;
-    passwordHash?: string;
   } = {};
 
   if (nextUsername) {
@@ -1438,10 +1471,6 @@ router.patch('/admin/users/:id/credentials', requireAuth, async (req, res) => {
   if (nextEmail) {
     data.email = nextEmail;
   }
-  if (payload.data.password) {
-    data.passwordHash = await bcrypt.hash(payload.data.password, 10);
-  }
-
   const updated = await prisma.user.update({
     where: { id: userId },
     data,
@@ -1525,7 +1554,7 @@ router.post('/users', requireAuth, async (req, res, next) => {
     }
 
     const data = createUserSchema.parse(req.body);
-    const passwordHash = await bcrypt.hash(data.password, 10);
+    const passwordHash = await bcrypt.hash(randomUUID(), 10);
 
     // Parse fullName into firstName, lastName, and shortName
     const nameParts = data.fullName.trim().split(/\s+/).filter(Boolean);

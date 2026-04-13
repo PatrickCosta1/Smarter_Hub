@@ -14,7 +14,12 @@ type ModalProps = {
 export default function Modal({ open, title, onClose, children, width, footer, showCloseButton = true }: ModalProps) {
   const modalRef = useRef<HTMLElement | null>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
   const titleId = useId();
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) {
@@ -35,7 +40,7 @@ export default function Modal({ open, title, onClose, children, width, footer, s
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -71,7 +76,7 @@ export default function Modal({ open, title, onClose, children, width, footer, s
         lastFocusedElementRef.current.focus();
       }
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) {
     return null;

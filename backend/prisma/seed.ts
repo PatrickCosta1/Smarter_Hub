@@ -113,7 +113,7 @@ async function main() {
 
   const permissions = await prisma.permission.findMany({ orderBy: { code: 'asc' } });
 
-  const tPeople = await createUser({
+  await createUser({
     username: 't.people',
     email: 't.people@tlantic.com',
     password: 'people123',
@@ -127,8 +127,23 @@ async function main() {
     funcao: 'Administração raiz do sistema',
   });
 
+  await createUser({
+    username: 'patrick.costa',
+    email: 'patrick.costa@tlantic.com',
+    password: 'people123',
+    role: 'ADMIN',
+    isRootAccess: true,
+    hasAccessTotal: true,
+    fullName: 'Patrick Costa',
+    workCountry: 'PT',
+    localidade: 'Porto',
+    cargo: 'People',
+    funcao: 'Administração raiz do sistema',
+  });
+
   console.log('Base de dados reiniciada.');
   console.log('Utilizador inicial: t.people / people123');
+  console.log('Utilizador adicional: patrick.costa / people123');
   console.log('Acesso total ativo em modo compacto (sem redundância por permissão).');
   console.log(`Permissões criadas: ${permissions.length}`);
 }

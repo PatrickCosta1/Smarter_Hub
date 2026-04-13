@@ -1,0 +1,859 @@
+{
+  "metadata": {
+    "generatedAt": "2026-04-13T00:00:00Z",
+    "system": "SMARTER_HUB",
+    "version": "2.0-post-permission-revolution",
+    "scope": "Complete system structure for dynamic Chatbase system prompt"
+  },
+  "userTypes": {
+    "enum_roles": [
+      {
+        "id": "COLABORADOR",
+        "label": "Colaborador",
+        "description": "Standard user with basic permissions",
+        "isActive": true,
+        "basePermissionCodes": [
+          "view_profile",
+          "edit_profile",
+          "request_profile_change",
+          "view_notifications",
+          "request_vacation",
+          "view_own_vacations",
+          "request_training",
+          "view_trainings",
+          "view_receipts",
+          "download_receipt"
+        ]
+      },
+      {
+        "id": "MANAGER",
+        "label": "Manager",
+        "description": "Team or activity manager",
+        "isActive": true,
+        "basePermissionCodes": [
+          "view_teams",
+          "manage_team_members",
+          "view_team_vacations",
+          "approve_vacation",
+          "reject_vacation",
+          "assign_training",
+          "view_user_list"
+        ]
+      },
+      {
+        "id": "COORDENADOR",
+        "label": "Coordenador",
+        "description": "Coordinator of operations or areas",
+        "isActive": true,
+        "basePermissionCodes": [
+          "view_teams",
+          "manage_team_members",
+          "view_team_vacations",
+          "approve_vacation",
+          "reject_vacation",
+          "approve_profile_change",
+          "view_user_list",
+          "view_all_vacations"
+        ]
+      },
+      {
+        "id": "ADMIN",
+        "label": "Administrador",
+        "description": "System administrator with broad access",
+        "isActive": true,
+        "basePermissionCodes": [
+          "view_user_list",
+          "create_user",
+          "edit_user",
+          "manage_user_active",
+          "reset_user_password",
+          "manage_permissions",
+          "view_system_settings",
+          "manage_system_config",
+          "view_audit_log",
+          "view_teams",
+          "create_team",
+          "edit_team",
+          "delete_team",
+          "assign_team_leader",
+          "manage_team_members",
+          "view_all_vacations",
+          "approve_vacation",
+          "reject_vacation",
+          "view_all_trainings",
+          "assign_training",
+          "manage_training_catalog",
+          "view_all_receipts",
+          "manage_notifications"
+        ]
+      },
+      {
+        "id": "CONVIDADO",
+        "label": "Convidado",
+        "description": "Guest with limited access",
+        "isActive": true,
+        "basePermissionCodes": []
+      }
+    ],
+    "specialUsers": [
+      {
+        "username": "t.people",
+        "email": "t.people@tlantic.com",
+        "roleId": "ADMIN",
+        "isRootAccess": true,
+        "hasAccessTotal": true,
+        "description": "Root user with supreme control",
+        "capabilities": [
+          "Grant/revoke ANY permission including access_total",
+          "Cannot submit vacations (special case)",
+          "Visible in special contexts only"
+        ]
+      },
+      {
+        "username": "sara",
+        "email": "sara@tlantic.com",
+        "roleId": "ADMIN",
+        "hasAccessTotal": true,
+        "delegatedBy": "t.people",
+        "description": "Delegated admin with full access",
+        "responsibilities": [
+          "Profile change approvals",
+          "Vacation approvals",
+          "User management"
+        ]
+      },
+      {
+        "username": "marcia",
+        "email": "marcia@tlantic.com",
+        "roleId": "COORDENADOR",
+        "permissions": [
+          "approve_profile_change",
+          "approve_vacation",
+          "view_user_list"
+        ],
+        "description": "HR coordinator with specific permissions"
+      }
+    ],
+    "accessTotal": {
+      "concept": "Users with hasAccessTotal=true automatically have ALL active permissions",
+      "fields": {
+        "hasAccessTotal": "Boolean flag enabling all permissions",
+        "accessTotalGrantedById": "User ID who granted access_total (traceability)",
+        "accessTotalGrantedAt": "Timestamp of grant"
+      },
+      "hierarchy": {
+        "root": "t.people (isRootAccess=true, can grant access_total to others)",
+        "delegated": "sara (hasAccessTotal=true, delegated by t.people, cannot grant to others)"
+      },
+      "detection": "user.isRootAccess OR user.hasAccessTotal OR (enabledPermissions.count === totalPermissions.count)"
+    }
+  },
+  "permissions": {
+    "totalCount": 42,
+    "categories": [
+      {
+        "categoryId": "SYSTEM",
+        "label": "Système",
+        "description": "System control permissions",
+        "permissions": [
+          {
+            "code": "manage_permissions",
+            "label": "Manage permissions",
+            "description": "Grant and revoke permissions to other users",
+            "requiresRestrictions": true,
+            "criticalityLevel": "CRITICAL",
+            "restrictionTypes": [
+              "restrictedToTeams",
+              "restrictedToCountries",
+              "restrictedToLevels",
+              "customRestrictions"
+            ]
+          },
+          {
+            "code": "view_system_settings",
+            "label": "View system settings",
+            "description": "View global configuration",
+            "requiresRestrictions": false,
+            "criticalityLevel": "HIGH"
+          },
+          {
+            "code": "manage_system_config",
+            "label": "Manage system config",
+            "description": "Change global portal settings",
+            "requiresRestrictions": false,
+            "criticalityLevel": "CRITICAL"
+          },
+          {
+            "code": "view_audit_log",
+            "label": "View audit log",
+            "description": "View history of changes and access (PermissionGrant logs)",
+            "requiresRestrictions": false,
+            "criticalityLevel": "HIGH"
+          }
+        ]
+      },
+      {
+        "categoryId": "USERS",
+        "label": "Users",
+        "description": "User management permissions",
+        "permissions": [
+          {
+            "code": "view_user_list",
+            "label": "View users",
+            "description": "View list of system users",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "create_user",
+            "label": "Create users",
+            "description": "Create new users (auto-assigns base permissions by role)",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "edit_user",
+            "label": "Edit users",
+            "description": "Edit other user data (role, team, credentials)",
+            "requiresRestrictions": true,
+            "restrictionTypes": ["restrictedToTeams"]
+          },
+          {
+            "code": "manage_user_active",
+            "label": "Manage user active status",
+            "description": "Activate/deactivate user accounts",
+            "requiresRestrictions": true
+          },
+          {
+            "code": "reset_user_password",
+            "label": "Reset password",
+            "description": "Reset user credentials",
+            "requiresRestrictions": true
+          }
+        ]
+      },
+      {
+        "categoryId": "TEAMS",
+        "label": "Teams",
+        "description": "Team management permissions",
+        "permissions": [
+          {
+            "code": "view_teams",
+            "label": "View teams",
+            "description": "View teams and composition",
+            "requiresRestrictions": true,
+            "restrictionTypes": ["restrictedToTeams"]
+          },
+          {
+            "code": "create_team",
+            "label": "Create team",
+            "description": "Create new teams",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "edit_team",
+            "label": "Edit team",
+            "description": "Edit team data",
+            "requiresRestrictions": true
+          },
+          {
+            "code": "delete_team",
+            "label": "Delete team",
+            "description": "Delete teams",
+            "requiresRestrictions": true
+          },
+          {
+            "code": "assign_team_leader",
+            "label": "Assign team leader",
+            "description": "Assign team manager/coordinator",
+            "requiresRestrictions": true
+          },
+          {
+            "code": "manage_team_members",
+            "label": "Manage team members",
+            "description": "Add, remove, and move team members",
+            "requiresRestrictions": true
+          }
+        ]
+      },
+      {
+        "categoryId": "VACATIONS",
+        "label": "Vacations",
+        "description": "Vacation management permissions",
+        "permissions": [
+          {
+            "code": "request_vacation",
+            "label": "Request vacation",
+            "description": "Create own vacation requests",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "view_own_vacations",
+            "label": "View own vacations",
+            "description": "View own vacation requests and history",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "view_team_vacations",
+            "label": "View team vacations",
+            "description": "View team vacation requests",
+            "requiresRestrictions": true,
+            "restrictionTypes": ["restrictedToTeams"]
+          },
+          {
+            "code": "view_all_vacations",
+            "label": "View all vacations",
+            "description": "View all user vacation requests",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "approve_vacation",
+            "label": "Approve vacation",
+            "description": "Approve vacation requests (multi-level workflow)",
+            "requiresRestrictions": true,
+            "workflow": {
+              "model": "VacationApproval with approvalLevel",
+              "status": "PENDING → WAITING (next level) or APPROVED",
+              "notification": true
+            }
+          },
+          {
+            "code": "reject_vacation",
+            "label": "Reject vacation",
+            "description": "Reject vacation requests with reason",
+            "requiresRestrictions": true
+          },
+          {
+            "code": "manage_vacation_rules",
+            "label": "Manage vacation rules",
+            "description": "Change vacation rules and approval criteria",
+            "requiresRestrictions": false
+          }
+        ]
+      },
+      {
+        "categoryId": "TRAININGS",
+        "label": "Trainings",
+        "description": "Training management permissions",
+        "permissions": [
+          {
+            "code": "request_training",
+            "label": "Request training",
+            "description": "Request trainings",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "view_trainings",
+            "label": "View own trainings",
+            "description": "View own trainings",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "view_all_trainings",
+            "label": "View all trainings",
+            "description": "View all user trainings",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "assign_training",
+            "label": "Assign training",
+            "description": "Assign trainings to other users",
+            "requiresRestrictions": true
+          },
+          {
+            "code": "manage_training_catalog",
+            "label": "Manage training catalog",
+            "description": "Create, edit, delete available trainings",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "mark_training_completed",
+            "label": "Mark training completed",
+            "description": "Mark training as completed",
+            "requiresRestrictions": true
+          }
+        ]
+      },
+      {
+        "categoryId": "PROFILE",
+        "label": "Profile",
+        "description": "Profile/profile card management",
+        "permissions": [
+          {
+            "code": "view_profile",
+            "label": "View profile",
+            "description": "View profile (own or others by context)",
+            "requiresRestrictions": true
+          },
+          {
+            "code": "edit_profile",
+            "label": "Edit profile",
+            "description": "Edit own profile",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "edit_other_profile",
+            "label": "Edit other profiles",
+            "description": "Edit other user profiles directly",
+            "requiresRestrictions": true
+          },
+          {
+            "code": "request_profile_change",
+            "label": "Request profile change",
+            "description": "Submit profile change requests for HR approval",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "approve_profile_change",
+            "label": "Approve profile changes",
+            "description": "Approve profile change requests",
+            "requiresRestrictions": true,
+            "workflow": {
+              "model": "ProfileChangeRequest",
+              "status": "PENDING → APPROVED/REJECTED",
+              "action": "Apply requestedData to Profile when approved",
+              "notification": true
+            }
+          }
+        ]
+      },
+      {
+        "categoryId": "RECEIPTS",
+        "label": "Receipts",
+        "description": "Receipt management permissions",
+        "permissions": [
+          {
+            "code": "view_receipts",
+            "label": "View receipts",
+            "description": "View own receipts",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "view_all_receipts",
+            "label": "View all receipts",
+            "description": "View all user receipts",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "download_receipt",
+            "label": "Download receipt",
+            "description": "Download receipt documents",
+            "requiresRestrictions": false
+          }
+        ]
+      },
+      {
+        "categoryId": "NOTIFICATIONS",
+        "label": "Notifications",
+        "description": "Notification management",
+        "permissions": [
+          {
+            "code": "view_notifications",
+            "label": "View notifications",
+            "description": "View system notifications",
+            "requiresRestrictions": false
+          },
+          {
+            "code": "manage_notifications",
+            "label": "Manage notifications",
+            "description": "Create, send, manage notifications",
+            "requiresRestrictions": false
+          }
+        ]
+      }
+    ]
+  },
+  "workflows": {
+    "vacation_approval": {
+      "trigger": "POST /vacations",
+      "requiresPermission": "request_vacation",
+      "initialStatus": "PENDING",
+      "model": "Vacation { id, userId, status, contextTeamId, ... }",
+      "approvals": "VacationApproval[] { vacationId, approverId, approvalLevel, status }",
+      "steps": [
+        {
+          "level": 1,
+          "description": "Team leader or activity manager",
+          "permissionRequired": "approve_vacation OR reject_vacation",
+          "restrictedBy": "contextTeamId (auto-linked to user's team)",
+          "statusAfter": "WAITING (next level) or APPROVED or REJECTED"
+        },
+        {
+          "level": 2,
+          "description": "HR/Coordinator second approval",
+          "permissionRequired": "approve_vacation",
+          "prerequisite": "Level 1 APPROVED",
+          "statusAfter": "APPROVED or REJECTED"
+        }
+      ],
+      "validations": [
+        "enforceVacationBusinessDays (no weekends/holidays)",
+        "validateVacationCountryPolicy (PT vs BR)"
+      ],
+      "countryPolicies": {
+        "PT": {
+          "mandatory": "10 consecutive business days per year",
+          "fractionated": "Allowed with limitations",
+          "weekends": "Not counted"
+        },
+        "BR": {
+          "minDaysPerPeriod": "5 running days",
+          "maxPeriods": 3,
+          "mandatoryBlock": "1 period >= 14 days if 3 periods",
+          "fractionatedAllowed": false,
+          "weekends": "Counted as running days"
+        }
+      },
+      "specialCases": [
+        "t.people cannot submit vacations",
+        "sara cannot submit vacations"
+      ]
+    },
+    "profile_change_approval": {
+      "trigger": "POST /profile/request",
+      "requiresPermission": "request_profile_change",
+      "initialStatus": "PENDING",
+      "model": "ProfileChangeRequest { id, userId, status, requestedData: JSON, changesSummary, ... }",
+      "steps": [
+        {
+          "description": "Submit request",
+          "actor": "Employee",
+          "action": "Submit JSON with profile field changes",
+          "statusAfter": "PENDING"
+        },
+        {
+          "description": "Review and approve",
+          "actor": "HR/Coordinator/People",
+          "permissionRequired": "approve_profile_change",
+          "actions": [
+            {
+              "action": "APPROVE",
+              "effect": "Apply requestedData fields to Profile, update Profile.updatedAt",
+              "notification": "Email + in-app: 'Profile updated successfully'"
+            },
+            {
+              "action": "REJECT",
+              "effect": "Retain requestedData, mark REJECTED, send reason",
+              "notification": "Email + in-app with rejection reason"
+            }
+          ]
+        }
+      ],
+      "fields": [
+        "primeiroNome", "apelido", "nomeAbreviado",
+        "dataNascimento", "genero", "estadoCivil",
+        "habilitacoesLiterarias", "curso", "faculdade",
+        "emailPessoal", "telemovel",
+        "moradaFiscal", "endereco", "localidade", "codigoPostal",
+        "matriculaCarro", "cartaoCidadao",
+        "nif", "niss", "iban",
+        "situacaoIrs", "numeroDependentes", "irsJovem", "anoPrimeiroDesconto",
+        "numeroCartaoContinente", "voucherNosData",
+        "comprovativoMoradaFiscal", "comprovativoCartaoCidadao", "comprovativoIban", "comprovativoCartaoContinente",
+        "contactoEmergenciaNome", "contactoEmergenciaParentesco", "contactoEmergenciaNumero",
+        "cargo", "funcao", "dataInicioContrato", "dataFimContrato",
+        "remuneracao", "tipoContrato", "regimeHorario",
+        "workCountry"
+      ]
+    },
+    "permission_assignment": {
+      "trigger": "POST /users/:id/permissions",
+      "requiresPermission": "manage_permissions",
+      "prequisites": [
+        "actor.manage_permissions",
+        "actor.isRootAccess OR actor.hasAccessTotal"
+      ],
+      "operations": [
+        {
+          "operation": "GRANT",
+          "payload": {
+            "permissionCode": "string",
+            "isEnabled": true,
+            "restrictedToTeams": "optional array",
+            "restrictedToCountries": "optional [PT, BR]",
+            "restrictedToLevels": "optional array",
+            "customRestrictions": "optional JSON",
+            "notes": "human reason",
+            "reason": "audit log reason"
+          },
+          "effects": [
+            "Create/update UserPermission entry",
+            "Log PermissionGrant event with action=GRANT",
+            "If enabledPermissions == totalPermissions → auto-set hasAccessTotal=true"
+          ]
+        },
+        {
+          "operation": "REVOKE",
+          "prequisites": [
+            "actor == grantedById (who granted can revoke) OR actor.isRootAccess"
+          ],
+          "payload": {
+            "reason": "audit log reason"
+          },
+          "effects": [
+            "Soft-delete: UserPermission.isEnabled = false",
+            "Log PermissionGrant event with action=REVOKE",
+            "If enabledPermissions < totalPermissions → auto-set hasAccessTotal=false"
+          ]
+        }
+      ],
+      "restrictionLevels": {
+        "global": "No restrictions = access to all instances",
+        "team": "restrictedToTeams = limited to specific teams",
+        "country": "restrictedToCountries = limited to PT or BR",
+        "hierarchyLevel": "restrictedToLevels = limited to specific hierarchy levels"
+      },
+      "auditLog": "All events in PermissionGrant with timestamps and reasons"
+    }
+  },
+  "ui": {
+    "navigation": {
+      "layout": "Sidebar left + Header top",
+      "menu": [
+        {
+          "id": "home",
+          "label": "Home",
+          "path": "/",
+          "visibleToAll": true
+        },
+        {
+          "id": "profile",
+          "label": "A Minha Ficha",
+          "path": "/profile",
+          "requiredPermission": "view_profile OR edit_profile",
+          "hiddenFor": ["t.people"]
+        },
+        {
+          "id": "teams",
+          "label": "Equipas",
+          "path": "/equipas",
+          "requiredPermission": "view_teams OR manage_team_members"
+        },
+        {
+          "id": "collaborators",
+          "label": "Colaboradores",
+          "path": "/colaboradores",
+          "requiredPermission": "view_user_list"
+        },
+        {
+          "id": "admin",
+          "label": "Administração",
+          "path": "/admin",
+          "requiredPermission": "edit_user OR create_team OR edit_team OR delete_team"
+        },
+        {
+          "id": "approvals",
+          "label": "Aprovações",
+          "path": "/aprovacoes",
+          "requiredPermission": "approve_profile_change OR approve_vacation OR reject_vacation OR view_all_vacations"
+        },
+        {
+          "id": "trainings",
+          "label": "Formações",
+          "path": "/formacoes",
+          "requiredPermission": "view_trainings OR view_all_trainings OR request_training OR assign_training"
+        },
+        {
+          "id": "vacations",
+          "label": "Férias",
+          "path": "/ferias",
+          "requiredPermission": "request_vacation OR view_own_vacations OR view_all_vacations",
+          "hiddenFor": ["t.people"]
+        },
+        {
+          "id": "receipts",
+          "label": "Recibos",
+          "path": "/recibos",
+          "requiredPermission": "view_receipts OR view_all_receipts"
+        }
+      ]
+    },
+    "pages": {
+      "HomePage": {
+        "path": "/",
+        "conditionalContent": {
+          "isTPeople": "Executive center with collaborators and approvals",
+          "isManager": "Pending work and team dashboard",
+          "else": "Direct summary with essentials"
+        },
+        "sections": [
+          "Hero greeting",
+          "Metrics (Pending, Notifications, Active Trainings)",
+          "Conditional action buttons",
+          "Info cards (conditional)"
+        ]
+      },
+      "AdminPage": {
+        "path": "/admin",
+        "requiredPermissions": ["edit_user OR create_team OR edit_team OR delete_team"],
+        "tabs": [
+          {
+            "tab": "Users",
+            "features": [
+              "Create user (create_user) - auto-assigns base permissions",
+              "Edit user (edit_user) - role, team, country, localidade, isActive",
+              "Reset password (reset_user_password)"
+            ]
+          },
+          {
+            "tab": "Teams",
+            "features": [
+              "Create team (create_team)",
+              "Edit team (edit_team)",
+              "Delete team (delete_team)",
+              "Assign leader (assign_team_leader)"
+            ]
+          }
+        ]
+      },
+      "PermissionsPage": {
+        "path": "/permissoes",
+        "requiredPermission": "manage_permissions",
+        "sections": [
+          {
+            "name": "Access Total",
+            "feature": "Toggle hasAccessTotal with reason",
+            "effects": [
+              "Activate: Delete all UserPermissions, set hasAccessTotal=true",
+              "Deactivate: hasAccessTotal=false, revert to granular"
+            ]
+          },
+          {
+            "name": "Granular Permissions",
+            "tabs": ["SYSTEM", "USERS", "TEAMS", "VACATIONS", "TRAININGS", "PROFILE", "RECEIPTS", "NOTIFICATIONS"],
+            "perPermission": {
+              "display": [
+                "Enabled/disabled checkbox",
+                "Restrictions UI if requiresRestrictions=true",
+                "Notes field",
+                "Granted by info",
+                "Granted at timestamp"
+              ],
+              "actions": ["REVOKE", "EDIT restrictions"]
+            }
+          },
+          {
+            "name": "Audit Log",
+            "feature": "PermissionGrant timeline",
+            "columns": ["Action", "Permission", "Actor", "Target", "Date", "Reason"]
+          }
+        ]
+      },
+      "RHApprovalsPage": {
+        "path": "/aprovacoes",
+        "requiredPermissions": ["approve_profile_change OR approve_vacation OR reject_vacation OR view_all_vacations"],
+        "tabs": [
+          {
+            "id": "profiles",
+            "label": "Profile Changes",
+            "requiredPermission": "approve_profile_change",
+            "table": {
+              "columns": [
+                "Collaborator (displayName)",
+                "Changes (changesSummary)",
+                "Status (PENDING/APPROVED/REJECTED)",
+                "Date (createdAt)",
+                "Actions"
+              ]
+            },
+            "actions": {
+              "APPROVE": "POST /profile/requests/:id/approve - Apply changes to Profile",
+              "REJECT": "POST /profile/requests/:id/reject - With mandatory reason"
+            }
+          },
+          {
+            "id": "vacations",
+            "label": "Vacation Requests",
+            "requiredPermission": "approve_vacation OR reject_vacation OR view_all_vacations",
+            "table": {
+              "columns": [
+                "Collaborator",
+                "Period (dataInicio - dataFim)",
+                "Type (VACATION/ABSENCE_MEDICAL/ABSENCE_TRAINING)",
+                "Status",
+                "Date",
+                "Actions"
+              ]
+            },
+            "actions": {
+              "APPROVE": "POST /vacations/:id/approve - Move to next approval level or finalize",
+              "REJECT": "POST /vacations/:id/reject - With mandatory reason"
+            }
+          }
+        ]
+      },
+      "VacationsPage": {
+        "path": "/ferias",
+        "requiredPermissions": ["request_vacation OR view_own_vacations OR view_all_vacations"],
+        "hiddenFor": ["t.people"],
+        "sections": [
+          {
+            "title": "Request Vacation",
+            "requiredPermission": "request_vacation",
+            "form": {
+              "fields": {
+                "dataInicio": "date (required)",
+                "dataFim": "date (required, >= dataInicio)",
+                "requestType": "enum [VACATION, ABSENCE_MEDICAL, ABSENCE_TRAINING]",
+                "partialDay": "enum [FULL, AM, PM] (only for VACATION, same day only)",
+                "observacoes": "text (optional)",
+                "attachmentLink": "url (optional)"
+              },
+              "validations": [
+                "enforceVacationBusinessDays",
+                "validateVacationCountryPolicy",
+                "ABSENCE_MEDICAL max 3 days",
+                "PartialDay only on VACATION, same-day"
+              ]
+            }
+          },
+          {
+            "title": "My Vacation History",
+            "requiredPermission": "view_own_vacations",
+            "filters": ["Status", "Year"]
+          },
+          {
+            "title": "All Vacations (Manager/HR)",
+            "requiredPermission": "view_all_vacations OR view_team_vacations",
+            "scope": "Based on granular permissions (team vs global)"
+          }
+        ]
+      },
+      "ProfilePage": {
+        "path": "/profile",
+        "requiredPermissions": ["view_profile OR edit_profile"],
+        "hiddenFor": ["t.people"],
+        "sections": [
+          "Personal Data (editable)",
+          "Address (editable)",
+          "Documents (editable)",
+          "Fiscal & Benefits (editable)",
+          "Emergency Contact (editable)",
+          "Work Info (editable)",
+          "Request Profile Change (submit for approval)",
+          "Request History (view pending/past requests)"
+        ]
+      }
+    }
+  },
+  "criticalScenarios": {
+    "approveVacation": {
+      "question": "How can I approve a vacation?",
+      "answer": "1. Must have approve_vacation permission. 2. Navigate to /aprovacoes tab 'Vacation Requests'. 3. Click APPROVE on request. 4. System auto-marks VacationApproval[current_level].status=APPROVED. 5. If final level → Vacation.status=APPROVED, notify collaborator. 6. If not final → move to next approver (WAITING status)."
+    },
+    "viewVacations": {
+      "question": "Can I see all vacations?",
+      "answer": "Depends on permissions: view_all_vacations (no limits) → YES. view_team_vacations restricted to teams (only those teams) → YES. view_own_vacations (only own) → NO. Team leader status (Team.managerId) depends on granular permissions."
+    },
+    "assignPermission": {
+      "question": "How do I grant a permission?",
+      "answer": "1. Must have manage_permissions. 2. Navigate to /permissoes. 3. Search user. 4. Select permission (e.g., approve_vacation). 5. If requiresRestrictions=true: specify teams/countries/levels. 6. Add note (e.g., 'Team leader TLANTIC'). 7. Click GRANT. 8. System logs PermissionGrant audit event. 9. If all permissions active → hasAccessTotal=true (automatic)."
+    },
+    "vacationPolicy": {
+      "question": "What are vacation policies PT vs BR?",
+      "answer": "PT: 10 minimum consecutive business days per year required; fractionated allowed after. BR: Max 3 periods/year, each >=5 running days; if 3 periods, one >=14 days; no partial days. Both: No weekends/national holidays in VACATION requests (use ABSENCE_* instead)."
+    },
+    "accessTotalMeaning": {
+      "question": "What does 'Access Total' mean?",
+      "answer": "hasAccessTotal=true grants user ALL active permissions automatically. Useful for delegated admins (sara) or testing. Can be toggled via /permissoes. If all 42 permissions enabled individually → auto-triggers hasAccessTotal=true. Revoke: Clear any permission → hasAccessTotal=false."
+    }
+  }
+}

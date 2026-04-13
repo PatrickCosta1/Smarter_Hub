@@ -94,13 +94,12 @@ export default function AdminPage() {
   const [sortBy, setSortBy] = useState<'username' | 'email' | 'teamName'>('username');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
-  const [credentialsDraft, setCredentialsDraft] = useState({ username: '', email: '', password: '' });
+  const [credentialsDraft, setCredentialsDraft] = useState({ username: '', email: '' });
   const [newUserDraft, setNewUserDraft] = useState({
     firstName: '',
     lastName: '',
     username: '',
     email: '',
-    password: '',
     workCountry: 'PT' as 'PT' | 'BR',
   });
 
@@ -157,14 +156,13 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!editingUser) {
-      setCredentialsDraft({ username: '', email: '', password: '' });
+      setCredentialsDraft({ username: '', email: '' });
       return;
     }
 
     setCredentialsDraft({
       username: editingUser.username,
       email: editingUser.email,
-      password: '',
     });
   }, [editingUser]);
 
@@ -197,17 +195,17 @@ export default function AdminPage() {
   function closeEditModal() {
     setIsEditModalOpen(false);
     setEditingUser(null);
-    setCredentialsDraft({ username: '', email: '', password: '' });
+    setCredentialsDraft({ username: '', email: '' });
   }
 
   function openCreateModal() {
-    setNewUserDraft({ firstName: '', lastName: '', username: '', email: '', password: '', workCountry: 'PT' });
+    setNewUserDraft({ firstName: '', lastName: '', username: '', email: '', workCountry: 'PT' });
     setIsCreateModalOpen(true);
   }
 
   function closeCreateModal() {
     setIsCreateModalOpen(false);
-    setNewUserDraft({ firstName: '', lastName: '', username: '', email: '', password: '', workCountry: 'PT' });
+    setNewUserDraft({ firstName: '', lastName: '', username: '', email: '', workCountry: 'PT' });
   }
 
   async function createUser() {
@@ -216,16 +214,10 @@ export default function AdminPage() {
     const fullName = `${firstName} ${lastName}`.trim();
     const username = newUserDraft.username.trim().toLowerCase();
     const email = newUserDraft.email.trim().toLowerCase();
-    const password = newUserDraft.password.trim();
     const workCountry = newUserDraft.workCountry;
 
-    if (!firstName || !lastName || !username || !email || !password) {
-      setStatus('Preenche primeiro nome, apelido, email e password.');
-      return;
-    }
-
-    if (password.length < 4) {
-      setStatus('A password deve ter pelo menos 4 caracteres.');
+    if (!firstName || !lastName || !username || !email) {
+      setStatus('Preenche primeiro nome, apelido, username e email.');
       return;
     }
 
@@ -238,7 +230,6 @@ export default function AdminPage() {
           fullName,
           username,
           email,
-          password,
           role: 'COLABORADOR',
           workCountry,
         }),
@@ -262,27 +253,18 @@ export default function AdminPage() {
 
     const username = credentialsDraft.username.trim().toLowerCase();
     const email = credentialsDraft.email.trim().toLowerCase();
-    const password = credentialsDraft.password.trim();
 
     if (!username || !email) {
       setStatus('Username e email são obrigatórios.');
       return;
     }
 
-    if (password && password.length < 4) {
-      setStatus('A password deve ter pelo menos 4 caracteres.');
-      return;
-    }
-
-    const payload: { username?: string; email?: string; password?: string } = {};
+    const payload: { username?: string; email?: string } = {};
     if (username !== editingUser.username) {
       payload.username = username;
     }
     if (email !== editingUser.email) {
       payload.email = email;
-    }
-    if (password) {
-      payload.password = password;
     }
 
     if (Object.keys(payload).length === 0) {
@@ -458,16 +440,6 @@ export default function AdminPage() {
                 autoComplete="off"
               />
             </label>
-
-            <label className="field-span-2">
-              <span>Nova password (opcional)</span>
-              <input
-                type="password"
-                value={credentialsDraft.password}
-                onChange={(event) => setCredentialsDraft((current) => ({ ...current, password: event.target.value }))}
-                autoComplete="new-password"
-              />
-            </label>
           </form>
         </Modal>
       )}
@@ -525,17 +497,6 @@ export default function AdminPage() {
                 autoComplete="off"
               />
             </label>
-
-            <label>
-              <span>Password inicial</span>
-              <input
-                type="password"
-                value={newUserDraft.password}
-                onChange={(event) => setNewUserDraft((current) => ({ ...current, password: event.target.value }))}
-                autoComplete="new-password"
-              />
-            </label>
-
             <label>
               <span>País</span>
               <select
@@ -548,7 +509,7 @@ export default function AdminPage() {
             </label>
 
             <div className="field-span-2">
-              <small>O utilizador será criado como colaborador e recebe automaticamente as permissões padrão de funcionário.</small>
+              <small>O utilizador será criado como colaborador e entra exclusivamente com Microsoft (sem password local).</small>
             </div>
           </form>
         </Modal>

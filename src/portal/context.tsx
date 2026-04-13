@@ -79,7 +79,7 @@ type PortalContextValue = {
   unreadNotifications: number;
   profile: ProfileData;
   notifications: PortalNotification[];
-  login: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
+  loginWithMicrosoft: (idToken: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   markAllNotificationsRead: () => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
@@ -181,6 +181,16 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const completeLoginSession = useCallback(async (token: string, user: AuthUser) => {
+    window.localStorage.setItem(STORAGE_TOKEN_KEY, token);
+    setAuthToken(token);
+    setCurrentUser(user);
+    setUserRole(mapBackendRole(user.role));
+    await loadAccessData(token, user);
+    await loadPortalData(token);
+    setIsAuthenticated(true);
+  }, [loadAccessData, loadPortalData]);
+
   useEffect(() => {
     const existingToken = window.localStorage.getItem(STORAGE_TOKEN_KEY);
 
@@ -211,28 +221,20 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     })();
   }, [loadAccessData, loadPortalData]);
 
-  const login = useCallback(async (username: string, password: string) => {
+  const loginWithMicrosoft = useCallback(async (idToken: string) => {
     try {
-      const response = await apiRequest<{ token: string; user: AuthUser }>('/auth/login', {
+      const response = await apiRequest<{ token: string; user: AuthUser }>('/auth/microsoft', {
         method: 'POST',
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ idToken }),
       });
 
-      const token = response.token;
-      window.localStorage.setItem(STORAGE_TOKEN_KEY, token);
-      setAuthToken(token);
-      setCurrentUser(response.user);
-      setUserRole(mapBackendRole(response.user.role));
-      await loadAccessData(token, response.user);
-      await loadPortalData(token);
-      setIsAuthenticated(true);
-
+      await completeLoginSession(response.token, response.user);
       return { success: true };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erro de autenticacao.';
+      const message = error instanceof Error ? error.message : 'Falha na autenticacao Microsoft.';
       return { success: false, message };
     }
-  }, [loadAccessData, loadPortalData]);
+  }, [completeLoginSession]);
 
   const logout = useCallback(() => {
     window.localStorage.removeItem(STORAGE_TOKEN_KEY);
@@ -354,7 +356,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       unreadNotifications,
       profile,
       notifications,
-      login,
+      loginWithMicrosoft,
       logout,
       markAllNotificationsRead,
       markNotificationRead,
@@ -363,7 +365,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       setProfile,
       saveProfile,
     }),
-    [currentUser, deleteAllNotifications, deleteNotification, hasPermission, isAccessTotal, isAuthenticated, isLoadingPortalData, isLoadingSession, isRootAccess, login, logout, markAllNotificationsRead, markNotificationRead, notifications, permissions, profile, saveProfile, setProfile, unreadNotifications, userRole],
+    [currentUser, deleteAllNotifications, deleteNotification, hasPermission, isAccessTotal, isAuthenticated, isLoadingPortalData, isLoadingSession, isRootAccess, loginWithMicrosoft, logout, markAllNotificationsRead, markNotificationRead, notifications, permissions, profile, saveProfile, setProfile, unreadNotifications, userRole],
   );
 
   return <PortalContext.Provider value={value}>{children}</PortalContext.Provider>;

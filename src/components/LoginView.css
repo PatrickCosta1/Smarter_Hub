@@ -29,7 +29,6 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  margin-bottom: 16px;
 }
 
 .auth-card {
@@ -60,6 +59,7 @@
 
 .auth-headline {
   margin-bottom: 2px;
+  text-align: center;
 }
 
 .login-form {
@@ -119,6 +119,10 @@
   border-top: 1px solid rgba(31, 55, 92, 0.08);
   color: #6d7f9b;
   font-size: 0.8rem;
+}
+
+.login-shell :is(input, select, textarea, button, a, [role="button"], [tabindex]):focus-visible {
+  outline: none;
 }
 
 @media (max-width: 1180px) {

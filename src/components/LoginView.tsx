@@ -1,94 +1,51 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { signInWithPopup } from 'firebase/auth';
 import { usePortal } from '../portal/context';
+import { createMicrosoftProvider, firebaseAuth, isFirebaseConfigured } from '../lib/firebase';
 import Button from './ui/Button';
-import TextInput from './ui/TextInput';
 import Toast from './ui/Toast';
 import './LoginView.css';
 
-type FormErrors = {
-  username?: string;
-  password?: string;
-};
-
-type FieldName = keyof FormErrors;
-
-function validateLogin(username: string, password: string): FormErrors {
-  const errors: FormErrors = {};
-
-  if (!username.trim()) {
-    errors.username = 'O utilizador é obrigatório.';
-  }
-
-  if (!password.trim()) {
-    errors.password = 'A palavra-passe é obrigatória.';
-  } else if (password.trim().length < 4) {
-    errors.password = 'A palavra-passe deve ter pelo menos 4 caracteres.';
-  }
-
-  return errors;
-}
-
 export default function LoginView() {
   const navigate = useNavigate();
-  const { login } = usePortal();
-
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [remember, setRemember] = useState(true);
-  const [showPassword, setShowPassword] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [touched, setTouched] = useState<Record<FieldName, boolean>>({
-    username: false,
-    password: false,
-  });
+  const { loginWithMicrosoft } = usePortal();
+  const [isMicrosoftSubmitting, setIsMicrosoftSubmitting] = useState(false);
   const [statusType, setStatusType] = useState<'idle' | 'error' | 'success'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
 
-  const canSubmit = useMemo(() => !isSubmitting, [isSubmitting]);
-
-  function touchField(fieldName: FieldName) {
-    setTouched((current) => ({ ...current, [fieldName]: true }));
-  }
-
-  function fieldError(fieldName: FieldName) {
-    if (!touched[fieldName]) {
-      return '';
-    }
-
-    return errors[fieldName] || '';
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const formErrors = validateLogin(username, password);
-    setErrors(formErrors);
-    setTouched({ username: true, password: true });
-
-    if (Object.keys(formErrors).length > 0) {
+  async function handleMicrosoftLogin() {
+    if (!firebaseAuth || !isFirebaseConfigured) {
       setStatusType('error');
-      setStatusMessage('Revise os campos destacados.');
+      setStatusMessage('Autenticação Microsoft ainda não configurada.');
       return;
     }
 
-    setIsSubmitting(true);
+    setIsMicrosoftSubmitting(true);
     setStatusType('idle');
     setStatusMessage('');
 
-    const result = await login(username, password);
-    setIsSubmitting(false);
+    try {
+      const popupResult = await signInWithPopup(firebaseAuth, createMicrosoftProvider());
+      const idToken = await popupResult.user.getIdToken(true);
+      const result = await loginWithMicrosoft(idToken);
 
-    if (!result.success) {
+      if (!result.success) {
+        setStatusType('error');
+        setStatusMessage(result.message || 'Falha no login com Microsoft.');
+        return;
+      }
+
+      setStatusType('success');
+      setStatusMessage('Login Microsoft efetuado com sucesso.');
+      navigate('/');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha no login Microsoft.';
       setStatusType('error');
-      setStatusMessage(result.message || 'Credenciais inválidas.');
-      return;
+      setStatusMessage(message);
+    } finally {
+      setIsMicrosoftSubmitting(false);
     }
-
-    setStatusType('success');
-    setStatusMessage('Login efetuado com sucesso.');
-    navigate('/');
   }
 
   return (
@@ -112,75 +69,17 @@ export default function LoginView() {
 
           <div className="auth-headline">
             <h2 id="login-title">Smarter Hub</h2>
-            <p className="auth-copy">Acede ao portal com as tuas credenciais.</p>
+            <p className="auth-copy"></p>
           </div>
 
-          <form className="login-form" onSubmit={handleSubmit}>
-            <TextInput
-              id="login-username"
-              label="Utilizador"
-              type="text"
-              name="username"
-              placeholder="Ex: patrick"
-              autoComplete="username"
-              value={username}
-              onChange={(event) => {
-                const value = event.target.value;
-                setUsername(value);
-                setErrors(validateLogin(value, password));
-              }}
-              onBlur={() => touchField('username')}
-              error={fieldError('username')}
-              icon={(
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
-                  <path d="M20 21a8 8 0 0 0-16 0" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
-              )}
-            />
-
-            <TextInput
-              id="login-password"
-              label="Palavra-passe"
-              type={showPassword ? 'text' : 'password'}
-              name="password"
-              placeholder="Ex: 1212"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => {
-                const value = event.target.value;
-                setPassword(value);
-                setErrors(validateLogin(username, value));
-              }}
-              onBlur={() => touchField('password')}
-              error={fieldError('password')}
-              icon={(
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
-                  <rect x="4" y="10" width="16" height="10" rx="2" />
-                  <path d="M8 10V7a4 4 0 0 1 8 0v3" />
-                </svg>
-              )}
-              trailing={(
-                <button className="input-action" type="button" onClick={() => setShowPassword((current) => !current)} aria-label={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}>
-                  {showPassword ? 'Ocultar' : 'Mostrar'}
-                </button>
-              )}
-            />
-
-            <div className="form-meta">
-              <label className="remember-me">
-                <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
-                <span>Lembrar-me</span>
-              </label>
-
-              <button type="button" className="text-button">
-                Esqueceu a palavra-passe?
-              </button>
-            </div>
-
-            <Button variant="primary" size="lg" type="submit" disabled={!canSubmit} isLoading={isSubmitting}>
-              Entrar no portal
+          <form className="login-form" onSubmit={(event) => event.preventDefault()}>
+            <Button variant="primary" size="lg" type="button" onClick={() => void handleMicrosoftLogin()} isLoading={isMicrosoftSubmitting} disabled={!isFirebaseConfigured}>
+              Entrar com Microsoft
             </Button>
+
+            {!isFirebaseConfigured && (
+              <p className="auth-copy">Configuração Firebase em falta. Define as variáveis VITE_FIREBASE_* no ficheiro .env do frontend.</p>
+            )}
 
             <Toast
               show={Boolean(statusMessage)}

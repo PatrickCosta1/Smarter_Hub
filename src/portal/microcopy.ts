@@ -9,12 +9,7 @@ export function resolveErrorMessage(error: unknown, fallback: string) {
 export const MICROCOPY = {
   accountAccess: {
     loadError: 'Não foi possível carregar os dados da conta.',
-    currentPasswordRequired: 'Indica a password atual.',
-    newPasswordMinLength: 'A nova password deve ter pelo menos 4 caracteres.',
-    passwordConfirmationMismatch: 'A confirmação da nova password não coincide.',
-    savingInfo: 'A guardar alterações de acesso...',
-    updateSuccess: 'Dados de acesso atualizados com sucesso.',
-    updateError: 'Não foi possível atualizar os dados de acesso.',
+    microsoftOnlyInfo: 'A autenticação é feita exclusivamente com Microsoft.',
   },
   notifications: {
     markAllReadSuccess: 'Notificações marcadas como lidas com sucesso.',
