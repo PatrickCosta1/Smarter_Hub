@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getBackendBase } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { MICROCOPY, resolveErrorMessage } from '../portal/microcopy';
 import { formatVacationStatusLabel, getVacationStatusTone } from '../portal/labels';
@@ -72,6 +72,36 @@ function getDisplayName(user?: { username: string; profile?: { nomeAbreviado?: s
 
   const fullName = `${user?.profile?.primeiroNome ?? ''} ${user?.profile?.apelido ?? ''}`.trim();
   return fullName || user?.username || '-';
+}
+
+function formatShortDate(dateText: string) {
+  const date = new Date(dateText);
+  if (Number.isNaN(date.getTime())) {
+    return '-';
+  }
+  return date.toLocaleDateString('pt-PT');
+}
+
+function renderApprovalFieldValue(field: string, value: string) {
+  const normalizedValue = (value || '').trim();
+  if (!normalizedValue || normalizedValue === '(vazio)' || normalizedValue === '-') {
+    return <span>(vazio)</span>;
+  }
+
+  const isProofField = /comprovativo/i.test(field);
+  const isHttp = normalizedValue.startsWith('http://') || normalizedValue.startsWith('https://');
+  const isRelativeUpload = normalizedValue.startsWith('/uploads/');
+
+  if (isProofField && (isHttp || isRelativeUpload)) {
+    const href = isRelativeUpload ? `${getBackendBase()}${normalizedValue}` : normalizedValue;
+    return (
+      <a className="approval-file-link" href={href} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+        Abrir comprovativo
+      </a>
+    );
+  }
+
+  return <span>{normalizedValue}</span>;
 }
 
 export default function RHApprovalsPage() {
@@ -279,40 +309,50 @@ export default function RHApprovalsPage() {
             ) : profileRequests.length === 0 ? (
               <article className="trainings-mobile-card">Sem pedidos pendentes.</article>
             ) : (
-              profileRequests.map((request) => (
-                <article key={request.id} className="trainings-mobile-card rh-profile-card" onClick={() => openProfileRequestDetails(request)}>
-                  <header>
-                    <h4>{request.requesterName || getDisplayName(request.user)}</h4>
-                    <Badge tone={getVacationStatusTone(request.status) === 'approved' ? 'success' : getVacationStatusTone(request.status) === 'pending' ? 'warning' : getVacationStatusTone(request.status) === 'rejected' ? 'danger' : 'neutral'}>
-                      {formatVacationStatusLabel(request.status)}
-                    </Badge>
-                  </header>
-                  <p>{request.changesSummary}</p>
-                  <div className="trainings-row-actions">
-                    <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); openProfileRequestDetails(request); }}>Ver detalhe</Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="primary"
-                      isLoading={pendingActionKey === `approve-profile-${request.id}`}
-                      disabled={Boolean(pendingActionKey)}
-                      onClick={(event) => { event.stopPropagation(); void approveProfileRequest(request); }}
-                    >
-                      Aprovar
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      isLoading={pendingActionKey === `reject-profile-${request.id}`}
-                      disabled={Boolean(pendingActionKey)}
-                      onClick={(event) => { event.stopPropagation(); void rejectProfileRequest(request); }}
-                    >
-                      Rejeitar
-                    </Button>
-                  </div>
-                </article>
-              ))
+              profileRequests.map((request) => {
+                const changesCount = (request.changeDetails ?? []).length;
+                return (
+                  <article key={request.id} className="trainings-mobile-card rh-profile-card" onClick={() => openProfileRequestDetails(request)}>
+                    <header>
+                      <div className="rh-profile-card__top">
+                        <h4>{request.requesterName || getDisplayName(request.user)}</h4>
+                        <Badge tone={getVacationStatusTone(request.status) === 'approved' ? 'success' : getVacationStatusTone(request.status) === 'pending' ? 'warning' : getVacationStatusTone(request.status) === 'rejected' ? 'danger' : 'neutral'}>
+                          {formatVacationStatusLabel(request.status)}
+                        </Badge>
+                      </div>
+                      <div className="rh-profile-card__meta">
+                        <span className="rh-profile-card__changes">
+                          📝 {changesCount} {changesCount === 1 ? 'alteração' : 'alterações'}
+                        </span>
+                        <span className="rh-profile-card__created">{formatShortDate(request.createdAt)}</span>
+                      </div>
+                    </header>
+                    <div className="trainings-row-actions">
+                      <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); openProfileRequestDetails(request); }}>Ver detalhe</Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="primary"
+                        isLoading={pendingActionKey === `approve-profile-${request.id}`}
+                        disabled={Boolean(pendingActionKey)}
+                        onClick={(event) => { event.stopPropagation(); void approveProfileRequest(request); }}
+                      >
+                        Aprovar
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        isLoading={pendingActionKey === `reject-profile-${request.id}`}
+                        disabled={Boolean(pendingActionKey)}
+                        onClick={(event) => { event.stopPropagation(); void rejectProfileRequest(request); }}
+                      >
+                        Rejeitar
+                      </Button>
+                    </div>
+                  </article>
+                );
+              })
             )}
           </div>
         </section>
@@ -387,9 +427,9 @@ export default function RHApprovalsPage() {
 
       <Modal
         open={Boolean(selectedProfileRequest)}
-        title="Detalhe do pedido de alteração de ficha"
+        title="Detalhe do pedido de alteração"
         onClose={closeProfileRequestDetails}
-        width="min(900px, 96vw)"
+        width="min(1300px, 98vw)"
         showCloseButton={false}
         footer={selectedProfileRequest ? (
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 12 }}>
@@ -424,18 +464,20 @@ export default function RHApprovalsPage() {
       >
         {selectedProfileRequest && (
           <div className="approval-profile-modal">
-            <p className="approval-profile-modal__summary">Pedido de {selectedProfileRequest.requesterName || getDisplayName(selectedProfileRequest.user)} com alterações detalhadas:</p>
+            <p className="approval-profile-modal__summary">Alterações solicitadas por {selectedProfileRequest.requesterName || getDisplayName(selectedProfileRequest.user)}</p>
             <div className="approval-profile-modal__grid">
               {(selectedProfileRequest.changeDetails ?? []).map((item) => (
                 <article key={`${item.field}-${item.oldValue}-${item.newValue}`} className="approval-profile-modal__item">
                   <h4>{item.field}</h4>
                   <div>
-                    <span>Valor atual</span>
-                    <strong>{item.oldValue}</strong>
-                  </div>
-                  <div>
-                    <span>Novo valor</span>
-                    <strong>{item.newValue}</strong>
+                    <div>
+                      <span>Atual</span>
+                      <strong>{renderApprovalFieldValue(item.field, item.oldValue)}</strong>
+                    </div>
+                    <div>
+                      <span>Novo</span>
+                      <strong>{renderApprovalFieldValue(item.field, item.newValue)}</strong>
+                    </div>
                   </div>
                 </article>
               ))}

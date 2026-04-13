@@ -20,6 +20,8 @@ type NotificationDetails = {
   title: string;
   message: string;
   tag: string;
+  icon: string;
+  color: 'blue' | 'green' | 'yellow' | 'red' | 'purple' | 'orange';
   action?: NotificationAction;
   minimalApprovalLayout?: boolean;
   profileChange?: {
@@ -152,8 +154,10 @@ function buildNotificationDetails(title: string, message: string): NotificationD
   if (normalized.includes('pedido de alteração de ficha') && (normalized.includes('submeteu') || normalized.includes('efetuou') || normalized.includes('pedido pendente'))) {
     return {
       title: 'Pedido de alteração',
-      message: `${profileChange.requesterName} solicitou ${profileChange.changes.length} campo${profileChange.changes.length === 1 ? '' : 's'}.`,
+      message: `${profileChange.requesterName} solicitou ${profileChange.changes.length} alteração${profileChange.changes.length === 1 ? '' : 's'}.`,
       tag: 'Ficha',
+      icon: '📋',
+      color: 'blue',
       action: { label: 'Abrir aprovação', path: '/aprovacoes' },
       minimalApprovalLayout: true,
       profileChange,
@@ -165,6 +169,8 @@ function buildNotificationDetails(title: string, message: string): NotificationD
       title: 'Pedido submetido',
       message: 'O pedido foi enviado para aprovação.',
       tag: 'Ficha',
+      icon: '✅',
+      color: 'green',
       action: { label: 'Abrir a minha ficha', path: '/profile' },
     };
   }
@@ -174,6 +180,8 @@ function buildNotificationDetails(title: string, message: string): NotificationD
       title: 'Ficha aprovada',
       message: 'A ficha já foi atualizada.',
       tag: 'Ficha',
+      icon: '✨',
+      color: 'green',
       action: { label: 'Abrir a minha ficha', path: '/profile' },
     };
   }
@@ -181,8 +189,10 @@ function buildNotificationDetails(title: string, message: string): NotificationD
   if (normalized.includes('ficha') && normalized.includes('recus')) {
     return {
       title: 'Ficha recusada',
-      message: 'O pedido foi recusado.',
+      message: 'O pedido foi recusado. Revise as observações.',
       tag: 'Ficha',
+      icon: '⚠️',
+      color: 'red',
       action: { label: 'Abrir a minha ficha', path: '/profile' },
     };
   }
@@ -192,6 +202,8 @@ function buildNotificationDetails(title: string, message: string): NotificationD
       title: normalized.includes('férias') ? 'Pedido de férias' : 'Pedido de ausência',
       message: humanizeTechnicalText(message),
       tag: 'Férias',
+      icon: '🏖️',
+      color: 'yellow',
       action: { label: 'Abrir aprovação', path: '/aprovacoes' },
       minimalApprovalLayout: true,
     };
@@ -199,18 +211,22 @@ function buildNotificationDetails(title: string, message: string): NotificationD
 
   if (normalized.includes('férias') && normalized.includes('aprov')) {
     return {
-      title: 'Pedido aprovado',
-      message: 'O pedido foi aprovado.',
+      title: 'Férias aprovadas',
+      message: 'O pedido de férias foi aprovado.',
       tag: 'Férias',
+      icon: '🎉',
+      color: 'green',
       action: { label: 'Abrir férias', path: '/ferias' },
     };
   }
 
   if (normalized.includes('férias') && normalized.includes('recus')) {
     return {
-      title: 'Pedido recusado',
-      message: 'O pedido foi recusado.',
+      title: 'Férias recusadas',
+      message: 'O pedido de férias foi recusado.',
       tag: 'Férias',
+      icon: '❌',
+      color: 'red',
       action: { label: 'Abrir férias', path: '/ferias' },
     };
   }
@@ -218,8 +234,10 @@ function buildNotificationDetails(title: string, message: string): NotificationD
   if (normalized.includes('formação') && normalized.includes('atribu')) {
     return {
       title: 'Nova formação atribuída',
-      message: 'Foi atribuída uma nova formação.',
+      message: 'Foi-te atribuída uma nova formação.',
       tag: 'Formação',
+      icon: '📚',
+      color: 'purple',
       action: { label: 'Abrir formações', path: '/formacoes' },
     };
   }
@@ -227,8 +245,10 @@ function buildNotificationDetails(title: string, message: string): NotificationD
   if (normalized.includes('formação') && normalized.includes('conclu')) {
     return {
       title: 'Formação concluída',
-      message: 'A conclusão foi registada.',
+      message: 'A conclusão foi registada com sucesso.',
       tag: 'Formação',
+      icon: '🏆',
+      color: 'green',
       action: { label: 'Abrir formações', path: '/formacoes' },
     };
   }
@@ -237,6 +257,8 @@ function buildNotificationDetails(title: string, message: string): NotificationD
     title: title || 'Atualização interna',
     message: message || 'Tem uma nova atualização no portal.',
     tag: 'Portal',
+    icon: '🔔',
+    color: 'blue',
   };
 }
 
@@ -426,19 +448,21 @@ export default function NotificationsPage() {
           const isMinimalApproval = Boolean(details.minimalApprovalLayout && details.action);
 
           return (
-            <article key={notification.id} className={`notification-card${notification.isRead ? '' : ' is-unread'}`}>
-              <div className="notification-card__leading" aria-hidden="true">
-                {notification.isRead ? '✓' : '•'}
+            <article key={notification.id} className={`notification-card notification-card--${details.color}${notification.isRead ? '' : ' is-unread'}`}>
+              <div className="notification-card__icon" aria-hidden="true">
+                {details.icon}
               </div>
 
               <div className="notification-card__main">
-                <span className="notification-card__tag">{friendly.tag}</span>
-                <div className="notification-card__meta">
-                  <span>{formatRelativeDate(notification.createdAt)}</span>
+                <div className="notification-card__header">
+                  <h3>{details.title}</h3>
                   <Badge tone={notification.isRead ? 'neutral' : 'info'}>{notification.isRead ? 'Lida' : 'Nova'}</Badge>
                 </div>
-                <h3>{friendly.title}</h3>
-                <p>{isMinimalApproval ? details.message : friendly.message}</p>
+                <p className="notification-card__message">{details.message}</p>
+                <div className="notification-card__meta">
+                  <span className="notification-card__tag">{details.tag}</span>
+                  <span className="notification-card__time">{formatRelativeDate(notification.createdAt)}</span>
+                </div>
               </div>
 
               <div className="notification-card__actions">
@@ -548,68 +572,70 @@ export default function NotificationsPage() {
         ) : undefined}
       >
         {selectedNotification && selectedDetails && (
-          <div className="notification-detail">
+          <div className={`notification-detail notification-detail--${selectedDetails.color}`}>
+            <div className="notification-detail__header">
+              <div className="notification-detail__icon">{selectedDetails.icon}</div>
+              <div>
+                <h2>{selectedDetails.title}</h2>
+                <Badge tone={selectedNotification.isRead ? 'neutral' : 'info'}>{selectedNotification.isRead ? 'Lida' : 'Nova'}</Badge>
+              </div>
+            </div>
+
             {selectedDetails.minimalApprovalLayout ? (
               <>
                 {selectedDetails.profileChange ? (
-                  <div className="notification-detail__panel notification-detail__panel--focus">
-                    <strong>{selectedDetails.profileChange.requesterName}</strong>
-                    <p className="notification-detail__summary notification-detail__summary--focus">Pedido de alteração</p>
+                  <div className="notification-detail__approval">
+                    <div className="notification-detail__requester">
+                      <strong>{selectedDetails.profileChange.requesterName}</strong>
+                      <span>solicitou {selectedDetails.profileChange.changes.length} alteração{selectedDetails.profileChange.changes.length === 1 ? '' : 's'}</span>
+                    </div>
                     <div className="notification-diff-list" aria-label="Detalhe de alterações da ficha">
                       {selectedDetails.profileChange.changes.map((item) => (
                         <article key={`${item.field}-${item.oldValue}-${item.newValue}`} className="notification-diff-item">
                           <h4>{item.field}</h4>
-                          <div>
-                            <span>Antes</span>
-                            <strong>{item.oldValue}</strong>
-                          </div>
-                          <div>
-                            <span>Depois</span>
-                            <strong>{item.newValue}</strong>
+                          <div className="notification-diff-row">
+                            <div>
+                              <span>Anterior</span>
+                              <strong>{item.oldValue}</strong>
+                            </div>
+                            <div className="notification-diff-arrow">→</div>
+                            <div>
+                              <span>Novo</span>
+                              <strong>{item.newValue}</strong>
+                            </div>
                           </div>
                         </article>
                       ))}
                     </div>
                   </div>
                 ) : (
-                  <p className="notification-detail__summary notification-detail__summary--focus">{selectedDetails.message}</p>
+                  <p className="notification-detail__summary">{selectedDetails.message}</p>
                 )}
-                {selectedAction && (
+                {selectedDetails.action && (
                   <Button type="button" variant="primary" onClick={() => {
-                    navigate(selectedAction.path);
+                    navigate(selectedDetails.action!.path);
                     closeNotificationDetails();
-                  }}>
-                    {selectedAction.label}
+                  }} style={{ width: '100%' }}>
+                    {selectedDetails.action.label}
                   </Button>
                 )}
               </>
             ) : (
               <>
-            <div className="notification-detail__meta">
-              <Badge tone={selectedNotification.isRead ? 'neutral' : 'info'}>{selectedNotification.isRead ? 'Lida' : 'Nova'}</Badge>
-              <span>{selectedDetails.tag}</span>
-              <span>{formatRelativeDate(selectedNotification.createdAt)}</span>
-            </div>
+                <p className="notification-detail__summary">{selectedDetails.message}</p>
 
-            <p className="notification-detail__summary">{selectedDetails.message}</p>
-
-            <div className="notification-detail__panel">
-              <strong>Mensagem original</strong>
-              <p>{humanizeTechnicalText(selectedNotification.message)}</p>
-            </div>
-
-            {selectedAction && (
-              <div className="notification-detail__panel notification-detail__panel--action">
-                <strong>Ação sugerida</strong>
-                <p>Existe uma ação direta associada a esta notificação.</p>
-                <Button type="button" variant="primary" onClick={() => {
-                  navigate(selectedAction.path);
-                  closeNotificationDetails();
-                }}>
-                  {selectedAction.label}
-                </Button>
-              </div>
-            )}
+                {selectedDetails.action && (
+                  <div className="notification-detail__panel notification-detail__panel--action">
+                    <strong>Ação sugerida</strong>
+                    <p>Há uma ação direta associada a esta notificação.</p>
+                    <Button type="button" variant="primary" onClick={() => {
+                      navigate(selectedDetails.action!.path);
+                      closeNotificationDetails();
+                    }} style={{ width: '100%' }}>
+                      {selectedDetails.action.label}
+                    </Button>
+                  </div>
+                )}
               </>
             )}
           </div>

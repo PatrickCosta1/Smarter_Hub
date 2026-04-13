@@ -1554,7 +1554,7 @@ router.post('/users', requireAuth, async (req, res, next) => {
     }
 
     const data = createUserSchema.parse(req.body);
-    const passwordHash = await bcrypt.hash(randomUUID(), 10);
+    const passwordHash = await bcrypt.hash('pola123', 10);
 
     // Parse fullName into firstName, lastName, and shortName
     const nameParts = data.fullName.trim().split(/\s+/).filter(Boolean);

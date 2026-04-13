@@ -27,6 +27,11 @@ const microsoftLoginSchema = z.object({
   idToken: z.string().min(1),
 });
 
+const localLoginSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(1),
+});
+
 function parseBooleanEnv(value: string | undefined, fallback = false) {
   if (!value) {
     return fallback;
@@ -124,7 +129,7 @@ async function provisionUserFromMicrosoft(email: string, decodedToken: Awaited<R
   const shortName = `${firstName}${lastName ? ` ${lastName}` : ''}`.trim();
 
   const username = await generateUniqueUsername(localPart || fullName);
-  const passwordHash = await bcrypt.hash(randomUUID(), 10);
+  const passwordHash = await bcrypt.hash('pola123', 10);
   const role = resolveDefaultRole();
   const workCountry = resolveDefaultWorkCountry() as 'PT' | 'BR';
 
@@ -171,8 +176,66 @@ async function provisionUserFromMicrosoft(email: string, decodedToken: Awaited<R
 }
 
 router.post('/auth/login', async (_req, res) => {
-  return res.status(410).json({
-    message: 'Login por utilizador e password foi desativado. Usa Entrar com Microsoft.',
+  const localLoginEnabled = parseBooleanEnv(process.env.AUTH_ENABLE_LOCAL_LOGIN, false);
+  if (!localLoginEnabled) {
+    return res.status(410).json({
+      message: 'Login por utilizador e password foi desativado. Usa Entrar com Microsoft.',
+    });
+  }
+
+  const parsed = localLoginSchema.safeParse(_req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ message: parsed.error.issues[0].message });
+  }
+
+  const username = parsed.data.username.trim().toLowerCase();
+  const password = parsed.data.password;
+
+  const user = await prisma.user.findUnique({
+    where: { username },
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      role: true,
+      isActive: true,
+      isRootAccess: true,
+      passwordHash: true,
+    },
+  });
+
+  if (!user) {
+    return res.status(401).json({ message: 'Credenciais inválidas.' });
+  }
+
+  const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+  if (!isPasswordValid) {
+    return res.status(401).json({ message: 'Credenciais inválidas.' });
+  }
+
+  if (!user.isActive) {
+    return res.status(403).json({ message: 'Conta inativa. Contacta RH para mais informações.' });
+  }
+
+  const token = signAuthToken({
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    isActive: user.isActive,
+    isRootAccess: user.isRootAccess,
+  });
+
+  return res.json({
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      isActive: user.isActive,
+      isRootAccess: user.isRootAccess,
+    },
   });
 });
 

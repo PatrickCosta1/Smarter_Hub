@@ -1,6 +1,5 @@
 import { ChangeEvent, MouseEvent, useEffect, useMemo, useState } from 'react';
 import {
-  cargoOptions,
   estadoCivilOptions,
   generoOptions,
   habilitacoesOptions,
@@ -15,6 +14,7 @@ import { usePortal } from '../portal/context';
 import { useFeedbackToast } from '../portal/useFeedbackToast';
 import { ProfileData, ProfileFieldError } from '../portal/types';
 import Button from '../components/ui/Button';
+import Modal from '../components/ui/Modal';
 
 type SectionKey = 'personal' | 'contacts' | 'documents' | 'tax' | 'emergency' | 'contract';
 
@@ -135,6 +135,10 @@ export default function ProfilePage() {
   const { toast, showToast } = useFeedbackToast(3400);
   const [isSaving, setIsSaving] = useState(false);
   const [currentSection, setCurrentSection] = useState<SectionKey>('personal');
+  const [hasPendingRequest, setHasPendingRequest] = useState(false);
+  const [pendingRequestLabel, setPendingRequestLabel] = useState('');
+  const [pendingChanges, setPendingChanges] = useState<string[]>([]);
+  const [isRequestFeedbackOpen, setIsRequestFeedbackOpen] = useState(false);
 
   const canEdit =
     isRootAccess
@@ -156,6 +160,64 @@ export default function ProfilePage() {
   useEffect(() => {
     setDraftProfile(profile);
   }, [profile]);
+
+  useEffect(() => {
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    if (!token) {
+      return;
+    }
+
+    (async () => {
+      try {
+        const response = await fetch(`${getApiBase()}/profile/requests/me`, {
+          headers: authHeaders(token),
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json()) as {
+          pending?: boolean;
+          request?: {
+            changesSummary?: string;
+            createdAt?: string;
+          } | null;
+        };
+
+        const pending = Boolean(payload.pending);
+        setHasPendingRequest(pending);
+        const summary = pending ? payload.request?.changesSummary || 'Pedido de alteração em análise pela equipa RH.' : '';
+        setPendingRequestLabel(summary);
+        
+        // Parse campos individuais da lista
+        if (summary && summary.includes(':')) {
+          const parts = summary.split(':');
+          const fieldsList = parts[1] || '';
+          const fields = fieldsList
+            .split(',')
+            .map(f => f.trim())
+            .filter(f => f.length > 0);
+          setPendingChanges(fields);
+        } else {
+          setPendingChanges([]);
+        }
+      } catch {
+        // Silencioso para não bloquear a edição da ficha se este fetch falhar.
+      }
+    })();
+  }, []);
+
+  function closeAllEditingSections() {
+    setEditingSections({
+      personal: false,
+      contacts: false,
+      documents: false,
+      tax: false,
+      emergency: false,
+      contract: false,
+    });
+  }
 
   function handleProfileChange(field: keyof ProfileData, value: string) {
     setDraftProfile((current) => {
@@ -280,7 +342,11 @@ export default function ProfilePage() {
     }
 
     if (requestMode) {
-      showToast('success', 'Pedido efetuado com sucesso. Em breve irá receber uma resposta.');
+      setHasPendingRequest(true);
+      setPendingRequestLabel(result.message || 'Pedido enviado para aprovação.');
+      setDraftProfile(profile);
+      closeAllEditingSections();
+      setIsRequestFeedbackOpen(true);
       return;
     }
 
@@ -314,6 +380,23 @@ export default function ProfilePage() {
           <small>Completa a tua ficha</small>
         </div>
       </section>
+
+      {hasPendingRequest && (
+        <section className="profile-request-banner" role="status" aria-live="polite">
+          <div>
+            <strong>Pedido em análise</strong>
+            {pendingChanges.length > 0 && (
+              <div className="profile-request-fields">
+                {pendingChanges.map((field) => (
+                  <span key={field} className="profile-request-field-badge">
+                    {field}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       <nav className="profile-stepper" aria-label="Navegação por etapas da ficha">
         {profileSections.map((section) => (
@@ -639,12 +722,7 @@ export default function ProfilePage() {
           <div className="profile-fields">
             <label>
               <span>Cargo</span>
-              <select value={draftProfile.cargo} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('cargo', event.target.value)}>
-                <option value="">Selecionar</option>
-                {cargoOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
+              <input type="text" value={draftProfile.cargo} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('cargo', event.target.value)} />
               {profileErrors.cargo && <small>{profileErrors.cargo}</small>}
             </label>
             <label className="field-span-2">
@@ -706,6 +784,24 @@ export default function ProfilePage() {
           </button>
         </div>
       )}
+
+      <Modal
+        open={isRequestFeedbackOpen}
+        title="Pedido submetido com sucesso"
+        onClose={() => setIsRequestFeedbackOpen(false)}
+        width="560px"
+        footer={(
+          <Button type="button" variant="primary" onClick={() => setIsRequestFeedbackOpen(false)}>
+            Percebi
+          </Button>
+        )}
+      >
+        <div className="profile-request-feedback">
+          <p>As alterações não foram aplicadas de imediato.</p>
+          <p>O teu pedido ficou registado e está agora em análise pela equipa RH.</p>
+          <p>Receberás notificação quando houver decisão.</p>
+        </div>
+      </Modal>
     </>
   );
 }

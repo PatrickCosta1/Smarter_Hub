@@ -79,6 +79,7 @@ type PortalContextValue = {
   unreadNotifications: number;
   profile: ProfileData;
   notifications: PortalNotification[];
+  loginWithPassword: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
   loginWithMicrosoft: (idToken: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
   markAllNotificationsRead: () => Promise<void>;
@@ -86,7 +87,7 @@ type PortalContextValue = {
   deleteNotification: (id: string) => Promise<void>;
   deleteAllNotifications: () => Promise<void>;
   setProfile: (profile: ProfileData) => void;
-  saveProfile: (profile: ProfileData) => Promise<{ success: boolean; message?: string }>;
+  saveProfile: (profile: ProfileData) => Promise<{ success: boolean; message?: string; pending?: boolean }>;
 };
 
 const PortalContext = createContext<PortalContextValue | null>(null);
@@ -236,6 +237,21 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     }
   }, [completeLoginSession]);
 
+  const loginWithPassword = useCallback(async (username: string, password: string) => {
+    try {
+      const response = await apiRequest<{ token: string; user: AuthUser }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      });
+
+      await completeLoginSession(response.token, response.user);
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha na autenticação por credenciais.';
+      return { success: false, message };
+    }
+  }, [completeLoginSession]);
+
   const logout = useCallback(() => {
     window.localStorage.removeItem(STORAGE_TOKEN_KEY);
     clearApiCache();
@@ -279,7 +295,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
         clearApiCache('/profile/requests/me');
         clearApiCache('/profile/requests');
         clearApiCache('/notifications/me');
-        return { success: true, message: response.message || 'Pedido enviado para aprovação.' };
+        return { success: true, pending: true, message: response.message || 'Pedido enviado para aprovação.' };
       }
 
       setProfileState(normalizedProfile);
@@ -356,6 +372,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       unreadNotifications,
       profile,
       notifications,
+      loginWithPassword,
       loginWithMicrosoft,
       logout,
       markAllNotificationsRead,
@@ -365,7 +382,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       setProfile,
       saveProfile,
     }),
-    [currentUser, deleteAllNotifications, deleteNotification, hasPermission, isAccessTotal, isAuthenticated, isLoadingPortalData, isLoadingSession, isRootAccess, loginWithMicrosoft, logout, markAllNotificationsRead, markNotificationRead, notifications, permissions, profile, saveProfile, setProfile, unreadNotifications, userRole],
+    [currentUser, deleteAllNotifications, deleteNotification, hasPermission, isAccessTotal, isAuthenticated, isLoadingPortalData, isLoadingSession, isRootAccess, loginWithMicrosoft, loginWithPassword, logout, markAllNotificationsRead, markNotificationRead, notifications, permissions, profile, saveProfile, setProfile, unreadNotifications, userRole],
   );
 
   return <PortalContext.Provider value={value}>{children}</PortalContext.Provider>;
