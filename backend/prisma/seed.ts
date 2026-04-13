@@ -26,6 +26,7 @@ async function createUser(params: {
     habilitacoesLiterarias: string;
     curso: string;
     faculdade: string;
+    emailPessoal: string;
     telemovel: string;
     moradaFiscal: string;
     endereco: string;

@@ -69,4 +69,8 @@ export type AuthUser = {
   role: 'COLABORADOR' | 'MANAGER' | 'COORDENADOR' | 'ADMIN' | 'CONVIDADO';
   isActive?: boolean;
   isRootAccess?: boolean;
+  team?: {
+    id: string;
+    name: string;
+  } | null;
 };

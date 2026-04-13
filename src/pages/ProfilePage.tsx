@@ -29,6 +29,52 @@ const profileSections: Array<{ key: SectionKey; label: string }> = [
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
+const profileFieldLabels: Partial<Record<keyof ProfileData, string>> = {
+  primeiroNome: 'Primeiro nome',
+  apelido: 'Apelido',
+  nomeAbreviado: 'Nome abreviado',
+  dataNascimento: 'Data de nascimento',
+  genero: 'Género',
+  estadoCivil: 'Estado civil',
+  habilitacoesLiterarias: 'Habilitações literárias',
+  curso: 'Curso',
+  faculdade: 'Faculdade',
+  emailPessoal: 'Email pessoal',
+  telemovel: 'Telemóvel',
+  moradaFiscal: 'Morada normal',
+  endereco: 'Morada normal',
+  localidade: 'Localidade',
+  codigoPostal: 'Código postal',
+  matriculaCarro: 'Matrícula do carro',
+  cartaoCidadao: 'Cartão de cidadão',
+  nif: 'NIF',
+  niss: 'NISS',
+  iban: 'IBAN',
+  situacaoIrs: 'Situação IRS',
+  numeroDependentes: 'Número de dependentes',
+  irsJovem: 'IRS Jovem',
+  anoPrimeiroDesconto: 'Ano do primeiro desconto',
+  numeroCartaoContinente: 'Número cartão continente',
+  voucherNosData: 'Voucher NOS',
+  comprovativoMoradaFiscal: 'Comprovativo morada fiscal',
+  comprovativoCartaoCidadao: 'Comprovativo cartão cidadão',
+  comprovativoIban: 'Comprovativo IBAN',
+  comprovativoCartaoContinente: 'Comprovativo cartão continente',
+  contactoEmergenciaNome: 'Contacto de emergência - nome',
+  contactoEmergenciaParentesco: 'Contacto de emergência - parentesco',
+  contactoEmergenciaNumero: 'Contacto de emergência - número',
+  cargo: 'Cargo',
+  funcao: 'Função',
+  dataInicioContrato: 'Data de início do contrato',
+  dataFimContrato: 'Data de fim do contrato',
+  remuneracao: 'Remuneração',
+  tipoContrato: 'Tipo de contrato',
+  regimeHorario: 'Regime horário',
+  workCountry: 'País de trabalho',
+};
+
+const consolidatedAddressFields: Array<keyof ProfileData> = ['moradaFiscal', 'endereco'];
+
 function renderFileLink(value: string) {
   if (!value) {
     return <em>Nenhum ficheiro selecionado</em>;
@@ -120,7 +166,7 @@ function validateProfile(profile: ProfileData, canEditContract: boolean = true):
 }
 
 export default function ProfilePage() {
-  const { profile, saveProfile, hasPermission, isRootAccess, isAccessTotal } = usePortal();
+  const { profile, saveProfile, hasPermission, isRootAccess, isAccessTotal, currentUser } = usePortal();
 
   const [draftProfile, setDraftProfile] = useState<ProfileData>(profile);
   const [editingSections, setEditingSections] = useState<Record<SectionKey, boolean>>({
@@ -139,6 +185,8 @@ export default function ProfilePage() {
   const [pendingRequestLabel, setPendingRequestLabel] = useState('');
   const [pendingChanges, setPendingChanges] = useState<string[]>([]);
   const [isRequestFeedbackOpen, setIsRequestFeedbackOpen] = useState(false);
+  const [showSeparateAddresses, setShowSeparateAddresses] = useState(false);
+  const [isCompletionHelpOpen, setIsCompletionHelpOpen] = useState(false);
 
   const canEdit =
     isRootAccess
@@ -147,6 +195,7 @@ export default function ProfilePage() {
     || hasPermission('edit_other_profile');
   const canEditContract = isRootAccess || hasPermission('edit_other_profile');
   const requestMode = !isRootAccess && (isAccessTotal || hasPermission('request_profile_change') || !canEditContract);
+  const teamName = currentUser?.team?.name?.trim() || 'Sem equipa';
 
   const profileCompletion = useMemo(() => {
     const fields = Object.values(draftProfile);
@@ -154,12 +203,29 @@ export default function ProfilePage() {
     return Math.round((filled / fields.length) * 100);
   }, [draftProfile]);
 
+  const completionIssues = useMemo(() => validateProfile(draftProfile, canEditContract), [canEditContract, draftProfile]);
+  const completionIssueEntries = useMemo(
+    () => Object.entries(completionIssues).map(([field, message]) => ({
+      field: field as keyof ProfileData,
+      label: profileFieldLabels[field as keyof ProfileData] ?? field,
+      message,
+    })),
+    [completionIssues],
+  );
+
   const collaboratorName = useMemo(() => `${draftProfile.primeiroNome} ${draftProfile.apelido}`.trim(), [draftProfile.apelido, draftProfile.primeiroNome]);
   const hasUnsavedChanges = useMemo(() => JSON.stringify(draftProfile) !== JSON.stringify(profile), [draftProfile, profile]);
 
   useEffect(() => {
     setDraftProfile(profile);
   }, [profile]);
+
+  useEffect(() => {
+    const hasDifferentAddress = profile.moradaFiscal.trim().length > 0
+      && profile.endereco.trim().length > 0
+      && profile.moradaFiscal.trim() !== profile.endereco.trim();
+    setShowSeparateAddresses(hasDifferentAddress);
+  }, [profile.endereco, profile.moradaFiscal]);
 
   useEffect(() => {
     const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
@@ -221,6 +287,18 @@ export default function ProfilePage() {
 
   function handleProfileChange(field: keyof ProfileData, value: string) {
     setDraftProfile((current) => {
+      if (field === 'moradaFiscal' || field === 'endereco') {
+        if (!showSeparateAddresses) {
+          return { ...current, moradaFiscal: value, endereco: value };
+        }
+
+        if (field === 'moradaFiscal') {
+          return { ...current, moradaFiscal: value };
+        }
+
+        return { ...current, endereco: value };
+      }
+
       return { ...current, [field]: value };
     });
 
@@ -251,10 +329,34 @@ export default function ProfilePage() {
         return updated;
       }
 
+      if ((field === 'moradaFiscal' || field === 'endereco') && !showSeparateAddresses) {
+        delete updated.moradaFiscal;
+        delete updated.endereco;
+        return updated;
+      }
+
       delete updated[field];
       return updated;
     });
 
+    if ((field === 'moradaFiscal' || field === 'endereco') && !showSeparateAddresses) {
+      setDraftProfile((current) => ({ ...current, moradaFiscal: value, endereco: value }));
+    }
+
+  }
+
+  function toggleAddressMode(separate: boolean) {
+    setShowSeparateAddresses(separate);
+    if (!separate) {
+      setDraftProfile((current) => {
+        const sharedValue = current.moradaFiscal.trim() || current.endereco.trim();
+        return {
+          ...current,
+          moradaFiscal: sharedValue,
+          endereco: sharedValue,
+        };
+      });
+    }
   }
 
   function goToPreviousSection() {
@@ -358,16 +460,10 @@ export default function ProfilePage() {
       <section className="profile-hero">
         <div className="hero-main">
           <p className="hero-kicker">Ficha de colaborador</p>
-          <h1>{collaboratorName}</h1>
-          <p>{profile.cargo} · {profile.tipoContrato}</p>
-          <div className="hero-chips">
-            <span>IRS Jovem: {profile.irsJovem || '-'}</span>
-            <span>Dependentes: {profile.numeroDependentes || '0'}</span>
-          </div>
-          <div className="profile-hero__actions">
-            <span>{profile.regimeHorario}</span>
-            <span>{profile.localidade || '-'}</span>
-            <span>{profile.estadoCivil || '-'}</span>
+          <h1>{profile.nomeAbreviado || collaboratorName}</h1>
+          <div className="profile-hero__meta">
+            <span>{profile.cargo || 'Cargo por definir'}</span>
+            <span>{teamName}</span>
           </div>
         </div>
 
@@ -377,7 +473,18 @@ export default function ProfilePage() {
           <div className="completion-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={profileCompletion}>
             <span style={{ width: `${profileCompletion}%` }} />
           </div>
-          <small>Completa a tua ficha</small>
+          <div className="completion-card__footer">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="completion-card__button"
+              onClick={() => setIsCompletionHelpOpen(true)}
+            >
+              <span className="completion-card__button-label">O que falta?</span>
+              <span className="completion-card__button-count">{completionIssueEntries.length}</span>
+            </Button>
+          </div>
         </div>
       </section>
 
@@ -515,16 +622,53 @@ export default function ProfilePage() {
               <span>Matrícula do carro</span>
               <input type="text" value={draftProfile.matriculaCarro} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('matriculaCarro', event.target.value)} />
             </label>
-            <label className="field-span-3">
-              <span>Morada fiscal</span>
-              <input type="text" value={draftProfile.moradaFiscal} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('moradaFiscal', event.target.value)} />
-              {profileErrors.moradaFiscal && <small>{profileErrors.moradaFiscal}</small>}
-            </label>
-            <label className="field-span-3">
-              <span>Endereço</span>
-              <input type="text" value={draftProfile.endereco} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('endereco', event.target.value)} />
-              {profileErrors.endereco && <small>{profileErrors.endereco}</small>}
-            </label>
+            <div className="profile-address-switch field-span-3">
+              <div className="profile-address-switch__copy">
+                <span>Morada fiscal e endereço são diferentes?</span>
+              </div>
+              <div className="profile-address-switch__actions" role="group" aria-label="Morada fiscal e endereço são diferentes?">
+                <Button
+                  type="button"
+                  variant={showSeparateAddresses ? 'primary' : 'ghost'}
+                  size="sm"
+                  disabled={!editingSections.contacts}
+                  onClick={() => toggleAddressMode(true)}
+                >
+                  Sim, são diferentes
+                </Button>
+                <Button
+                  type="button"
+                  variant={!showSeparateAddresses ? 'primary' : 'ghost'}
+                  size="sm"
+                  disabled={!editingSections.contacts}
+                  onClick={() => toggleAddressMode(false)}
+                >
+                  Não, é a mesma morada
+                </Button>
+              </div>
+            </div>
+            {showSeparateAddresses ? (
+              <>
+                <label className="field-span-3">
+                  <span>Morada fiscal</span>
+                  <input type="text" value={draftProfile.moradaFiscal} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('moradaFiscal', event.target.value)} />
+                  {profileErrors.moradaFiscal && <small>{profileErrors.moradaFiscal}</small>}
+                </label>
+                <label className="field-span-3">
+                  <span>Endereço</span>
+                  <input type="text" value={draftProfile.endereco} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('endereco', event.target.value)} />
+                  {profileErrors.endereco && <small>{profileErrors.endereco}</small>}
+                </label>
+              </>
+            ) : (
+              <label className="field-span-3">
+                <span>Morada</span>
+                <input type="text" value={draftProfile.moradaFiscal || draftProfile.endereco} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('moradaFiscal', event.target.value)} />
+                <small>Esta morada é usada para ambos os campos.</small>
+                {profileErrors.moradaFiscal && <small>{profileErrors.moradaFiscal}</small>}
+                {profileErrors.endereco && <small>{profileErrors.endereco}</small>}
+              </label>
+            )}
             <label>
               <span>Localidade</span>
               <input type="text" value={draftProfile.localidade} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('localidade', event.target.value)} />
@@ -784,6 +928,56 @@ export default function ProfilePage() {
           </button>
         </div>
       )}
+
+      <Modal
+        open={isCompletionHelpOpen}
+        title="O que falta completar"
+        onClose={() => setIsCompletionHelpOpen(false)}
+        width="80%"
+        footer={(
+          <Button type="button" variant="primary" onClick={() => setIsCompletionHelpOpen(false)}>
+            Fechar
+          </Button>
+        )}
+      >
+        <div className="profile-completion-help profile-completion-help--modal">
+          <header className="profile-completion-help__header">
+            <div>
+              <p className="profile-completion-help__eyebrow">Resumo rápido</p>
+              <h4>{completionIssueEntries.length === 0 ? 'A ficha está completa' : 'Campos por concluir'}</h4>
+            </div>
+            <div className="profile-completion-help__score">
+              <strong>{profileCompletion}%</strong>
+              <span>concluída</span>
+            </div>
+          </header>
+
+          <div className="profile-completion-help__body">
+            <div className="profile-completion-help__summary">
+              <p>{completionIssueEntries.length === 0 ? 'Não há campos em falta no momento.' : `Faltam ${completionIssueEntries.length} campos para concluir a ficha.`}</p>
+              <small>Usa esta lista como atalho para perceber o que precisa de atenção.</small>
+            </div>
+
+            {completionIssueEntries.length > 0 ? (
+              <ul className="profile-completion-help__list">
+                {completionIssueEntries.map((entry) => (
+                  <li key={entry.field}>
+                    <div>
+                      <span>{entry.label}</span>
+                      <small>{entry.message}</small>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="profile-completion-help__empty">
+                <strong>Perfeito.</strong>
+                <p>Não precisas de corrigir nada agora.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={isRequestFeedbackOpen}

@@ -165,6 +165,12 @@ async function provisionUserFromMicrosoft(email: string, decodedToken: Awaited<R
       role: true,
       isActive: true,
       isRootAccess: true,
+        team: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
     },
   });
 
@@ -235,6 +241,7 @@ router.post('/auth/login', async (_req, res) => {
       role: user.role,
       isActive: user.isActive,
       isRootAccess: user.isRootAccess,
+      team: null,
     },
   });
 });
@@ -277,6 +284,12 @@ router.post('/auth/microsoft', async (req, res) => {
         role: true,
         isActive: true,
         isRootAccess: true,
+        team: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
 
@@ -301,7 +314,25 @@ router.post('/auth/microsoft', async (req, res) => {
 });
 
 router.get("/auth/me", requireAuth, async (req, res) => {
-  return res.json({ user: req.authUser });
+  const user = await prisma.user.findUnique({
+    where: { id: req.authUser!.id },
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      role: true,
+      isActive: true,
+      isRootAccess: true,
+      team: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+    },
+  });
+
+  return res.json({ user });
 });
 
 router.patch('/auth/account', requireAuth, async (_req, res) => {

@@ -25,12 +25,8 @@ async function initDatabaseWithRetry() {
     const pushStatus = run('npm', ['run', 'prisma:push']);
 
     if (pushStatus === 0) {
-      const seedStatus = run('npm', ['run', 'db:seed']);
-
-      if (seedStatus === 0) {
-        console.log('[render-start] Database initialized successfully.');
-        return true;
-      }
+      console.log('[render-start] Database schema synchronized successfully.');
+      return true;
     }
 
     if (attempt < maxAttempts) {

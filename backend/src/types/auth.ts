@@ -7,6 +7,10 @@ export type AuthUser = {
   role: Role;
   isActive: boolean;
   isRootAccess: boolean;
+  team?: {
+    id: string;
+    name: string;
+  } | null;
 };
 
 export type JwtPayload = {

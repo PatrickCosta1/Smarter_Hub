@@ -860,14 +860,8 @@ export default function VacationsPage() {
                 <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={handleAttachmentChange} />
               </label>
 
-              <label>
-                <span>Link do comprovativo</span>
-                <input type="text" value={draft.attachmentLink} onChange={(event) => handleDraftChange('attachmentLink', event.target.value)} placeholder="/uploads/... ou https://..." />
-              </label>
-
               <div className="trainings-form-actions field-span-2">
                 <Button type="submit" variant="primary" isLoading={isSubmitting}>{editingId ? 'Guardar nova versão' : 'Enviar pedido'}</Button>
-                <Button type="button" variant="ghost" onClick={resetForm} disabled={isSubmitting}>{editingId ? 'Cancelar edição' : 'Limpar'}</Button>
               </div>
             </form>
           </section>
