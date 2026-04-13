@@ -263,18 +263,20 @@ model VacationApproval {
 }
 
 model ProfileChangeRequest {
-  id            String   @id @default(ulid())
-  userId        String
-  requestedData Json
-  changesSummary String
-  status        String   @default("PENDING")
-  reviewedById  String?
-  reviewedAt    DateTime?
-  reviewReason  String   @default("")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  user          User     @relation("ProfileChangeRequestUser", fields: [userId], references: [id], onDelete: Cascade)
-  reviewedBy    User?    @relation("ProfileChangeRequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  id               String   @id @default(ulid())
+  userId           String
+  requestedData    Json
+  changesSummary   String
+  status           String   @default("PENDING")  // "PENDING" | "APPROVED" | "REJECTED" | "PARTIALLY_REJECTED"
+  rejectedFields   Json     @default("{}")       // {"fieldName": "motivo da rejeição"}
+  approvedFields   Json     @default("{}")       // Campos aprovados (apenas em PARTIALLY_REJECTED)
+  reviewedById     String?
+  reviewedAt       DateTime?
+  reviewReason     String   @default("")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation("ProfileChangeRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy       User?    @relation("ProfileChangeRequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
 }
 
 model Permission {

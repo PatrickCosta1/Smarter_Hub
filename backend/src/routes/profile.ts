@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import {
   buildUserWhereFromScope,
   canAccessUserByPermission,
+  canReviewAccessTotalHierarchy,
   getPermissionScope,
   hasPermission,
   isAccessTotal,
@@ -126,6 +127,8 @@ const updateProfileSchema = z.object({
 
 const reviewRequestSchema = z.object({
   reason: z.string().optional(),
+  reviewType: z.enum(['FULL_APPROVE', 'FULL_REJECT', 'PARTIAL_REJECT']).optional(),
+  rejectedFields: z.record(z.string(), z.string()).optional(), // {"fieldName": "observações"}
 });
 
 const friendlyProfileFieldLabels: Partial<Record<(typeof profileFields)[number], string>> = {
@@ -190,6 +193,7 @@ function normalizeFieldValue(value: unknown) {
 }
 
 type ProfileChangeDetail = {
+  fieldKey: string;
   field: string;
   oldValue: string;
   newValue: string;
@@ -205,6 +209,7 @@ function buildProfileChangeDetails(
   return changedKeys.map((key) => {
     const label = friendlyProfileFieldLabels[key as (typeof profileFields)[number]] ?? key;
     return {
+      fieldKey: key,
       field: label,
       oldValue: normalizeFieldValue(baseline[key]),
       newValue: normalizeFieldValue(next[key]),
@@ -289,12 +294,13 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
     const canRequestProfileChange = await hasPermission(userId, 'request_profile_change');
     const canEditOtherProfiles = await hasPermission(userId, 'edit_other_profile');
     const canEditGlobalProfileFields = req.authUser?.isRootAccess || await isAccessTotal(userId);
+    const mustRequestProfileChange = !req.authUser?.isRootAccess && canEditGlobalProfileFields;
 
     if (!canEditGlobalProfileFields) {
       delete data.workCountry;
     }
 
-    if (req.authUser!.role === 'COLABORADOR' && canRequestProfileChange) {
+    if (mustRequestProfileChange || (req.authUser!.role === 'COLABORADOR' && canRequestProfileChange)) {
       const currentProfile = await prisma.profile.findUnique({
         where: { userId },
       });
@@ -324,7 +330,7 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
           data: {
             requestedData: data as unknown as object,
             changesSummary: summary,
-            reviewedById: null,
+            reviewedBy: { disconnect: true },
             reviewedAt: null,
             reviewReason: '',
           },
@@ -431,6 +437,7 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
     return res.status(403).json({ message: 'Sem permissões para aprovar pedidos.' });
   }
 
+  const validation = reviewRequestSchema.safeParse(req.body);
   const request = await prisma.profileChangeRequest.findFirst({
     where: { id: String(req.params.id), status: 'PENDING' },
   });
@@ -439,39 +446,103 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
     return res.status(404).json({ message: 'Pedido não encontrado.' });
   }
 
-  const canReviewTarget = await canAccessUserByPermission(req.authUser!.id, 'approve_profile_change', request.userId);
+  const targetUser = await prisma.user.findUnique({
+    where: { id: request.userId },
+    select: { hasAccessTotal: true },
+  });
+
+  const canReviewTarget = targetUser?.hasAccessTotal
+    ? await canReviewAccessTotalHierarchy(req.authUser!.id, request.userId)
+    : await canAccessUserByPermission(req.authUser!.id, 'approve_profile_change', request.userId);
   if (!canReviewTarget && !req.authUser!.isRootAccess) {
     return res.status(403).json({ message: 'Sem permissões para aprovar este pedido com as restrições atuais.' });
   }
 
-  const requestedData = request.requestedData as Record<string, unknown>;
+  const reviewType = validation.success ? validation.data.reviewType || 'FULL_APPROVE' : 'FULL_APPROVE';
+  const reason = validation.success ? validation.data.reason?.trim() || 'Pedido aprovado.' : 'Pedido aprovado.';
+  const rejectedFields = validation.success ? validation.data.rejectedFields || {} : {};
 
-  await prisma.profile.upsert({
-    where: { userId: request.userId },
-    update: requestedData,
-    create: {
-      userId: request.userId,
-      ...requestedData,
-    },
-  });
+  // CASE 1: Aprovação completa
+  if (reviewType === 'FULL_APPROVE') {
+    const requestedData = request.requestedData as Record<string, unknown>;
 
-  await prisma.profileChangeRequest.update({
-    where: { id: request.id },
-    data: {
-      status: 'APPROVED',
-      reviewedById: req.authUser!.id,
-      reviewedAt: new Date(),
-      reviewReason: 'Pedido aprovado.',
-    },
-  });
+    await prisma.profile.upsert({
+      where: { userId: request.userId },
+      update: requestedData,
+      create: {
+        userId: request.userId,
+        ...requestedData,
+      },
+    });
 
-  await prisma.notification.create({
-    data: {
-      userId: request.userId,
-      title: 'Pedido de alteração aprovado',
-      message: 'A ficha foi atualizada.',
-    },
-  });
+    await prisma.profileChangeRequest.update({
+      where: { id: request.id },
+      data: {
+        status: 'APPROVED',
+        reviewedBy: { connect: { id: req.authUser!.id } },
+        reviewedAt: new Date(),
+        reviewReason: 'Pedido aprovado.',
+      },
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId: request.userId,
+        title: 'Pedido de alteração aprovado',
+        message: 'A ficha foi atualizada com sucesso.',
+      },
+    });
+  }
+  // CASE 2: Rejeição parcial (alguns campos rejeitados)
+  else if (reviewType === 'PARTIAL_REJECT') {
+    const requestedData = request.requestedData as Record<string, unknown>;
+    const approvedFields: Record<string, unknown> = {};
+
+    // Separar campos aprovados dos rejeitados
+    Object.entries(requestedData).forEach(([field, value]) => {
+      if (!rejectedFields[field]) {
+        approvedFields[field] = value;
+      }
+    });
+
+    // Aplicar apenas os campos aprovados
+    if (Object.keys(approvedFields).length > 0) {
+      await prisma.profile.upsert({
+        where: { userId: request.userId },
+        update: approvedFields,
+        create: {
+          userId: request.userId,
+          ...approvedFields,
+        },
+      });
+    }
+
+    // Montar mensagem detalhada de rejeição
+    const rejectedFieldsList = Object.entries(rejectedFields)
+      .map(([field, observation]) => `- ${friendlyProfileFieldLabels[field as keyof typeof friendlyProfileFieldLabels] || field}: ${observation}`)
+      .join('\n');
+
+    const notificationMessage = `O teu pedido de alteração foi parcialmente rejeitado. Os seguintes campos foram rejeitados:\n${rejectedFieldsList}`;
+
+    await prisma.profileChangeRequest.update({
+      where: { id: request.id },
+      data: {
+        status: 'PARTIALLY_REJECTED',
+        reviewedBy: { connect: { id: req.authUser!.id } },
+        reviewedAt: new Date(),
+        reviewReason: `Parcialmente rejeitado: ${Object.keys(rejectedFields).join(', ')}`,
+      },
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId: request.userId,
+        title: 'Pedido de alteração parcialmente rejeitado',
+        message: notificationMessage,
+      },
+    });
+  }
+  // CASE 3: (O endpoint de reject anterior permanece com full rejection)
 
   return res.json({ success: true });
 });
@@ -490,7 +561,14 @@ router.post('/profile/requests/:id/reject', requireAuth, async (req, res) => {
     return res.status(404).json({ message: 'Pedido não encontrado.' });
   }
 
-  const canReviewTarget = await canAccessUserByPermission(req.authUser!.id, 'approve_profile_change', request.userId);
+  const targetUser = await prisma.user.findUnique({
+    where: { id: request.userId },
+    select: { hasAccessTotal: true },
+  });
+
+  const canReviewTarget = targetUser?.hasAccessTotal
+    ? await canReviewAccessTotalHierarchy(req.authUser!.id, request.userId)
+    : await canAccessUserByPermission(req.authUser!.id, 'approve_profile_change', request.userId);
   if (!canReviewTarget && !req.authUser!.isRootAccess) {
     return res.status(403).json({ message: 'Sem permissões para recusar este pedido com as restrições atuais.' });
   }
@@ -501,7 +579,7 @@ router.post('/profile/requests/:id/reject', requireAuth, async (req, res) => {
     where: { id: request.id },
     data: {
       status: 'REJECTED',
-      reviewedById: req.authUser!.id,
+      reviewedBy: { connect: { id: req.authUser!.id } },
       reviewedAt: new Date(),
       reviewReason: reason,
     },

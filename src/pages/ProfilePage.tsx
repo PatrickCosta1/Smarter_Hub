@@ -120,7 +120,7 @@ function validateProfile(profile: ProfileData, canEditContract: boolean = true):
 }
 
 export default function ProfilePage() {
-  const { profile, saveProfile, hasPermission, isRootAccess } = usePortal();
+  const { profile, saveProfile, hasPermission, isRootAccess, isAccessTotal } = usePortal();
 
   const [draftProfile, setDraftProfile] = useState<ProfileData>(profile);
   const [editingSections, setEditingSections] = useState<Record<SectionKey, boolean>>({
@@ -146,7 +146,7 @@ export default function ProfilePage() {
     || hasPermission('request_profile_change')
     || hasPermission('edit_other_profile');
   const canEditContract = isRootAccess || hasPermission('edit_other_profile');
-  const requestMode = !canEditContract;
+  const requestMode = !isRootAccess && (isAccessTotal || hasPermission('request_profile_change') || !canEditContract);
 
   const profileCompletion = useMemo(() => {
     const fields = Object.values(draftProfile);

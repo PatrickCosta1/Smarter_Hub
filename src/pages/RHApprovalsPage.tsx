@@ -22,9 +22,12 @@ type ProfileRequest = {
   userId: string;
   requesterName?: string;
   changesSummary: string;
-  status: string;
+  status: string; // "PENDING" | "APPROVED" | "REJECTED" | "PARTIALLY_REJECTED"
   requestedData: Record<string, string>;
+  rejectedFields?: Record<string, string>; // {"fieldName": "observações"}
+  approvedFields?: Record<string, string>; // Campos aprovados (em PARTIALLY_REJECTED)
   changeDetails?: Array<{
+    fieldKey?: string;
     field: string;
     oldValue: string;
     newValue: string;
@@ -112,6 +115,8 @@ export default function RHApprovalsPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [selectedProfileRequest, setSelectedProfileRequest] = useState<ProfileRequest | null>(null);
+  const [rejectionMode, setRejectionMode] = useState<'none' | 'total' | 'partial'>('none');
+  const [rejectedFields, setRejectedFields] = useState<Record<string, string>>({}); // {"fieldName": "observações"}
   const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
   const [toast, setToast] = useState<{ tone: 'success' | 'error' | 'info'; message: string; visible: boolean }>({
     tone: 'info',
@@ -186,6 +191,10 @@ export default function RHApprovalsPage() {
     }
   }
 
+  const selectedProfileChangeDetails = selectedProfileRequest?.changeDetails ?? [];
+  const selectedRejectedFieldEntries = Object.entries(rejectedFields);
+  const partialRejectionReady = selectedRejectedFieldEntries.length > 0 && selectedRejectedFieldEntries.every(([, note]) => note.trim().length > 0);
+
   if (!canReviewProfiles && !canReviewVacations) {
     return (
       <section className="trainings-shell">
@@ -199,11 +208,13 @@ export default function RHApprovalsPage() {
 
   async function approveProfileRequest(request: ProfileRequest) {
     await runAction(`approve-profile-${request.id}`, MICROCOPY.approvals.approveProfileSuccess(getDisplayName(request.user)), MICROCOPY.approvals.approveProfileError, async () => {
-      await apiRequest(`/profile/requests/${request.id}/approve`, { method: 'POST', headers: getAuthHeaders() });
+      await apiRequest(`/profile/requests/${request.id}/approve`, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ reviewType: 'FULL_APPROVE' }) });
       clearApiCache('/profile/requests');
       setProfileRequests((current) => current.filter((item) => item.id !== request.id));
       if (selectedProfileRequest?.id === request.id) {
         setSelectedProfileRequest(null);
+        setRejectionMode('none');
+        setRejectedFields({});
       }
     });
   }
@@ -219,6 +230,32 @@ export default function RHApprovalsPage() {
       setProfileRequests((current) => current.filter((item) => item.id !== request.id));
       if (selectedProfileRequest?.id === request.id) {
         setSelectedProfileRequest(null);
+        setRejectionMode('none');
+        setRejectedFields({});
+      }
+    });
+  }
+
+  async function partiallyRejectProfileRequest(request: ProfileRequest) {
+    await runAction(`partial-reject-profile-${request.id}`, 'Pedido parcialmente rejeitado com sucesso.', 'Erro ao rejeitar parcialmente o pedido.', async () => {
+      await apiRequest(`/profile/requests/${request.id}/approve`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          reviewType: 'PARTIAL_REJECT',
+          rejectedFields: Object.fromEntries(
+            selectedProfileChangeDetails
+              .filter((item) => Object.prototype.hasOwnProperty.call(rejectedFields, item.field))
+              .map((item) => [item.fieldKey || item.field, rejectedFields[item.field]]),
+          ),
+        }),
+      });
+      clearApiCache('/profile/requests');
+      setProfileRequests((current) => current.filter((item) => item.id !== request.id));
+      if (selectedProfileRequest?.id === request.id) {
+        setSelectedProfileRequest(null);
+        setRejectionMode('none');
+        setRejectedFields({});
       }
     });
   }
@@ -285,13 +322,6 @@ export default function RHApprovalsPage() {
         <section className="trainings-list-card">
           <div className="trainings-list-head">
             <h3>Pedidos de alteração de ficha</h3>
-            <input
-              className="rh-reason-input"
-              type="text"
-              value={rejectReason}
-              onChange={(event) => setRejectReason(event.target.value)}
-              placeholder="Motivo da rejeição (opcional)"
-            />
           </div>
 
           <div className="rh-request-list">
@@ -362,13 +392,6 @@ export default function RHApprovalsPage() {
         <section className="trainings-list-card">
           <div className="trainings-list-head">
             <h3>Pedidos de férias e ausências</h3>
-            <input
-              className="rh-reason-input"
-              type="text"
-              value={rejectReason}
-              onChange={(event) => setRejectReason(event.target.value)}
-              placeholder="Motivo da rejeição (opcional)"
-            />
           </div>
 
           <div className="rh-request-list">
@@ -437,32 +460,61 @@ export default function RHApprovalsPage() {
               {selectedProfileRequest.requesterName || getDisplayName(selectedProfileRequest.user)}
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <Button type="button" variant="ghost" size="md" onClick={closeProfileRequestDetails}>Fechar</Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="md"
-                isLoading={pendingActionKey === `reject-profile-${selectedProfileRequest.id}`}
-                disabled={Boolean(pendingActionKey)}
-                onClick={() => { void rejectProfileRequest(selectedProfileRequest); }}
-              >
-                Rejeitar
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                size="md"
-                isLoading={pendingActionKey === `approve-profile-${selectedProfileRequest.id}`}
-                disabled={Boolean(pendingActionKey)}
-                onClick={() => { void approveProfileRequest(selectedProfileRequest); }}
-              >
-                Aprovar
-              </Button>
+              <Button type="button" variant="ghost" size="md" onClick={() => { setRejectionMode('none'); closeProfileRequestDetails(); }}>Fechar</Button>
+              {rejectionMode === 'none' && (
+                <>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="md"
+                    isLoading={pendingActionKey === `reject-profile-${selectedProfileRequest.id}`}
+                    disabled={Boolean(pendingActionKey)}
+                    onClick={() => { setRejectedFields({}); setRejectionMode('partial'); }}
+                  >
+                    Rejeitar campos
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="md"
+                    isLoading={pendingActionKey === `reject-profile-${selectedProfileRequest.id}`}
+                    disabled={Boolean(pendingActionKey)}
+                    onClick={() => { void rejectProfileRequest(selectedProfileRequest); }}
+                  >
+                    Rejeitar tudo
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="md"
+                    isLoading={pendingActionKey === `approve-profile-${selectedProfileRequest.id}`}
+                    disabled={Boolean(pendingActionKey)}
+                    onClick={() => { void approveProfileRequest(selectedProfileRequest); }}
+                  >
+                    Aprovar tudo
+                  </Button>
+                </>
+              )}
+              {rejectionMode === 'partial' && (
+                <>
+                  
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="md"
+                    isLoading={pendingActionKey === `partial-reject-profile-${selectedProfileRequest.id}`}
+                    disabled={Boolean(pendingActionKey) || !partialRejectionReady}
+                    onClick={() => { void partiallyRejectProfileRequest(selectedProfileRequest); }}
+                  >
+                    {partialRejectionReady ? `Confirmar rejeições (${Object.keys(rejectedFields).length})` : 'Preencher observações'}
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         ) : undefined}
       >
-        {selectedProfileRequest && (
+        {selectedProfileRequest && rejectionMode === 'none' && (
           <div className="approval-profile-modal">
             <p className="approval-profile-modal__summary">Alterações solicitadas por {selectedProfileRequest.requesterName || getDisplayName(selectedProfileRequest.user)}</p>
             <div className="approval-profile-modal__grid">
@@ -481,6 +533,111 @@ export default function RHApprovalsPage() {
                   </div>
                 </article>
               ))}
+            </div>
+          </div>
+        )}
+        {selectedProfileRequest && rejectionMode === 'partial' && (
+          <div className="approval-profile-modal">
+            <div className="approval-profile-modal__partial-header">
+              <div>
+                <p className="approval-profile-modal__eyebrow">Rejeição parcial</p>
+                <h3>Escolhe os campos a recusar e justifica cada decisão</h3>
+                <p className="approval-profile-modal__lead">A observação é obrigatória em cada campo rejeitado. Manténs o restante pedido aprovado sem perder o contexto da decisão.</p>
+              </div>
+
+              <div className="approval-profile-modal__partial-status">
+                <strong>{selectedRejectedFieldEntries.length} selecionado{selectedRejectedFieldEntries.length === 1 ? '' : 's'}</strong>
+                <span>{partialRejectionReady ? 'Pronto para confirmar' : 'Falta observação em alguns campos'}</span>
+              </div>
+            </div>
+
+            <div className="approval-profile-modal__partial-layout">
+              <div className="approval-profile-modal__partial-list">
+                {selectedProfileChangeDetails.map((item) => {
+                  const rejectionKey = item.fieldKey || item.field;
+                  const isRejected = Object.prototype.hasOwnProperty.call(rejectedFields, item.field);
+                  const note = rejectedFields[item.field] ?? '';
+
+                  return (
+                    <article key={`${item.field}-${item.oldValue}-${item.newValue}`} className={`approval-profile-modal__partial-item${isRejected ? ' is-selected' : ''}`}>
+                      <label className="approval-profile-modal__partial-toggle">
+                        <input
+                          type="checkbox"
+                          checked={isRejected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setRejectedFields((current) => ({ ...current, [item.field]: '' }));
+                            } else {
+                              setRejectedFields((current) => {
+                                const copy = { ...current };
+                                delete copy[item.field];
+                                return copy;
+                              });
+                            }
+                          }}
+                        />
+                        <span>
+                          <strong>{item.field}</strong>
+                          <small>Clica para incluir este campo na rejeição parcial</small>
+                        </span>
+                      </label>
+
+                      <div className="approval-profile-modal__partial-values">
+                        <div>
+                          <span>Atual</span>
+                          <strong>{renderApprovalFieldValue(item.field, item.oldValue)}</strong>
+                        </div>
+                        <div>
+                          <span>Novo</span>
+                          <strong>{renderApprovalFieldValue(item.field, item.newValue)}</strong>
+                        </div>
+                      </div>
+
+                      {isRejected && (
+                        <div className="approval-profile-modal__note-block">
+                          <div className="approval-profile-modal__note-title">
+                            <strong>Observação obrigatória</strong>
+                            <span>Explique de forma objetiva porque este campo não pode ser aceite.</span>
+                          </div>
+                          <textarea
+                            placeholder="Ex.: o comprovativo está ilegível / falta validação documental / dado incoerente..."
+                            value={note}
+                            onChange={(e) => {
+                              setRejectedFields((current) => ({ ...current, [item.field]: e.target.value }));
+                            }}
+                          />
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+
+              <aside className="approval-profile-modal__partial-summary">
+                <h4>Resumo da decisão</h4>
+                <p>Rejeita apenas os campos abaixo. O pedido segue com os restantes campos aprovados.</p>
+
+                {selectedRejectedFieldEntries.length === 0 ? (
+                  <div className="approval-profile-modal__partial-empty">
+                    <strong>Nenhum campo selecionado</strong>
+                    <span>Marca pelo menos um campo para abrir a caixa de observações.</span>
+                  </div>
+                ) : (
+                  <ul>
+                    {selectedRejectedFieldEntries.map(([field, note]) => (
+                      <li key={field}>
+                        <strong>{field}</strong>
+                        <span>{note.trim() || 'Sem observação ainda'}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <div className="approval-profile-modal__partial-tip">
+                  <strong>Boa prática</strong>
+                  <span>Escreve observações curtas, específicas e acionáveis. Isso acelera a correção do pedido.</span>
+                </div>
+              </aside>
             </div>
           </div>
         )}

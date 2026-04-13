@@ -430,3 +430,56 @@ export async function canAccessUserByPermission(actorUserId: string, permissionC
 
   return true;
 }
+
+export async function canReviewAccessTotalHierarchy(actorUserId: string, targetUserId: string) {
+  const [actor, target] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: actorUserId },
+      select: { id: true, isRootAccess: true, hasAccessTotal: true },
+    }),
+    prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, hasAccessTotal: true, accessTotalGrantedById: true },
+    }),
+  ]);
+
+  if (!actor || !target) {
+    return false;
+  }
+
+  if (actor.isRootAccess) {
+    return true;
+  }
+
+  if (!target.hasAccessTotal || !actor.hasAccessTotal) {
+    return false;
+  }
+
+  const visited = new Set<string>();
+  let currentGrantorId = target.accessTotalGrantedById ?? null;
+
+  while (currentGrantorId && !visited.has(currentGrantorId)) {
+    if (currentGrantorId === actor.id) {
+      return true;
+    }
+
+    visited.add(currentGrantorId);
+
+    const grantor = await prisma.user.findUnique({
+      where: { id: currentGrantorId },
+      select: { id: true, isRootAccess: true, accessTotalGrantedById: true },
+    });
+
+    if (!grantor) {
+      return false;
+    }
+
+    if (grantor.isRootAccess) {
+      return grantor.id === actor.id;
+    }
+
+    currentGrantorId = grantor.accessTotalGrantedById ?? null;
+  }
+
+  return false;
+}
