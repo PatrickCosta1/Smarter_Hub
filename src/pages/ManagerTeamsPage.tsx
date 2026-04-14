@@ -145,6 +145,14 @@ function addDays(baseIso: string, days: number) {
   return `${year}-${month}-${day}`;
 }
 
+function getLocalIsoDate() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function getDaysBetween(startIso: string, endIso: string) {
   const start = new Date(`${startIso}T00:00:00`).getTime();
   const end = new Date(`${endIso}T00:00:00`).getTime();
@@ -379,22 +387,19 @@ export default function ManagerTeamsPage() {
       }
 
       if (hasMemberChanges) {
-        for (const userId of toAdd) {
-          await setMemberInSelectedTeam(userId, true, { silentStatus: true, skipRefresh: true });
-        }
-
-        for (const userId of toRemove) {
-          await setMemberInSelectedTeam(userId, false, { silentStatus: true, skipRefresh: true });
-        }
+        await Promise.all([
+          ...toAdd.map((userId) => setMemberInSelectedTeam(userId, true, { silentStatus: true, skipRefresh: true })),
+          ...toRemove.map((userId) => setMemberInSelectedTeam(userId, false, { silentStatus: true, skipRefresh: true })),
+        ]);
       }
 
       clearApiCache('/teams');
       clearApiCache('/admin/teams');
-      await loadTeams();
-      if (selectedTeamId) {
-        await loadTeamDetail(selectedTeamId);
-      }
-      await loadLeaderOptions();
+      await Promise.all([
+        loadTeams(),
+        selectedTeamId ? loadTeamDetail(selectedTeamId) : Promise.resolve(),
+        loadLeaderOptions(),
+      ]);
       setIsManageTeamModalOpen(false);
       setStatus('Equipa atualizada com sucesso.');
     } catch (error) {
@@ -417,7 +422,7 @@ export default function ManagerTeamsPage() {
       });
       clearApiCache('/teams');
       clearApiCache('/admin/teams');
-      await loadTeams();
+      await Promise.all([loadTeams(), loadLeaderOptions()]);
       setIsDeleteTeamConfirmOpen(false);
       setIsManageTeamModalOpen(false);
       setSelectedTeamId(null);
@@ -584,7 +589,7 @@ export default function ManagerTeamsPage() {
 
     setIsSavingTeam(true);
     try {
-      await apiRequest('/admin/teams', {
+      const createdTeam = await apiRequest<{ id: string; name: string }>('/admin/teams', {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -599,7 +604,13 @@ export default function ManagerTeamsPage() {
       clearApiCache('/admin/teams');
       setIsNewTeamModalOpen(false);
       setTeamDraft(EMPTY_TEAM_DRAFT);
-      await loadTeams();
+      await Promise.all([
+        loadTeams(),
+        loadLeaderOptions(),
+      ]);
+      if (createdTeam?.id) {
+        setSelectedTeamId(createdTeam.id);
+      }
       setStatus('Equipa criada com sucesso.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao criar equipa.');
@@ -638,7 +649,7 @@ export default function ManagerTeamsPage() {
       }>;
     }
 
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const todayIso = getLocalIsoDate();
 
     return selectedTeamDetail.members
       .flatMap((member) => (

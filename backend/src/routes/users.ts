@@ -113,6 +113,50 @@ const managerTeamMemberUpdateSchema = z.object({
 const AUTO_DEFAULT_EMPLOYEE_NOTE = '[AUTO_PRESET_DEFAULT_EMPLOYEE]';
 const AUTO_TEAM_LEADER_NOTE = '[AUTO_PRESET_TEAM_LEADER]';
 
+function parseIsoDate(value?: string | null) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
+
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function yearsBetween(start: Date, end = new Date()) {
+  const diff = end.getTime() - start.getTime();
+  if (!Number.isFinite(diff) || diff <= 0) {
+    return 0;
+  }
+
+  return diff / (365.25 * 24 * 60 * 60 * 1000);
+}
+
+function average(values: number[]) {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function normalizeGender(value?: string) {
+  const normalized = (value || '').trim().toLowerCase();
+
+  if (!normalized) {
+    return 'Não informado';
+  }
+
+  if (['m', 'masculino', 'male', 'homem'].includes(normalized)) {
+    return 'Masculino';
+  }
+
+  if (['f', 'feminino', 'female', 'mulher'].includes(normalized)) {
+    return 'Feminino';
+  }
+
+  return 'Outro';
+}
+
 const DEFAULT_EMPLOYEE_PERMISSION_CODES = [
   'view_profile',
   'request_profile_change',
@@ -581,6 +625,242 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
   }));
 
   return res.json({ total, page, pageSize, rows: normalizedRows });
+});
+
+router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
+  if (!await hasPermission(req.authUser!.id, 'view_user_list')) {
+    return res.status(403).json({ message: 'Sem permissões para consultar o dashboard.' });
+  }
+
+  const scope = await getPermissionScope(req.authUser!.id, 'view_user_list');
+  if (!scope) {
+    return res.status(403).json({ message: 'Sem permissões para consultar o dashboard.' });
+  }
+
+  const scopeWhere = buildUserWhereFromScope(scope) as Prisma.UserWhereInput | null;
+  const collaboratorWhere: Prisma.UserWhereInput = {
+    role: { in: ['COLABORADOR', 'MANAGER', 'COORDENADOR', 'ADMIN'] },
+    ...(scopeWhere ? { AND: [scopeWhere] } : {}),
+  };
+
+  const requestScopeWhere = scopeWhere ? { user: scopeWhere } : {};
+
+  const [usersResult, profileRequestsResult, vacationsResult, trainingsResult, historyResult] = await Promise.allSettled([
+    prisma.user.findMany({
+      where: collaboratorWhere,
+      select: {
+        id: true,
+        isActive: true,
+        team: { select: { name: true } },
+        profile: {
+          select: {
+            dataNascimento: true,
+            dataInicioContrato: true,
+            genero: true,
+            habilitacoesLiterarias: true,
+            cargo: true,
+            funcao: true,
+          },
+        },
+      },
+    }),
+    prisma.profileChangeRequest.count({
+      where: {
+        status: 'PENDING',
+        ...requestScopeWhere,
+      },
+    }),
+    prisma.vacation.count({
+      where: {
+        status: 'PENDING',
+        ...requestScopeWhere,
+      },
+    }),
+    Promise.all([
+      prisma.training.count({
+        where: {
+          status: { in: ['ASSIGNED', 'ATRIBUIDA', 'ATRIBUÍDA'] },
+          ...requestScopeWhere,
+        },
+      }),
+      prisma.training.count({
+        where: {
+          status: { in: ['COMPLETED', 'CONCLUIDA', 'CONCLUÍDA'] },
+          ...requestScopeWhere,
+        },
+      }),
+      prisma.training.findMany({
+        where: requestScopeWhere,
+        select: { horas: true },
+      }),
+    ]),
+    prisma.profileChangeRequest.findMany({
+      where: {
+        status: { in: ['APPROVED', 'PARTIALLY_REJECTED', 'REJECTED'] },
+        reviewedAt: { not: null },
+        ...requestScopeWhere,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            profile: {
+              select: {
+                nomeAbreviado: true,
+                primeiroNome: true,
+                apelido: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [{ reviewedAt: 'desc' }, { createdAt: 'desc' }],
+      take: 120,
+    }),
+  ]);
+
+  const collaboratorRows = usersResult.status === 'fulfilled' ? usersResult.value : [];
+  const teamCount = new Set(
+    collaboratorRows
+      .map((item) => item.team?.name?.trim())
+      .filter((value): value is string => Boolean(value)),
+  ).size;
+  const pendingProfileRequests = profileRequestsResult.status === 'fulfilled' ? profileRequestsResult.value : 0;
+  const pendingVacationRequests = vacationsResult.status === 'fulfilled' ? vacationsResult.value : 0;
+  const assignedTrainings = trainingsResult.status === 'fulfilled' ? trainingsResult.value[0] : 0;
+  const completedTrainings = trainingsResult.status === 'fulfilled' ? trainingsResult.value[1] : 0;
+  const trainingHoursAvg = trainingsResult.status === 'fulfilled'
+    ? average(trainingsResult.value[2].map((item) => Number(item.horas || 0)).filter((value) => value > 0))
+    : 0;
+  const historyRows = historyResult.status === 'fulfilled' ? historyResult.value : [];
+
+  const activeUsers = collaboratorRows.filter((user) => user.isActive !== false).length;
+  const inactiveUsers = Math.max(0, collaboratorRows.length - activeUsers);
+
+  const ageValues = collaboratorRows
+    .map((item) => parseIsoDate(item.profile?.dataNascimento || ''))
+    .filter((value): value is Date => value !== null)
+    .map((birthDate) => yearsBetween(birthDate));
+
+  const tenureValues = collaboratorRows
+    .map((item) => parseIsoDate(item.profile?.dataInicioContrato || ''))
+    .filter((value): value is Date => value !== null)
+    .map((startDate) => yearsBetween(startDate));
+
+  const educationMap = new Map<string, number>();
+  const areaGenderMap = new Map<string, { Masculino: number; Feminino: number; Outro: number; 'Não informado': number }>();
+  const timeInLevelMap = new Map<string, number[]>();
+
+  const promotionEvents = historyRows
+    .filter((item) => Boolean(item.reviewedAt))
+    .filter((item) => {
+      const requestedData = (item.requestedData as Record<string, unknown>) || {};
+      const approvedFields = (item.approvedFields as Record<string, unknown>) || {};
+      const changedFields = Object.keys(requestedData);
+      const approvedFieldNames = Object.keys(approvedFields);
+      const requestedCargo = String(requestedData.cargo || '').trim();
+      const approvedCargo = String(approvedFields.cargo || '').trim();
+
+      const approvedWithCargo = item.status === 'APPROVED' && changedFields.includes('cargo') && requestedCargo.length > 0;
+      const partialWithApprovedCargo = item.status === 'PARTIALLY_REJECTED' && approvedFieldNames.includes('cargo') && approvedCargo.length > 0;
+
+      return approvedWithCargo || partialWithApprovedCargo;
+    })
+    .map((item) => ({
+      id: item.id,
+      userId: item.user?.id || '',
+      collaborator: item.user?.profile?.nomeAbreviado?.trim()
+        || `${item.user?.profile?.primeiroNome || ''} ${item.user?.profile?.apelido || ''}`.trim()
+        || item.user?.username
+        || 'Colaborador',
+      promotedTo: String(((item.approvedFields as Record<string, unknown>)?.cargo || (item.requestedData as Record<string, unknown>)?.cargo || '')).trim() || 'Nível atualizado',
+      reviewedAt: item.reviewedAt?.toISOString() || item.createdAt.toISOString(),
+    }))
+    .filter((item) => Boolean(item.userId))
+    .sort((a, b) => new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime());
+
+  const latestPromotionByUser = new Map<string, string>();
+  for (const event of promotionEvents) {
+    if (!latestPromotionByUser.has(event.userId)) {
+      latestPromotionByUser.set(event.userId, event.reviewedAt);
+    }
+  }
+
+  for (const collaborator of collaboratorRows) {
+    const education = (collaborator.profile?.habilitacoesLiterarias || '').trim() || 'Não informado';
+    educationMap.set(education, (educationMap.get(education) || 0) + 1);
+
+    const area = (collaborator.team?.name || collaborator.profile?.funcao || 'Sem área').trim() || 'Sem área';
+    if (!areaGenderMap.has(area)) {
+      areaGenderMap.set(area, { Masculino: 0, Feminino: 0, Outro: 0, 'Não informado': 0 });
+    }
+
+    const genderBucket = areaGenderMap.get(area)!;
+    const gender = normalizeGender(collaborator.profile?.genero);
+    genderBucket[gender as keyof typeof genderBucket] += 1;
+
+    const currentLevel = (collaborator.profile?.cargo || collaborator.profile?.funcao || 'Sem nível').trim() || 'Sem nível';
+    const promotionDate = latestPromotionByUser.get(collaborator.id);
+    const baseDate = promotionDate ? new Date(promotionDate) : parseIsoDate(collaborator.profile?.dataInicioContrato || '');
+
+    if (baseDate) {
+      if (!timeInLevelMap.has(currentLevel)) {
+        timeInLevelMap.set(currentLevel, []);
+      }
+
+      timeInLevelMap.get(currentLevel)!.push(yearsBetween(baseDate));
+    }
+  }
+
+  const educationDistribution = Array.from(educationMap.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 6);
+
+  const genderByArea = Array.from(areaGenderMap.entries())
+    .map(([area, counts]) => ({
+      area,
+      counts,
+      total: Object.values(counts).reduce((sum, value) => sum + value, 0),
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 6);
+
+  const timeInCurrentLevelByCargo = Array.from(timeInLevelMap.entries())
+    .map(([cargo, durations]) => ({
+      cargo,
+      averageYears: average(durations),
+      people: durations.length,
+    }))
+    .sort((a, b) => b.people - a.people)
+    .slice(0, 6);
+
+  return res.json({
+    refreshedAt: new Date().toISOString(),
+    totals: {
+      collaborators: collaboratorRows.length,
+      activeUsers,
+      inactiveUsers,
+      teams: teamCount,
+      pendingProfileRequests,
+      pendingVacationRequests,
+      trainingsAssigned: assignedTrainings,
+      trainingsCompleted: completedTrainings,
+      trainingHoursAvg,
+      promotionEvents: promotionEvents.length,
+    },
+    averages: {
+      age: average(ageValues),
+      tenure: average(tenureValues),
+    },
+    charts: {
+      educationDistribution,
+      genderByArea,
+      timeInCurrentLevelByCargo,
+    },
+    recentPromotions: promotionEvents.slice(0, 8),
+  });
 });
 
 router.patch('/users/:id/active', requireAuth, async (req, res) => {

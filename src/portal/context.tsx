@@ -1,4 +1,4 @@
-import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { initialProfileData } from './data';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from './api';
 import { AuthUser, PortalNotification, ProfileData, UserRole } from './types';
@@ -86,6 +86,7 @@ type PortalContextValue = {
   markNotificationRead: (id: string) => Promise<void>;
   deleteNotification: (id: string) => Promise<void>;
   deleteAllNotifications: () => Promise<void>;
+  refreshNotifications: () => Promise<void>;
   setProfile: (profile: ProfileData) => void;
   saveProfile: (profile: ProfileData) => Promise<{ success: boolean; message?: string; pending?: boolean }>;
 };
@@ -137,6 +138,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [notifications, setNotifications] = useState<PortalNotification[]>([]);
   const [profile, setProfileState] = useState<ProfileData>(initialProfileData);
+  const notificationsRefreshInFlight = useRef<Promise<void> | null>(null);
 
   const unreadNotifications = useMemo(() => notifications.filter((item) => !item.isRead).length, [notifications]);
 
@@ -159,6 +161,35 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       setIsLoadingPortalData(false);
     }
   }, []);
+
+  const refreshNotifications = useCallback(async (token = authToken) => {
+    if (!token) {
+      return;
+    }
+
+    if (notificationsRefreshInFlight.current) {
+      return notificationsRefreshInFlight.current;
+    }
+
+    const request = (async () => {
+      try {
+        const data = await apiRequest<PortalNotification[]>('/notifications/me', {
+          headers: authHeaders(token),
+        });
+
+        if (window.localStorage.getItem(STORAGE_TOKEN_KEY) === token) {
+          setNotifications(data);
+        }
+      } catch {
+        // Refresh silencioso: falhas temporárias não devem bloquear a UI.
+      } finally {
+        notificationsRefreshInFlight.current = null;
+      }
+    })();
+
+    notificationsRefreshInFlight.current = request;
+    return request;
+  }, [authToken]);
 
   const loadAccessData = useCallback(async (token: string, user: AuthUser) => {
     const fallbackRootAccess = Boolean(user.isRootAccess);
@@ -226,6 +257,46 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       }
     })();
   }, [loadAccessData, loadPortalData]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !authToken) {
+      return;
+    }
+
+    let disposed = false;
+
+    const syncNotifications = () => {
+      if (disposed) {
+        return;
+      }
+
+      void refreshNotifications(authToken);
+    };
+
+    const visibilityHandler = () => {
+      if (!document.hidden) {
+        syncNotifications();
+      }
+    };
+
+    syncNotifications();
+
+    const intervalId = window.setInterval(() => {
+      if (!document.hidden) {
+        syncNotifications();
+      }
+    }, 1500);
+
+    window.addEventListener('focus', syncNotifications);
+    document.addEventListener('visibilitychange', visibilityHandler);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', syncNotifications);
+      document.removeEventListener('visibilitychange', visibilityHandler);
+    };
+  }, [authToken, isAuthenticated, refreshNotifications]);
 
   const loginWithMicrosoft = useCallback(async (idToken: string) => {
     try {
@@ -300,16 +371,18 @@ export function PortalProvider({ children }: { children: ReactNode }) {
         clearApiCache('/profile/requests/me');
         clearApiCache('/profile/requests');
         clearApiCache('/notifications/me');
+        void refreshNotifications(authToken);
         return { success: true, pending: true, message: response.message || 'Pedido enviado para aprovação.' };
       }
 
       setProfileState(normalizedProfile);
+      void refreshNotifications(authToken);
       return { success: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao guardar alterações.';
       return { success: false, message };
     }
-  }, [authToken]);
+  }, [authToken, refreshNotifications]);
 
   const markAllNotificationsRead = useCallback(async () => {
     if (!authToken) {
@@ -322,7 +395,8 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     });
 
     setNotifications((current) => current.map((item) => ({ ...item, isRead: true })));
-  }, [authToken]);
+    void refreshNotifications(authToken);
+  }, [authToken, refreshNotifications]);
 
   const markNotificationRead = useCallback(async (id: string) => {
     if (!authToken) {
@@ -335,7 +409,8 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     });
 
     setNotifications((current) => current.map((item) => (item.id === id ? { ...item, isRead: true } : item)));
-  }, [authToken]);
+    void refreshNotifications(authToken);
+  }, [authToken, refreshNotifications]);
 
   const deleteNotification = useCallback(async (id: string) => {
     if (!authToken) {
@@ -348,7 +423,8 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     });
 
     setNotifications((current) => current.filter((item) => item.id !== id));
-  }, [authToken]);
+    void refreshNotifications(authToken);
+  }, [authToken, refreshNotifications]);
 
   const deleteAllNotifications = useCallback(async () => {
     if (!authToken) {
@@ -361,7 +437,8 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     });
 
     setNotifications([]);
-  }, [authToken]);
+    void refreshNotifications(authToken);
+  }, [authToken, refreshNotifications]);
 
   const value = useMemo(
     () => ({
@@ -384,10 +461,11 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       markNotificationRead,
       deleteNotification,
       deleteAllNotifications,
+      refreshNotifications,
       setProfile,
       saveProfile,
     }),
-    [currentUser, deleteAllNotifications, deleteNotification, hasPermission, isAccessTotal, isAuthenticated, isLoadingPortalData, isLoadingSession, isRootAccess, loginWithMicrosoft, loginWithPassword, logout, markAllNotificationsRead, markNotificationRead, notifications, permissions, profile, saveProfile, setProfile, unreadNotifications, userRole],
+    [currentUser, deleteAllNotifications, deleteNotification, hasPermission, isAccessTotal, isAuthenticated, isLoadingPortalData, isLoadingSession, isRootAccess, loginWithMicrosoft, loginWithPassword, logout, markAllNotificationsRead, markNotificationRead, notifications, permissions, profile, refreshNotifications, saveProfile, setProfile, unreadNotifications, userRole],
   );
 
   return <PortalContext.Provider value={value}>{children}</PortalContext.Provider>;

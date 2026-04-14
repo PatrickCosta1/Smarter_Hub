@@ -108,7 +108,7 @@ function renderApprovalFieldValue(field: string, value: string) {
 }
 
 export default function RHApprovalsPage() {
-  const { hasPermission, isRootAccess } = usePortal();
+  const { hasPermission, isRootAccess, refreshNotifications } = usePortal();
   const [activeTab, setActiveTab] = useState<'profiles' | 'vacations'>('profiles');
   const [profileRequests, setProfileRequests] = useState<ProfileRequest[]>([]);
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([]);
@@ -221,6 +221,7 @@ export default function RHApprovalsPage() {
       await apiRequest(`/profile/requests/${request.id}/approve`, { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ reviewType: 'FULL_APPROVE' }) });
       clearApiCache('/profile/requests');
       setProfileRequests((current) => current.filter((item) => item.id !== request.id));
+      void refreshNotifications();
       if (selectedProfileRequest?.id === request.id) {
         setSelectedProfileRequest(null);
         setRejectionMode('none');
@@ -238,6 +239,7 @@ export default function RHApprovalsPage() {
       });
       clearApiCache('/profile/requests');
       setProfileRequests((current) => current.filter((item) => item.id !== request.id));
+      void refreshNotifications();
       if (selectedProfileRequest?.id === request.id) {
         setSelectedProfileRequest(null);
         setRejectionMode('none');
@@ -262,6 +264,7 @@ export default function RHApprovalsPage() {
       });
       clearApiCache('/profile/requests');
       setProfileRequests((current) => current.filter((item) => item.id !== request.id));
+      void refreshNotifications();
       if (selectedProfileRequest?.id === request.id) {
         setSelectedProfileRequest(null);
         setRejectionMode('none');
@@ -275,6 +278,7 @@ export default function RHApprovalsPage() {
       await apiRequest(`/vacations/${request.id}/approve`, { method: 'POST', headers: getAuthHeaders() });
       clearApiCache('/vacations');
       setVacationRequests((current) => current.filter((item) => item.id !== request.id));
+      void refreshNotifications();
     });
   }
 
@@ -287,6 +291,7 @@ export default function RHApprovalsPage() {
       });
       clearApiCache('/vacations');
       setVacationRequests((current) => current.filter((item) => item.id !== request.id));
+      void refreshNotifications();
     });
   }
 

@@ -5,7 +5,7 @@ import { usePortal } from '../portal/context';
 import { MenuItem } from '../portal/types';
 
 export default function PortalLayout() {
-  const { userRole, unreadNotifications, logout, hasPermission, isRootAccess, currentUser } = usePortal();
+  const { userRole, unreadNotifications, logout, hasPermission, isRootAccess, isAccessTotal, currentUser } = usePortal();
   const navigate = useNavigate();
   const location = useLocation();
   const [menuQuery, setMenuQuery] = useState('');
@@ -16,6 +16,7 @@ export default function PortalLayout() {
 
     const menu: MenuItem[] = [
       { id: 'home', label: 'Home', path: '/' },
+      ...(isRootAccess || isAccessTotal ? [{ id: 'dashboard', label: 'Dashboard', path: '/dashboard' }] : []),
       ...(!isTPeople ? [{ id: 'profile', label: 'A Minha Ficha', path: '/profile' }] : []),
       ...(can('view_teams') || can('manage_team_members') ? [{ id: 'equipas', label: 'Equipas', path: '/equipas' }] : []),
       ...(can('view_user_list') ? [{ id: 'colaboradores', label: 'Colaboradores', path: '/colaboradores' }] : []),
@@ -35,7 +36,7 @@ export default function PortalLayout() {
     ];
 
     return menu;
-  }, [hasPermission, isRootAccess, isTPeople]);
+  }, [hasPermission, isAccessTotal, isRootAccess, isTPeople]);
 
   const currentMenu = useMemo(
     () => roleMenus.find((item) => item.path === location.pathname),

@@ -255,7 +255,7 @@ function buildMonthGrid(year: number, monthIndex: number) {
 }
 
 export default function VacationsPage() {
-  const { profile, hasPermission, isRootAccess } = usePortal();
+  const { profile, hasPermission, isRootAccess, refreshNotifications } = usePortal();
 
   const [activeTab, setActiveTab] = useState<Subtab>('overview');
   const [draft, setDraft] = useState<VacationDraft>(EMPTY_DRAFT);
@@ -622,6 +622,7 @@ export default function VacationsPage() {
 
       clearApiCache('/vacations');
       await Promise.all([loadMine(), loadOverview(), loadCalendar()]);
+      void refreshNotifications();
       resetForm();
       showToast('success', editingId ? 'Pedido atualizado por versionamento com sucesso.' : 'Pedido submetido com sucesso e enviado para aprovação.');
     } catch (error) {
@@ -665,6 +666,7 @@ export default function VacationsPage() {
 
       clearApiCache('/vacations');
       await Promise.all([loadMine(), loadOverview(), loadCalendar()]);
+      void refreshNotifications();
       showToast('success', 'Pedido cancelado.');
     } catch (error) {
       showToast('error', error instanceof Error ? error.message : 'Falha ao cancelar pedido.');

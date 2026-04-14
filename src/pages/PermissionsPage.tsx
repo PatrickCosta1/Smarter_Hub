@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { formatRoleLabel } from '../portal/labels';
@@ -195,6 +195,7 @@ export default function PermissionsPage() {
   const [audit, setAudit] = useState<AuditResponse | null>(null);
   const [isLoadingAudit, setIsLoadingAudit] = useState(false);
   const [isTogglingAccessTotal, setIsTogglingAccessTotal] = useState(false);
+  const permissionsCacheRef = useRef<Record<string, PermissionsResponse>>({});
 
   const filteredUsers = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -246,13 +247,24 @@ export default function PermissionsPage() {
     }
   }, [filteredUsers, selectedUserId]);
 
+  function applyPermissionsState(data: PermissionsResponse) {
+    const hasAccessTotal = Boolean(data.accessTotal);
+    setSelectedUser(data.user);
+    setSelectedUserAccessTotal(hasAccessTotal);
+    setPermissions(data.permissions);
+    setDrafts(Object.fromEntries(data.permissions.map((permission) => [permission.id, buildDraftFromAssignment(permission, hasAccessTotal)])));
+    setStatus('');
+  }
+
   async function loadUsers(signal?: AbortSignal) {
     setIsUsersLoading(true);
     try {
       const data = await apiRequestCached<AdminUser[]>('/admin/users', { headers: getAuthHeaders(), signal }, 12000);
       setUsers(data);
       if (!selectedUserId && data.length > 0) {
-        setSelectedUserId(data[0].id);
+        const firstUserId = data[0].id;
+        setSelectedUserId(firstUserId);
+        void loadPermissions(firstUserId, undefined, { forceRefresh: false });
       }
     } catch (error) {
       if (isAbortError(error) || signal?.aborted) {
@@ -267,16 +279,21 @@ export default function PermissionsPage() {
     }
   }
 
-  async function loadPermissions(userId: string, signal?: AbortSignal) {
+  async function loadPermissions(userId: string, signal?: AbortSignal, options?: { forceRefresh?: boolean }) {
+    const forceRefresh = options?.forceRefresh === true;
+    if (!forceRefresh) {
+      const cached = permissionsCacheRef.current[userId];
+      if (cached) {
+        applyPermissionsState(cached);
+        return;
+      }
+    }
+
     setIsDetailsLoading(true);
     try {
       const data = await apiRequestCached<PermissionsResponse>(`/users/${userId}/permissions`, { headers: getAuthHeaders(), signal }, 10000, true);
-      const hasAccessTotal = Boolean(data.accessTotal);
-      setSelectedUser(data.user);
-      setSelectedUserAccessTotal(hasAccessTotal);
-      setPermissions(data.permissions);
-      setDrafts(Object.fromEntries(data.permissions.map((permission) => [permission.id, buildDraftFromAssignment(permission, hasAccessTotal)])));
-      setStatus('');
+      permissionsCacheRef.current[userId] = data;
+      applyPermissionsState(data);
     } catch (error) {
       if (isAbortError(error) || signal?.aborted) {
         return;
@@ -345,7 +362,7 @@ export default function PermissionsPage() {
       }
 
       clearApiCache();
-      await loadPermissions(selectedUser.id);
+      await loadPermissions(selectedUser.id, undefined, { forceRefresh: true });
       setStatus('Permissão guardada com sucesso.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao guardar permissão.');
@@ -393,8 +410,9 @@ export default function PermissionsPage() {
       setAccessTotalModalOpen(false);
       setAccessReason('');
       setSelectedUserAccessTotal(Boolean(result.accessTotal));
+      delete permissionsCacheRef.current[selectedUser.id];
       void loadUsers();
-      void loadPermissions(selectedUser.id);
+      void loadPermissions(selectedUser.id, undefined, { forceRefresh: true });
       setStatus(accessTotalAction === 'grant' ? 'Acesso total concedido.' : 'Acesso total revogado.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao alterar acesso total.');

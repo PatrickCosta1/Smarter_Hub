@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { ProfileOptionType } from "@prisma/client";
+import { Prisma, ProfileOptionType } from "@prisma/client";
 
 import { prisma } from "../lib/prisma.js";
 import {
@@ -619,6 +619,86 @@ router.get('/profile/requests', requireAuth, async (req, res) => {
   return res.json(enriched);
 });
 
+router.get('/profile/requests/history', requireAuth, async (req, res) => {
+  const canReview = await hasPermission(req.authUser!.id, 'approve_profile_change');
+  const canViewUsers = await hasPermission(req.authUser!.id, 'view_user_list');
+
+  if (!req.authUser!.isRootAccess && !canReview && !canViewUsers) {
+    return res.status(403).json({ message: 'Sem permissões para consultar histórico de alterações de ficha.' });
+  }
+
+  const reviewScope = canReview ? await getPermissionScope(req.authUser!.id, 'approve_profile_change') : null;
+  const usersScope = canViewUsers ? await getPermissionScope(req.authUser!.id, 'view_user_list') : null;
+  const scope = reviewScope || usersScope;
+
+  if (!req.authUser!.isRootAccess && !scope) {
+    return res.status(403).json({ message: 'Sem permissões para consultar histórico de alterações de ficha.' });
+  }
+
+  const userScopeWhere = req.authUser!.isRootAccess
+    ? null
+    : buildUserWhereFromScope(scope!);
+
+  const limit = Math.min(500, Math.max(10, Number(typeof req.query.limit === 'string' ? req.query.limit : '200') || 200));
+
+  const requests = await prisma.profileChangeRequest.findMany({
+    where: {
+      status: { in: ['APPROVED', 'PARTIALLY_REJECTED', 'REJECTED'] },
+      reviewedAt: { not: null },
+      ...(userScopeWhere ? { user: userScopeWhere } : {}),
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          role: true,
+          profile: {
+            select: {
+              nomeAbreviado: true,
+              primeiroNome: true,
+              apelido: true,
+            },
+          },
+        },
+      },
+      reviewedBy: {
+        select: {
+          id: true,
+          username: true,
+          profile: {
+            select: {
+              nomeAbreviado: true,
+              primeiroNome: true,
+              apelido: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: [{ reviewedAt: 'desc' }, { createdAt: 'desc' }],
+    take: limit,
+  });
+
+  return res.json(requests.map((item) => {
+    const requestedData = (item.requestedData as Record<string, unknown>) ?? {};
+    const approvedFields = (item.approvedFields as Record<string, unknown>) ?? {};
+    const rejectedFields = (item.rejectedFields as Record<string, unknown>) ?? {};
+
+    return {
+      ...item,
+      changedFields: Object.keys(requestedData),
+      approvedFieldNames: Object.keys(approvedFields),
+      rejectedFieldNames: Object.keys(rejectedFields),
+      requestedData,
+      approvedFields,
+      rejectedFields,
+      requesterName: resolveRequesterDisplayName(item.user.profile),
+    };
+  }));
+});
+
 router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
   if (!await hasPermission(req.authUser!.id, 'approve_profile_change')) {
     return res.status(403).json({ message: 'Sem permissões para aprovar pedidos.' });
@@ -666,6 +746,8 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
       where: { id: request.id },
       data: {
         status: 'APPROVED',
+        approvedFields: requestedData as Prisma.InputJsonValue,
+        rejectedFields: {},
         reviewedBy: { connect: { id: req.authUser!.id } },
         reviewedAt: new Date(),
         reviewReason: 'Pedido aprovado.',
@@ -715,6 +797,8 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
       where: { id: request.id },
       data: {
         status: 'PARTIALLY_REJECTED',
+        approvedFields: approvedFields as Prisma.InputJsonValue,
+        rejectedFields: rejectedFields as Prisma.InputJsonValue,
         reviewedBy: { connect: { id: req.authUser!.id } },
         reviewedAt: new Date(),
         reviewReason: `Parcialmente rejeitado: ${Object.keys(rejectedFields).join(', ')}`,

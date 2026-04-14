@@ -284,7 +284,7 @@ function formatRelativeDate(dateText: string) {
 }
 
 export default function NotificationsPage() {
-  const { notifications, markAllNotificationsRead, markNotificationRead, deleteNotification, deleteAllNotifications, unreadNotifications } = usePortal();
+  const { notifications, markAllNotificationsRead, markNotificationRead, deleteNotification, deleteAllNotifications, unreadNotifications, refreshNotifications } = usePortal();
   const navigate = useNavigate();
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [selectedNotificationId, setSelectedNotificationId] = useState<string | null>(null);
@@ -346,6 +346,10 @@ export default function NotificationsPage() {
     () => notifications.find((item) => item.id === notificationToDelete) || null,
     [notificationToDelete, notifications],
   );
+
+  useEffect(() => {
+    void refreshNotifications();
+  }, [refreshNotifications]);
 
   function openNotification(notificationId: string) {
     const notification = notifications.find((item) => item.id === notificationId);

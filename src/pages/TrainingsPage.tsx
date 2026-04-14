@@ -115,7 +115,7 @@ function getTrainingOriginLabel(record: TrainingRecord) {
 }
 
 export default function TrainingsPage() {
-  const { hasPermission, isRootAccess } = usePortal();
+  const { hasPermission, isRootAccess, refreshNotifications } = usePortal();
   const canManage = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
 
   const [query, setQuery] = useState('');
@@ -288,6 +288,7 @@ export default function TrainingsPage() {
 
       clearApiCache('/trainings');
       setAssignStatus('Formação atribuída com sucesso.');
+      void refreshNotifications();
       setRecentAssigned((current) => ([
         {
           id: created.id,
@@ -313,6 +314,7 @@ export default function TrainingsPage() {
 
       clearApiCache('/trainings');
       setRecords((current) => current.map((record) => (record.id === id ? updated : record)));
+      void refreshNotifications();
       setStatus('Formação marcada como concluída.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao concluir formação.');

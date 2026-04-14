@@ -320,11 +320,7 @@ function buildEditDraftFromRow(item: CollaboratorRow): CollaboratorEditDraft {
 }
 
 function getCollaboratorTeamInfo(item: CollaboratorRow) {
-  const resolvedTeam = item.team?.name
-    ? item.team
-    : item.teamMemberships?.[0]?.team?.name
-      ? item.teamMemberships[0].team
-      : item.managedTeams?.[0] ?? null;
+  const resolvedTeam = getCollaboratorPrimaryTeam(item);
 
   if (!resolvedTeam) {
     return { name: '-', isLeader: false };
@@ -334,6 +330,18 @@ function getCollaboratorTeamInfo(item: CollaboratorRow) {
     || Boolean(item.managedTeams?.some((team) => team.id === resolvedTeam.id));
 
   return { name: resolvedTeam.name, isLeader };
+}
+
+function getCollaboratorPrimaryTeam(item: CollaboratorRow) {
+  if (item.team?.name) {
+    return item.team;
+  }
+
+  if (item.teamMemberships?.[0]?.team?.name) {
+    return item.teamMemberships[0].team;
+  }
+
+  return item.managedTeams?.[0] ?? null;
 }
 
 type CollaboratorsResponse = {
@@ -635,6 +643,29 @@ export default function CollaboratorsPage() {
 
   const selectedRestrictionCountries = selectedPermissionDraft ? normalizeList(selectedPermissionDraft.restrictedToCountries) : [];
   const selectedRestrictedTeamIds = selectedPermissionDraft ? normalizeList(selectedPermissionDraft.restrictedToTeams) : [];
+  const selectedRowTeam = useMemo(() => {
+    if (!selectedRow) {
+      return null;
+    }
+
+    const resolvedTeam = getCollaboratorPrimaryTeam(selectedRow);
+    return resolvedTeam ? { id: resolvedTeam.id, name: resolvedTeam.name } : null;
+  }, [selectedRow]);
+  const collaboratorTeamOptions = useMemo(() => {
+    const options: TeamOption[] = [];
+
+    if (selectedRowTeam) {
+      options.push(selectedRowTeam);
+    }
+
+    for (const team of permissionTeams) {
+      if (!options.some((item) => item.id === team.id)) {
+        options.push(team);
+      }
+    }
+
+    return options;
+  }, [permissionTeams, selectedRowTeam]);
   const selectedRestrictedTeams = useMemo(
     () => permissionTeams.filter((team) => selectedRestrictedTeamIds.includes(team.id)),
     [permissionTeams, selectedRestrictedTeamIds],
@@ -661,13 +692,10 @@ export default function CollaboratorsPage() {
     }
 
     const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      void loadCollaborators(controller.signal);
-    }, 220);
+    void loadCollaborators(controller.signal);
 
     return () => {
       controller.abort();
-      window.clearTimeout(timer);
     };
   }, [canView, page, pageSize, query, roleFilter, activeFilter, countryFilter, sortBy, sortDirection]);
 
@@ -752,11 +780,48 @@ export default function CollaboratorsPage() {
     setIsDetailsOpen(true);
     setIsLoadingDetails(true);
     setEditDraft(buildEditDraftFromRow(item));
+    setSelectedPermissions([]);
+    setSelectedUserAccessTotal(false);
+    setPermissionDrafts({});
+    setPermissionTeams([]);
+    setCustomCargoOptions([]);
+    setCustomFuncaoOptions([]);
+    setSelectedPermissionId(null);
+    setPermissionSearch('');
+    setPendingTeamToAdd('');
 
     try {
-      const details = await apiRequest<UserPermissionsResponse>(`/users/${item.id}/permissions`, {
-        headers: getAuthHeaders(),
-      });
+      const loadPermissionTeams = async () => {
+        try {
+          const adminTeams = await apiRequestCached<Array<{ id: string; name: string }>>('/admin/teams', {
+            headers: getAuthHeaders(),
+          }, 8000, true);
+          return (adminTeams || []).map((team) => ({ id: team.id, name: team.name }));
+        } catch {
+          try {
+            const scopedTeams = await apiRequestCached<Array<{ id: string; name: string }>>('/teams', {
+              headers: getAuthHeaders(),
+            }, 8000, true);
+            return (scopedTeams || []).map((team) => ({ id: team.id, name: team.name }));
+          } catch {
+            return [];
+          }
+        }
+      };
+
+      const [details, permissionTeams, profileOptions] = await Promise.all([
+        apiRequest<UserPermissionsResponse>(`/users/${item.id}/permissions`, {
+          headers: getAuthHeaders(),
+        }),
+        loadPermissionTeams(),
+        apiRequestCached<{
+          cargo?: CustomProfileOption[];
+          funcao?: CustomProfileOption[];
+        }>('/profile/options', {
+          headers: getAuthHeaders(),
+        }, 8000, true),
+      ]);
+
       const hasAccessTotal = Boolean(details.accessTotal);
       setSelectedPermissions(details.permissions);
       setSelectedUserAccessTotal(hasAccessTotal);
@@ -765,36 +830,9 @@ export default function CollaboratorsPage() {
       setPermissionSearch('');
       setPendingTeamToAdd('');
 
-      try {
-        const adminTeams = await apiRequestCached<Array<{ id: string; name: string }>>('/admin/teams', {
-          headers: getAuthHeaders(),
-        }, 8000, true);
-        setPermissionTeams((adminTeams || []).map((team) => ({ id: team.id, name: team.name })));
-      } catch {
-        try {
-          const scopedTeams = await apiRequestCached<Array<{ id: string; name: string }>>('/teams', {
-            headers: getAuthHeaders(),
-          }, 8000, true);
-          setPermissionTeams((scopedTeams || []).map((team) => ({ id: team.id, name: team.name })));
-        } catch {
-          setPermissionTeams([]);
-        }
-      }
-
-      try {
-        const profileOptions = await apiRequestCached<{
-          cargo?: CustomProfileOption[];
-          funcao?: CustomProfileOption[];
-        }>('/profile/options', {
-          headers: getAuthHeaders(),
-        }, 8000, true);
-
-        setCustomCargoOptions(profileOptions.cargo ?? []);
-        setCustomFuncaoOptions(profileOptions.funcao ?? []);
-      } catch {
-        setCustomCargoOptions([]);
-        setCustomFuncaoOptions([]);
-      }
+      setPermissionTeams(permissionTeams);
+      setCustomCargoOptions(profileOptions.cargo ?? []);
+      setCustomFuncaoOptions(profileOptions.funcao ?? []);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar detalhe do colaborador.');
     } finally {
@@ -1395,28 +1433,7 @@ export default function CollaboratorsPage() {
             <button type="button" className={detailsTab === 'estado' ? 'is-active' : ''} onClick={() => setDetailsTab('estado')}>3. Estado</button>
           </nav>
 
-          {isLoadingDetails && (
-            <div className="collaborator-modal-panel">
-              <Skeleton lines={2} />
-              <div className="collaborator-kpi-grid">
-                {Array.from({ length: 4 }).map((_, index) => (
-                  <article key={index}>
-                    <Skeleton lines={2} />
-                  </article>
-                ))}
-              </div>
-              <div className="collaborator-info-grid">
-                <article>
-                  <Skeleton lines={3} />
-                </article>
-                <article>
-                  <Skeleton lines={3} />
-                </article>
-              </div>
-            </div>
-          )}
-
-          {!isLoadingDetails && selectedRow && detailsTab === 'ficha' && (
+          {selectedRow && detailsTab === 'ficha' && (
             <section className="collaborator-modal-panel">
               <div className="collaborator-ficha-actions">
                 <div>
@@ -1486,7 +1503,7 @@ export default function CollaboratorsPage() {
                       <span>Equipa principal</span>
                       <select value={editDraft.teamId} onChange={(event) => setEditDraft((current) => ({ ...current, teamId: event.target.value }))} disabled={!canEditUser || editDraft.role === 'ADMIN'}>
                         <option value="">Sem equipa</option>
-                        {permissionTeams.map((team) => (
+                        {collaboratorTeamOptions.map((team) => (
                           <option key={team.id} value={team.id}>{team.name}</option>
                         ))}
                       </select>
@@ -1525,8 +1542,12 @@ export default function CollaboratorsPage() {
             </section>
           )}
 
-          {!isLoadingDetails && selectedRow && detailsTab === 'permissoes' && (
+          {selectedRow && detailsTab === 'permissoes' && (
             <section className="collaborator-modal-panel">
+              {isLoadingDetails ? (
+                <Skeleton lines={3} />
+              ) : (
+                <>
               <header className="collaborator-permissions-header">
                 <div>
                   <h4>Permissões simplificadas</h4>
@@ -1784,32 +1805,40 @@ export default function CollaboratorsPage() {
                   )}
                 </section>
               </div>
+                </>
+              )}
             </section>
           )}
 
-          {!isLoadingDetails && selectedRow && detailsTab === 'estado' && (
+          {selectedRow && detailsTab === 'estado' && (
             <section className="collaborator-modal-panel">
-              <div className="collaborator-kpi-grid">
-                <article>
-                  <span>Conta</span>
-                  <strong>{selectedRow.isActive ? 'Ativa' : 'Inativa'}</strong>
-                </article>
-                <article>
-                  <span>Acesso total</span>
-                  <strong>{selectedUserAccessTotal ? 'Sim' : 'Não'}</strong>
-                </article>
-              </div>
+              {isLoadingDetails ? (
+                <Skeleton lines={3} />
+              ) : (
+                <>
+                  <div className="collaborator-kpi-grid">
+                    <article>
+                      <span>Conta</span>
+                      <strong>{selectedRow.isActive ? 'Ativa' : 'Inativa'}</strong>
+                    </article>
+                    <article>
+                      <span>Acesso total</span>
+                      <strong>{selectedUserAccessTotal ? 'Sim' : 'Não'}</strong>
+                    </article>
+                  </div>
 
-              <div className="collaborator-status-actions">
-                <Button
-                  type="button"
-                  variant={selectedRow.isActive ? 'danger' : 'secondary'}
-                  onClick={() => openActiveConfirm(selectedRow)}
-                  disabled={!canManageActive || selectedRow.username === 't.people'}
-                >
-                  {selectedRow.isActive ? 'Desativar conta' : 'Reativar conta'}
-                </Button>
-              </div>
+                  <div className="collaborator-status-actions">
+                    <Button
+                      type="button"
+                      variant={selectedRow.isActive ? 'danger' : 'secondary'}
+                      onClick={() => openActiveConfirm(selectedRow)}
+                      disabled={!canManageActive || selectedRow.username === 't.people'}
+                    >
+                      {selectedRow.isActive ? 'Desativar conta' : 'Reativar conta'}
+                    </Button>
+                  </div>
+                </>
+              )}
             </section>
           )}
         </section>

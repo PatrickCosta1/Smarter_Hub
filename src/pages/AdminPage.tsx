@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { formatRoleLabel } from '../portal/labels';
@@ -95,6 +95,7 @@ export default function AdminPage() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [credentialsDraft, setCredentialsDraft] = useState({ username: '', email: '' });
+  const loadDataInFlightRef = useRef<Promise<void> | null>(null);
   const [newUserDraft, setNewUserDraft] = useState({
     firstName: '',
     lastName: '',
@@ -179,17 +180,31 @@ export default function AdminPage() {
   }, [newUserDraft.firstName, newUserDraft.lastName]);
 
   async function loadData(signal?: AbortSignal) {
+    if (signal?.aborted) {
+      return;
+    }
+
     setIsLoadingData(true);
+
+    if (!loadDataInFlightRef.current) {
+      loadDataInFlightRef.current = (async () => {
+        try {
+          const usersData = await apiRequestCached<AdminUser[]>('/admin/users', { headers: getAuthHeaders(), signal }, 15000);
+          setUsers(usersData);
+        } catch (error) {
+          if (isAbortError(error) || signal?.aborted) {
+            return;
+          }
+
+          setStatus(error instanceof Error ? error.message : 'Falha ao carregar dados de administração.');
+        } finally {
+          loadDataInFlightRef.current = null;
+        }
+      })();
+    }
+
     try {
-      const usersData = await apiRequestCached<AdminUser[]>('/admin/users', { headers: getAuthHeaders(), signal }, 15000);
-
-      setUsers(usersData);
-    } catch (error) {
-      if (isAbortError(error) || signal?.aborted) {
-        return;
-      }
-
-      setStatus(error instanceof Error ? error.message : 'Falha ao carregar dados de administração.');
+      await loadDataInFlightRef.current;
     } finally {
       if (!signal?.aborted) {
         setIsLoadingData(false);
@@ -233,7 +248,14 @@ export default function AdminPage() {
 
     setIsCreatingUser(true);
     try {
-      await apiRequest('/users', {
+      const created = await apiRequest<{
+        id: string;
+        username: string;
+        email: string;
+        role: AdminUser['role'];
+        teamId?: string | null;
+        profile?: AdminUser['profile'];
+      }>('/users', {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -246,9 +268,23 @@ export default function AdminPage() {
       });
 
       clearApiCache('/admin/users');
-      await loadData();
+      setUsers((current) => [
+        {
+          id: created.id,
+          username: created.username,
+          email: created.email,
+          role: created.role,
+          teamId: created.teamId ?? null,
+          teamName: null,
+          workCountry,
+          localidade: '',
+          profile: created.profile ?? null,
+        },
+        ...current,
+      ]);
       closeCreateModal();
       setStatus('Novo utilizador criado com permissões padrão de funcionário.');
+      void loadData();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao criar utilizador.');
     } finally {
@@ -290,9 +326,14 @@ export default function AdminPage() {
         body: JSON.stringify(payload),
       });
       clearApiCache('/admin/users');
-      await loadData();
+      setUsers((current) => current.map((item) => (
+        item.id === editingUser.id
+          ? { ...item, username: payload.username ?? item.username, email: payload.email ?? item.email }
+          : item
+      )));
       closeEditModal();
       setStatus('Credenciais atualizadas com sucesso.');
+      void loadData();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao atualizar credenciais.');
     } finally {
