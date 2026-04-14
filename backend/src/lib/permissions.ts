@@ -52,6 +52,7 @@ export const PERMISSION_CATALOG: PermissionCatalogItem[] = [
   { code: 'view_profile', label: 'Ver perfil', description: 'Permite consultar o perfil próprio ou de outros conforme contexto.', category: 'PROFILE', requiresRestrictions: true },
   { code: 'edit_profile', label: 'Editar perfil', description: 'Permite editar o perfil próprio.', category: 'PROFILE', requiresRestrictions: false },
   { code: 'edit_other_profile', label: 'Editar perfis de outros', description: 'Permite editar perfis de outros utilizadores.', category: 'PROFILE', requiresRestrictions: true },
+  { code: 'manage_profile_dropdown_options', label: 'Gerir cargos e funções', description: 'Permite gerir o catálogo de cargos e funções disponível na ficha do colaborador.', category: 'PROFILE', requiresRestrictions: false },
   { code: 'request_profile_change', label: 'Pedir alteração de ficha', description: 'Permite submeter pedidos de alteração de dados.', category: 'PROFILE', requiresRestrictions: false },
   { code: 'approve_profile_change', label: 'Aprovar alterações de ficha', description: 'Permite aprovar pedidos de alteração de dados.', category: 'PROFILE', requiresRestrictions: true },
 

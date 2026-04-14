@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { apiRequestCached, authHeaders } from '../portal/api';
+import { apiRequestCached, authHeaders, isAbortError } from '../portal/api';
 import { formatRoleLabel } from '../portal/labels';
 import { useFeedbackToast } from '../portal/useFeedbackToast';
 import Toast from '../components/ui/Toast';
@@ -22,21 +22,30 @@ export default function AccountAccessPage() {
   const { toast, showToast } = useFeedbackToast();
 
   useEffect(() => {
-    void loadMe();
+    const controller = new AbortController();
+
+    void loadMe(controller.signal);
+
+    return () => controller.abort();
   }, []);
 
-  async function loadMe() {
+  async function loadMe(signal?: AbortSignal) {
     const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
 
     try {
       const data = await apiRequestCached<MeResponse>('/auth/me', {
         headers: authHeaders(token),
+        signal,
       }, 20000);
 
       setUsername(data.user.username);
       setEmail(data.user.email);
       setRole(data.user.role);
-    } catch {
+    } catch (error) {
+      if (isAbortError(error) || signal?.aborted) {
+        return;
+      }
+
       showToast('error', 'Não foi possível carregar os teus dados de acesso.');
     }
   }

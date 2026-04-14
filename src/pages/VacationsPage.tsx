@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { formatVacationStatusLabel, getVacationStatusTone } from '../portal/labels';
 import Badge from '../components/ui/Badge';
@@ -263,7 +263,10 @@ export default function VacationsPage() {
   const [records, setRecords] = useState<VacationRecord[]>([]);
   const [overview, setOverview] = useState<VacationOverview | null>(null);
   const [calendarData, setCalendarData] = useState<CalendarPayload | null>(null);
-  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [isOverviewLoading, setIsOverviewLoading] = useState(false);
+  const [isCalendarLoading, setIsCalendarLoading] = useState(false);
+  const [overviewError, setOverviewError] = useState('');
+  const [calendarError, setCalendarError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<{ tone: 'success' | 'error' | 'info'; message: string; visible: boolean }>({
     tone: 'info',
@@ -353,41 +356,63 @@ export default function VacationsPage() {
   }, [activeTab, calendarData, calendarMonthIndexToFocus]);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
 
     void (async () => {
-      setIsLoadingData(true);
-
-      const tasks: Array<Promise<unknown>> = [];
-
-      if (!cacheRef.current.overviewLoaded) {
-        cacheRef.current.overviewLoaded = true;
-        tasks.push(loadOverview());
-      }
-      if (!cacheRef.current.calendarLoaded) {
-        cacheRef.current.calendarLoaded = true;
-        tasks.push(loadCalendar());
-      }
       if (!cacheRef.current.recordsLoaded) {
         cacheRef.current.recordsLoaded = true;
-        tasks.push(loadMine());
+        await loadMine(controller.signal);
       }
 
-      tasks.push(loadTeamContexts());
-
-      try {
-        await Promise.all(tasks.map((task) => task.catch(() => undefined)));
-      } finally {
-        if (!cancelled) {
-          setIsLoadingData(false);
-        }
-      }
+      await loadTeamContexts(controller.signal);
     })();
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'overview' || cacheRef.current.overviewLoaded || isOverviewLoading) {
+      return;
+    }
+
+    const controller = new AbortController();
+    cacheRef.current.overviewLoaded = true;
+    setIsOverviewLoading(true);
+    setOverviewError('');
+
+    void loadOverview(controller.signal)
+      .catch(() => undefined)
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsOverviewLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [activeTab, isOverviewLoading]);
+
+  useEffect(() => {
+    if (activeTab !== 'calendar' || cacheRef.current.calendarLoaded || isCalendarLoading) {
+      return;
+    }
+
+    const controller = new AbortController();
+    cacheRef.current.calendarLoaded = true;
+    setIsCalendarLoading(true);
+    setCalendarError('');
+
+    void loadCalendar(controller.signal)
+      .catch(() => undefined)
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsCalendarLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [activeTab, isCalendarLoading]);
 
   function showToast(tone: 'success' | 'error' | 'info', message: string) {
     setToast({ tone, message, visible: true });
@@ -396,31 +421,51 @@ export default function VacationsPage() {
     }, 3200);
   }
 
-  async function loadMine() {
+  async function loadMine(signal?: AbortSignal) {
     const data = await apiRequestCached<VacationRecord[]>('/vacations/me', {
       headers: getAuthHeaders(),
+      signal,
     }, 60000);
     setRecords(data);
   }
 
-  async function loadOverview() {
-    const data = await apiRequestCached<VacationOverview>('/vacations/overview', {
-      headers: getAuthHeaders(),
-    }, 60000);
-    setOverview(data);
+  async function loadOverview(signal?: AbortSignal) {
+    try {
+      const data = await apiRequestCached<VacationOverview>('/vacations/overview', {
+        headers: getAuthHeaders(),
+        signal,
+      }, 60000);
+      setOverview(data);
+      return data;
+    } catch (error) {
+      if (!isAbortError(error) && !signal?.aborted) {
+        setOverviewError(error instanceof Error ? error.message : 'Falha ao carregar resumo de férias.');
+      }
+      throw error;
+    }
   }
 
-  async function loadCalendar() {
-    const year = new Date().getFullYear();
-    const data = await apiRequestCached<CalendarPayload>(`/vacations/calendar?year=${year}`, {
-      headers: getAuthHeaders(),
-    }, 60000);
-    setCalendarData(data);
+  async function loadCalendar(signal?: AbortSignal) {
+    try {
+      const year = new Date().getFullYear();
+      const data = await apiRequestCached<CalendarPayload>(`/vacations/calendar?year=${year}`, {
+        headers: getAuthHeaders(),
+        signal,
+      }, 60000);
+      setCalendarData(data);
+      return data;
+    } catch (error) {
+      if (!isAbortError(error) && !signal?.aborted) {
+        setCalendarError(error instanceof Error ? error.message : 'Falha ao carregar calendário de férias.');
+      }
+      throw error;
+    }
   }
 
-  async function loadTeamContexts() {
+  async function loadTeamContexts(signal?: AbortSignal) {
     const data = await apiRequestCached<TeamContext[]>('/users/me/teams', {
       headers: getAuthHeaders(),
+      signal,
     }, 120000);
 
     setTeamContexts(data);
@@ -683,13 +728,29 @@ export default function VacationsPage() {
         <button type="button" className={activeTab === 'requests' ? 'is-active' : ''} onClick={() => setActiveTab('requests')}>Os meus pedidos</button>
       </nav>
 
-      {activeTab === 'overview' && (isLoadingData || overview) && (
+      {activeTab === 'overview' && (
         <section className="trainings-list-card">
           <div className="trainings-list-head">
             <h3>Resumo anual</h3>
           </div>
 
-          {isLoadingData ? (
+          {overviewError ? (
+            <div className="vacations-panel-state">
+              <p>{overviewError}</p>
+              <button
+                type="button"
+                className="vacations-panel-state__action"
+                onClick={() => {
+                  cacheRef.current.overviewLoaded = false;
+                  setOverviewError('');
+                  setIsOverviewLoading(false);
+                  setActiveTab('overview');
+                }}
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : isOverviewLoading || !overview ? (
             <div className="vacations-overview-grid vacations-overview-grid--loading">
               {Array.from({ length: 6 }).map((_, index) => (
                 <article key={index} className="home-card home-card--loading">
@@ -736,7 +797,7 @@ export default function VacationsPage() {
         </section>
       )}
 
-      {activeTab === 'calendar' && (isLoadingData || calendarData) && (
+      {activeTab === 'calendar' && (
         <section className="trainings-list-card">
           <div className="vacations-legend vacations-legend--sticky" aria-label="Legenda do calendário">
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--holiday" />Feriado</span>
@@ -747,7 +808,23 @@ export default function VacationsPage() {
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--extra" />Dia extra automático</span>
           </div>
 
-          {isLoadingData ? (
+          {calendarError ? (
+            <div className="vacations-panel-state">
+              <p>{calendarError}</p>
+              <button
+                type="button"
+                className="vacations-panel-state__action"
+                onClick={() => {
+                  cacheRef.current.calendarLoaded = false;
+                  setCalendarError('');
+                  setIsCalendarLoading(false);
+                  setActiveTab('calendar');
+                }}
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : isCalendarLoading || !calendarData ? (
             <div className="vacations-year-grid vacations-year-grid--loading">
               {Array.from({ length: 4 }).map((_, index) => (
                 <article key={index} className="vacations-month-card home-card--loading">

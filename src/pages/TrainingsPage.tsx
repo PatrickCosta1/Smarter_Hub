@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { usePortal } from '../portal/context';
-import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache, isAbortError } from '../portal/api';
 import { formatRoleLabel, formatTrainingStatusLabel, getTrainingStatusTone } from '../portal/labels';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
@@ -129,6 +129,8 @@ export default function TrainingsPage() {
   const [isSearchingCollaborators, setIsSearchingCollaborators] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isAssignedModalOpen, setIsAssignedModalOpen] = useState(false);
+  const [isRecordsLoading, setIsRecordsLoading] = useState(false);
+  const [recordsLoaded, setRecordsLoaded] = useState(false);
   const [completeConfirmRecordId, setCompleteConfirmRecordId] = useState<string | null>(null);
   const [recentAssigned, setRecentAssigned] = useState<RecentAssignedItem[]>([]);
 
@@ -163,34 +165,68 @@ export default function TrainingsPage() {
   );
 
   useEffect(() => {
-    void loadTrainings();
+    if (canManage) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    void loadTrainings(controller.signal);
+
+    return () => controller.abort();
   }, [canManage]);
+
+  useEffect(() => {
+    if (!canManage || !isAssignedModalOpen || recordsLoaded || isRecordsLoading) {
+      return;
+    }
+
+    const controller = new AbortController();
+    void loadTrainings(controller.signal);
+
+    return () => controller.abort();
+  }, [canManage, isAssignedModalOpen, recordsLoaded, isRecordsLoading]);
 
   useEffect(() => {
     if (!canManage) {
       return;
     }
 
+    const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      void loadCollaborators(collaboratorQuery);
+      void loadCollaborators(collaboratorQuery, controller.signal);
     }, 260);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
   }, [canManage, collaboratorQuery]);
 
-  async function loadTrainings() {
+  async function loadTrainings(signal?: AbortSignal) {
+    setIsRecordsLoading(true);
     try {
       const path = canManage ? '/trainings/assigned' : '/trainings/me';
       const data = await apiRequestCached<TrainingRecord[]>(path, {
         headers: getAuthHeaders(),
+        signal,
       }, 60000);
       setRecords(data);
+      setRecordsLoaded(true);
     } catch (error) {
+      if (isAbortError(error) || signal?.aborted) {
+        return;
+      }
+
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar formações.');
+    } finally {
+      if (!signal?.aborted) {
+        setIsRecordsLoading(false);
+      }
     }
   }
 
-  async function loadCollaborators(searchValue: string) {
+  async function loadCollaborators(searchValue: string, signal?: AbortSignal) {
     const trimmed = searchValue.trim();
 
     if (!trimmed) {
@@ -206,12 +242,19 @@ export default function TrainingsPage() {
       const path = `/users?q=${q}&limit=40`;
       const data = await apiRequestCached<Collaborator[]>(path, {
         headers: getAuthHeaders(),
+        signal,
       }, 30000);
       setCollaborators(data);
     } catch (error) {
+      if (isAbortError(error) || signal?.aborted) {
+        return;
+      }
+
       setAssignStatus(error instanceof Error ? error.message : 'Falha ao pesquisar colaboradores.');
     } finally {
-      setIsSearchingCollaborators(false);
+      if (!signal?.aborted) {
+        setIsSearchingCollaborators(false);
+      }
     }
   }
 
@@ -305,15 +348,15 @@ export default function TrainingsPage() {
         <div className="trainings-hours-summary">
           <article>
             <span>Horas totais</span>
-            <strong>{formatHours(totalHours)} h</strong>
+            <strong>{(isRecordsLoading || (canManage && !recordsLoaded)) ? <span className="trainings-summary-loading">A carregar</span> : `${formatHours(totalHours)} h`}</strong>
           </article>
           <article>
             <span>{canManage ? 'Por concluir' : 'Por concluir'}</span>
-            <strong>{criticalCount}</strong>
+            <strong>{(isRecordsLoading || (canManage && !recordsLoaded)) ? <span className="trainings-summary-loading">A carregar</span> : criticalCount}</strong>
           </article>
           <article>
             <span>Concluídas</span>
-            <strong>{completedCount}</strong>
+            <strong>{(isRecordsLoading || (canManage && !recordsLoaded)) ? <span className="trainings-summary-loading">A carregar</span> : completedCount}</strong>
           </article>
         </div>
       </header>
@@ -410,7 +453,6 @@ export default function TrainingsPage() {
 
                   <div className="trainings-form-actions field-span-2">
                     <Button type="submit" variant="primary">Atribuir formação</Button>
-                    <Button type="button" variant="ghost" onClick={() => setAssignDraft(EMPTY_ASSIGN_DRAFT)}>Limpar</Button>
                   </div>
                 </form>
 
@@ -465,29 +507,33 @@ export default function TrainingsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {visibleRecords.length === 0 && (
+                      {(isRecordsLoading && !recordsLoaded) ? (
+                        <tr>
+                          <td colSpan={9}>A carregar formações...</td>
+                        </tr>
+                      ) : visibleRecords.length === 0 ? (
                         <tr>
                           <td colSpan={9}>Sem formações para apresentar.</td>
                         </tr>
+                      ) : (
+                        visibleRecords.map((record) => (
+                          <tr key={record.id}>
+                            <td>{record.nome}</td>
+                            <td>{record.user?.username || '-'}</td>
+                            <td>{getTrainingOriginLabel(record)}</td>
+                            <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
+                            <td>{formatHours(record.horas)} h</td>
+                            <td>{record.duracao || '-'}</td>
+                            <td>{record.entidade || '-'}</td>
+                            <td>{record.dataConclusao || '-'}</td>
+                            <td>
+                              <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
+                                {formatTrainingStatusLabel(record.status)}
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))
                       )}
-
-                      {visibleRecords.map((record) => (
-                        <tr key={record.id}>
-                          <td>{record.nome}</td>
-                          <td>{record.user?.username || '-'}</td>
-                          <td>{getTrainingOriginLabel(record)}</td>
-                          <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
-                          <td>{formatHours(record.horas)} h</td>
-                          <td>{record.duracao || '-'}</td>
-                          <td>{record.entidade || '-'}</td>
-                          <td>{record.dataConclusao || '-'}</td>
-                          <td>
-                            <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
-                              {formatTrainingStatusLabel(record.status)}
-                            </Badge>
-                          </td>
-                        </tr>
-                      ))}
                     </tbody>
                   </table>
                 </div>

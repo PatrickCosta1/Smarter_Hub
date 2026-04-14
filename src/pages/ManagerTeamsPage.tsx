@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { formatRoleLabel } from '../portal/labels';
 import Skeleton from '../components/ui/Skeleton';
@@ -220,7 +220,11 @@ export default function ManagerTeamsPage() {
       return;
     }
 
-    void loadTeams();
+    const controller = new AbortController();
+
+    void loadTeams(controller.signal);
+
+    return () => controller.abort();
   }, [canAccessTeams]);
 
   useEffect(() => {
@@ -231,7 +235,11 @@ export default function ManagerTeamsPage() {
       return;
     }
 
-    void loadTeamDetail(selectedTeamId);
+    const controller = new AbortController();
+
+    void loadTeamDetail(selectedTeamId, controller.signal);
+
+    return () => controller.abort();
   }, [selectedTeamId]);
 
   useEffect(() => {
@@ -246,13 +254,14 @@ export default function ManagerTeamsPage() {
     return () => window.clearTimeout(timeoutId);
   }, [status]);
 
-  async function loadTeams() {
+  async function loadTeams(signal?: AbortSignal) {
     setLoading(true);
     setStatus('');
 
     try {
       const data = await apiRequestCached<TeamSummary[]>('/teams/me?details=none', {
         headers: getAuthHeaders(),
+        signal,
       }, 90000);
 
       setTeams(data);
@@ -260,25 +269,38 @@ export default function ManagerTeamsPage() {
         setSelectedTeamId(null);
       }
     } catch (error) {
+      if (isAbortError(error) || signal?.aborted) {
+        return;
+      }
+
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar equipas.');
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
   }
 
-  async function loadTeamDetail(teamId: string) {
+  async function loadTeamDetail(teamId: string, signal?: AbortSignal) {
     setLoadingDetail(true);
     setStatus('');
 
     try {
       const data = await apiRequestCached<TeamDetail>(`/teams/me/${teamId}`, {
         headers: getAuthHeaders(),
+        signal,
       }, 45000);
       setSelectedTeamDetail(data);
     } catch (error) {
+      if (isAbortError(error) || signal?.aborted) {
+        return;
+      }
+
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar detalhe da equipa.');
     } finally {
-      setLoadingDetail(false);
+      if (!signal?.aborted) {
+        setLoadingDetail(false);
+      }
     }
   }
 
@@ -843,46 +865,56 @@ export default function ManagerTeamsPage() {
           </div>
         }
       >
-        <form className="trainings-form" onSubmit={(event) => { event.preventDefault(); void saveTeam(); }}>
-          <label>
-            <span>Nome</span>
-            <input type="text" value={teamDraft.name} onChange={(event) => setTeamDraft((current) => ({ ...current, name: event.target.value }))} />
-          </label>
+        <form className="team-create-form" onSubmit={(event) => { event.preventDefault(); void saveTeam(); }}>
+          <header className="team-create-form__hero">
+            <p>Configuração inteligente</p>
+            <h4>Cria a equipa com liderança, membros e hierarquia</h4>
+            <small>Podes definir o chefe agora e ajustar participantes sem sair deste fluxo.</small>
+          </header>
 
-          <label>
-            <span>Chefe de equipa</span>
-            <div className="team-picker-inline">
-              <Button type="button" variant="secondary" size="sm" onClick={() => openPicker('leader')}>Escolher</Button>
-              <strong>{selectedLeader ? getProfileDisplayName(selectedLeader) : 'Sem chefe selecionado'}</strong>
-            </div>
-          </label>
+          <div className="team-create-form__grid">
+            <label>
+              <span>Nome da equipa</span>
+              <input type="text" value={teamDraft.name} onChange={(event) => setTeamDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex: Operações Norte" />
+            </label>
 
-          <label>
-            <span>Membros participantes</span>
-            <div className="team-picker-inline">
-              <Button type="button" variant="secondary" size="sm" onClick={() => openPicker('members')}>Escolher</Button>
-              <strong>{selectedMembers.length} selecionado(s)</strong>
-            </div>
-            {selectedMembers.length > 0 && (
-              <div className="team-member-chip-list">
-                {selectedMembers.map((member) => (
-                  <button key={member.id} type="button" className="team-member-chip" onClick={() => toggleMember(member.id)}>
-                    {getProfileDisplayName(member)} ×
-                  </button>
+            <label>
+              <span>Subequipa de</span>
+              <select value={teamDraft.parentTeamId} onChange={(event) => setTeamDraft((current) => ({ ...current, parentTeamId: event.target.value }))}>
+                <option value="">Sem equipa-mãe</option>
+                {teams.map((team) => (
+                  <option key={team.id} value={team.id}>{team.name}</option>
                 ))}
-              </div>
-            )}
-          </label>
+              </select>
+            </label>
+          </div>
 
-          <label>
-            <span>Subequipa de</span>
-            <select value={teamDraft.parentTeamId} onChange={(event) => setTeamDraft((current) => ({ ...current, parentTeamId: event.target.value }))}>
-              <option value="">Sem equipa-mãe</option>
-              {teams.map((team) => (
-                <option key={team.id} value={team.id}>{team.name}</option>
-              ))}
-            </select>
-          </label>
+          <div className="team-create-form__pickers">
+            <article>
+              <div className="team-picker-inline">
+                <strong>Chefe de equipa</strong>
+                <Button type="button" variant="secondary" size="sm" onClick={() => openPicker('leader')}>Escolher</Button>
+              </div>
+              <p>{selectedLeader ? getProfileDisplayName(selectedLeader) : 'Sem chefe selecionado'}</p>
+            </article>
+
+            <article>
+              <div className="team-picker-inline">
+                <strong>Membros participantes</strong>
+                <Button type="button" variant="secondary" size="sm" onClick={() => openPicker('members')}>Escolher</Button>
+              </div>
+              <p>{selectedMembers.length} selecionado(s)</p>
+              {selectedMembers.length > 0 && (
+                <div className="team-member-chip-list">
+                  {selectedMembers.map((member) => (
+                    <button key={member.id} type="button" className="team-member-chip" onClick={() => toggleMember(member.id)}>
+                      {getProfileDisplayName(member)} ×
+                    </button>
+                  ))}
+                </div>
+              )}
+            </article>
+          </div>
         </form>
       </Modal>
 

@@ -39,6 +39,7 @@ export async function notifyUsersByPermission(
     where: {
       OR: [
         { isRootAccess: true },
+        { hasAccessTotal: true },
         {
           permissionAssignments: {
             some: {

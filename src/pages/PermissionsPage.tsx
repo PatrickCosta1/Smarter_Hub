@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { formatRoleLabel } from '../portal/labels';
 import Badge from '../components/ui/Badge';
@@ -221,7 +221,11 @@ export default function PermissionsPage() {
       return;
     }
 
-    void loadUsers();
+    const controller = new AbortController();
+
+    void loadUsers(controller.signal);
+
+    return () => controller.abort();
   }, [canAccess]);
 
   useEffect(() => {
@@ -229,7 +233,11 @@ export default function PermissionsPage() {
       return;
     }
 
-    void loadPermissions(selectedUserId);
+    const controller = new AbortController();
+
+    void loadPermissions(selectedUserId, controller.signal);
+
+    return () => controller.abort();
   }, [canAccess, selectedUserId]);
 
   useEffect(() => {
@@ -238,25 +246,31 @@ export default function PermissionsPage() {
     }
   }, [filteredUsers, selectedUserId]);
 
-  async function loadUsers() {
+  async function loadUsers(signal?: AbortSignal) {
     setIsUsersLoading(true);
     try {
-      const data = await apiRequestCached<AdminUser[]>('/admin/users', { headers: getAuthHeaders() }, 12000);
+      const data = await apiRequestCached<AdminUser[]>('/admin/users', { headers: getAuthHeaders(), signal }, 12000);
       setUsers(data);
       if (!selectedUserId && data.length > 0) {
         setSelectedUserId(data[0].id);
       }
     } catch (error) {
+      if (isAbortError(error) || signal?.aborted) {
+        return;
+      }
+
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar utilizadores.');
     } finally {
-      setIsUsersLoading(false);
+      if (!signal?.aborted) {
+        setIsUsersLoading(false);
+      }
     }
   }
 
-  async function loadPermissions(userId: string) {
+  async function loadPermissions(userId: string, signal?: AbortSignal) {
     setIsDetailsLoading(true);
     try {
-      const data = await apiRequestCached<PermissionsResponse>(`/users/${userId}/permissions`, { headers: getAuthHeaders() }, 10000, true);
+      const data = await apiRequestCached<PermissionsResponse>(`/users/${userId}/permissions`, { headers: getAuthHeaders(), signal }, 10000, true);
       const hasAccessTotal = Boolean(data.accessTotal);
       setSelectedUser(data.user);
       setSelectedUserAccessTotal(hasAccessTotal);
@@ -264,9 +278,15 @@ export default function PermissionsPage() {
       setDrafts(Object.fromEntries(data.permissions.map((permission) => [permission.id, buildDraftFromAssignment(permission, hasAccessTotal)])));
       setStatus('');
     } catch (error) {
+      if (isAbortError(error) || signal?.aborted) {
+        return;
+      }
+
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar permissões.');
     } finally {
-      setIsDetailsLoading(false);
+      if (!signal?.aborted) {
+        setIsDetailsLoading(false);
+      }
     }
   }
 

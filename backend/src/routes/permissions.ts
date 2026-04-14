@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 import { prisma } from '../lib/prisma.js';
+import { PERMISSION_CATALOG } from '../lib/permissions.js';
 import {
   canManagePermissions,
   canRevokeAccessTotal,
@@ -13,6 +14,7 @@ import {
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
+let permissionCatalogSyncPromise: Promise<void> | null = null;
 
 const permissionAssignmentSchema = z.object({
   permissionId: z.string().min(1).optional(),
@@ -51,6 +53,44 @@ export const __permissionsTestables = {
   permissionAssignmentSchema,
   accessTotalSchema,
 };
+
+async function ensurePermissionCatalogSynced() {
+  if (!permissionCatalogSyncPromise) {
+    permissionCatalogSyncPromise = (async () => {
+      for (const item of PERMISSION_CATALOG) {
+        await prisma.permission.upsert({
+          where: { code: item.code },
+          update: {
+            label: item.label,
+            description: item.description,
+            category: item.category,
+            requiresRestrictions: item.requiresRestrictions,
+          },
+          create: {
+            code: item.code,
+            label: item.label,
+            description: item.description,
+            category: item.category,
+            requiresRestrictions: item.requiresRestrictions,
+          },
+        });
+      }
+    })().finally(() => {
+      permissionCatalogSyncPromise = null;
+    });
+  }
+
+  await permissionCatalogSyncPromise;
+}
+
+router.use(async (_req, _res, next) => {
+  try {
+    await ensurePermissionCatalogSynced();
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 async function resolvePermission(input: { permissionId?: string; permissionCode?: string }) {
   if (input.permissionId) {

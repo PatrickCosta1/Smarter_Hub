@@ -8,6 +8,7 @@ import { prisma } from '../lib/prisma.js';
 import {
   buildUserWhereFromScope,
   canAccessUserByPermission,
+  canReviewAccessTotalHierarchy,
   canManagePermissions,
   getPermissionScope,
   hasPermission,
@@ -29,8 +30,47 @@ const createUserSchema = z.object({
 });
 
 const updateAdminUserSchema = z.object({
+  primeiroNome: z.string().optional(),
+  apelido: z.string().optional(),
+  nomeAbreviado: z.string().optional(),
+  dataNascimento: z.string().optional(),
+  genero: z.string().optional(),
+  estadoCivil: z.string().optional(),
+  habilitacoesLiterarias: z.string().optional(),
+  curso: z.string().optional(),
+  faculdade: z.string().optional(),
+  emailPessoal: z.string().optional(),
+  telemovel: z.string().optional(),
+  moradaFiscal: z.string().optional(),
+  endereco: z.string().optional(),
   role: roleSchema.optional(),
   teamId: z.string().nullable().optional(),
+  codigoPostal: z.string().optional(),
+  matriculaCarro: z.string().optional(),
+  cartaoCidadao: z.string().optional(),
+  nif: z.string().optional(),
+  niss: z.string().optional(),
+  iban: z.string().optional(),
+  situacaoIrs: z.string().optional(),
+  numeroDependentes: z.string().optional(),
+  irsJovem: z.string().optional(),
+  anoPrimeiroDesconto: z.string().optional(),
+  numeroCartaoContinente: z.string().optional(),
+  voucherNosData: z.string().optional(),
+  comprovativoMoradaFiscal: z.string().optional(),
+  comprovativoCartaoCidadao: z.string().optional(),
+  comprovativoIban: z.string().optional(),
+  comprovativoCartaoContinente: z.string().optional(),
+  contactoEmergenciaNome: z.string().optional(),
+  contactoEmergenciaParentesco: z.string().optional(),
+  contactoEmergenciaNumero: z.string().optional(),
+  cargo: z.string().optional(),
+  funcao: z.string().optional(),
+  dataInicioContrato: z.string().optional(),
+  dataFimContrato: z.string().optional(),
+  remuneracao: z.string().optional(),
+  tipoContrato: z.string().optional(),
+  regimeHorario: z.string().optional(),
   workCountry: countrySchema.optional(),
   localidade: z.string().optional(),
   isActive: z.boolean().optional(),
@@ -326,8 +366,42 @@ router.get('/users', requireAuth, async (req, res) => {
           nomeAbreviado: true,
           primeiroNome: true,
           apelido: true,
+          dataNascimento: true,
+          genero: true,
+          estadoCivil: true,
+          habilitacoesLiterarias: true,
+          curso: true,
+          faculdade: true,
+          emailPessoal: true,
+          telemovel: true,
+          moradaFiscal: true,
+          endereco: true,
+          codigoPostal: true,
+          matriculaCarro: true,
+          cartaoCidadao: true,
+          nif: true,
+          niss: true,
+          iban: true,
+          situacaoIrs: true,
+          numeroDependentes: true,
+          irsJovem: true,
+          anoPrimeiroDesconto: true,
+          numeroCartaoContinente: true,
+          voucherNosData: true,
+          comprovativoMoradaFiscal: true,
+          comprovativoCartaoCidadao: true,
+          comprovativoIban: true,
+          comprovativoCartaoContinente: true,
+          contactoEmergenciaNome: true,
+          contactoEmergenciaParentesco: true,
+          contactoEmergenciaNumero: true,
           cargo: true,
           funcao: true,
+          dataInicioContrato: true,
+          dataFimContrato: true,
+          remuneracao: true,
+          tipoContrato: true,
+          regimeHorario: true,
           workCountry: true,
           localidade: true,
         },
@@ -452,8 +526,42 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
             nomeAbreviado: true,
             primeiroNome: true,
             apelido: true,
+            dataNascimento: true,
+            genero: true,
+            estadoCivil: true,
+            habilitacoesLiterarias: true,
+            curso: true,
+            faculdade: true,
+            emailPessoal: true,
+            telemovel: true,
+            moradaFiscal: true,
+            endereco: true,
+            codigoPostal: true,
+            matriculaCarro: true,
+            cartaoCidadao: true,
+            nif: true,
+            niss: true,
+            iban: true,
+            situacaoIrs: true,
+            numeroDependentes: true,
+            irsJovem: true,
+            anoPrimeiroDesconto: true,
+            numeroCartaoContinente: true,
+            voucherNosData: true,
+            comprovativoMoradaFiscal: true,
+            comprovativoCartaoCidadao: true,
+            comprovativoIban: true,
+            comprovativoCartaoContinente: true,
+            contactoEmergenciaNome: true,
+            contactoEmergenciaParentesco: true,
+            contactoEmergenciaNumero: true,
             cargo: true,
             funcao: true,
+            dataInicioContrato: true,
+            dataFimContrato: true,
+            remuneracao: true,
+            tipoContrato: true,
+            regimeHorario: true,
             workCountry: true,
             localidade: true,
           },
@@ -1310,10 +1418,39 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
   }
 
   const data = payload.data;
-  const existing = await prisma.user.findUnique({ where: { id: userId } });
+  const existing = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      isRootAccess: true,
+      hasAccessTotal: true,
+    },
+  });
 
   if (!existing) {
     return res.status(404).json({ message: 'Utilizador não encontrado.' });
+  }
+
+  if (existing.isRootAccess && !req.authUser!.isRootAccess) {
+    return res.status(403).json({ message: 'Sem permissões para editar este utilizador.' });
+  }
+
+  if (!req.authUser!.isRootAccess) {
+    const actorHasAccessTotal = await isAccessTotal(req.authUser!.id);
+
+    if (actorHasAccessTotal) {
+      if (existing.hasAccessTotal) {
+        const canManageByHierarchy = await canReviewAccessTotalHierarchy(req.authUser!.id, userId);
+        if (!canManageByHierarchy) {
+          return res.status(403).json({ message: 'Sem permissões para editar este utilizador acima de ti na hierarquia de acesso total.' });
+        }
+      }
+    } else {
+      const canManageTarget = await canAccessUserByPermission(req.authUser!.id, 'edit_user', userId);
+      if (!canManageTarget) {
+        return res.status(403).json({ message: 'Sem permissões para editar este utilizador com as restrições atuais.' });
+      }
+    }
   }
 
   if (data.role === 'ADMIN') {
@@ -1323,6 +1460,50 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
   if (req.authUser!.id === userId && data.isActive === false) {
     return res.status(400).json({ message: 'Não é permitido desativar a tua própria conta.' });
   }
+
+  const profilePayload = {
+    ...(data.primeiroNome !== undefined ? { primeiroNome: data.primeiroNome } : {}),
+    ...(data.apelido !== undefined ? { apelido: data.apelido } : {}),
+    ...(data.nomeAbreviado !== undefined ? { nomeAbreviado: data.nomeAbreviado } : {}),
+    ...(data.dataNascimento !== undefined ? { dataNascimento: data.dataNascimento } : {}),
+    ...(data.genero !== undefined ? { genero: data.genero } : {}),
+    ...(data.estadoCivil !== undefined ? { estadoCivil: data.estadoCivil } : {}),
+    ...(data.habilitacoesLiterarias !== undefined ? { habilitacoesLiterarias: data.habilitacoesLiterarias } : {}),
+    ...(data.curso !== undefined ? { curso: data.curso } : {}),
+    ...(data.faculdade !== undefined ? { faculdade: data.faculdade } : {}),
+    ...(data.emailPessoal !== undefined ? { emailPessoal: data.emailPessoal } : {}),
+    ...(data.telemovel !== undefined ? { telemovel: data.telemovel } : {}),
+    ...(data.moradaFiscal !== undefined ? { moradaFiscal: data.moradaFiscal } : {}),
+    ...(data.endereco !== undefined ? { endereco: data.endereco } : {}),
+    ...(data.localidade !== undefined ? { localidade: data.localidade } : {}),
+    ...(data.codigoPostal !== undefined ? { codigoPostal: data.codigoPostal } : {}),
+    ...(data.matriculaCarro !== undefined ? { matriculaCarro: data.matriculaCarro } : {}),
+    ...(data.cartaoCidadao !== undefined ? { cartaoCidadao: data.cartaoCidadao } : {}),
+    ...(data.nif !== undefined ? { nif: data.nif } : {}),
+    ...(data.niss !== undefined ? { niss: data.niss } : {}),
+    ...(data.iban !== undefined ? { iban: data.iban } : {}),
+    ...(data.situacaoIrs !== undefined ? { situacaoIrs: data.situacaoIrs } : {}),
+    ...(data.numeroDependentes !== undefined ? { numeroDependentes: data.numeroDependentes } : {}),
+    ...(data.irsJovem !== undefined ? { irsJovem: data.irsJovem } : {}),
+    ...(data.anoPrimeiroDesconto !== undefined ? { anoPrimeiroDesconto: data.anoPrimeiroDesconto } : {}),
+    ...(data.numeroCartaoContinente !== undefined ? { numeroCartaoContinente: data.numeroCartaoContinente } : {}),
+    ...(data.voucherNosData !== undefined ? { voucherNosData: data.voucherNosData } : {}),
+    ...(data.comprovativoMoradaFiscal !== undefined ? { comprovativoMoradaFiscal: data.comprovativoMoradaFiscal } : {}),
+    ...(data.comprovativoCartaoCidadao !== undefined ? { comprovativoCartaoCidadao: data.comprovativoCartaoCidadao } : {}),
+    ...(data.comprovativoIban !== undefined ? { comprovativoIban: data.comprovativoIban } : {}),
+    ...(data.comprovativoCartaoContinente !== undefined ? { comprovativoCartaoContinente: data.comprovativoCartaoContinente } : {}),
+    ...(data.contactoEmergenciaNome !== undefined ? { contactoEmergenciaNome: data.contactoEmergenciaNome } : {}),
+    ...(data.contactoEmergenciaParentesco !== undefined ? { contactoEmergenciaParentesco: data.contactoEmergenciaParentesco } : {}),
+    ...(data.contactoEmergenciaNumero !== undefined ? { contactoEmergenciaNumero: data.contactoEmergenciaNumero } : {}),
+    ...(data.cargo !== undefined ? { cargo: data.cargo } : {}),
+    ...(data.funcao !== undefined ? { funcao: data.funcao } : {}),
+    ...(data.dataInicioContrato !== undefined ? { dataInicioContrato: data.dataInicioContrato } : {}),
+    ...(data.dataFimContrato !== undefined ? { dataFimContrato: data.dataFimContrato } : {}),
+    ...(data.remuneracao !== undefined ? { remuneracao: data.remuneracao } : {}),
+    ...(data.tipoContrato !== undefined ? { tipoContrato: data.tipoContrato } : {}),
+    ...(data.regimeHorario !== undefined ? { regimeHorario: data.regimeHorario } : {}),
+    ...(data.workCountry !== undefined ? { workCountry: data.workCountry } : {}),
+  };
 
   const updatedUser = await prisma.user.update({
     where: { id: userId },
@@ -1361,15 +1542,16 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
     }
   }
 
-  if (data.workCountry || data.localidade !== undefined) {
+  if (Object.keys(profilePayload).length > 0 || data.localidade !== undefined) {
     await prisma.profile.upsert({
       where: { userId },
       update: {
-        ...(data.workCountry ? { workCountry: data.workCountry } : {}),
+        ...profilePayload,
         ...(data.localidade !== undefined ? { localidade: data.localidade } : {}),
       },
       create: {
         userId,
+        ...profilePayload,
         workCountry: data.workCountry ?? 'PT',
         localidade: data.localidade ?? '',
       },

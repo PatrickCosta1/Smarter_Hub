@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
+import { ChangeEvent, useEffect, useMemo, useState } from 'react';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase, getBackendBase, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
+import { estadoCivilOptions, generoOptions, habilitacoesOptions, irsJovemOptions, parentescoOptions, regimeHorarioOptions, situacaoIrsOptions, tipoContratoOptions } from '../portal/data';
 import { formatRoleLabel } from '../portal/labels';
 import Badge from '../components/ui/Badge';
 import DataTable from '../components/ui/DataTable';
@@ -18,6 +19,7 @@ type CollaboratorRow = {
   username: string;
   email: string;
   role: 'COLABORADOR' | 'MANAGER' | 'COORDENADOR' | 'ADMIN' | 'CONVIDADO';
+  teamId?: string | null;
   isActive: boolean;
   deactivatedAt: string | null;
   updatedAt: string;
@@ -32,12 +34,290 @@ type CollaboratorRow = {
     nomeAbreviado?: string;
     primeiroNome?: string;
     apelido?: string;
+    dataNascimento?: string;
+    genero?: string;
+    estadoCivil?: string;
+    habilitacoesLiterarias?: string;
+    curso?: string;
+    faculdade?: string;
+    emailPessoal?: string;
+    telemovel?: string;
+    moradaFiscal?: string;
+    endereco?: string;
     cargo?: string;
     funcao?: string;
+    codigoPostal?: string;
+    matriculaCarro?: string;
+    cartaoCidadao?: string;
+    nif?: string;
+    niss?: string;
+    iban?: string;
+    situacaoIrs?: string;
+    numeroDependentes?: string;
+    irsJovem?: string;
+    anoPrimeiroDesconto?: string;
+    numeroCartaoContinente?: string;
+    voucherNosData?: string;
+    comprovativoMoradaFiscal?: string;
+    comprovativoCartaoCidadao?: string;
+    comprovativoIban?: string;
+    comprovativoCartaoContinente?: string;
+    contactoEmergenciaNome?: string;
+    contactoEmergenciaParentesco?: string;
+    contactoEmergenciaNumero?: string;
+    dataInicioContrato?: string;
+    dataFimContrato?: string;
+    remuneracao?: string;
+    tipoContrato?: string;
+    regimeHorario?: string;
     workCountry?: 'PT' | 'BR';
     localidade?: string;
   } | null;
 };
+
+type CollaboratorEditDraft = {
+  role: CollaboratorRow['role'];
+  teamId: string;
+  isActive: boolean;
+  workCountry: 'PT' | 'BR';
+  primeiroNome: string;
+  apelido: string;
+  nomeAbreviado: string;
+  dataNascimento: string;
+  genero: string;
+  estadoCivil: string;
+  habilitacoesLiterarias: string;
+  curso: string;
+  faculdade: string;
+  emailPessoal: string;
+  telemovel: string;
+  moradaFiscal: string;
+  endereco: string;
+  localidade: string;
+  codigoPostal: string;
+  matriculaCarro: string;
+  cartaoCidadao: string;
+  nif: string;
+  niss: string;
+  iban: string;
+  situacaoIrs: string;
+  numeroDependentes: string;
+  irsJovem: string;
+  anoPrimeiroDesconto: string;
+  numeroCartaoContinente: string;
+  voucherNosData: string;
+  comprovativoMoradaFiscal: string;
+  comprovativoCartaoCidadao: string;
+  comprovativoIban: string;
+  comprovativoCartaoContinente: string;
+  contactoEmergenciaNome: string;
+  contactoEmergenciaParentesco: string;
+  contactoEmergenciaNumero: string;
+  cargo: string;
+  funcao: string;
+  dataInicioContrato: string;
+  dataFimContrato: string;
+  remuneracao: string;
+  tipoContrato: string;
+  regimeHorario: string;
+};
+
+const EDIT_PROFILE_FIELDS: Array<{ key: keyof CollaboratorEditDraft; label: string; section: 'identificacao' | 'contactos' | 'fiscal' | 'emergencia' | 'contrato' }> = [
+  { key: 'primeiroNome', label: 'Primeiro nome', section: 'identificacao' },
+  { key: 'apelido', label: 'Apelido', section: 'identificacao' },
+  { key: 'nomeAbreviado', label: 'Nome abreviado', section: 'identificacao' },
+  { key: 'dataNascimento', label: 'Data de nascimento', section: 'identificacao' },
+  { key: 'genero', label: 'Género', section: 'identificacao' },
+  { key: 'estadoCivil', label: 'Estado civil', section: 'identificacao' },
+  { key: 'habilitacoesLiterarias', label: 'Habilitações literárias', section: 'identificacao' },
+  { key: 'curso', label: 'Curso', section: 'identificacao' },
+  { key: 'faculdade', label: 'Faculdade', section: 'identificacao' },
+  { key: 'emailPessoal', label: 'Email pessoal', section: 'contactos' },
+  { key: 'telemovel', label: 'Telemóvel', section: 'contactos' },
+  { key: 'moradaFiscal', label: 'Morada fiscal', section: 'contactos' },
+  { key: 'endereco', label: 'Morada habitual', section: 'contactos' },
+  { key: 'localidade', label: 'Localidade', section: 'contactos' },
+  { key: 'codigoPostal', label: 'Código postal', section: 'contactos' },
+  { key: 'matriculaCarro', label: 'Matrícula do carro', section: 'fiscal' },
+  { key: 'cartaoCidadao', label: 'Cartão de cidadão', section: 'fiscal' },
+  { key: 'nif', label: 'NIF', section: 'fiscal' },
+  { key: 'niss', label: 'NISS', section: 'fiscal' },
+  { key: 'iban', label: 'IBAN', section: 'fiscal' },
+  { key: 'situacaoIrs', label: 'Situação IRS', section: 'fiscal' },
+  { key: 'numeroDependentes', label: 'Número de dependentes', section: 'fiscal' },
+  { key: 'irsJovem', label: 'IRS jovem', section: 'fiscal' },
+  { key: 'anoPrimeiroDesconto', label: 'Ano do primeiro desconto', section: 'fiscal' },
+  { key: 'numeroCartaoContinente', label: 'Cartão Continente', section: 'fiscal' },
+  { key: 'voucherNosData', label: 'Voucher NOS data', section: 'fiscal' },
+  { key: 'comprovativoMoradaFiscal', label: 'Comprovativo morada fiscal', section: 'fiscal' },
+  { key: 'comprovativoCartaoCidadao', label: 'Comprovativo cartão de cidadão', section: 'fiscal' },
+  { key: 'comprovativoIban', label: 'Comprovativo IBAN', section: 'fiscal' },
+  { key: 'comprovativoCartaoContinente', label: 'Comprovativo cartão Continente', section: 'fiscal' },
+  { key: 'contactoEmergenciaNome', label: 'Nome contacto emergência', section: 'emergencia' },
+  { key: 'contactoEmergenciaParentesco', label: 'Parentesco contacto emergência', section: 'emergencia' },
+  { key: 'contactoEmergenciaNumero', label: 'Número contacto emergência', section: 'emergencia' },
+  { key: 'cargo', label: 'Cargo', section: 'contrato' },
+  { key: 'funcao', label: 'Função', section: 'contrato' },
+  { key: 'dataInicioContrato', label: 'Data início contrato', section: 'contrato' },
+  { key: 'dataFimContrato', label: 'Data fim contrato', section: 'contrato' },
+  { key: 'remuneracao', label: 'Remuneração', section: 'contrato' },
+  { key: 'tipoContrato', label: 'Tipo contrato', section: 'contrato' },
+  { key: 'regimeHorario', label: 'Regime horário', section: 'contrato' },
+];
+
+const EMPTY_EDIT_DRAFT: CollaboratorEditDraft = {
+  role: 'COLABORADOR',
+  teamId: '',
+  isActive: true,
+  workCountry: 'PT',
+  primeiroNome: '',
+  apelido: '',
+  nomeAbreviado: '',
+  dataNascimento: '',
+  genero: '',
+  estadoCivil: '',
+  habilitacoesLiterarias: '',
+  curso: '',
+  faculdade: '',
+  emailPessoal: '',
+  telemovel: '',
+  moradaFiscal: '',
+  endereco: '',
+  localidade: '',
+  codigoPostal: '',
+  matriculaCarro: '',
+  cartaoCidadao: '',
+  nif: '',
+  niss: '',
+  iban: '',
+  situacaoIrs: '',
+  numeroDependentes: '',
+  irsJovem: '',
+  anoPrimeiroDesconto: '',
+  numeroCartaoContinente: '',
+  voucherNosData: '',
+  comprovativoMoradaFiscal: '',
+  comprovativoCartaoCidadao: '',
+  comprovativoIban: '',
+  comprovativoCartaoContinente: '',
+  contactoEmergenciaNome: '',
+  contactoEmergenciaParentesco: '',
+  contactoEmergenciaNumero: '',
+  cargo: '',
+  funcao: '',
+  dataInicioContrato: '',
+  dataFimContrato: '',
+  remuneracao: '',
+  tipoContrato: '',
+  regimeHorario: '',
+};
+
+const CARGO_OPTIONS = [
+  'Trainee',
+  'Junior',
+  'Associate',
+  'Senior',
+  'Lead',
+  'Principal',
+  'Director',
+  'C Level',
+];
+
+const FUNCAO_OPTIONS = [
+  'Administrative Assistant',
+  'Business Analyst',
+  'Business Consultant',
+  'Business Controller',
+  'CEO',
+  'Communication Manager',
+  'Communication Specialist',
+  'Data Analyst',
+  'Data Engineer',
+  'Data Science Manager',
+  'Data Scientist',
+  'Delivery Director',
+  'Delivery Manager',
+  'DevOps Engineer',
+  'DevOps Manager',
+  'Estagiario',
+  'Managing Director',
+  'Operations & Control Director',
+  'Operations & Control Manager',
+  'People Director',
+  'People Manager',
+  'People Partner',
+  'Pre-Sales Consultant',
+  'Product Architect',
+  'Product Director',
+  'Product Manager',
+  'Product Owner',
+  'Project Manager',
+  'Quality Analyst',
+  'Quality Manager',
+  'Sales Consultant',
+  'Sales Director',
+  'Sales Manager',
+  'Scrum Master',
+  'Service Analyst',
+  'Service Director',
+  'Service Engineer',
+  'Service Manager',
+  'Software Developer',
+  'Software Engineer',
+  'Strategic Solutions Consultant',
+  'Technical Consultant',
+  'UX UI Designer',
+];
+
+function buildEditDraftFromRow(item: CollaboratorRow): CollaboratorEditDraft {
+  const profile = item.profile || {};
+  return {
+    role: item.role,
+    teamId: item.teamId || '',
+    isActive: item.isActive,
+    workCountry: profile.workCountry || 'PT',
+    primeiroNome: profile.primeiroNome || '',
+    apelido: profile.apelido || '',
+    nomeAbreviado: profile.nomeAbreviado || '',
+    dataNascimento: profile.dataNascimento || '',
+    genero: profile.genero || '',
+    estadoCivil: profile.estadoCivil || '',
+    habilitacoesLiterarias: profile.habilitacoesLiterarias || '',
+    curso: profile.curso || '',
+    faculdade: profile.faculdade || '',
+    emailPessoal: profile.emailPessoal || '',
+    telemovel: profile.telemovel || '',
+    moradaFiscal: profile.moradaFiscal || '',
+    endereco: profile.endereco || '',
+    localidade: profile.localidade || '',
+    codigoPostal: profile.codigoPostal || '',
+    matriculaCarro: profile.matriculaCarro || '',
+    cartaoCidadao: profile.cartaoCidadao || '',
+    nif: profile.nif || '',
+    niss: profile.niss || '',
+    iban: profile.iban || '',
+    situacaoIrs: profile.situacaoIrs || '',
+    numeroDependentes: profile.numeroDependentes || '',
+    irsJovem: profile.irsJovem || '',
+    anoPrimeiroDesconto: profile.anoPrimeiroDesconto || '',
+    numeroCartaoContinente: profile.numeroCartaoContinente || '',
+    voucherNosData: profile.voucherNosData || '',
+    comprovativoMoradaFiscal: profile.comprovativoMoradaFiscal || '',
+    comprovativoCartaoCidadao: profile.comprovativoCartaoCidadao || '',
+    comprovativoIban: profile.comprovativoIban || '',
+    comprovativoCartaoContinente: profile.comprovativoCartaoContinente || '',
+    contactoEmergenciaNome: profile.contactoEmergenciaNome || '',
+    contactoEmergenciaParentesco: profile.contactoEmergenciaParentesco || '',
+    contactoEmergenciaNumero: profile.contactoEmergenciaNumero || '',
+    cargo: profile.cargo || '',
+    funcao: profile.funcao || '',
+    dataInicioContrato: profile.dataInicioContrato || '',
+    dataFimContrato: profile.dataFimContrato || '',
+    remuneracao: profile.remuneracao || '',
+    tipoContrato: profile.tipoContrato || '',
+    regimeHorario: profile.regimeHorario || '',
+  };
+}
 
 function getCollaboratorTeamInfo(item: CollaboratorRow) {
   const resolvedTeam = item.team?.name
@@ -114,6 +394,12 @@ type TeamOption = {
   name: string;
 };
 
+type CustomProfileOption = {
+  id: string;
+  label: string;
+  groupLabel?: string | null;
+};
+
 type PermissionDraft = {
   enabled: boolean;
   restrictedToTeams: string;
@@ -135,6 +421,42 @@ const EMPTY_PERMISSION_DRAFT: PermissionDraft = {
 function getAuthHeaders() {
   const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
   return authHeaders(token);
+}
+
+function normalizeDropdownValues(values: string[]) {
+  const unique = new Map<string, string>();
+  for (const value of values) {
+    const cleaned = value.trim();
+    if (!cleaned) {
+      continue;
+    }
+    const key = cleaned.toLowerCase();
+    if (!unique.has(key)) {
+      unique.set(key, cleaned);
+    }
+  }
+  return Array.from(unique.values()).sort((a, b) => a.localeCompare(b, 'pt-PT'));
+}
+
+function normalizeFileUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith('/uploads/')) {
+    return `${getBackendBase()}${trimmed}`;
+  }
+
+  if (trimmed.startsWith('uploads/')) {
+    return `${getBackendBase()}/${trimmed}`;
+  }
+
+  return `${getBackendBase()}/uploads/${trimmed.replace(/^\/+/, '')}`;
 }
 
 function getDisplayName(item: CollaboratorRow) {
@@ -210,8 +532,9 @@ function buildDraftFromAssignment(item: PermissionItem, forceEnabled = false): P
 }
 
 export default function CollaboratorsPage() {
-  const { hasPermission, isRootAccess, currentUser } = usePortal();
+  const { hasPermission, isRootAccess, isAccessTotal, currentUser } = usePortal();
   const canView = isRootAccess || hasPermission('view_user_list');
+  const canEditUser = isRootAccess || hasPermission('edit_user');
   const canManagePermissions = isRootAccess || hasPermission('manage_permissions');
   const canManageActive = isRootAccess || hasPermission('manage_user_active');
 
@@ -246,6 +569,38 @@ export default function CollaboratorsPage() {
   const [permissionSearch, setPermissionSearch] = useState('');
   const [permissionTeams, setPermissionTeams] = useState<TeamOption[]>([]);
   const [pendingTeamToAdd, setPendingTeamToAdd] = useState('');
+  const [editDraft, setEditDraft] = useState<CollaboratorEditDraft>(EMPTY_EDIT_DRAFT);
+  const [isSavingEditDraft, setIsSavingEditDraft] = useState(false);
+  const [customCargoOptions, setCustomCargoOptions] = useState<CustomProfileOption[]>([]);
+  const [customFuncaoOptions, setCustomFuncaoOptions] = useState<CustomProfileOption[]>([]);
+  const [isProfileOptionModalOpen, setIsProfileOptionModalOpen] = useState(false);
+  const [profileOptionType, setProfileOptionType] = useState<'CARGO' | 'FUNCAO'>('CARGO');
+  const [profileOptionLabel, setProfileOptionLabel] = useState('');
+  const [profileOptionGroup, setProfileOptionGroup] = useState('');
+  const [isSavingProfileOption, setIsSavingProfileOption] = useState(false);
+  const canManageProfileOptions = isRootAccess || isAccessTotal || hasPermission('manage_profile_dropdown_options');
+
+  const cargoDropdownOptions = useMemo(
+    () => normalizeDropdownValues([
+      ...CARGO_OPTIONS,
+      ...rows.map((item) => item.profile?.cargo || ''),
+      ...customCargoOptions.map((item) => item.label),
+      editDraft.cargo,
+    ]),
+    [customCargoOptions, editDraft.cargo, rows],
+  );
+
+  const funcaoDropdownOptions = useMemo(
+    () => normalizeDropdownValues([
+      ...FUNCAO_OPTIONS,
+      ...rows.map((item) => item.profile?.funcao || ''),
+      ...customFuncaoOptions.map((item) => item.label),
+      editDraft.funcao,
+    ]),
+    [customFuncaoOptions, editDraft.funcao, rows],
+  );
+
+  const hiddenFileInputId = (fieldKey: string) => `collaborator-${fieldKey}-file`;
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
   const visibleRows = useMemo(
@@ -305,10 +660,18 @@ export default function CollaboratorsPage() {
       return;
     }
 
-    void loadCollaborators();
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void loadCollaborators(controller.signal);
+    }, 220);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
   }, [canView, page, pageSize, query, roleFilter, activeFilter, countryFilter, sortBy, sortDirection]);
 
-  async function loadCollaborators() {
+  async function loadCollaborators(signal?: AbortSignal) {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -332,15 +695,22 @@ export default function CollaboratorsPage() {
 
       const data = await apiRequestCached<CollaboratorsResponse>(`/users/collaborators?${params.toString()}`, {
         headers: getAuthHeaders(),
+        signal,
       }, 10000);
 
       setRows(data.rows);
       setTotal(data.total);
       setStatus('');
     } catch (error) {
+      if (isAbortError(error) || signal?.aborted) {
+        return;
+      }
+
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar colaboradores.');
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
   }
 
@@ -381,6 +751,7 @@ export default function CollaboratorsPage() {
     setDetailsTab(initialTab);
     setIsDetailsOpen(true);
     setIsLoadingDetails(true);
+    setEditDraft(buildEditDraftFromRow(item));
 
     try {
       const details = await apiRequest<UserPermissionsResponse>(`/users/${item.id}/permissions`, {
@@ -409,10 +780,148 @@ export default function CollaboratorsPage() {
           setPermissionTeams([]);
         }
       }
+
+      try {
+        const profileOptions = await apiRequestCached<{
+          cargo?: CustomProfileOption[];
+          funcao?: CustomProfileOption[];
+        }>('/profile/options', {
+          headers: getAuthHeaders(),
+        }, 8000, true);
+
+        setCustomCargoOptions(profileOptions.cargo ?? []);
+        setCustomFuncaoOptions(profileOptions.funcao ?? []);
+      } catch {
+        setCustomCargoOptions([]);
+        setCustomFuncaoOptions([]);
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar detalhe do colaborador.');
     } finally {
       setIsLoadingDetails(false);
+    }
+  }
+
+  async function openProfileOptionModal(type: 'CARGO' | 'FUNCAO') {
+    if (!selectedRow || !canManageProfileOptions) {
+      return;
+    }
+
+    setProfileOptionType(type);
+    setProfileOptionLabel('');
+    setProfileOptionGroup('');
+    setIsProfileOptionModalOpen(true);
+  }
+
+  async function handleCreateProfileOption() {
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const normalizedLabel = profileOptionLabel.trim().replace(/\s+/g, ' ');
+    const normalizedGroup = profileOptionGroup.trim().replace(/\s+/g, ' ');
+
+    if (!token || !normalizedLabel) {
+      setStatus('Indica um valor válido para adicionar.');
+      return;
+    }
+
+    setIsSavingProfileOption(true);
+
+    try {
+      const payload = await apiRequest<{ option?: { id: string; type: 'CARGO' | 'FUNCAO'; label: string; groupLabel?: string | null } }>('/profile/options', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          type: profileOptionType,
+          label: normalizedLabel,
+          groupLabel: profileOptionType === 'FUNCAO' ? normalizedGroup : undefined,
+        }),
+      });
+
+      const created = payload.option;
+      if (!created) {
+        throw new Error('Não foi possível guardar o valor.');
+      }
+
+      if (created.type === 'CARGO') {
+        setCustomCargoOptions((current) => [...current, { id: created.id, label: created.label, groupLabel: created.groupLabel }]);
+      } else {
+        setCustomFuncaoOptions((current) => [...current, { id: created.id, label: created.label, groupLabel: created.groupLabel }]);
+      }
+
+      setIsProfileOptionModalOpen(false);
+      setStatus('Valor adicionado com sucesso.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Não foi possível adicionar o valor.');
+    } finally {
+      setIsSavingProfileOption(false);
+    }
+  }
+
+  async function saveCollaboratorDraft() {
+    if (!selectedRow) {
+      return;
+    }
+
+    setIsSavingEditDraft(true);
+    try {
+      await apiRequest(`/admin/users/${selectedRow.id}`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          role: editDraft.role,
+          teamId: editDraft.role === 'ADMIN' ? null : (editDraft.teamId || null),
+          isActive: editDraft.isActive,
+          workCountry: editDraft.workCountry,
+          primeiroNome: editDraft.primeiroNome,
+          apelido: editDraft.apelido,
+          nomeAbreviado: editDraft.nomeAbreviado,
+          dataNascimento: editDraft.dataNascimento,
+          genero: editDraft.genero,
+          estadoCivil: editDraft.estadoCivil,
+          habilitacoesLiterarias: editDraft.habilitacoesLiterarias,
+          curso: editDraft.curso,
+          faculdade: editDraft.faculdade,
+          emailPessoal: editDraft.emailPessoal,
+          telemovel: editDraft.telemovel,
+          moradaFiscal: editDraft.moradaFiscal,
+          endereco: editDraft.endereco,
+          localidade: editDraft.localidade,
+          codigoPostal: editDraft.codigoPostal,
+          matriculaCarro: editDraft.matriculaCarro,
+          cartaoCidadao: editDraft.cartaoCidadao,
+          nif: editDraft.nif,
+          niss: editDraft.niss,
+          iban: editDraft.iban,
+          situacaoIrs: editDraft.situacaoIrs,
+          numeroDependentes: editDraft.numeroDependentes,
+          irsJovem: editDraft.irsJovem,
+          anoPrimeiroDesconto: editDraft.anoPrimeiroDesconto,
+          numeroCartaoContinente: editDraft.numeroCartaoContinente,
+          voucherNosData: editDraft.voucherNosData,
+          comprovativoMoradaFiscal: editDraft.comprovativoMoradaFiscal,
+          comprovativoCartaoCidadao: editDraft.comprovativoCartaoCidadao,
+          comprovativoIban: editDraft.comprovativoIban,
+          comprovativoCartaoContinente: editDraft.comprovativoCartaoContinente,
+          contactoEmergenciaNome: editDraft.contactoEmergenciaNome,
+          contactoEmergenciaParentesco: editDraft.contactoEmergenciaParentesco,
+          contactoEmergenciaNumero: editDraft.contactoEmergenciaNumero,
+          cargo: editDraft.cargo,
+          funcao: editDraft.funcao,
+          dataInicioContrato: editDraft.dataInicioContrato,
+          dataFimContrato: editDraft.dataFimContrato,
+          remuneracao: editDraft.remuneracao,
+          tipoContrato: editDraft.tipoContrato,
+          regimeHorario: editDraft.regimeHorario,
+        }),
+      });
+
+      clearApiCache('/users/collaborators');
+      await loadCollaborators();
+      await openDetails(selectedRow, 'ficha');
+      setStatus('Ficha atualizada com sucesso.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Falha ao guardar ficha do colaborador.');
+    } finally {
+      setIsSavingEditDraft(false);
     }
   }
 
@@ -533,6 +1042,182 @@ export default function CollaboratorsPage() {
         restrictedToTeams: toggleCommaItem(selectedPermissionDraft.restrictedToTeams, teamId),
       },
     }));
+  }
+
+  function renderEditFieldControl(fieldKey: keyof CollaboratorEditDraft) {
+    const isComprovativoField = fieldKey === 'comprovativoMoradaFiscal'
+      || fieldKey === 'comprovativoCartaoCidadao'
+      || fieldKey === 'comprovativoIban'
+      || fieldKey === 'comprovativoCartaoContinente';
+
+    const value = editDraft[fieldKey] as string;
+
+    const onChangeValue = (nextValue: string) => {
+      setEditDraft((current) => ({ ...current, [fieldKey]: nextValue }));
+    };
+
+    if (fieldKey === 'genero') {
+      return (
+        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+          <option value="">Selecionar</option>
+          {generoOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      );
+    }
+
+    if (fieldKey === 'estadoCivil') {
+      return (
+        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+          <option value="">Selecionar</option>
+          {estadoCivilOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      );
+    }
+
+    if (fieldKey === 'habilitacoesLiterarias') {
+      return (
+        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+          <option value="">Selecionar</option>
+          {habilitacoesOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      );
+    }
+
+    if (fieldKey === 'situacaoIrs') {
+      return (
+        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+          <option value="">Selecionar</option>
+          {situacaoIrsOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      );
+    }
+
+    if (fieldKey === 'irsJovem') {
+      return (
+        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+          <option value="">Selecionar</option>
+          {irsJovemOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      );
+    }
+
+    if (fieldKey === 'contactoEmergenciaParentesco') {
+      return (
+        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+          <option value="">Selecionar</option>
+          {parentescoOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      );
+    }
+
+    if (fieldKey === 'tipoContrato') {
+      return (
+        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+          <option value="">Selecionar</option>
+          {tipoContratoOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      );
+    }
+
+    if (fieldKey === 'regimeHorario') {
+      return (
+        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+          <option value="">Selecionar</option>
+          {regimeHorarioOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      );
+    }
+
+    if (fieldKey === 'cargo') {
+      return (
+        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+          <option value="">Selecionar</option>
+          {cargoDropdownOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      );
+    }
+
+    if (fieldKey === 'funcao') {
+      return (
+        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+          <option value="">Selecionar</option>
+          {funcaoDropdownOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      );
+    }
+
+    if (isComprovativoField) {
+      const comprovativoUrl = normalizeFileUrl(value);
+      return (
+        <div className="collaborator-proof-field">
+          <div className="collaborator-proof-field__actions">
+            {comprovativoUrl ? (
+              <a href={comprovativoUrl} target="_blank" rel="noreferrer" className="collaborator-proof-link">
+                Ver atual
+              </a>
+            ) : (
+              <span className="collaborator-proof-link collaborator-proof-link--empty">Sem comprovativo</span>
+            )}
+
+            <label className="collaborator-proof-upload">
+              <span>Anexar novo</span>
+              <input
+                id={hiddenFileInputId(fieldKey)}
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(event) => void handleCollaboratorFileChange(fieldKey, event)}
+                onClick={(event) => {
+                  event.currentTarget.value = '';
+                }}
+                disabled={!canEditUser || isSavingEditDraft}
+              />
+            </label>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <input
+        type="text"
+        value={value}
+        onChange={(event) => onChangeValue(event.target.value)}
+        disabled={!canEditUser}
+      />
+    );
+  }
+
+  async function handleCollaboratorFileChange(field: keyof CollaboratorEditDraft, event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch(`${getApiBase()}/files/upload`, {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(payload.message || 'Falha ao carregar ficheiro.');
+      }
+
+      const payload = (await response.json()) as { link?: string; linkPath?: string };
+      setEditDraft((current) => ({
+        ...current,
+        [field]: payload.linkPath || payload.link || '',
+      }));
+      setStatus('Comprovativo carregado com sucesso.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Falha ao carregar comprovativo.');
+    }
   }
 
   if (!canView) {
@@ -656,7 +1341,7 @@ export default function CollaboratorsPage() {
               header: 'Ações',
               render: (item: CollaboratorRow) => (
                 <div className="collaborators-actions">
-                  <Button type="button" size="sm" variant="ghost" onClick={() => void openDetails(item)}>Ver</Button>
+                  <Button type="button" size="sm" variant="primary" onClick={() => void openDetails(item)}>Editar</Button>
                   <Button type="button" size="sm" variant="secondary" onClick={() => void openDetails(item, 'permissoes')} disabled={!canManagePermissions}>Permissões</Button>
                   <Button
                     type="button"
@@ -699,7 +1384,6 @@ export default function CollaboratorsPage() {
         showCloseButton={false}
         footer={
           <div className="modal-footer-split">
-            <small>Fluxo unificado: ficha, permissões e estado de conta.</small>
             <Button type="button" variant="ghost" onClick={() => setIsDetailsOpen(false)}>Fechar</Button>
           </div>
         }
@@ -734,6 +1418,23 @@ export default function CollaboratorsPage() {
 
           {!isLoadingDetails && selectedRow && detailsTab === 'ficha' && (
             <section className="collaborator-modal-panel">
+              <div className="collaborator-ficha-actions">
+                <div>
+                  <h4>Ficha editável</h4>
+                  <p>Usa esta área para ajustar todos os dados do colaborador.</p>
+                </div>
+                {canManageProfileOptions && (
+                  <div className="profile-contract__actions">
+                    <Button type="button" variant="ghost" size="sm" onClick={() => void openProfileOptionModal('CARGO')}>
+                      + Novo cargo
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => void openProfileOptionModal('FUNCAO')}>
+                      + Nova função
+                    </Button>
+                  </div>
+                )}
+              </div>
+
               <div className="collaborator-kpi-grid">
                 <article>
                   <span>Nome</span>
@@ -753,19 +1454,73 @@ export default function CollaboratorsPage() {
                 </article>
               </div>
 
-              <div className="collaborator-info-grid">
-                <article>
-                  <h4>Identificação</h4>
-                  <p><span>Username:</span> {selectedRow.username}</p>
-                  <p><span>País:</span> {selectedRow.profile?.workCountry || 'PT'}</p>
-                  <p><span>Localidade:</span> {selectedRow.profile?.localidade || '-'}</p>
+              <div className="collaborator-edit-workbench">
+                <article className="collaborator-edit-section">
+                  <h4>Dados de conta</h4>
+                  <div className="collaborator-edit-grid collaborator-edit-grid--top">
+                    <label>
+                      <span>Username</span>
+                      <input type="text" value={selectedRow.username} disabled />
+                    </label>
+                    <label>
+                      <span>Email login</span>
+                      <input type="text" value={selectedRow.email} disabled />
+                    </label>
+                    <label>
+                      <span>Role</span>
+                      <select value={editDraft.role} onChange={(event) => setEditDraft((current) => ({ ...current, role: event.target.value as CollaboratorRow['role'] }))} disabled={!canEditUser}>
+                        <option value="COLABORADOR">{formatRoleLabel('COLABORADOR')}</option>
+                        <option value="MANAGER">{formatRoleLabel('MANAGER')}</option>
+                        <option value="COORDENADOR">{formatRoleLabel('COORDENADOR')}</option>
+                        <option value="ADMIN">{formatRoleLabel('ADMIN')}</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>País de trabalho</span>
+                      <select value={editDraft.workCountry} onChange={(event) => setEditDraft((current) => ({ ...current, workCountry: event.target.value as 'PT' | 'BR' }))} disabled={!canEditUser}>
+                        <option value="PT">Portugal</option>
+                        <option value="BR">Brasil</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Equipa principal</span>
+                      <select value={editDraft.teamId} onChange={(event) => setEditDraft((current) => ({ ...current, teamId: event.target.value }))} disabled={!canEditUser || editDraft.role === 'ADMIN'}>
+                        <option value="">Sem equipa</option>
+                        {permissionTeams.map((team) => (
+                          <option key={team.id} value={team.id}>{team.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Estado da conta</span>
+                      <select value={editDraft.isActive ? 'ACTIVE' : 'INACTIVE'} onChange={(event) => setEditDraft((current) => ({ ...current, isActive: event.target.value === 'ACTIVE' }))} disabled={!canEditUser || selectedRow.username === 't.people'}>
+                        <option value="ACTIVE">Ativa</option>
+                        <option value="INACTIVE">Inativa</option>
+                      </select>
+                    </label>
+                  </div>
                 </article>
-                <article>
-                  <h4>Função</h4>
-                  <p><span>Cargo:</span> {selectedRow.profile?.cargo || '-'}</p>
-                  <p><span>Função:</span> {selectedRow.profile?.funcao || '-'}</p>
-                  <p><span>Estado:</span> {selectedRow.isActive ? 'Ativo' : 'Inativo'}</p>
-                </article>
+
+                {['identificacao', 'contactos', 'fiscal', 'emergencia', 'contrato'].map((section) => (
+                  <article key={section} className="collaborator-edit-section">
+                    <h4>{section === 'identificacao' ? 'Identificação' : section === 'contactos' ? 'Contactos e moradas' : section === 'fiscal' ? 'Fiscal e documentos' : section === 'emergencia' ? 'Emergência' : 'Contrato'}</h4>
+                    <div className="collaborator-edit-grid">
+                      {EDIT_PROFILE_FIELDS.filter((field) => field.section === section).map((field) => (
+                        <label key={field.key}>
+                          <span>{field.label}</span>
+                          {renderEditFieldControl(field.key)}
+                        </label>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+
+                <div className="permission-card__footer">
+                  <Button type="button" variant="primary" isLoading={isSavingEditDraft} disabled={!canEditUser || isSavingEditDraft} onClick={() => void saveCollaboratorDraft()}>
+                    Guardar ficha completa
+                  </Button>
+                  {!canEditUser && <small>Sem permissões para editar dados deste colaborador.</small>}
+                </div>
               </div>
             </section>
           )}
@@ -1058,6 +1813,57 @@ export default function CollaboratorsPage() {
             </section>
           )}
         </section>
+      </Modal>
+
+      <Modal
+        open={isProfileOptionModalOpen}
+        title={profileOptionType === 'CARGO' ? 'Adicionar novo cargo' : 'Adicionar nova função'}
+        onClose={() => setIsProfileOptionModalOpen(false)}
+        width="520px"
+        footer={(
+          <div className="profile-option-modal__footer">
+            <Button type="button" variant="ghost" onClick={() => setIsProfileOptionModalOpen(false)} disabled={isSavingProfileOption}>
+              Cancelar
+            </Button>
+            <Button type="button" variant="primary" isLoading={isSavingProfileOption} onClick={() => void handleCreateProfileOption()}>
+              Guardar
+            </Button>
+          </div>
+        )}
+      >
+        <div className="profile-option-modal">
+          <label>
+            <span>Tipo</span>
+            <select value={profileOptionType} onChange={(event) => setProfileOptionType(event.target.value as 'CARGO' | 'FUNCAO')} disabled={isSavingProfileOption}>
+              <option value="CARGO">Cargo</option>
+              <option value="FUNCAO">Função</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Nome</span>
+            <input
+              type="text"
+              value={profileOptionLabel}
+              disabled={isSavingProfileOption}
+              placeholder={profileOptionType === 'CARGO' ? 'Ex.: Staff Engineer' : 'Ex.: Data Governance Specialist'}
+              onChange={(event) => setProfileOptionLabel(event.target.value)}
+            />
+          </label>
+
+          {profileOptionType === 'FUNCAO' && (
+            <label>
+              <span>Grupo (opcional)</span>
+              <input
+                type="text"
+                value={profileOptionGroup}
+                disabled={isSavingProfileOption}
+                placeholder="Ex.: Produto"
+                onChange={(event) => setProfileOptionGroup(event.target.value)}
+              />
+            </label>
+          )}
+        </div>
       </Modal>
 
       <Modal

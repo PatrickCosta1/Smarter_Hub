@@ -387,19 +387,23 @@ export default function NotificationsPage() {
           <p className="hero-kicker">Central executiva</p>
           <h2>Notificações</h2>
           <p className="notifications-subtitle">{headlineText}</p>
+          <div className="notifications-hero__chips">
+            <span>{filterMode === 'all' ? 'A mostrar todas' : filterMode === 'unread' ? 'A mostrar por ler' : 'A mostrar lidas'}</span>
+            <span>Atualização em tempo real</span>
+          </div>
         </div>
 
         <div className="notifications-stats">
-          <div>
-            <span>Eventos</span>
-            <strong>{notifications.length}</strong>
-          </div>
-          <div>
-            <span>Pendentes</span>
+          <div className="notifications-stat notifications-stat--unread">
+            <span>Por ler</span>
             <strong>{unreadNotifications}</strong>
           </div>
-          <div>
-            <span>Concluídos</span>
+          <div className="notifications-stat">
+            <span>Total</span>
+            <strong>{notifications.length}</strong>
+          </div>
+          <div className="notifications-stat">
+            <span>Lidas</span>
             <strong>{readCount}</strong>
           </div>
         </div>

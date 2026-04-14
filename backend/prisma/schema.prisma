@@ -55,6 +55,11 @@ enum VacationStatus {
   CANCELLED
 }
 
+enum ProfileOptionType {
+  CARGO
+  FUNCAO
+}
+
 model Team {
   id            String      @id @default(ulid())
   name          String      @unique
@@ -102,6 +107,7 @@ model User {
   vacationApprovalSteps VacationApproval[]
   profileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestUser")
   reviewedProfileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestReviewer")
+  createdProfileOptions ProfileDropdownOption[] @relation("ProfileOptionAuthor")
   permissionAssignments UserPermission[] @relation("PermissionTargetUser")
   permissionAssignmentsGranted UserPermission[] @relation("PermissionGrantAuthor")
   accessTotalGrantedBy User?  @relation("AccessTotalGrantAuthor", fields: [accessTotalGrantedById], references: [id], onDelete: SetNull)
@@ -181,6 +187,23 @@ model Profile {
 
   @@index([userId])
   @@index([workCountry])
+}
+
+model ProfileDropdownOption {
+  id              String            @id @default(ulid())
+  type            ProfileOptionType
+  label           String
+  normalizedValue String
+  groupLabel      String?
+  isActive        Boolean           @default(true)
+  createdById     String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  createdBy       User?             @relation("ProfileOptionAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([type, normalizedValue])
+  @@index([type, isActive])
+  @@index([createdById])
 }
 
 model Notification {

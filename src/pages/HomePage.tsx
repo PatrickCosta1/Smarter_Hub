@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiRequestCached, authHeaders } from '../portal/api';
+import { apiRequestCached, authHeaders, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
@@ -36,15 +36,17 @@ export default function HomePage() {
   );
 
   useEffect(() => {
+    const controller = new AbortController();
+
     void (async () => {
       setIsLoadingSummary(true);
 
       try {
         if (isManagerFlow || isTPeople) {
           const [profileRequests, vacationRequests, trainings] = await Promise.all([
-            apiRequestCached<unknown[]>('/profile/requests', { headers: getAuthHeaders() }, 15000),
-            apiRequestCached<unknown[]>('/vacations/requests', { headers: getAuthHeaders() }, 15000),
-            apiRequestCached<Array<{ status?: string }>>('/trainings/assigned', { headers: getAuthHeaders() }, 15000),
+            apiRequestCached<unknown[]>('/profile/requests', { headers: getAuthHeaders(), signal: controller.signal }, 15000),
+            apiRequestCached<unknown[]>('/vacations/requests', { headers: getAuthHeaders(), signal: controller.signal }, 15000),
+            apiRequestCached<Array<{ status?: string }>>('/trainings/assigned', { headers: getAuthHeaders(), signal: controller.signal }, 15000),
           ]);
 
           setPendingProfileRequests(profileRequests.length);
@@ -54,20 +56,28 @@ export default function HomePage() {
           return;
         }
 
-        const ownRequest = await apiRequestCached<{ pending?: boolean }>('/profile/requests/me', { headers: getAuthHeaders() }, 15000);
+        const ownRequest = await apiRequestCached<{ pending?: boolean }>('/profile/requests/me', { headers: getAuthHeaders(), signal: controller.signal }, 15000);
         setOwnPendingProfileRequest(Boolean(ownRequest.pending));
         setPendingProfileRequests(0);
         setPendingVacationRequests(0);
         setAssignedTrainings(0);
-      } catch {
+      } catch (error) {
+        if (isAbortError(error) || controller.signal.aborted) {
+          return;
+        }
+
         setPendingProfileRequests(0);
         setPendingVacationRequests(0);
         setAssignedTrainings(0);
         setOwnPendingProfileRequest(false);
       } finally {
-        setIsLoadingSummary(false);
+        if (!controller.signal.aborted) {
+          setIsLoadingSummary(false);
+        }
       }
     })();
+
+    return () => controller.abort();
   }, [isManagerFlow, isTPeople]);
 
   return (

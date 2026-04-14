@@ -13,6 +13,44 @@ type ApiCacheEntry = {
 const apiGetCache = new Map<string, ApiCacheEntry>();
 const apiGetInFlight = new Map<string, Promise<unknown>>();
 
+function createAbortError() {
+  return new DOMException('The operation was aborted.', 'AbortError');
+}
+
+function raceWithAbort<T>(promise: Promise<T>, signal?: AbortSignal) {
+  if (!signal) {
+    return promise;
+  }
+
+  if (signal.aborted) {
+    return Promise.reject<T>(createAbortError());
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const handleAbort = () => {
+      cleanup();
+      reject(createAbortError());
+    };
+
+    const cleanup = () => {
+      signal.removeEventListener('abort', handleAbort);
+    };
+
+    signal.addEventListener('abort', handleAbort, { once: true });
+
+    promise.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error) => {
+        cleanup();
+        reject(error);
+      },
+    );
+  });
+}
+
 function buildCacheKey(path: string, options?: RequestInit) {
   const method = (options?.method || 'GET').toUpperCase();
   const headers = (options?.headers ?? {}) as Record<string, string>;
@@ -87,7 +125,7 @@ export async function apiRequestCached<T>(
 
     const inFlight = apiGetInFlight.get(key);
     if (inFlight) {
-      return (await inFlight) as T;
+      return (await raceWithAbort(inFlight as Promise<T>, options?.signal ?? undefined)) as T;
     }
   }
 
@@ -107,6 +145,12 @@ export async function apiRequestCached<T>(
   } finally {
     apiGetInFlight.delete(key);
   }
+}
+
+export function isAbortError(error: unknown) {
+  return error instanceof DOMException
+    ? error.name === 'AbortError'
+    : error instanceof Error && error.name === 'AbortError';
 }
 
 export function clearApiCache(prefix?: string) {

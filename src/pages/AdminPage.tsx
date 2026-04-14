@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { formatRoleLabel } from '../portal/labels';
 import Button from '../components/ui/Button';
@@ -141,7 +141,11 @@ export default function AdminPage() {
       return;
     }
 
-    void loadData();
+    const controller = new AbortController();
+
+    void loadData(controller.signal);
+
+    return () => controller.abort();
   }, [canAccess]);
 
   useEffect(() => {
@@ -174,16 +178,22 @@ export default function AdminPage() {
     }));
   }, [newUserDraft.firstName, newUserDraft.lastName]);
 
-  async function loadData() {
+  async function loadData(signal?: AbortSignal) {
     setIsLoadingData(true);
     try {
-      const usersData = await apiRequestCached<AdminUser[]>('/admin/users', { headers: getAuthHeaders() }, 15000);
+      const usersData = await apiRequestCached<AdminUser[]>('/admin/users', { headers: getAuthHeaders(), signal }, 15000);
 
       setUsers(usersData);
     } catch (error) {
+      if (isAbortError(error) || signal?.aborted) {
+        return;
+      }
+
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar dados de administração.');
     } finally {
-      setIsLoadingData(false);
+      if (!signal?.aborted) {
+        setIsLoadingData(false);
+      }
     }
   }
 

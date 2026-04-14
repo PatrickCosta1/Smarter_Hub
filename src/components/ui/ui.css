@@ -289,7 +289,8 @@
 .ui-modal__footer {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 :is(input, select, textarea, button, a, [role="button"], [tabindex]):focus-visible {

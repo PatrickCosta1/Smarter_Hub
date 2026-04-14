@@ -121,6 +121,7 @@ async function main() {
   await prisma.$transaction([
     prisma.permissionGrant.deleteMany(),
     prisma.userPermission.deleteMany(),
+    prisma.profileDropdownOption.deleteMany(),
     prisma.vacationApproval.deleteMany(),
     prisma.vacation.deleteMany(),
     prisma.profileChangeRequest.deleteMany(),

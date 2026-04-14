@@ -82,6 +82,8 @@ export default function Modal({ open, title, onClose, children, width, footer, s
     return null;
   }
 
+  const showHeaderClose = showCloseButton && !footer;
+
   return (
     <div className="quick-overlay" onClick={onClose} role="presentation">
       <article
@@ -96,7 +98,7 @@ export default function Modal({ open, title, onClose, children, width, footer, s
       >
         <header className="quick-modal__head">
           <h3 id={titleId}>{title}</h3>
-          {showCloseButton && (
+          {showHeaderClose && (
             <Button variant="ghost" size="sm" type="button" onClick={onClose} aria-label="Fechar">
               Fechar
             </Button>

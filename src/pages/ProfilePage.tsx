@@ -1,4 +1,5 @@
-import { ChangeEvent, MouseEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, MouseEvent, CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   estadoCivilOptions,
   generoOptions,
@@ -9,7 +10,7 @@ import {
   situacaoIrsOptions,
   tipoContratoOptions,
 } from '../portal/data';
-import { getApiBase, getBackendBase, authHeaders } from '../portal/api';
+import { apiRequest, getApiBase, getBackendBase, authHeaders, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { useFeedbackToast } from '../portal/useFeedbackToast';
 import { ProfileData, ProfileFieldError } from '../portal/types';
@@ -75,6 +76,98 @@ const profileFieldLabels: Partial<Record<keyof ProfileData, string>> = {
 
 const consolidatedAddressFields: Array<keyof ProfileData> = ['moradaFiscal', 'endereco'];
 
+type DropdownEntry = {
+  label: string;
+  group?: string;
+};
+
+type ProfileOptionType = 'CARGO' | 'FUNCAO';
+
+type CustomProfileOption = {
+  id: string;
+  label: string;
+  groupLabel?: string | null;
+};
+
+const defaultCargoOptions: DropdownEntry[] = [
+  { label: 'Trainee' },
+  { label: 'Junior' },
+  { label: 'Associate' },
+  { label: 'Senior' },
+  { label: 'Lead' },
+  { label: 'Principal' },
+  { label: 'Director' },
+  { label: 'C Level' },
+];
+
+const defaultFuncaoOptions: DropdownEntry[] = [
+  { label: 'Administrative Assistant', group: 'Gestão e suporte' },
+  { label: 'Business Analyst', group: 'Negócio e análise' },
+  { label: 'Business Consultant', group: 'Negócio e análise' },
+  { label: 'Business Controller', group: 'Negócio e análise' },
+  { label: 'CEO', group: 'Direção' },
+  { label: 'Communication Manager', group: 'Comunicação' },
+  { label: 'Communication Specialist', group: 'Comunicação' },
+  { label: 'Data Analyst', group: 'Dados e engenharia' },
+  { label: 'Data Engineer', group: 'Dados e engenharia' },
+  { label: 'Data Science Manager', group: 'Dados e engenharia' },
+  { label: 'Data Scientist', group: 'Dados e engenharia' },
+  { label: 'Delivery Director', group: 'Direção' },
+  { label: 'Delivery Manager', group: 'Operações e delivery' },
+  { label: 'DevOps Engineer', group: 'Dados e engenharia' },
+  { label: 'DevOps Manager', group: 'Operações e delivery' },
+  { label: 'Estagiario', group: 'Estágio' },
+  { label: 'Managing Director', group: 'Direção' },
+  { label: 'Operations & Control Director', group: 'Operações e control' },
+  { label: 'Operations & Control Manager', group: 'Operações e control' },
+  { label: 'People Director', group: 'Pessoas e cultura' },
+  { label: 'People Manager', group: 'Pessoas e cultura' },
+  { label: 'People Partner', group: 'Pessoas e cultura' },
+  { label: 'Pre-Sales Consultant', group: 'Pré-venda e consultoria' },
+  { label: 'Product Architect', group: 'Produto' },
+  { label: 'Product Director', group: 'Produto' },
+  { label: 'Product Manager', group: 'Produto' },
+  { label: 'Product Owner', group: 'Produto' },
+  { label: 'Project Manager', group: 'Gestão de projeto' },
+  { label: 'Quality Analyst', group: 'Qualidade' },
+  { label: 'Quality Manager', group: 'Qualidade' },
+  { label: 'Sales Consultant', group: 'Comercial' },
+  { label: 'Sales Director', group: 'Comercial' },
+  { label: 'Sales Manager', group: 'Comercial' },
+  { label: 'Scrum Master', group: 'Gestão de projeto' },
+  { label: 'Service Analyst', group: 'Serviço' },
+  { label: 'Service Director', group: 'Serviço' },
+  { label: 'Service Engineer', group: 'Serviço' },
+  { label: 'Service Manager', group: 'Serviço' },
+  { label: 'Software Developer', group: 'Tecnologia' },
+  { label: 'Software Engineer', group: 'Tecnologia' },
+  { label: 'Strategic Solutions Consultant', group: 'Pré-venda e consultoria' },
+  { label: 'Technical Consultant', group: 'Pré-venda e consultoria' },
+  { label: 'UX UI Designer', group: 'Produto' },
+];
+
+function mergeDropdownOptions(baseOptions: DropdownEntry[], customOptions: CustomProfileOption[]) {
+  const merged = new Map<string, DropdownEntry>();
+
+  baseOptions.forEach((option) => {
+    merged.set(option.label.trim().toLowerCase(), option);
+  });
+
+  customOptions.forEach((option) => {
+    const normalized = option.label.trim().toLowerCase();
+    if (!normalized || merged.has(normalized)) {
+      return;
+    }
+
+    merged.set(normalized, {
+      label: option.label,
+      group: option.groupLabel || undefined,
+    });
+  });
+
+  return Array.from(merged.values()).sort((a, b) => a.label.localeCompare(b.label, 'pt-PT'));
+}
+
 function renderFileLink(value: string) {
   if (!value) {
     return <em>Nenhum ficheiro selecionado</em>;
@@ -94,6 +187,191 @@ function renderFileLink(value: string) {
         Abrir comprovativo
       </a>
     </em>
+  );
+}
+
+type SearchableDropdownProps = {
+  label: string;
+  value: string;
+  placeholder: string;
+  options: DropdownEntry[];
+  columns?: 1 | 2;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+};
+
+function SearchableDropdown({ label, value, placeholder, options, columns = 1, disabled = false, onChange }: SearchableDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [opensUpward, setOpensUpward] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const inputId = `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-dropdown`;
+
+  const selectedLabel = useMemo(() => {
+    const found = options.find((option) => option.label === value);
+    return found?.label || value || placeholder;
+  }, [options, placeholder, value]);
+
+  const filteredOptions = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return options;
+    }
+
+    return options.filter((option) => option.label.toLowerCase().includes(normalizedQuery) || option.group?.toLowerCase().includes(normalizedQuery));
+  }, [options, query]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const updateMenuPosition = () => {
+      const anchor = buttonRef.current;
+      if (!anchor) {
+        return;
+      }
+
+      const rect = anchor.getBoundingClientRect();
+      const preferredWidth = Math.max(rect.width, columns === 2 ? 620 : 320);
+      const maxWidth = Math.min(preferredWidth, window.innerWidth - 16);
+      const availableBelow = window.innerHeight - rect.bottom - 20;
+      const availableAbove = rect.top - 20;
+      const estimatedMenuHeight = 420;
+      const openAbove = availableBelow < estimatedMenuHeight && availableAbove > availableBelow;
+      const availableSide = openAbove ? availableAbove : availableBelow;
+      const panelHeight = Math.max(180, Math.min(430, availableSide));
+      const top = openAbove ? Math.max(8, rect.top - panelHeight - 8) : rect.bottom + 8;
+      const left = Math.min(rect.left, window.innerWidth - maxWidth - 8);
+
+      setOpensUpward(openAbove);
+      setMenuStyle({
+        position: 'fixed',
+        top,
+        left: Math.max(8, left),
+        width: maxWidth,
+        height: panelHeight,
+        maxHeight: panelHeight,
+        overflow: 'hidden',
+      });
+    };
+
+    updateMenuPosition();
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (containerRef.current && target && !containerRef.current.contains(target)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleResizeOrScroll = () => updateMenuPosition();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('resize', handleResizeOrScroll);
+    window.addEventListener('scroll', handleResizeOrScroll, true);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('resize', handleResizeOrScroll);
+      window.removeEventListener('scroll', handleResizeOrScroll, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [columns, isOpen]);
+
+  const groupedOptions = useMemo(() => {
+    const groups = new Map<string, DropdownEntry[]>();
+
+    filteredOptions.forEach((option) => {
+      const groupName = option.group || 'Opções';
+      const entries = groups.get(groupName) || [];
+      entries.push(option);
+      groups.set(groupName, entries);
+    });
+
+    return Array.from(groups.entries()).map(([groupName, entries]) => ({ groupName, entries }));
+  }, [filteredOptions]);
+
+  return (
+    <div className="profile-combobox" ref={containerRef}>
+      <button
+        ref={buttonRef}
+        type="button"
+        className={`profile-combobox__trigger${isOpen ? ' is-open' : ''}`}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-controls={inputId}
+        onClick={() => {
+          if (!disabled) {
+            setIsOpen((current) => !current);
+            setQuery('');
+          }
+        }}
+      >
+        <span className={`profile-combobox__value${!value ? ' is-placeholder' : ''}`}>{selectedLabel}</span>
+        <span className="profile-combobox__chevron" aria-hidden="true">▾</span>
+      </button>
+
+      {isOpen && !disabled && createPortal(
+        <div className={`profile-combobox__menu${opensUpward ? ' is-upward' : ''}`} style={menuStyle} role="listbox" id={inputId}>
+          <div className="profile-combobox__search-wrap">
+            <input
+              className="profile-combobox__search"
+              type="search"
+              value={query}
+              placeholder={`Procurar ${label.toLowerCase()}`}
+              autoFocus
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+
+          <div className={`profile-combobox__options${columns === 2 ? ' profile-combobox__options--two-cols' : ''}`}>
+            {groupedOptions.length > 0 ? groupedOptions.map((group) => (
+              <div key={group.groupName} className="profile-combobox__group">
+                {group.groupName !== 'Opções' && <p>{group.groupName}</p>}
+                <div className={`profile-combobox__group-items${columns === 2 ? ' profile-combobox__group-items--two-cols' : ''}`}>
+                  {group.entries.map((option) => {
+                    const isSelected = option.label === value;
+                    return (
+                      <button
+                        key={`${group.groupName}-${option.label}`}
+                        type="button"
+                        className={`profile-combobox__option${isSelected ? ' is-selected' : ''}`}
+                        onClick={() => {
+                          onChange(option.label);
+                          setIsOpen(false);
+                          setQuery('');
+                        }}
+                      >
+                        <span>{option.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )) : (
+              <div className="profile-combobox__empty">Sem resultados para esta pesquisa.</div>
+            )}
+          </div>
+
+          <div className="profile-combobox__footer">
+            <button type="button" className="profile-combobox__close" onClick={() => setIsOpen(false)}>
+              Fechar
+            </button>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
   );
 }
 
@@ -187,6 +465,13 @@ export default function ProfilePage() {
   const [isRequestFeedbackOpen, setIsRequestFeedbackOpen] = useState(false);
   const [showSeparateAddresses, setShowSeparateAddresses] = useState(false);
   const [isCompletionHelpOpen, setIsCompletionHelpOpen] = useState(false);
+  const [customCargoOptions, setCustomCargoOptions] = useState<CustomProfileOption[]>([]);
+  const [customFuncaoOptions, setCustomFuncaoOptions] = useState<CustomProfileOption[]>([]);
+  const [isProfileOptionModalOpen, setIsProfileOptionModalOpen] = useState(false);
+  const [profileOptionType, setProfileOptionType] = useState<ProfileOptionType>('CARGO');
+  const [profileOptionLabel, setProfileOptionLabel] = useState('');
+  const [profileOptionGroup, setProfileOptionGroup] = useState('');
+  const [isSavingProfileOption, setIsSavingProfileOption] = useState(false);
 
   const canEdit =
     isRootAccess
@@ -195,7 +480,18 @@ export default function ProfilePage() {
     || hasPermission('edit_other_profile');
   const canEditContract = isRootAccess || hasPermission('edit_other_profile');
   const requestMode = !isRootAccess && (isAccessTotal || hasPermission('request_profile_change') || !canEditContract);
+  const canManageProfileOptions = isRootAccess || isAccessTotal || hasPermission('manage_profile_dropdown_options');
   const teamName = currentUser?.team?.name?.trim() || 'Sem equipa';
+
+  const cargoOptions = useMemo(
+    () => mergeDropdownOptions(defaultCargoOptions, customCargoOptions),
+    [customCargoOptions],
+  );
+
+  const funcaoOptions = useMemo(
+    () => mergeDropdownOptions(defaultFuncaoOptions, customFuncaoOptions),
+    [customFuncaoOptions],
+  );
 
   const profileCompletion = useMemo(() => {
     const fields = Object.values(draftProfile);
@@ -233,10 +529,13 @@ export default function ProfilePage() {
       return;
     }
 
+    const controller = new AbortController();
+
     (async () => {
       try {
         const response = await fetch(`${getApiBase()}/profile/requests/me`, {
           headers: authHeaders(token),
+          signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -268,10 +567,49 @@ export default function ProfilePage() {
         } else {
           setPendingChanges([]);
         }
-      } catch {
+      } catch (error) {
+        if (isAbortError(error) || controller.signal.aborted) {
+          return;
+        }
+
         // Silencioso para não bloquear a edição da ficha se este fetch falhar.
       }
     })();
+
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    if (!token) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const payload = await apiRequest<{
+          cargo?: CustomProfileOption[];
+          funcao?: CustomProfileOption[];
+        }>('/profile/options', {
+          headers: authHeaders(token),
+          signal: controller.signal,
+        });
+
+        setCustomCargoOptions(payload.cargo ?? []);
+        setCustomFuncaoOptions(payload.funcao ?? []);
+      } catch (error) {
+        if (isAbortError(error) || controller.signal.aborted) {
+          return;
+        }
+
+        setCustomCargoOptions([]);
+        setCustomFuncaoOptions([]);
+      }
+    })();
+
+    return () => controller.abort();
   }, []);
 
   function closeAllEditingSections() {
@@ -356,6 +694,73 @@ export default function ProfilePage() {
           endereco: sharedValue,
         };
       });
+    }
+  }
+
+  function openProfileOptionModal(type: ProfileOptionType) {
+    if (!canManageProfileOptions) {
+      return;
+    }
+
+    setProfileOptionType(type);
+    setProfileOptionLabel('');
+    setProfileOptionGroup('');
+    setIsProfileOptionModalOpen(true);
+  }
+
+  async function handleCreateProfileOption() {
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const normalizedLabel = profileOptionLabel.trim().replace(/\s+/g, ' ');
+    const normalizedGroup = profileOptionGroup.trim().replace(/\s+/g, ' ');
+
+    if (!token || !normalizedLabel) {
+      showToast('error', 'Indica um valor válido para adicionar.');
+      return;
+    }
+
+    setIsSavingProfileOption(true);
+
+    try {
+      const payload = await apiRequest<{ option?: { id: string; type: ProfileOptionType; label: string; groupLabel?: string | null } }>('/profile/options', {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({
+          type: profileOptionType,
+          label: normalizedLabel,
+          groupLabel: profileOptionType === 'FUNCAO' ? normalizedGroup : undefined,
+        }),
+      });
+
+      const created = payload.option;
+      if (!created) {
+        showToast('error', 'Não foi possível guardar o valor.');
+        return;
+      }
+
+      if (created.type === 'CARGO') {
+        setCustomCargoOptions((current) => {
+          if (current.some((item) => item.id === created.id)) {
+            return current;
+          }
+          return [...current, { id: created.id, label: created.label, groupLabel: created.groupLabel }];
+        });
+        handleProfileChange('cargo', created.label);
+      } else {
+        setCustomFuncaoOptions((current) => {
+          if (current.some((item) => item.id === created.id)) {
+            return current;
+          }
+          return [...current, { id: created.id, label: created.label, groupLabel: created.groupLabel }];
+        });
+        handleProfileChange('funcao', created.label);
+      }
+
+      setIsProfileOptionModalOpen(false);
+      showToast('success', 'Valor adicionado com sucesso.');
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Não foi possível adicionar o valor.');
+    } finally {
+      setIsSavingProfileOption(false);
     }
   }
 
@@ -857,21 +1262,38 @@ export default function ProfilePage() {
         <article className="profile-card">
           <div className="section-headline">
             <h2>6. Situação contratual</h2>
-            {canEditContract && (
-              <button className={`section-edit-button${editingSections.contract ? ' is-active' : ''}`} type="button" onClick={() => toggleSectionEdit('contract')}>
-                ✏️
-              </button>
-            )}
+            <div className="profile-contract__actions">
+              {canEditContract && (
+                <button className={`section-edit-button${editingSections.contract ? ' is-active' : ''}`} type="button" onClick={() => toggleSectionEdit('contract')}>
+                  ✏️
+                </button>
+              )}
+            </div>
           </div>
           <div className="profile-fields">
             <label>
               <span>Cargo</span>
-              <input type="text" value={draftProfile.cargo} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('cargo', event.target.value)} />
+              <SearchableDropdown
+                label="Cargo"
+                value={draftProfile.cargo}
+                placeholder="Selecionar cargo"
+                options={cargoOptions}
+                disabled={!canEditContract || !editingSections.contract}
+                onChange={(value) => handleProfileChange('cargo', value)}
+              />
               {profileErrors.cargo && <small>{profileErrors.cargo}</small>}
             </label>
             <label className="field-span-2">
               <span>Função</span>
-              <textarea value={draftProfile.funcao} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('funcao', event.target.value)} rows={2} />
+              <SearchableDropdown
+                label="Função"
+                value={draftProfile.funcao}
+                placeholder="Selecionar função"
+                options={funcaoOptions}
+                columns={2}
+                disabled={!canEditContract || !editingSections.contract}
+                onChange={(value) => handleProfileChange('funcao', value)}
+              />
               {profileErrors.funcao && <small>{profileErrors.funcao}</small>}
             </label>
             <label>

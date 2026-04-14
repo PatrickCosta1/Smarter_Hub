@@ -69,6 +69,13 @@ export default function PortalLayout() {
     return `${todayLabel}`;
   }, [todayLabel]);
 
+  const notificationsLabel = useMemo(() => {
+    if (unreadNotifications === 1) {
+      return '1 por ler';
+    }
+    return `${unreadNotifications} por ler`;
+  }, [unreadNotifications]);
+
   function handleLogout() {
     logout();
     navigate('/login');
@@ -120,6 +127,9 @@ export default function PortalLayout() {
 
             <div className="portal-header__actions">
               <span className="portal-header__chip">{globalInfoLabel}</span>
+              <span className={`portal-header__chip portal-header__chip--notifications${unreadNotifications > 0 ? ' has-unread' : ''}`}>
+                {notificationsLabel}
+              </span>
               <button
                 className={`icon-button icon-button--header${unreadNotifications > 0 ? ' has-unread' : ''}${location.pathname === '/notifications' ? ' is-active' : ''}`}
                 type="button"
@@ -127,6 +137,7 @@ export default function PortalLayout() {
                 aria-label="Notificações"
                 title="Notificações"
               >
+                <span className="icon-button__ping" aria-hidden="true" />
                 <span aria-hidden="true">🔔</span>
                 {unreadNotifications > 0 && <span className="icon-badge">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>}
               </button>

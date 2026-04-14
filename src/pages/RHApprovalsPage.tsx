@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getBackendBase } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getBackendBase, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { MICROCOPY, resolveErrorMessage } from '../portal/microcopy';
 import { formatVacationStatusLabel, getVacationStatusTone } from '../portal/labels';
@@ -139,7 +139,11 @@ export default function RHApprovalsPage() {
       return;
     }
 
-    void loadData();
+    const controller = new AbortController();
+
+    void loadData(controller.signal);
+
+    return () => controller.abort();
   }, [canReviewProfiles, canReviewVacations]);
 
   useEffect(() => {
@@ -170,24 +174,30 @@ export default function RHApprovalsPage() {
     }
   }
 
-  async function loadData() {
+  async function loadData(signal?: AbortSignal) {
     setIsLoadingData(true);
     try {
       const [profiles, vacations] = await Promise.all([
         canReviewProfiles
-          ? apiRequestCached<ProfileRequest[]>('/profile/requests', { headers: getAuthHeaders() }, 45000)
+          ? apiRequestCached<ProfileRequest[]>('/profile/requests', { headers: getAuthHeaders(), signal }, 45000)
           : Promise.resolve([]),
         canReviewVacations
-          ? apiRequestCached<VacationRequest[]>('/vacations/requests', { headers: getAuthHeaders() }, 45000)
+          ? apiRequestCached<VacationRequest[]>('/vacations/requests', { headers: getAuthHeaders(), signal }, 45000)
           : Promise.resolve([]),
       ]);
 
       setProfileRequests(profiles);
       setVacationRequests(vacations);
     } catch (error) {
+      if (isAbortError(error) || signal?.aborted) {
+        return;
+      }
+
       showToast('error', resolveErrorMessage(error, MICROCOPY.approvals.loadRequestsError));
     } finally {
-      setIsLoadingData(false);
+      if (!signal?.aborted) {
+        setIsLoadingData(false);
+      }
     }
   }
 

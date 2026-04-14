@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { ProfileOptionType } from "@prisma/client";
 
 import { prisma } from "../lib/prisma.js";
 import {
@@ -14,6 +15,192 @@ import { requireAuth } from "../middleware/auth.js";
 import { notifyUsersByPermission } from "../lib/notifications.js";
 
 const router = Router();
+
+const defaultCargoOptions = [
+  'Trainee',
+  'Junior',
+  'Associate',
+  'Senior',
+  'Lead',
+  'Principal',
+  'Director',
+  'C Level',
+];
+
+const defaultFuncaoOptions = [
+  { label: 'Administrative Assistant', groupLabel: 'Gestão e suporte' },
+  { label: 'Business Analyst', groupLabel: 'Negócio e análise' },
+  { label: 'Business Consultant', groupLabel: 'Negócio e análise' },
+  { label: 'Business Controller', groupLabel: 'Negócio e análise' },
+  { label: 'CEO', groupLabel: 'Direção' },
+  { label: 'Communication Manager', groupLabel: 'Comunicação' },
+  { label: 'Communication Specialist', groupLabel: 'Comunicação' },
+  { label: 'Data Analyst', groupLabel: 'Dados e engenharia' },
+  { label: 'Data Engineer', groupLabel: 'Dados e engenharia' },
+  { label: 'Data Science Manager', groupLabel: 'Dados e engenharia' },
+  { label: 'Data Scientist', groupLabel: 'Dados e engenharia' },
+  { label: 'Delivery Director', groupLabel: 'Direção' },
+  { label: 'Delivery Manager', groupLabel: 'Operações e delivery' },
+  { label: 'DevOps Engineer', groupLabel: 'Dados e engenharia' },
+  { label: 'DevOps Manager', groupLabel: 'Operações e delivery' },
+  { label: 'Estagiario', groupLabel: 'Estágio' },
+  { label: 'Managing Director', groupLabel: 'Direção' },
+  { label: 'Operations & Control Director', groupLabel: 'Operações e control' },
+  { label: 'Operations & Control Manager', groupLabel: 'Operações e control' },
+  { label: 'People Director', groupLabel: 'Pessoas e cultura' },
+  { label: 'People Manager', groupLabel: 'Pessoas e cultura' },
+  { label: 'People Partner', groupLabel: 'Pessoas e cultura' },
+  { label: 'Pre-Sales Consultant', groupLabel: 'Pré-venda e consultoria' },
+  { label: 'Product Architect', groupLabel: 'Produto' },
+  { label: 'Product Director', groupLabel: 'Produto' },
+  { label: 'Product Manager', groupLabel: 'Produto' },
+  { label: 'Product Owner', groupLabel: 'Produto' },
+  { label: 'Project Manager', groupLabel: 'Gestão de projeto' },
+  { label: 'Quality Analyst', groupLabel: 'Qualidade' },
+  { label: 'Quality Manager', groupLabel: 'Qualidade' },
+  { label: 'Sales Consultant', groupLabel: 'Comercial' },
+  { label: 'Sales Director', groupLabel: 'Comercial' },
+  { label: 'Sales Manager', groupLabel: 'Comercial' },
+  { label: 'Scrum Master', groupLabel: 'Gestão de projeto' },
+  { label: 'Service Analyst', groupLabel: 'Serviço' },
+  { label: 'Service Director', groupLabel: 'Serviço' },
+  { label: 'Service Engineer', groupLabel: 'Serviço' },
+  { label: 'Service Manager', groupLabel: 'Serviço' },
+  { label: 'Software Developer', groupLabel: 'Tecnologia' },
+  { label: 'Software Engineer', groupLabel: 'Tecnologia' },
+  { label: 'Strategic Solutions Consultant', groupLabel: 'Pré-venda e consultoria' },
+  { label: 'Technical Consultant', groupLabel: 'Pré-venda e consultoria' },
+  { label: 'UX UI Designer', groupLabel: 'Produto' },
+];
+
+const defaultOptionsByType: Record<ProfileOptionType, Array<{ label: string; groupLabel?: string }>> = {
+  CARGO: defaultCargoOptions.map((label) => ({ label })),
+  FUNCAO: defaultFuncaoOptions,
+};
+
+function normalizeDropdownOptionLabel(value: string) {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function normalizeDropdownOptionKey(value: string) {
+  return normalizeDropdownOptionLabel(value).toLowerCase();
+}
+
+const profileDropdownOptionSchema = z.object({
+  type: z.nativeEnum(ProfileOptionType),
+  label: z.string().min(2).max(80),
+  groupLabel: z.string().max(60).optional(),
+});
+
+async function canManageProfileDropdownOptions(userId: string, isRootAccessFlag: boolean) {
+  if (isRootAccessFlag) {
+    return true;
+  }
+
+  if (await isAccessTotal(userId)) {
+    return true;
+  }
+
+  return hasPermission(userId, 'manage_profile_dropdown_options');
+}
+
+router.get('/profile/options', requireAuth, async (req, res) => {
+  const customOptions = await prisma.profileDropdownOption.findMany({
+    where: { isActive: true },
+    select: {
+      id: true,
+      type: true,
+      label: true,
+      groupLabel: true,
+    },
+    orderBy: [{ type: 'asc' }, { label: 'asc' }],
+  });
+
+  return res.json({
+    cargo: customOptions
+      .filter((option) => option.type === 'CARGO')
+      .map((option) => ({ id: option.id, label: option.label, groupLabel: option.groupLabel })),
+    funcao: customOptions
+      .filter((option) => option.type === 'FUNCAO')
+      .map((option) => ({ id: option.id, label: option.label, groupLabel: option.groupLabel })),
+  });
+});
+
+router.post('/profile/options', requireAuth, async (req, res) => {
+  const allowed = await canManageProfileDropdownOptions(req.authUser!.id, req.authUser!.isRootAccess);
+  if (!allowed) {
+    return res.status(403).json({ message: 'Sem permissões para gerir cargos e funções.' });
+  }
+
+  const parsed = profileDropdownOptionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ message: 'Payload inválido.', issues: parsed.error.issues });
+  }
+
+  const normalizedLabel = normalizeDropdownOptionLabel(parsed.data.label);
+  const normalizedKey = normalizeDropdownOptionKey(parsed.data.label);
+  const normalizedGroupLabel = normalizeDropdownOptionLabel(parsed.data.groupLabel || '');
+
+  if (!normalizedLabel) {
+    return res.status(400).json({ message: 'Indica um valor válido.' });
+  }
+
+  const defaultsForType = defaultOptionsByType[parsed.data.type];
+  const existsInDefaults = defaultsForType.some((item) => normalizeDropdownOptionKey(item.label) === normalizedKey);
+  if (existsInDefaults) {
+    return res.status(409).json({ message: 'Esse valor já existe na lista base.' });
+  }
+
+  const existing = await prisma.profileDropdownOption.findUnique({
+    where: {
+      type_normalizedValue: {
+        type: parsed.data.type,
+        normalizedValue: normalizedKey,
+      },
+    },
+  });
+
+  if (existing?.isActive) {
+    return res.status(409).json({ message: 'Esse valor já existe.' });
+  }
+
+  if (existing && !existing.isActive) {
+    const restored = await prisma.profileDropdownOption.update({
+      where: { id: existing.id },
+      data: {
+        isActive: true,
+        label: normalizedLabel,
+        groupLabel: normalizedGroupLabel || null,
+      },
+      select: {
+        id: true,
+        type: true,
+        label: true,
+        groupLabel: true,
+      },
+    });
+
+    return res.status(201).json({ option: restored });
+  }
+
+  const created = await prisma.profileDropdownOption.create({
+    data: {
+      type: parsed.data.type,
+      label: normalizedLabel,
+      normalizedValue: normalizedKey,
+      groupLabel: normalizedGroupLabel || null,
+      createdById: req.authUser!.id,
+    },
+    select: {
+      id: true,
+      type: true,
+      label: true,
+      groupLabel: true,
+    },
+  });
+
+  return res.status(201).json({ option: created });
+});
 
 const profileFields = [
   "primeiroNome",
