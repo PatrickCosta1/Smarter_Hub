@@ -37,6 +37,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         role: true,
         isActive: true,
         isRootAccess: true,
+          hasAccessTotal: true,
       }
     });
 
@@ -62,6 +63,7 @@ export function signAuthToken(user: AuthUser) {
       username: user.username,
       role: user.role,
       isRootAccess: user.isRootAccess,
+      hasAccessTotal: Boolean(user.hasAccessTotal),
     },
     getJwtSecret(),
     { expiresIn: "8h" }

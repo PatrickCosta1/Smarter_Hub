@@ -7,6 +7,7 @@ export type AuthUser = {
   role: Role;
   isActive: boolean;
   isRootAccess: boolean;
+  hasAccessTotal?: boolean;
   team?: {
     id: string;
     name: string;
@@ -18,4 +19,5 @@ export type JwtPayload = {
   username: string;
   role: Role;
   isRootAccess: boolean;
+  hasAccessTotal?: boolean;
 };

@@ -165,6 +165,7 @@ async function provisionUserFromMicrosoft(email: string, decodedToken: Awaited<R
       role: true,
       isActive: true,
       isRootAccess: true,
+        hasAccessTotal: true,
         team: {
           select: {
             id: true,
@@ -206,7 +207,8 @@ router.post('/auth/login', async (_req, res) => {
       role: true,
       isActive: true,
       isRootAccess: true,
-      passwordHash: true,
+        hasAccessTotal: true,
+        passwordHash: true,
     },
   });
 
@@ -230,6 +232,7 @@ router.post('/auth/login', async (_req, res) => {
     role: user.role,
     isActive: user.isActive,
     isRootAccess: user.isRootAccess,
+      hasAccessTotal: user.hasAccessTotal,
   });
 
   return res.json({
@@ -241,6 +244,7 @@ router.post('/auth/login', async (_req, res) => {
       role: user.role,
       isActive: user.isActive,
       isRootAccess: user.isRootAccess,
+        hasAccessTotal: user.hasAccessTotal,
       team: null,
     },
   });
@@ -284,6 +288,7 @@ router.post('/auth/microsoft', async (req, res) => {
         role: true,
         isActive: true,
         isRootAccess: true,
+          hasAccessTotal: true,
         team: {
           select: {
             id: true,
@@ -323,6 +328,7 @@ router.get("/auth/me", requireAuth, async (req, res) => {
       role: true,
       isActive: true,
       isRootAccess: true,
+        hasAccessTotal: true,
       team: {
         select: {
           id: true,

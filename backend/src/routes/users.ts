@@ -9,7 +9,6 @@ import {
   buildUserWhereFromScope,
   canAccessUserByPermission,
   canReviewAccessTotalHierarchy,
-  canManagePermissions,
   getPermissionScope,
   hasPermission,
   isAccessTotal,
@@ -1126,13 +1125,13 @@ router.patch('/manager/team-members/:id', requireAuth, async (req, res) => {
 });
 
 router.get('/admin/users', requireAuth, async (req, res) => {
-  if (!await canManagePermissions(req.authUser!)) {
-    return res.status(403).json({ message: 'Apenas admin pode gerir perfis.' });
+  if (!await hasPermission(req.authUser!.id, 'view_user_list')) {
+    return res.status(403).json({ message: 'Sem permissões para consultar utilizadores.' });
   }
 
-  const scope = await getPermissionScope(req.authUser!.id, 'manage_permissions');
+  const scope = await getPermissionScope(req.authUser!.id, 'view_user_list');
   if (!scope) {
-    return res.status(403).json({ message: 'Sem permissões para gerir perfis.' });
+    return res.status(403).json({ message: 'Sem permissões para consultar utilizadores.' });
   }
 
   const scopeWhere = buildUserWhereFromScope(scope) as Prisma.UserWhereInput | null;

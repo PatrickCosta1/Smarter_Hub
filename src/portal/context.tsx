@@ -162,6 +162,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
 
   const loadAccessData = useCallback(async (token: string, user: AuthUser) => {
     const fallbackRootAccess = Boolean(user.isRootAccess);
+    const fallbackAccessTotal = Boolean(user.hasAccessTotal);
 
     try {
       const response = await apiRequest<UserPermissionsResponse>(`/users/${user.id}/permissions`, {
@@ -174,11 +175,11 @@ export function PortalProvider({ children }: { children: ReactNode }) {
 
       setPermissions(permissionCodes);
       setIsRootAccess(Boolean(response.user?.isRootAccess ?? fallbackRootAccess));
-      setIsAccessTotal(Boolean(response.accessTotal));
+      setIsAccessTotal(Boolean(response.accessTotal ?? fallbackAccessTotal));
     } catch {
       setPermissions([]);
       setIsRootAccess(fallbackRootAccess);
-      setIsAccessTotal(false);
+      setIsAccessTotal(fallbackAccessTotal);
     }
   }, []);
 
@@ -187,8 +188,10 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     setAuthToken(token);
     setCurrentUser(user);
     setUserRole(mapBackendRole(user.role));
-    await loadAccessData(token, user);
-    await loadPortalData(token);
+    await Promise.all([
+      loadAccessData(token, user),
+      loadPortalData(token),
+    ]);
     setIsAuthenticated(true);
   }, [loadAccessData, loadPortalData]);
 
@@ -210,8 +213,10 @@ export function PortalProvider({ children }: { children: ReactNode }) {
 
         setCurrentUser(response.user);
         setUserRole(mapBackendRole(response.user.role));
-        await loadAccessData(existingToken, response.user);
-        await loadPortalData(existingToken);
+        await Promise.all([
+          loadAccessData(existingToken, response.user),
+          loadPortalData(existingToken),
+        ]);
         setIsAuthenticated(true);
       } catch {
         window.localStorage.removeItem(STORAGE_TOKEN_KEY);
@@ -266,12 +271,12 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const hasPermission = useCallback((code: string) => {
-    if (isRootAccess || isAccessTotal) {
+    if (isRootAccess || isAccessTotal || currentUser?.hasAccessTotal) {
       return true;
     }
 
     return permissions.includes(code);
-  }, [isRootAccess, isAccessTotal, permissions]);
+  }, [isRootAccess, isAccessTotal, permissions, currentUser?.hasAccessTotal]);
 
   const setProfile = useCallback((profileData: ProfileData) => {
     setProfileState(normalizeProfileData(profileData));

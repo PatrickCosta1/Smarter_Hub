@@ -373,46 +373,72 @@ export default function VacationsPage() {
   }, []);
 
   useEffect(() => {
-    if (activeTab !== 'overview' || cacheRef.current.overviewLoaded || isOverviewLoading) {
+    if (activeTab !== 'overview' || cacheRef.current.overviewLoaded) {
       return;
     }
 
     const controller = new AbortController();
-    cacheRef.current.overviewLoaded = true;
+    let disposed = false;
     setIsOverviewLoading(true);
     setOverviewError('');
 
     void loadOverview(controller.signal)
-      .catch(() => undefined)
-      .finally(() => {
+      .then(() => {
         if (!controller.signal.aborted) {
+          cacheRef.current.overviewLoaded = true;
+        }
+      })
+      .catch((error) => {
+        if (isAbortError(error) || controller.signal.aborted) {
+          return;
+        }
+        cacheRef.current.overviewLoaded = false;
+      })
+      .finally(() => {
+        if (!disposed) {
           setIsOverviewLoading(false);
         }
       });
 
-    return () => controller.abort();
-  }, [activeTab, isOverviewLoading]);
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
+  }, [activeTab]);
 
   useEffect(() => {
-    if (activeTab !== 'calendar' || cacheRef.current.calendarLoaded || isCalendarLoading) {
+    if (activeTab !== 'calendar' || cacheRef.current.calendarLoaded) {
       return;
     }
 
     const controller = new AbortController();
-    cacheRef.current.calendarLoaded = true;
+    let disposed = false;
     setIsCalendarLoading(true);
     setCalendarError('');
 
     void loadCalendar(controller.signal)
-      .catch(() => undefined)
-      .finally(() => {
+      .then(() => {
         if (!controller.signal.aborted) {
+          cacheRef.current.calendarLoaded = true;
+        }
+      })
+      .catch((error) => {
+        if (isAbortError(error) || controller.signal.aborted) {
+          return;
+        }
+        cacheRef.current.calendarLoaded = false;
+      })
+      .finally(() => {
+        if (!disposed) {
           setIsCalendarLoading(false);
         }
       });
 
-    return () => controller.abort();
-  }, [activeTab, isCalendarLoading]);
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
+  }, [activeTab]);
 
   function showToast(tone: 'success' | 'error' | 'info', message: string) {
     setToast({ tone, message, visible: true });
@@ -422,11 +448,19 @@ export default function VacationsPage() {
   }
 
   async function loadMine(signal?: AbortSignal) {
-    const data = await apiRequestCached<VacationRecord[]>('/vacations/me', {
-      headers: getAuthHeaders(),
-      signal,
-    }, 60000);
-    setRecords(data);
+    try {
+      const data = await apiRequestCached<VacationRecord[]>('/vacations/me', {
+        headers: getAuthHeaders(),
+        signal,
+      }, 60000);
+      if (!signal?.aborted) {
+        setRecords(data);
+      }
+    } catch (error) {
+      if (!isAbortError(error) && !signal?.aborted) {
+        console.error('Falha ao carregar férias:', error);
+      }
+    }
   }
 
   async function loadOverview(signal?: AbortSignal) {
@@ -463,16 +497,24 @@ export default function VacationsPage() {
   }
 
   async function loadTeamContexts(signal?: AbortSignal) {
-    const data = await apiRequestCached<TeamContext[]>('/users/me/teams', {
-      headers: getAuthHeaders(),
-      signal,
-    }, 120000);
+    try {
+      const data = await apiRequestCached<TeamContext[]>('/users/me/teams', {
+        headers: getAuthHeaders(),
+        signal,
+      }, 120000);
 
-    setTeamContexts(data);
-    setDraft((current) => ({
-      ...current,
-      contextTeamId: current.contextTeamId || data.find((item) => item.isPrimary)?.teamId || data[0]?.teamId || '',
-    }));
+      if (!signal?.aborted) {
+        setTeamContexts(data);
+        setDraft((current) => ({
+          ...current,
+          contextTeamId: current.contextTeamId || data.find((item) => item.isPrimary)?.teamId || data[0]?.teamId || '',
+        }));
+      }
+    } catch (error) {
+      if (!isAbortError(error) && !signal?.aborted) {
+        console.error('Falha ao carregar contextos de equipa:', error);
+      }
+    }
   }
 
   function resetForm() {

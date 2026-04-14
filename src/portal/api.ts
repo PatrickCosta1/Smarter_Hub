@@ -129,8 +129,12 @@ export async function apiRequestCached<T>(
     }
   }
 
+  const requestOptions: RequestInit | undefined = options
+    ? { ...options, signal: undefined }
+    : undefined;
+
   const requestPromise = (async () => {
-    const fresh = await apiRequest<T>(path, options);
+    const fresh = await apiRequest<T>(path, requestOptions);
     apiGetCache.set(key, {
       expiresAt: Date.now() + ttlMs,
       value: fresh,

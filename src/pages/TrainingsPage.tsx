@@ -165,10 +165,6 @@ export default function TrainingsPage() {
   );
 
   useEffect(() => {
-    if (canManage) {
-      return;
-    }
-
     const controller = new AbortController();
 
     void loadTrainings(controller.signal);
