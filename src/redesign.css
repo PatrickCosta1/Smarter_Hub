@@ -427,19 +427,6 @@
   isolation: isolate;
 }
 
-.dashboard-shell::before {
-  content: '';
-  position: absolute;
-  inset: -12px -8px auto;
-  height: 240px;
-  border-radius: 36px;
-  background:
-    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.18), transparent 38%),
-    radial-gradient(circle at 85% 25%, rgba(42, 152, 255, 0.28), transparent 34%),
-    linear-gradient(135deg, rgba(3, 65, 162, 0.95), rgba(18, 122, 245, 0.82));
-  z-index: -1;
-  filter: saturate(1.05);
-}
 
 .dashboard-hero--compact {
   align-items: center;
@@ -554,18 +541,6 @@
   color: #fff;
 }
 
-.dashboard-kpi-grid--compact .dashboard-kpi-card:nth-child(1)::after {
-  content: 'EXEC';
-  align-self: end;
-  justify-self: end;
-  display: inline-flex;
-  padding: 5px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
-  font-size: 0.7rem;
-  font-weight: 800;
-}
 
 .dashboard-kpi-card--strong {
   min-height: 96px;
@@ -3658,18 +3633,6 @@
   color: #fff;
 }
 
-.dashboard-kpi-grid--compact .dashboard-kpi-card:nth-child(1)::after {
-  content: 'EXEC';
-  align-self: end;
-  justify-self: end;
-  display: inline-flex;
-  padding: 5px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
-  font-size: 0.7rem;
-  font-weight: 800;
-}
 
 .team-vacation-timeline > span {
   border: 1px solid var(--elite-line);
@@ -3723,7 +3686,6 @@
   position: sticky;
   top: 8px;
   z-index: 2;
-  background: linear-gradient(180deg, #ff8b3d, #ffcf57);
   border: 1px solid var(--elite-line);
   border-radius: 10px;
   padding: 8px 10px;
