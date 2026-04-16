@@ -143,8 +143,14 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   const [profile, setProfileState] = useState<ProfileData>(initialProfileData);
   const notificationsRefreshInFlight = useRef<{ sequence: number; promise: Promise<void> } | null>(null);
   const notificationsRefreshSequence = useRef(0);
+  const notificationsSnapshotRef = useRef<PortalNotification[]>([]);
+  const notificationsMutationSequence = useRef(0);
 
   const unreadNotifications = useMemo(() => notifications.filter((item) => !item.isRead).length, [notifications]);
+
+  useEffect(() => {
+    notificationsSnapshotRef.current = notifications;
+  }, [notifications]);
 
   const loadPortalData = useCallback(async (token: string) => {
     setIsLoadingPortalData(true);
@@ -401,61 +407,79 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     }
   }, [authToken, refreshNotifications]);
 
-  const markAllNotificationsRead = useCallback(async () => {
+  const runOptimisticNotificationMutation = useCallback(async (
+    updater: (current: PortalNotification[]) => PortalNotification[],
+    mutationRequest: () => Promise<void>,
+  ) => {
     if (!authToken) {
       return;
     }
 
-    await apiRequest<{ updated: number }>('/notifications/read-all', {
-      method: 'PATCH',
-      headers: authHeaders(authToken),
-    });
+    const previous = notificationsSnapshotRef.current;
+    const mutationSequence = notificationsMutationSequence.current + 1;
+    notificationsMutationSequence.current = mutationSequence;
 
-    setNotifications((current) => current.map((item) => ({ ...item, isRead: true })));
-    void refreshNotifications(authToken, true);
+    setNotifications(updater(previous));
+
+    try {
+      await mutationRequest();
+    } catch (error) {
+      if (notificationsMutationSequence.current === mutationSequence) {
+        setNotifications(previous);
+      }
+      throw error;
+    } finally {
+      void refreshNotifications(authToken, true);
+    }
   }, [authToken, refreshNotifications]);
+
+  const markAllNotificationsRead = useCallback(async () => {
+    await runOptimisticNotificationMutation(
+      (current) => current.map((item) => ({ ...item, isRead: true })),
+      async () => {
+        await apiRequest<{ updated: number }>('/notifications/read-all', {
+          method: 'PATCH',
+          headers: authHeaders(authToken),
+        });
+      },
+    );
+  }, [authToken, runOptimisticNotificationMutation]);
 
   const markNotificationRead = useCallback(async (id: string) => {
-    if (!authToken) {
-      return;
-    }
-
-    await apiRequest<{ updated: number }>(`/notifications/${id}/read`, {
-      method: 'PATCH',
-      headers: authHeaders(authToken),
-    });
-
-    setNotifications((current) => current.map((item) => (item.id === id ? { ...item, isRead: true } : item)));
-    void refreshNotifications(authToken, true);
-  }, [authToken, refreshNotifications]);
+    await runOptimisticNotificationMutation(
+      (current) => current.map((item) => (item.id === id ? { ...item, isRead: true } : item)),
+      async () => {
+        await apiRequest<{ updated: number }>(`/notifications/${id}/read`, {
+          method: 'PATCH',
+          headers: authHeaders(authToken),
+        });
+      },
+    );
+  }, [authToken, runOptimisticNotificationMutation]);
 
   const deleteNotification = useCallback(async (id: string) => {
-    if (!authToken) {
-      return;
-    }
-
-    await apiRequest<{ deleted: number }>(`/notifications/${id}`, {
-      method: 'DELETE',
-      headers: authHeaders(authToken),
-    });
-
-    setNotifications((current) => current.filter((item) => item.id !== id));
-    void refreshNotifications(authToken, true);
-  }, [authToken, refreshNotifications]);
+    await runOptimisticNotificationMutation(
+      (current) => current.filter((item) => item.id !== id),
+      async () => {
+        await apiRequest<{ deleted: number }>(`/notifications/${id}`, {
+          method: 'DELETE',
+          headers: authHeaders(authToken),
+        });
+      },
+    );
+  }, [authToken, runOptimisticNotificationMutation]);
 
   const deleteAllNotifications = useCallback(async () => {
-    if (!authToken) {
-      return;
-    }
-
-    await apiRequest<{ deleted: number }>('/notifications', {
-      method: 'DELETE',
-      headers: authHeaders(authToken),
-    });
-
-    setNotifications([]);
-    void refreshNotifications(authToken, true);
-  }, [authToken, refreshNotifications]);
+    await runOptimisticNotificationMutation(
+      () => [],
+      async () => {
+        await apiRequest<{ deleted: number }>('/notifications', {
+          method: 'DELETE',
+          headers: authHeaders(authToken),
+        });
+      },
+    );
+  }, [authToken, runOptimisticNotificationMutation]);
 
   const value = useMemo(
     () => ({

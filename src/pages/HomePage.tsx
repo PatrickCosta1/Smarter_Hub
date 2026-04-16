@@ -8,6 +8,14 @@ import LoadingInline from '../components/ui/LoadingInline';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
+type DashboardSummaryMetrics = {
+  totals?: {
+    pendingProfileRequests?: number;
+    pendingVacationRequests?: number;
+    trainingsAssigned?: number;
+  };
+};
+
 function getAuthHeaders() {
   const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
   return authHeaders(token);
@@ -17,6 +25,7 @@ export default function HomePage() {
   const navigate = useNavigate();
   const { profile, unreadNotifications, hasPermission, isRootAccess, currentUser } = usePortal();
   const isTPeople = currentUser?.username === 't.people';
+  const canViewUserList = isRootAccess || hasPermission('view_user_list');
   const canReviewApprovals = isRootAccess || hasPermission('approve_profile_change') || hasPermission('approve_vacation') || hasPermission('reject_vacation');
   const canManageTrainings = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
   const canManageCollaborators = isRootAccess || hasPermission('view_user_list') || hasPermission('manage_user_active') || hasPermission('manage_permissions');
@@ -52,56 +61,53 @@ export default function HomePage() {
       setIsLoadingOwnPendingProfileRequest(true);
 
       if (isManagerFlow || isTPeople) {
-        void apiRequestCached<unknown[]>('/profile/requests', { headers: getAuthHeaders(), signal: controller.signal }, 15000)
-          .then((profileRequests) => {
+        const headers = getAuthHeaders();
+
+        if (canViewUserList) {
+          try {
+            const summary = await apiRequestCached<DashboardSummaryMetrics>('/users/dashboard-summary', {
+              headers,
+              signal: controller.signal,
+            }, 15000);
+
             if (!controller.signal.aborted) {
-              setPendingProfileRequests(profileRequests.length);
+              setPendingProfileRequests(Number(summary.totals?.pendingProfileRequests || 0));
+              setPendingVacationRequests(Number(summary.totals?.pendingVacationRequests || 0));
+              setAssignedTrainings(Number(summary.totals?.trainingsAssigned || 0));
             }
-          })
-          .catch((error) => {
+          } catch (error) {
             if (!isAbortError(error) && !controller.signal.aborted) {
               setPendingProfileRequests(0);
-            }
-          })
-          .finally(() => {
-            if (!controller.signal.aborted) {
-              setIsLoadingPendingProfileRequests(false);
-            }
-          });
-
-        void apiRequestCached<unknown[]>('/vacations/requests', { headers: getAuthHeaders(), signal: controller.signal }, 15000)
-          .then((vacationRequests) => {
-            if (!controller.signal.aborted) {
-              setPendingVacationRequests(vacationRequests.length);
-            }
-          })
-          .catch((error) => {
-            if (!isAbortError(error) && !controller.signal.aborted) {
               setPendingVacationRequests(0);
-            }
-          })
-          .finally(() => {
-            if (!controller.signal.aborted) {
-              setIsLoadingPendingVacationRequests(false);
-            }
-          });
-
-        void apiRequestCached<Array<{ status?: string }>>('/trainings/assigned', { headers: getAuthHeaders(), signal: controller.signal }, 15000)
-          .then((trainings) => {
-            if (!controller.signal.aborted) {
-              setAssignedTrainings(trainings.filter((item) => item.status === 'ASSIGNED').length);
-            }
-          })
-          .catch((error) => {
-            if (!isAbortError(error) && !controller.signal.aborted) {
               setAssignedTrainings(0);
             }
-          })
-          .finally(() => {
+          } finally {
             if (!controller.signal.aborted) {
+              setIsLoadingPendingProfileRequests(false);
+              setIsLoadingPendingVacationRequests(false);
               setIsLoadingAssignedTrainings(false);
             }
-          });
+          }
+        } else {
+          const [profileRequestsResult, vacationRequestsResult, assignedTrainingsResult] = await Promise.allSettled([
+            apiRequestCached<unknown[]>('/profile/requests', { headers, signal: controller.signal }, 15000),
+            apiRequestCached<unknown[]>('/vacations/requests', { headers, signal: controller.signal }, 15000),
+            apiRequestCached<Array<{ status?: string }>>('/trainings/assigned', { headers, signal: controller.signal }, 15000),
+          ]);
+
+          if (!controller.signal.aborted) {
+            setPendingProfileRequests(profileRequestsResult.status === 'fulfilled' ? profileRequestsResult.value.length : 0);
+            setPendingVacationRequests(vacationRequestsResult.status === 'fulfilled' ? vacationRequestsResult.value.length : 0);
+            setAssignedTrainings(
+              assignedTrainingsResult.status === 'fulfilled'
+                ? assignedTrainingsResult.value.filter((item) => item.status === 'ASSIGNED').length
+                : 0,
+            );
+            setIsLoadingPendingProfileRequests(false);
+            setIsLoadingPendingVacationRequests(false);
+            setIsLoadingAssignedTrainings(false);
+          }
+        }
 
         setOwnPendingProfileRequest(false);
         setIsLoadingOwnPendingProfileRequest(false);
@@ -131,7 +137,7 @@ export default function HomePage() {
     })();
 
     return () => controller.abort();
-  }, [isManagerFlow, isTPeople]);
+  }, [canViewUserList, isManagerFlow, isTPeople]);
 
   return (
     <>
