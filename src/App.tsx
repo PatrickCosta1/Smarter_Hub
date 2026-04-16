@@ -25,7 +25,6 @@ function AppRoutes() {
   const { isAuthenticated, isLoadingSession, currentUser, hasPermission, isRootAccess, isAccessTotal } = usePortal();
   const isTPeople = currentUser?.username === 't.people';
   const prefetchFingerprintRef = useRef('');
-  const currentYear = useRef(new Date().getFullYear()).current;
 
   const canViewUserList = isRootAccess || hasPermission('view_user_list');
   const canViewTeams = isRootAccess || hasPermission('view_teams') || hasPermission('manage_team_members');
@@ -45,6 +44,8 @@ function AppRoutes() {
       requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
       cancelIdleCallback?: (handle: number) => void;
     };
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+    const isConstrainedNetwork = Boolean(connection?.saveData) || ['slow-2g', '2g'].includes(connection?.effectiveType || '');
 
     const warmChunks = () => {
       void import('./pages/HomePage');
@@ -58,11 +59,13 @@ function AppRoutes() {
       void import('./pages/AdminPage');
       void import('./pages/ManagerTeamsPage');
       void import('./pages/CollaboratorsPage');
+      void import('./pages/DashboardPage');
     };
 
     const token = window.localStorage.getItem(STORAGE_TOKEN_KEY) || '';
     const prefetchFingerprint = [
       token,
+      isConstrainedNetwork ? 'net-constrained' : 'net-normal',
       isRootAccess ? 'root' : 'no-root',
       isAccessTotal ? 'access-total' : 'no-access-total',
       canViewUserList ? 'view_user_list' : '-',
@@ -75,65 +78,26 @@ function AppRoutes() {
       canReviewApprovals ? 'approvals' : '-',
     ].join('|');
 
+    if (prefetchFingerprintRef.current === prefetchFingerprint) {
+      return;
+    }
+    prefetchFingerprintRef.current = prefetchFingerprint;
+
     const safePrefetch = (path: string, ttlMs: number) => apiRequestCached(path, { headers: authHeaders(token) }, ttlMs).catch(() => undefined);
-
-    const warmCriticalData = () => {
-      if (!token || prefetchFingerprintRef.current === prefetchFingerprint) {
-        return;
-      }
-
-      prefetchFingerprintRef.current = prefetchFingerprint;
-
-      const requests: Array<Promise<unknown>> = [
-        safePrefetch('/auth/me', 30000),
-        safePrefetch('/profile/me', 60000),
-        safePrefetch('/notifications/me', 30000),
-        safePrefetch('/profile/requests/me', 30000),
-      ];
-
-      if (canViewTeams) {
-        requests.push(safePrefetch('/teams/me?details=none', 60000));
-      }
-
-      if (canViewUserList) {
-        requests.push(safePrefetch('/users/collaborators?page=1&pageSize=20&sortBy=updatedAt&sortDirection=desc', 60000));
-      }
-
-      if (canEditUser || canManagePermissions) {
-        requests.push(safePrefetch('/admin/users', 60000));
-      }
-
-      if (canManageTrainings) {
-        requests.push(safePrefetch('/trainings/assigned', 60000));
-      } else if (canViewOwnTrainings) {
-        requests.push(safePrefetch('/trainings/me', 60000));
-      }
-
-      if (canViewVacations) {
-        requests.push(safePrefetch('/vacations/requests', 60000));
-        requests.push(safePrefetch('/vacations/me', 60000));
-        requests.push(safePrefetch('/vacations/overview', 60000));
-        requests.push(safePrefetch(`/vacations/calendar?year=${currentYear}`, 60000));
-        requests.push(safePrefetch('/users/me/teams', 120000));
-      }
-
-      if (canReviewApprovals) {
-        requests.push(safePrefetch('/profile/requests', 60000));
-      }
-
-      if (isRootAccess || isAccessTotal) {
-        requests.push(safePrefetch('/users/dashboard-summary', 60000));
-      }
-
-      void Promise.allSettled(requests);
-    };
 
     const warmSecondaryData = () => {
       if (!token) {
         return;
       }
 
+      if (isConstrainedNetwork) {
+        return;
+      }
+
       const requests: Array<Promise<unknown>> = [];
+
+      requests.push(safePrefetch('/notifications/me', 10000));
+      requests.push(safePrefetch('/profile/me', 30000));
 
       if (canViewTeams) {
         requests.push(safePrefetch('/users/collaborators?page=1&pageSize=250&sortBy=username&sortDirection=asc', 60000));
@@ -148,10 +112,25 @@ function AppRoutes() {
         requests.push(safePrefetch(`/users/${currentUser.id}/permissions`, 60000));
       }
 
+      if (isRootAccess || isAccessTotal) {
+        requests.push(safePrefetch('/users/dashboard-summary', 45000));
+      }
+
+      if (canReviewApprovals) {
+        requests.push(safePrefetch('/profile/requests', 45000));
+        requests.push(safePrefetch('/vacations/requests', 45000));
+      }
+
+      if (canViewVacations) {
+        requests.push(safePrefetch('/vacations', 30000));
+      }
+
+      if (canManageTrainings || canViewOwnTrainings) {
+        requests.push(safePrefetch(canManageTrainings ? '/trainings/assigned' : '/trainings/me', 60000));
+      }
+
       void Promise.allSettled(requests);
     };
-
-    warmCriticalData();
 
     const warmEverything = () => {
       warmChunks();

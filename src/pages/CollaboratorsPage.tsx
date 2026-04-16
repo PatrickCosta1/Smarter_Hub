@@ -407,6 +407,14 @@ type UserPermissionsResponse = {
   permissions: PermissionItem[];
 };
 
+type CollaboratorDetailsCacheEntry = {
+  selectedPermissions: PermissionItem[];
+  selectedUserAccessTotal: boolean;
+  permissionTeams: TeamOption[];
+  customCargoOptions: CustomProfileOption[];
+  customFuncaoOptions: CustomProfileOption[];
+};
+
 type TeamOption = {
   id: string;
   name: string;
@@ -599,6 +607,8 @@ export default function CollaboratorsPage() {
   const canManageProfileOptions = isRootAccess || isAccessTotal || hasPermission('manage_profile_dropdown_options');
   const collaboratorQueryInputRef = useRef<HTMLInputElement | null>(null);
   const collaboratorQueryRef = useRef(query);
+  const detailsLoadControllerRef = useRef<AbortController | null>(null);
+  const [detailsCacheByUserId, setDetailsCacheByUserId] = useState<Record<string, CollaboratorDetailsCacheEntry>>({});
 
   useEffect(() => {
     collaboratorQueryRef.current = query;
@@ -735,8 +745,14 @@ export default function CollaboratorsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      detailsLoadControllerRef.current?.abort();
+    };
+  }, []);
+
   async function loadCollaborators(signal?: AbortSignal) {
-    setLoading(true);
+    setLoading(rows.length === 0);
     try {
       const params = new URLSearchParams();
       params.set('page', String(page));
@@ -811,11 +827,29 @@ export default function CollaboratorsPage() {
   }
 
   async function openDetails(item: CollaboratorRow, initialTab: 'ficha' | 'permissoes' | 'estado' = 'ficha') {
+    detailsLoadControllerRef.current?.abort();
+
     setSelectedRow(item);
     setDetailsTab(initialTab);
     setIsDetailsOpen(true);
-    setIsLoadingDetails(true);
     setEditDraft(buildEditDraftFromRow(item));
+    setPermissionSearch('');
+    setPendingTeamToAdd('');
+
+    const cached = detailsCacheByUserId[item.id];
+    if (cached) {
+      setIsLoadingDetails(false);
+      setSelectedPermissions(cached.selectedPermissions);
+      setSelectedUserAccessTotal(cached.selectedUserAccessTotal);
+      setPermissionTeams(cached.permissionTeams);
+      setCustomCargoOptions(cached.customCargoOptions);
+      setCustomFuncaoOptions(cached.customFuncaoOptions);
+      setPermissionDrafts(Object.fromEntries(cached.selectedPermissions.map((permission) => [permission.id, buildDraftFromAssignment(permission, cached.selectedUserAccessTotal)])));
+      setSelectedPermissionId(cached.selectedPermissions[0]?.id ?? null);
+      return;
+    }
+
+    setIsLoadingDetails(true);
     setSelectedPermissions([]);
     setSelectedUserAccessTotal(false);
     setPermissionDrafts({});
@@ -823,20 +857,23 @@ export default function CollaboratorsPage() {
     setCustomCargoOptions([]);
     setCustomFuncaoOptions([]);
     setSelectedPermissionId(null);
-    setPermissionSearch('');
-    setPendingTeamToAdd('');
+
+    const controller = new AbortController();
+    detailsLoadControllerRef.current = controller;
 
     try {
       const loadPermissionTeams = async () => {
         try {
           const adminTeams = await apiRequestCached<Array<{ id: string; name: string }>>('/admin/teams', {
             headers: getAuthHeaders(),
+            signal: controller.signal,
           }, 8000, true);
           return (adminTeams || []).map((team) => ({ id: team.id, name: team.name }));
         } catch {
           try {
             const scopedTeams = await apiRequestCached<Array<{ id: string; name: string }>>('/teams', {
               headers: getAuthHeaders(),
+              signal: controller.signal,
             }, 8000, true);
             return (scopedTeams || []).map((team) => ({ id: team.id, name: team.name }));
           } catch {
@@ -848,6 +885,7 @@ export default function CollaboratorsPage() {
       const [details, permissionTeams, profileOptions] = await Promise.all([
         apiRequest<UserPermissionsResponse>(`/users/${item.id}/permissions`, {
           headers: getAuthHeaders(),
+          signal: controller.signal,
         }),
         loadPermissionTeams(),
         apiRequestCached<{
@@ -855,8 +893,13 @@ export default function CollaboratorsPage() {
           funcao?: CustomProfileOption[];
         }>('/profile/options', {
           headers: getAuthHeaders(),
+          signal: controller.signal,
         }, 8000, true),
       ]);
+
+      if (controller.signal.aborted) {
+        return;
+      }
 
       const hasAccessTotal = Boolean(details.accessTotal);
       setSelectedPermissions(details.permissions);
@@ -869,11 +912,34 @@ export default function CollaboratorsPage() {
       setPermissionTeams(permissionTeams);
       setCustomCargoOptions(profileOptions.cargo ?? []);
       setCustomFuncaoOptions(profileOptions.funcao ?? []);
+      setDetailsCacheByUserId((current) => ({
+        ...current,
+        [item.id]: {
+          selectedPermissions: details.permissions,
+          selectedUserAccessTotal: hasAccessTotal,
+          permissionTeams,
+          customCargoOptions: profileOptions.cargo ?? [],
+          customFuncaoOptions: profileOptions.funcao ?? [],
+        },
+      }));
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Falha ao carregar detalhe do colaborador.');
+      if (!controller.signal.aborted) {
+        setStatus(error instanceof Error ? error.message : 'Falha ao carregar detalhe do colaborador.');
+      }
     } finally {
-      setIsLoadingDetails(false);
+      if (!controller.signal.aborted) {
+        setIsLoadingDetails(false);
+      }
+      if (detailsLoadControllerRef.current === controller) {
+        detailsLoadControllerRef.current = null;
+      }
     }
+  }
+
+  function closeDetails() {
+    detailsLoadControllerRef.current?.abort();
+    detailsLoadControllerRef.current = null;
+    setIsDetailsOpen(false);
   }
 
   async function openProfileOptionModal(type: 'CARGO' | 'FUNCAO') {
@@ -1473,12 +1539,12 @@ export default function CollaboratorsPage() {
       <Modal
         open={isDetailsOpen}
         title={selectedRow ? `Gestão do colaborador · ${getDisplayName(selectedRow)}` : 'Gestão do colaborador'}
-        onClose={() => setIsDetailsOpen(false)}
+        onClose={closeDetails}
         width="min(1360px, 97vw)"
         showCloseButton={false}
         footer={
           <div className="modal-footer-split">
-            <Button type="button" variant="ghost" onClick={() => setIsDetailsOpen(false)}>Fechar</Button>
+            <Button type="button" variant="ghost" onClick={closeDetails}>Fechar</Button>
           </div>
         }
       >

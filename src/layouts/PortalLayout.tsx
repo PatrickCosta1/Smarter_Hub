@@ -1,15 +1,20 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { roleLabels } from '../portal/data';
 import { usePortal } from '../portal/context';
 import { MenuItem } from '../portal/types';
+import { apiRequestCached, authHeaders } from '../portal/api';
+
+const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
 export default function PortalLayout() {
   const { userRole, unreadNotifications, logout, hasPermission, isRootAccess, isAccessTotal, currentUser } = usePortal();
   const navigate = useNavigate();
   const location = useLocation();
   const [menuQuery, setMenuQuery] = useState('');
+  const prefetchedRoutesRef = useRef<Set<string>>(new Set());
   const isTPeople = currentUser?.username === 't.people';
+  const canManageTrainings = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
 
   const roleMenus = useMemo(() => {
     const can = (code: string) => isRootAccess || hasPermission(code);
@@ -82,6 +87,91 @@ export default function PortalLayout() {
     navigate('/login');
   }
 
+  function prefetchRoute(path: string) {
+    if (prefetchedRoutesRef.current.has(path)) {
+      return;
+    }
+
+    prefetchedRoutesRef.current.add(path);
+
+    switch (path) {
+      case '/dashboard':
+        void import('../pages/DashboardPage');
+        break;
+      case '/equipas':
+        void import('../pages/ManagerTeamsPage');
+        break;
+      case '/colaboradores':
+        void import('../pages/CollaboratorsPage');
+        break;
+      case '/admin':
+        void import('../pages/AdminPage');
+        break;
+      case '/aprovacoes':
+        void import('../pages/RHApprovalsPage');
+        break;
+      case '/formacoes':
+        void import('../pages/TrainingsPage');
+        break;
+      case '/ferias':
+        void import('../pages/VacationsPage');
+        break;
+      case '/profile':
+        void import('../pages/ProfilePage');
+        break;
+      default:
+        break;
+    }
+
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    if (!token) {
+      return;
+    }
+
+    const headers = authHeaders(token);
+    const safePrefetch = (endpoint: string, ttlMs: number) => apiRequestCached(endpoint, { headers }, ttlMs).catch(() => undefined);
+
+    if (path === '/dashboard' && (isRootAccess || isAccessTotal)) {
+      void safePrefetch('/users/dashboard-summary', 45000);
+      return;
+    }
+
+    if (path === '/equipas') {
+      void safePrefetch('/teams/me?details=none', 45000);
+      return;
+    }
+
+    if (path === '/colaboradores') {
+      void safePrefetch('/users/collaborators?page=1&pageSize=20&sortBy=updatedAt&sortDirection=desc', 30000);
+      return;
+    }
+
+    if (path === '/admin') {
+      void safePrefetch('/admin/users', 30000);
+      return;
+    }
+
+    if (path === '/aprovacoes') {
+      void Promise.allSettled([
+        safePrefetch('/profile/requests', 45000),
+        safePrefetch('/vacations/requests', 45000),
+      ]);
+      return;
+    }
+
+    if (path === '/formacoes') {
+      void safePrefetch(canManageTrainings ? '/trainings/assigned' : '/trainings/me', 45000);
+      return;
+    }
+
+    if (path === '/ferias') {
+      void Promise.allSettled([
+        safePrefetch('/vacations/me', 30000),
+        safePrefetch('/vacations/overview', 30000),
+      ]);
+    }
+  }
+
   return (
     <main className="app-shell">
       <div className="login-background" aria-hidden="true">
@@ -111,7 +201,13 @@ export default function PortalLayout() {
 
           <nav className="portal-nav" aria-label="Menu principal">
             {filteredMenu.map((item) => (
-              <NavLink key={item.id} className={({ isActive }) => `portal-nav__link${isActive ? ' is-active' : ''}`} to={item.path}>
+              <NavLink
+                key={item.id}
+                className={({ isActive }) => `portal-nav__link${isActive ? ' is-active' : ''}`}
+                to={item.path}
+                onMouseEnter={() => prefetchRoute(item.path)}
+                onFocus={() => prefetchRoute(item.path)}
+              >
                 {item.label}
               </NavLink>
             ))}

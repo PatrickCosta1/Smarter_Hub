@@ -204,7 +204,7 @@ export default function TrainingsPage() {
   }, [canManage, collaboratorQuery]);
 
   async function loadTrainings(signal?: AbortSignal) {
-    setIsRecordsLoading(true);
+    setIsRecordsLoading(records.length === 0);
     try {
       const path = canManage ? '/trainings/assigned' : '/trainings/me';
       const data = await apiRequestCached<TrainingRecord[]>(path, {
@@ -350,15 +350,15 @@ export default function TrainingsPage() {
         <div className="trainings-hours-summary">
           <article>
             <span>Horas totais</span>
-            <strong>{(isRecordsLoading || (canManage && !recordsLoaded)) ? <span className="trainings-summary-loading">A carregar</span> : `${formatHours(totalHours)} h`}</strong>
+            <strong>{(isRecordsLoading && !recordsLoaded) ? <span className="trainings-summary-loading">A carregar</span> : `${formatHours(totalHours)} h`}</strong>
           </article>
           <article>
             <span>{canManage ? 'Por concluir' : 'Por concluir'}</span>
-            <strong>{(isRecordsLoading || (canManage && !recordsLoaded)) ? <span className="trainings-summary-loading">A carregar</span> : criticalCount}</strong>
+            <strong>{(isRecordsLoading && !recordsLoaded) ? <span className="trainings-summary-loading">A carregar</span> : criticalCount}</strong>
           </article>
           <article>
             <span>Concluídas</span>
-            <strong>{(isRecordsLoading || (canManage && !recordsLoaded)) ? <span className="trainings-summary-loading">A carregar</span> : completedCount}</strong>
+            <strong>{(isRecordsLoading && !recordsLoaded) ? <span className="trainings-summary-loading">A carregar</span> : completedCount}</strong>
           </article>
         </div>
       </header>

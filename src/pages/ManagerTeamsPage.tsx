@@ -3,6 +3,7 @@ import { apiRequest, apiRequestCached, authHeaders, clearApiCache, isAbortError 
 import { usePortal } from '../portal/context';
 import { formatRoleLabel } from '../portal/labels';
 import Skeleton from '../components/ui/Skeleton';
+import LoadingInline from '../components/ui/LoadingInline';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
 import EmptyState from '../components/ui/EmptyState';
@@ -197,9 +198,9 @@ export default function ManagerTeamsPage() {
   const canAccessTeams = isRootAccess || hasPermission('view_teams') || canManageTeamMembers;
   const [teams, setTeams] = useState<TeamSummary[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
-  const [selectedTeamDetail, setSelectedTeamDetail] = useState<TeamDetail | null>(null);
+  const [teamDetailsById, setTeamDetailsById] = useState<Record<string, TeamDetail>>({});
   const [loading, setLoading] = useState(false);
-  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [loadingDetailTeamId, setLoadingDetailTeamId] = useState<string | null>(null);
   const [status, setStatus] = useState('');
   const [teamModalTab, setTeamModalTab] = useState<'overview' | 'vacations'>('overview');
   const [isNewTeamModalOpen, setIsNewTeamModalOpen] = useState(false);
@@ -220,6 +221,7 @@ export default function ManagerTeamsPage() {
     [teams, selectedTeamId],
   );
 
+  const selectedTeamDetail = selectedTeamId ? teamDetailsById[selectedTeamId] || null : null;
   const selectedTeam = selectedTeamDetail || selectedTeamSummary;
   const selectedTeamMembers = selectedTeamDetail?.members || [];
 
@@ -237,9 +239,12 @@ export default function ManagerTeamsPage() {
 
   useEffect(() => {
     setTeamModalTab('overview');
-    setSelectedTeamDetail(null);
 
     if (!selectedTeamId) {
+      return;
+    }
+
+    if (teamDetailsById[selectedTeamId]) {
       return;
     }
 
@@ -248,7 +253,7 @@ export default function ManagerTeamsPage() {
     void loadTeamDetail(selectedTeamId, controller.signal);
 
     return () => controller.abort();
-  }, [selectedTeamId]);
+  }, [selectedTeamId, teamDetailsById]);
 
   useEffect(() => {
     if (!status) {
@@ -263,7 +268,7 @@ export default function ManagerTeamsPage() {
   }, [status]);
 
   async function loadTeams(signal?: AbortSignal) {
-    setLoading(true);
+    setLoading(teams.length === 0);
     setStatus('');
 
     try {
@@ -290,7 +295,7 @@ export default function ManagerTeamsPage() {
   }
 
   async function loadTeamDetail(teamId: string, signal?: AbortSignal) {
-    setLoadingDetail(true);
+    setLoadingDetailTeamId(teamId);
     setStatus('');
 
     try {
@@ -298,7 +303,10 @@ export default function ManagerTeamsPage() {
         headers: getAuthHeaders(),
         signal,
       }, 45000);
-      setSelectedTeamDetail(data);
+      setTeamDetailsById((current) => ({
+        ...current,
+        [teamId]: data,
+      }));
     } catch (error) {
       if (isAbortError(error) || signal?.aborted) {
         return;
@@ -307,7 +315,7 @@ export default function ManagerTeamsPage() {
       setStatus(error instanceof Error ? error.message : 'Falha ao carregar detalhe da equipa.');
     } finally {
       if (!signal?.aborted) {
-        setLoadingDetail(false);
+        setLoadingDetailTeamId((current) => (current === teamId ? null : current));
       }
     }
   }
@@ -691,6 +699,8 @@ export default function ManagerTeamsPage() {
     return 'info';
   }, [status]);
 
+  const isSelectedTeamDetailLoading = loadingDetailTeamId === selectedTeamId;
+
   return (
     <section className="trainings-shell">
       <header className="trainings-hero">
@@ -703,7 +713,7 @@ export default function ManagerTeamsPage() {
         <div className="trainings-hours-summary">
           <article>
             <span>Equipas visíveis</span>
-            <strong>{teams.length}</strong>
+            <strong>{loading && teams.length === 0 ? <LoadingInline variant="metric" /> : teams.length}</strong>
           </article>
         </div>
       </header>
@@ -720,6 +730,11 @@ export default function ManagerTeamsPage() {
           {loading && (
             <article className="trainings-mobile-card">
               <Skeleton lines={3} />
+            </article>
+          )}
+          {loading && teams.length > 0 && (
+            <article className="trainings-mobile-card">
+              <LoadingInline variant="body" />
             </article>
           )}
           {!loading && teams.length === 0 && (
@@ -761,13 +776,7 @@ export default function ManagerTeamsPage() {
               </button>
             </div>
 
-            {loadingDetail && (
-              <article className="trainings-mobile-card">
-                <Skeleton lines={5} />
-              </article>
-            )}
-
-            {!loadingDetail && teamModalTab === 'overview' && (
+            {teamModalTab === 'overview' && (
               <>
                 {(canEditTeam || canDeleteTeam || canManageTeamMembers) && (
                   <div className="team-overview-head">
@@ -802,7 +811,13 @@ export default function ManagerTeamsPage() {
                 </div>
 
                 <section className="manager-team-members-list manager-team-members-list--structured">
-                  {selectedTeamMembers.length === 0 && (
+                  {isSelectedTeamDetailLoading && selectedTeamMembers.length === 0 && (
+                    <article className="trainings-mobile-card">
+                      <Skeleton lines={3} />
+                    </article>
+                  )}
+
+                  {!isSelectedTeamDetailLoading && selectedTeamMembers.length === 0 && (
                     <EmptyState
                       title="Sem membros nesta equipa."
                       message="Adiciona colaboradores para começar a gerir esta equipa."
@@ -827,9 +842,15 @@ export default function ManagerTeamsPage() {
               </>
             )}
 
-            {!loadingDetail && teamModalTab === 'vacations' && (
+            {teamModalTab === 'vacations' && (
               <section className="manager-team-vacations-board">
-                {upcomingVacations.length === 0 && (
+                {isSelectedTeamDetailLoading && upcomingVacations.length === 0 && (
+                  <article className="trainings-mobile-card">
+                    <Skeleton lines={4} />
+                  </article>
+                )}
+
+                {!isSelectedTeamDetailLoading && upcomingVacations.length === 0 && (
                   <EmptyState
                     title="Sem férias futuras ou em curso neste momento."
                     message="Quando houver pedidos aprovados no período, serão listados aqui."

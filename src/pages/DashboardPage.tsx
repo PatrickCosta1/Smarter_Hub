@@ -3,6 +3,7 @@ import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import Skeleton from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
+import LoadingInline from '../components/ui/LoadingInline';
 import { apiRequestCached, authHeaders, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 
@@ -94,6 +95,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [status, setStatus] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     if (!canAccess) {
@@ -107,7 +109,9 @@ export default function DashboardPage() {
   }, [canAccess]);
 
   async function loadSummary(signal?: AbortSignal, forceRefresh = false) {
-    setIsLoading(true);
+    const shouldBlockInitialLoad = summary === null && !forceRefresh;
+    setIsLoading(shouldBlockInitialLoad);
+    setIsRefreshing(forceRefresh && summary !== null);
     setStatus('');
 
     try {
@@ -128,6 +132,7 @@ export default function DashboardPage() {
     } finally {
       if (!signal?.aborted) {
         setIsLoading(false);
+        setIsRefreshing(false);
       }
     }
   }
@@ -171,7 +176,7 @@ export default function DashboardPage() {
         </div>
         <div className="dashboard-hero__actions">
           <Badge tone="info">Atualização rápida</Badge>
-          <Button type="button" variant="primary" onClick={() => void loadSummary(undefined, true)} isLoading={isLoading}>
+          <Button type="button" variant="primary" onClick={() => void loadSummary(undefined, true)} isLoading={isRefreshing}>
             Atualizar
           </Button>
         </div>
@@ -180,7 +185,7 @@ export default function DashboardPage() {
       {status && <article className="dashboard-status-card">{status}</article>}
 
       <section className="dashboard-kpi-grid dashboard-kpi-grid--compact">
-        {isLoading || !summary
+        {isLoading && !summary
           ? Array.from({ length: 6 }).map((_, index) => (
             <article key={index} className="dashboard-kpi-card">
               <Skeleton lines={2} />
@@ -202,7 +207,7 @@ export default function DashboardPage() {
               <p>Onde a equipa está concentrada e como se distribui.</p>
             </div>
           </header>
-          {isLoading ? (
+          {isLoading && !summary ? (
             <Skeleton lines={7} />
           ) : !summary || summary.charts.genderByArea.length === 0 ? (
             <EmptyState title="Sem dados suficientes." message="Este bloco aparece quando existirem equipa e perfil preenchidos." />
@@ -236,7 +241,7 @@ export default function DashboardPage() {
               <p>Distribuição compacta dos principais níveis académicos.</p>
             </div>
           </header>
-          {isLoading ? (
+          {isLoading && !summary ? (
             <Skeleton lines={6} />
           ) : !summary || summary.charts.educationDistribution.length === 0 ? (
             <EmptyState title="Sem dados académicos." message="Este gráfico é preenchido quando houver habilitações registadas." />
@@ -262,7 +267,7 @@ export default function DashboardPage() {
               <p>Leitura rápida da permanência por cargo atual.</p>
             </div>
           </header>
-          {isLoading ? (
+          {isLoading && !summary ? (
             <Skeleton lines={6} />
           ) : !summary || summary.charts.timeInCurrentLevelByCargo.length === 0 ? (
             <EmptyState title="Sem progressões suficientes." message="Os níveis surgem assim que existirem datas de início ou promoções aprovadas." />
@@ -290,7 +295,7 @@ export default function DashboardPage() {
             </div>
             <Badge tone="success">{summary?.totals.promotionEvents || 0}</Badge>
           </header>
-          {isLoading ? (
+          {isLoading && !summary ? (
             <Skeleton lines={6} />
           ) : !summary || summary.recentPromotions.length === 0 ? (
             <EmptyState title="Sem histórico de progressão." message="Quando existirem pedidos aprovados de cargo, aparecem aqui." />

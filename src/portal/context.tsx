@@ -150,17 +150,25 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     setIsLoadingPortalData(true);
 
     try {
-      const [profileData, notificationsData] = await Promise.all([
-        apiRequestCached<ProfileData>('/profile/me', {
-          headers: authHeaders(token),
-        }, 30000),
-        apiRequestCached<PortalNotification[]>('/notifications/me', {
-          headers: authHeaders(token),
-        }, 10000),
-      ]);
+      const headers = authHeaders(token);
 
-      setProfileState(normalizeProfileData(profileData));
-      setNotifications(notificationsData);
+      const profilePromise = apiRequestCached<ProfileData>('/profile/me', {
+        headers,
+      }, 30000)
+        .then((profileData) => {
+          setProfileState(normalizeProfileData(profileData));
+        })
+        .catch(() => undefined);
+
+      const notificationsPromise = apiRequestCached<PortalNotification[]>('/notifications/me', {
+        headers,
+      }, 10000)
+        .then((notificationsData) => {
+          setNotifications(notificationsData);
+        })
+        .catch(() => undefined);
+
+      await Promise.allSettled([profilePromise, notificationsPromise]);
     } finally {
       setIsLoadingPortalData(false);
     }

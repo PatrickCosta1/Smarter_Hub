@@ -113,7 +113,8 @@ export default function RHApprovalsPage() {
   const [profileRequests, setProfileRequests] = useState<ProfileRequest[]>([]);
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([]);
   const [rejectReason, setRejectReason] = useState('');
-  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [isLoadingProfileRequests, setIsLoadingProfileRequests] = useState(true);
+  const [isLoadingVacationRequests, setIsLoadingVacationRequests] = useState(true);
   const [selectedProfileRequest, setSelectedProfileRequest] = useState<ProfileRequest | null>(null);
   const [rejectionMode, setRejectionMode] = useState<'none' | 'total' | 'partial'>('none');
   const [rejectedFields, setRejectedFields] = useState<Record<string, string>>({}); // {"fieldName": "observações"}
@@ -125,6 +126,7 @@ export default function RHApprovalsPage() {
   });
 
   const requestCount = useMemo(() => profileRequests.length + vacationRequests.length, [profileRequests.length, vacationRequests.length]);
+  const isLoadingData = isLoadingProfileRequests || isLoadingVacationRequests;
   const canReviewProfiles = isRootAccess || hasPermission('approve_profile_change');
   const canReviewVacations = isRootAccess || hasPermission('approve_vacation') || hasPermission('reject_vacation') || hasPermission('view_all_vacations');
 
@@ -141,7 +143,8 @@ export default function RHApprovalsPage() {
 
     const controller = new AbortController();
 
-    void loadData(controller.signal);
+    void loadProfileRequests(controller.signal);
+    void loadVacationRequests(controller.signal);
 
     return () => controller.abort();
   }, [canReviewProfiles, canReviewVacations]);
@@ -174,19 +177,38 @@ export default function RHApprovalsPage() {
     }
   }
 
-  async function loadData(signal?: AbortSignal) {
-    setIsLoadingData(true);
+  async function loadProfileRequests(signal?: AbortSignal) {
+    setIsLoadingProfileRequests(true);
     try {
-      const [profiles, vacations] = await Promise.all([
-        canReviewProfiles
-          ? apiRequestCached<ProfileRequest[]>('/profile/requests', { headers: getAuthHeaders(), signal }, 45000)
-          : Promise.resolve([]),
-        canReviewVacations
-          ? apiRequestCached<VacationRequest[]>('/vacations/requests', { headers: getAuthHeaders(), signal }, 45000)
-          : Promise.resolve([]),
-      ]);
+      if (!canReviewProfiles) {
+        setProfileRequests([]);
+        return;
+      }
 
+      const profiles = await apiRequestCached<ProfileRequest[]>('/profile/requests', { headers: getAuthHeaders(), signal }, 45000);
       setProfileRequests(profiles);
+    } catch (error) {
+      if (isAbortError(error) || signal?.aborted) {
+        return;
+      }
+
+      showToast('error', resolveErrorMessage(error, MICROCOPY.approvals.loadRequestsError));
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoadingProfileRequests(false);
+      }
+    }
+  }
+
+  async function loadVacationRequests(signal?: AbortSignal) {
+    setIsLoadingVacationRequests(true);
+    try {
+      if (!canReviewVacations) {
+        setVacationRequests([]);
+        return;
+      }
+
+      const vacations = await apiRequestCached<VacationRequest[]>('/vacations/requests', { headers: getAuthHeaders(), signal }, 45000);
       setVacationRequests(vacations);
     } catch (error) {
       if (isAbortError(error) || signal?.aborted) {
@@ -196,7 +218,7 @@ export default function RHApprovalsPage() {
       showToast('error', resolveErrorMessage(error, MICROCOPY.approvals.loadRequestsError));
     } finally {
       if (!signal?.aborted) {
-        setIsLoadingData(false);
+        setIsLoadingVacationRequests(false);
       }
     }
   }
@@ -323,12 +345,12 @@ export default function RHApprovalsPage() {
       <div className="rh-tabs">
         {canReviewProfiles && (
           <button type="button" className={activeTab === 'profiles' ? 'is-active' : ''} onClick={() => setActiveTab('profiles')}>
-            Alterações de ficha ({isLoadingData ? '...' : profileRequests.length})
+            Alterações de ficha ({isLoadingProfileRequests ? '...' : profileRequests.length})
           </button>
         )}
         {canReviewVacations && (
           <button type="button" className={activeTab === 'vacations' ? 'is-active' : ''} onClick={() => setActiveTab('vacations')}>
-            Férias e ausências ({isLoadingData ? '...' : vacationRequests.length})
+            Férias e ausências ({isLoadingVacationRequests ? '...' : vacationRequests.length})
           </button>
         )}
       </div>
@@ -340,7 +362,7 @@ export default function RHApprovalsPage() {
           </div>
 
           <div className="rh-request-list">
-            {isLoadingData ? (
+            {isLoadingProfileRequests ? (
               Array.from({ length: 3 }).map((_, index) => (
                 <article key={index} className="trainings-mobile-card">
                   <Skeleton lines={2} />
@@ -410,7 +432,7 @@ export default function RHApprovalsPage() {
           </div>
 
           <div className="rh-request-list">
-            {isLoadingData ? (
+            {isLoadingVacationRequests ? (
               Array.from({ length: 3 }).map((_, index) => (
                 <article key={index} className="trainings-mobile-card">
                   <Skeleton lines={2} />

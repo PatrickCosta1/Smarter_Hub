@@ -184,7 +184,7 @@ export default function AdminPage() {
       return;
     }
 
-    setIsLoadingData(true);
+    setIsLoadingData(users.length === 0);
 
     if (!loadDataInFlightRef.current) {
       loadDataInFlightRef.current = (async () => {

@@ -28,53 +28,106 @@ export default function HomePage() {
   const [pendingVacationRequests, setPendingVacationRequests] = useState(0);
   const [assignedTrainings, setAssignedTrainings] = useState(0);
   const [ownPendingProfileRequest, setOwnPendingProfileRequest] = useState(false);
-  const [isLoadingSummary, setIsLoadingSummary] = useState(true);
+  const [isLoadingPendingProfileRequests, setIsLoadingPendingProfileRequests] = useState(true);
+  const [isLoadingPendingVacationRequests, setIsLoadingPendingVacationRequests] = useState(true);
+  const [isLoadingAssignedTrainings, setIsLoadingAssignedTrainings] = useState(true);
+  const [isLoadingOwnPendingProfileRequest, setIsLoadingOwnPendingProfileRequest] = useState(true);
 
   const totalPending = useMemo(
     () => (isManagerFlow ? pendingProfileRequests + pendingVacationRequests : Number(ownPendingProfileRequest)),
     [isManagerFlow, ownPendingProfileRequest, pendingProfileRequests, pendingVacationRequests],
   );
 
+  const isLoadingMetrics = isManagerFlow || isTPeople
+    ? isLoadingPendingProfileRequests || isLoadingPendingVacationRequests || isLoadingAssignedTrainings
+    : isLoadingOwnPendingProfileRequest;
+
   useEffect(() => {
     const controller = new AbortController();
 
     void (async () => {
-      setIsLoadingSummary(true);
+      setIsLoadingPendingProfileRequests(true);
+      setIsLoadingPendingVacationRequests(true);
+      setIsLoadingAssignedTrainings(true);
+      setIsLoadingOwnPendingProfileRequest(true);
 
-      try {
-        if (isManagerFlow || isTPeople) {
-          const [profileRequests, vacationRequests, trainings] = await Promise.all([
-            apiRequestCached<unknown[]>('/profile/requests', { headers: getAuthHeaders(), signal: controller.signal }, 15000),
-            apiRequestCached<unknown[]>('/vacations/requests', { headers: getAuthHeaders(), signal: controller.signal }, 15000),
-            apiRequestCached<Array<{ status?: string }>>('/trainings/assigned', { headers: getAuthHeaders(), signal: controller.signal }, 15000),
-          ]);
+      if (isManagerFlow || isTPeople) {
+        void apiRequestCached<unknown[]>('/profile/requests', { headers: getAuthHeaders(), signal: controller.signal }, 15000)
+          .then((profileRequests) => {
+            if (!controller.signal.aborted) {
+              setPendingProfileRequests(profileRequests.length);
+            }
+          })
+          .catch((error) => {
+            if (!isAbortError(error) && !controller.signal.aborted) {
+              setPendingProfileRequests(0);
+            }
+          })
+          .finally(() => {
+            if (!controller.signal.aborted) {
+              setIsLoadingPendingProfileRequests(false);
+            }
+          });
 
-          setPendingProfileRequests(profileRequests.length);
-          setPendingVacationRequests(vacationRequests.length);
-          setAssignedTrainings(trainings.filter((item) => item.status === 'ASSIGNED').length);
-          setOwnPendingProfileRequest(false);
-          return;
-        }
+        void apiRequestCached<unknown[]>('/vacations/requests', { headers: getAuthHeaders(), signal: controller.signal }, 15000)
+          .then((vacationRequests) => {
+            if (!controller.signal.aborted) {
+              setPendingVacationRequests(vacationRequests.length);
+            }
+          })
+          .catch((error) => {
+            if (!isAbortError(error) && !controller.signal.aborted) {
+              setPendingVacationRequests(0);
+            }
+          })
+          .finally(() => {
+            if (!controller.signal.aborted) {
+              setIsLoadingPendingVacationRequests(false);
+            }
+          });
 
-        const ownRequest = await apiRequestCached<{ pending?: boolean }>('/profile/requests/me', { headers: getAuthHeaders(), signal: controller.signal }, 15000);
-        setOwnPendingProfileRequest(Boolean(ownRequest.pending));
-        setPendingProfileRequests(0);
-        setPendingVacationRequests(0);
-        setAssignedTrainings(0);
-      } catch (error) {
-        if (isAbortError(error) || controller.signal.aborted) {
-          return;
-        }
+        void apiRequestCached<Array<{ status?: string }>>('/trainings/assigned', { headers: getAuthHeaders(), signal: controller.signal }, 15000)
+          .then((trainings) => {
+            if (!controller.signal.aborted) {
+              setAssignedTrainings(trainings.filter((item) => item.status === 'ASSIGNED').length);
+            }
+          })
+          .catch((error) => {
+            if (!isAbortError(error) && !controller.signal.aborted) {
+              setAssignedTrainings(0);
+            }
+          })
+          .finally(() => {
+            if (!controller.signal.aborted) {
+              setIsLoadingAssignedTrainings(false);
+            }
+          });
 
-        setPendingProfileRequests(0);
-        setPendingVacationRequests(0);
-        setAssignedTrainings(0);
         setOwnPendingProfileRequest(false);
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsLoadingSummary(false);
-        }
+        setIsLoadingOwnPendingProfileRequest(false);
+        return;
       }
+
+      void apiRequestCached<{ pending?: boolean }>('/profile/requests/me', { headers: getAuthHeaders(), signal: controller.signal }, 15000)
+        .then((ownRequest) => {
+          if (!controller.signal.aborted) {
+            setOwnPendingProfileRequest(Boolean(ownRequest.pending));
+          }
+        })
+        .catch((error) => {
+          if (!isAbortError(error) && !controller.signal.aborted) {
+            setOwnPendingProfileRequest(false);
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setIsLoadingOwnPendingProfileRequest(false);
+          }
+        });
+
+      setPendingProfileRequests(0);
+      setPendingVacationRequests(0);
+      setAssignedTrainings(0);
     })();
 
     return () => controller.abort();
@@ -85,33 +138,29 @@ export default function HomePage() {
       <section className="home-hero">
         <div className="home-main">
           <p className="hero-kicker">Portal interno</p>
-          <h1>{isLoadingSummary ? <LoadingInline variant="title" /> : `Olá, ${displayName}!`}</h1>
-          <p>
-            {isLoadingSummary ? (
-              <LoadingInline variant="body" />
-            ) : isTPeople
-              ? 'Centro executivo com foco em decisões e operação.'
-              : isManagerFlow
-                ? 'Pendências e equipa num painel objetivo.'
-                : 'Resumo direto com o essencial do dia.'}
-          </p>
+          <h1>{`Olá, ${displayName}!`}</h1>
+          <p>{isTPeople
+            ? 'Centro executivo com foco em decisões e operação.'
+            : isManagerFlow
+              ? 'Pendências e equipa num painel objetivo.'
+              : 'Resumo direto com o essencial do dia.'}</p>
 
           <div className="home-metrics">
             <article>
               <span>Pendências</span>
-              <strong>{isLoadingSummary ? <LoadingInline variant="metric" /> : totalPending}</strong>
+              <strong>{isLoadingMetrics ? <LoadingInline variant="metric" /> : totalPending}</strong>
             </article>
             <article>
               <span>Notificações</span>
-              <strong>{isLoadingSummary ? <LoadingInline variant="metric" /> : unreadNotifications}</strong>
+              <strong>{unreadNotifications}</strong>
             </article>
             <article>
               <span>Formações ativas</span>
-              <strong>{isLoadingSummary ? <LoadingInline variant="metric" /> : assignedTrainings}</strong>
+              <strong>{isLoadingMetrics ? <LoadingInline variant="metric" /> : assignedTrainings}</strong>
             </article>
           </div>
 
-          {!isManagerFlow && ownPendingProfileRequest && !isLoadingSummary && (
+          {!isManagerFlow && ownPendingProfileRequest && !isLoadingOwnPendingProfileRequest && (
             <div className="home-pending-banner">
               <strong>Pedido de alteração da ficha em análise</strong>
               <p>O teu pedido foi submetido e está à espera de aprovação. Vais receber uma notificação quando houver decisão.</p>
@@ -137,7 +186,7 @@ export default function HomePage() {
       </section>
 
       <section className="home-grid">
-        {isLoadingSummary ? (
+        {isLoadingMetrics ? (
           <>
             <Card as="article" className="home-card home-card--loading">
               <LoadingInline variant="cardTitle" />
@@ -175,7 +224,7 @@ export default function HomePage() {
               <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/profile')}>Ver</Button>
             </Card>
 
-            {ownPendingProfileRequest && (
+            {ownPendingProfileRequest && !isLoadingOwnPendingProfileRequest && (
               <Card as="article" className="home-card home-card--highlight">
                 <p>Pendente</p>
                 <h3>Pedido de ficha em aprovação</h3>
