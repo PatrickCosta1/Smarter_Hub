@@ -99,7 +99,6 @@ export default function LoginView() {
 
           <div className="auth-headline">
             <h2 id="login-title">Smarter Hub</h2>
-            <p className="auth-copy">Usa Microsoft por defeito. Para testes, podes ativar login local por credenciais.</p>
           </div>
 
           <form className="login-form" onSubmit={(event) => event.preventDefault()}>

@@ -997,6 +997,127 @@ button {
   font-weight: 800;
 }
 
+.profile-trainings-card {
+  display: grid;
+  gap: 14px;
+}
+
+.profile-trainings-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.profile-trainings-summary article {
+  border: 1px solid #d3e2fb;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: linear-gradient(170deg, #fafdff, #edf5ff);
+  display: grid;
+  gap: 4px;
+}
+
+.profile-trainings-summary span {
+  color: #56739d;
+  font-size: 0.79rem;
+  font-weight: 700;
+}
+
+.profile-trainings-summary strong {
+  color: #103e84;
+  font-size: 1.02rem;
+}
+
+.profile-trainings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.profile-training-item {
+  border: 1px solid #d4e2fb;
+  border-radius: 16px;
+  background: linear-gradient(170deg, rgba(255, 255, 255, 0.99), rgba(242, 248, 255, 0.92));
+  box-shadow: 0 12px 24px rgba(16, 59, 128, 0.11);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.profile-training-item--loading {
+  color: #4b6893;
+  font-weight: 700;
+}
+
+.profile-training-item header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.profile-training-item h4 {
+  margin: 0;
+  color: #123f86;
+  font-size: 0.96rem;
+}
+
+.profile-training-item__meta {
+  display: grid;
+  gap: 6px;
+}
+
+.profile-training-item__meta span {
+  color: #4f678e;
+  font-size: 0.8rem;
+}
+
+.profile-training-item__meta strong {
+  color: #1e4f93;
+}
+
+.profile-training-item a {
+  justify-self: start;
+  color: #1d5eb4;
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.profile-training-item a:hover {
+  text-decoration: underline;
+}
+
+.profile-trainings-empty {
+  border: 1px dashed #bfd2f5;
+  border-radius: 14px;
+  padding: 12px;
+  background: #f6fbff;
+  color: #4a678f;
+  display: grid;
+  gap: 4px;
+}
+
+.profile-trainings-empty strong {
+  color: #153f82;
+}
+
+.profile-trainings-empty p {
+  margin: 0;
+}
+
+.profile-trainings-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.profile-trainings-error .trainings-status {
+  margin: 0;
+}
+
 .manager-teams-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
@@ -1501,6 +1622,11 @@ button {
   .meta-list,
   .profile-fields--3,
   .notifications-list {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-trainings-summary,
+  .profile-trainings-grid {
     grid-template-columns: 1fr;
   }
 

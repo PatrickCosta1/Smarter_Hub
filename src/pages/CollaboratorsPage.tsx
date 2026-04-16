@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase, getBackendBase, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { estadoCivilOptions, generoOptions, habilitacoesOptions, irsJovemOptions, parentescoOptions, regimeHorarioOptions, situacaoIrsOptions, tipoContratoOptions } from '../portal/data';
@@ -587,6 +587,12 @@ export default function CollaboratorsPage() {
   const [profileOptionGroup, setProfileOptionGroup] = useState('');
   const [isSavingProfileOption, setIsSavingProfileOption] = useState(false);
   const canManageProfileOptions = isRootAccess || isAccessTotal || hasPermission('manage_profile_dropdown_options');
+  const collaboratorQueryInputRef = useRef<HTMLInputElement | null>(null);
+  const collaboratorQueryRef = useRef(query);
+
+  useEffect(() => {
+    collaboratorQueryRef.current = query;
+  }, [query]);
 
   const cargoDropdownOptions = useMemo(
     () => normalizeDropdownValues([
@@ -698,6 +704,26 @@ export default function CollaboratorsPage() {
       controller.abort();
     };
   }, [canView, page, pageSize, query, roleFilter, activeFilter, countryFilter, sortBy, sortDirection]);
+
+  useEffect(() => {
+    const syncQueryFromInput = () => {
+      const inputValue = collaboratorQueryInputRef.current?.value ?? '';
+
+      if (inputValue !== collaboratorQueryRef.current) {
+        collaboratorQueryRef.current = inputValue;
+        setPage(1);
+        setQuery(inputValue);
+      }
+    };
+
+    const timeoutId = window.setTimeout(syncQueryFromInput, 0);
+    window.addEventListener('pageshow', syncQueryFromInput);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.removeEventListener('pageshow', syncQueryFromInput);
+    };
+  }, []);
 
   async function loadCollaborators(signal?: AbortSignal) {
     setLoading(true);
@@ -1283,7 +1309,14 @@ export default function CollaboratorsPage() {
         <div className="collaborators-filter-grid">
           <label>
             <span>Pesquisar</span>
-            <input type="search" value={query} onChange={(event) => { setPage(1); setQuery(event.target.value); }} placeholder="Nome, username, email, cargo, função..." />
+            <input
+              ref={collaboratorQueryInputRef}
+              type="search"
+              value={query}
+              autoComplete="off"
+              onChange={(event) => { setPage(1); setQuery(event.target.value); }}
+              placeholder="Nome, username, email, cargo, função..."
+            />
           </label>
 
           <label>

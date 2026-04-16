@@ -13,11 +13,13 @@ import {
 import { apiRequest, getApiBase, getBackendBase, authHeaders, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { useFeedbackToast } from '../portal/useFeedbackToast';
+import { formatTrainingStatusLabel, getTrainingStatusTone } from '../portal/labels';
 import { ProfileData, ProfileFieldError } from '../portal/types';
+import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 
-type SectionKey = 'personal' | 'contacts' | 'documents' | 'tax' | 'emergency' | 'contract';
+type SectionKey = 'personal' | 'contacts' | 'documents' | 'tax' | 'emergency' | 'contract' | 'trainings';
 
 const profileSections: Array<{ key: SectionKey; label: string }> = [
   { key: 'personal', label: 'Identificação' },
@@ -26,7 +28,28 @@ const profileSections: Array<{ key: SectionKey; label: string }> = [
   { key: 'tax', label: 'IRS e benefícios' },
   { key: 'emergency', label: 'Emergência' },
   { key: 'contract', label: 'Contrato' },
+  { key: 'trainings', label: 'Formações' },
 ];
+
+type ProfileTrainingRecord = {
+  id: string;
+  nome: string;
+  link: string;
+  horas: number;
+  dataInicio: string;
+  entidade: string;
+  dataConclusao: string;
+  status?: string;
+  createdAt: string;
+  assignedBy?: {
+    username: string;
+    profile?: {
+      nomeAbreviado?: string;
+      primeiroNome?: string;
+      apelido?: string;
+    } | null;
+  } | null;
+};
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -443,6 +466,49 @@ function validateProfile(profile: ProfileData, canEditContract: boolean = true):
   return errors;
 }
 
+function formatPtDate(value: string) {
+  if (!value) {
+    return '-';
+  }
+
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (dateOnly) {
+    return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]}`;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(parsed);
+}
+
+function formatTrainingHours(value: number) {
+  return new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(value);
+}
+
+function resolveTrainingStartDate(record: ProfileTrainingRecord) {
+  return record.dataInicio?.trim() || '';
+}
+
+function resolveTrainingOrigin(record: ProfileTrainingRecord) {
+  const shortName = record.assignedBy?.profile?.nomeAbreviado?.trim() || '';
+  if (shortName) {
+    return shortName;
+  }
+
+  const first = record.assignedBy?.profile?.primeiroNome?.trim() || '';
+  const last = record.assignedBy?.profile?.apelido?.trim() || '';
+  const fullName = `${first} ${last}`.trim();
+
+  return fullName || record.assignedBy?.username || 'Próprio';
+}
+
 export default function ProfilePage() {
   const { profile, saveProfile, hasPermission, isRootAccess, isAccessTotal, currentUser } = usePortal();
 
@@ -454,6 +520,7 @@ export default function ProfilePage() {
     tax: false,
     emergency: false,
     contract: false,
+    trainings: false,
   });
   const [profileErrors, setProfileErrors] = useState<ProfileFieldError>({});
   const { toast, showToast } = useFeedbackToast(3400);
@@ -472,6 +539,10 @@ export default function ProfilePage() {
   const [profileOptionLabel, setProfileOptionLabel] = useState('');
   const [profileOptionGroup, setProfileOptionGroup] = useState('');
   const [isSavingProfileOption, setIsSavingProfileOption] = useState(false);
+  const [ownTrainings, setOwnTrainings] = useState<ProfileTrainingRecord[]>([]);
+  const [isLoadingOwnTrainings, setIsLoadingOwnTrainings] = useState(false);
+  const [ownTrainingsLoaded, setOwnTrainingsLoaded] = useState(false);
+  const [ownTrainingsStatus, setOwnTrainingsStatus] = useState('');
 
   const canEdit =
     isRootAccess
@@ -511,6 +582,10 @@ export default function ProfilePage() {
 
   const collaboratorName = useMemo(() => `${draftProfile.primeiroNome} ${draftProfile.apelido}`.trim(), [draftProfile.apelido, draftProfile.primeiroNome]);
   const hasUnsavedChanges = useMemo(() => JSON.stringify(draftProfile) !== JSON.stringify(profile), [draftProfile, profile]);
+  const sortedOwnTrainings = useMemo(
+    () => [...ownTrainings].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [ownTrainings],
+  );
 
   useEffect(() => {
     setDraftProfile(profile);
@@ -612,6 +687,53 @@ export default function ProfilePage() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    if (currentSection !== 'trainings' || ownTrainingsLoaded) {
+      return;
+    }
+
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    if (!token) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let isActive = true;
+    setIsLoadingOwnTrainings(true);
+    setOwnTrainingsStatus('');
+
+    (async () => {
+      try {
+        const data = await apiRequest<ProfileTrainingRecord[]>('/trainings/me', {
+          headers: authHeaders(token),
+          signal: controller.signal,
+        });
+
+        if (!isActive || controller.signal.aborted) {
+          return;
+        }
+
+        setOwnTrainings(data);
+        setOwnTrainingsLoaded(true);
+      } catch (error) {
+        if (!isActive || isAbortError(error) || controller.signal.aborted) {
+          return;
+        }
+
+        setOwnTrainingsStatus(error instanceof Error ? error.message : 'Falha ao carregar formações.');
+      } finally {
+        if (isActive) {
+          setIsLoadingOwnTrainings(false);
+        }
+      }
+    })();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, [currentSection, ownTrainingsLoaded]);
+
   function closeAllEditingSections() {
     setEditingSections({
       personal: false,
@@ -620,6 +742,7 @@ export default function ProfilePage() {
       tax: false,
       emergency: false,
       contract: false,
+      trainings: false,
     });
   }
 
@@ -1330,6 +1453,83 @@ export default function ProfilePage() {
               </select>
               {profileErrors.regimeHorario && <small>{profileErrors.regimeHorario}</small>}
             </label>
+          </div>
+        </article>
+        )}
+
+        {currentSection === 'trainings' && (
+        <article className="profile-card profile-card--full profile-trainings-card">
+          <div className="section-headline">
+            <h2>7. Formações</h2>
+          </div>
+
+          <div className="profile-trainings-summary" aria-live="polite">
+            <article>
+              <span>Total</span>
+              <strong>{isLoadingOwnTrainings ? '...' : sortedOwnTrainings.length}</strong>
+            </article>
+            <article>
+              <span>Concluídas</span>
+              <strong>{isLoadingOwnTrainings ? '...' : sortedOwnTrainings.filter((item) => !item.status || item.status === 'COMPLETED' || item.status === 'CONCLUIDA').length}</strong>
+            </article>
+            <article>
+              <span>Horas acumuladas</span>
+              <strong>{isLoadingOwnTrainings ? '...' : `${formatTrainingHours(sortedOwnTrainings.reduce((acc, item) => acc + item.horas, 0))} h`}</strong>
+            </article>
+          </div>
+
+          {ownTrainingsStatus && (
+            <div className="profile-trainings-error">
+              <p className="trainings-status">{ownTrainingsStatus}</p>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setOwnTrainingsLoaded(false);
+                  setOwnTrainings([]);
+                  setOwnTrainingsStatus('');
+                }}
+              >
+                Tentar novamente
+              </Button>
+            </div>
+          )}
+
+          {!isLoadingOwnTrainings && sortedOwnTrainings.length === 0 && !ownTrainingsStatus && (
+            <div className="profile-trainings-empty">
+              <strong>Sem formações registadas.</strong>
+              <p>Quando receberes ou concluíres formações, aparecem aqui automaticamente.</p>
+            </div>
+          )}
+
+          <div className="profile-trainings-grid">
+            {isLoadingOwnTrainings && (
+              <article className="profile-training-item profile-training-item--loading">A carregar formações...</article>
+            )}
+
+            {!isLoadingOwnTrainings && sortedOwnTrainings.map((record) => (
+              <article key={record.id} className="profile-training-item">
+                <header>
+                  <h4>{record.nome}</h4>
+                  <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
+                    {formatTrainingStatusLabel(record.status)}
+                  </Badge>
+                </header>
+
+                <div className="profile-training-item__meta">
+                  <span><strong>Data de início:</strong> {formatPtDate(resolveTrainingStartDate(record))}</span>
+                  <span><strong>Data de conclusão:</strong> {formatPtDate(record.dataConclusao)}</span>
+                  <span><strong>Horas:</strong> {formatTrainingHours(record.horas)} h</span>
+                  <span><strong>Entidade:</strong> {record.entidade || '-'}</span>
+                  <span><strong>Origem:</strong> {resolveTrainingOrigin(record)}</span>
+                </div>
+
+                {record.link && (
+                  <a href={record.link} target="_blank" rel="noreferrer">Abrir conteúdo da formação</a>
+                )}
+              </article>
+            ))}
           </div>
         </article>
         )}

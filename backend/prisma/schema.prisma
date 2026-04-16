@@ -222,7 +222,7 @@ model Training {
   nome          String
   link          String   @default("")
   horas         Float
-  duracao       String   @default("")
+  dataInicio    String   @default("")
   entidade      String   @default("")
   dataConclusao String   @default("")
   status        String   @default("CONCLUIDA")

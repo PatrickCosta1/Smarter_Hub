@@ -18,7 +18,7 @@ type TrainingRecord = {
   nome: string;
   link: string;
   horas: number;
-  duracao: string;
+  dataInicio: string;
   entidade: string;
   dataConclusao: string;
   status?: string;
@@ -60,7 +60,7 @@ type AssignDraft = {
   nome: string;
   link: string;
   horas: string;
-  duracao: string;
+  dataInicio: string;
   entidade: string;
 };
 
@@ -76,7 +76,7 @@ const EMPTY_ASSIGN_DRAFT: AssignDraft = {
   nome: '',
   link: '',
   horas: '',
-  duracao: '',
+  dataInicio: '',
   entidade: '',
 };
 
@@ -114,6 +114,10 @@ function getTrainingOriginLabel(record: TrainingRecord) {
   return formatAbbreviatedUserName(record.assignedBy);
 }
 
+function getTrainingStartDate(record: TrainingRecord) {
+  return record.dataInicio?.trim() || '';
+}
+
 export default function TrainingsPage() {
   const { hasPermission, isRootAccess, refreshNotifications } = usePortal();
   const canManage = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
@@ -147,7 +151,7 @@ export default function TrainingsPage() {
     }
 
     return sortedRecords.filter((record) => {
-      return [record.nome, record.entidade, record.duracao, record.link, record.user?.username ?? '']
+      return [record.nome, record.entidade, getTrainingStartDate(record), record.link, record.user?.username ?? '']
         .join(' ')
         .toLowerCase()
         .includes(normalized);
@@ -281,7 +285,7 @@ export default function TrainingsPage() {
           nome: assignDraft.nome.trim(),
           link: assignDraft.link.trim(),
           horas: parsedHours,
-          duracao: assignDraft.duracao.trim(),
+          dataInicio: assignDraft.dataInicio,
           entidade: assignDraft.entidade.trim(),
         }),
       });
@@ -440,8 +444,8 @@ export default function TrainingsPage() {
                   </label>
 
                   <label>
-                    <span>Duração (período da formação)</span>
-                    <input type="text" value={assignDraft.duracao} onChange={(event) => updateAssignDraft('duracao', event.target.value)} placeholder="Ex: 01/05-03/05 ou 3 sessões" />
+                    <span>Data de início</span>
+                    <input type="date" value={assignDraft.dataInicio} onChange={(event) => updateAssignDraft('dataInicio', event.target.value)} />
                   </label>
 
                   <label>
@@ -498,7 +502,7 @@ export default function TrainingsPage() {
                         <th>Origem</th>
                         <th>Link</th>
                         <th>Horas</th>
-                        <th>Duração</th>
+                        <th>Data de início</th>
                         <th>Entidade</th>
                         <th>Data conclusão</th>
                         <th>Estado</th>
@@ -521,7 +525,7 @@ export default function TrainingsPage() {
                             <td>{getTrainingOriginLabel(record)}</td>
                             <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
                             <td>{formatHours(record.horas)} h</td>
-                            <td>{record.duracao || '-'}</td>
+                            <td>{getTrainingStartDate(record) || '-'}</td>
                             <td>{record.entidade || '-'}</td>
                             <td>{record.dataConclusao || '-'}</td>
                             <td>
@@ -559,7 +563,7 @@ export default function TrainingsPage() {
                   <th>Origem</th>
                   <th>Link</th>
                   <th>Horas</th>
-                  <th>Duração</th>
+                  <th>Data de início</th>
                   <th>Entidade</th>
                   <th>Data conclusão</th>
                   <th>Estado</th>
@@ -579,7 +583,7 @@ export default function TrainingsPage() {
                     <td>{getTrainingOriginLabel(record)}</td>
                     <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
                     <td>{formatHours(record.horas)} h</td>
-                    <td>{record.duracao || '-'}</td>
+                    <td>{getTrainingStartDate(record) || '-'}</td>
                     <td>{record.entidade || '-'}</td>
                     <td>{record.dataConclusao || '-'}</td>
                     <td>
@@ -620,7 +624,7 @@ export default function TrainingsPage() {
                   <span>Horas:</span> {formatHours(record.horas)} h
                 </p>
                 <p>
-                  <span>Duração:</span> {record.duracao || '-'}
+                  <span>Data de início:</span> {getTrainingStartDate(record) || '-'}
                 </p>
                 <p>
                   <span>Entidade:</span> {record.entidade || '-'}

@@ -138,7 +138,8 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [notifications, setNotifications] = useState<PortalNotification[]>([]);
   const [profile, setProfileState] = useState<ProfileData>(initialProfileData);
-  const notificationsRefreshInFlight = useRef<Promise<void> | null>(null);
+  const notificationsRefreshInFlight = useRef<{ sequence: number; promise: Promise<void> } | null>(null);
+  const notificationsRefreshSequence = useRef(0);
 
   const unreadNotifications = useMemo(() => notifications.filter((item) => !item.isRead).length, [notifications]);
 
@@ -162,14 +163,17 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const refreshNotifications = useCallback(async (token = authToken) => {
+  const refreshNotifications = useCallback(async (token = authToken, forceRefresh = false) => {
     if (!token) {
       return;
     }
 
-    if (notificationsRefreshInFlight.current) {
-      return notificationsRefreshInFlight.current;
+    if (!forceRefresh && notificationsRefreshInFlight.current) {
+      return notificationsRefreshInFlight.current.promise;
     }
+
+    const sequence = notificationsRefreshSequence.current + 1;
+    notificationsRefreshSequence.current = sequence;
 
     const request = (async () => {
       try {
@@ -177,17 +181,19 @@ export function PortalProvider({ children }: { children: ReactNode }) {
           headers: authHeaders(token),
         });
 
-        if (window.localStorage.getItem(STORAGE_TOKEN_KEY) === token) {
+        if (window.localStorage.getItem(STORAGE_TOKEN_KEY) === token && notificationsRefreshSequence.current === sequence) {
           setNotifications(data);
         }
       } catch {
         // Refresh silencioso: falhas temporárias não devem bloquear a UI.
       } finally {
-        notificationsRefreshInFlight.current = null;
+        if (notificationsRefreshInFlight.current?.sequence === sequence) {
+          notificationsRefreshInFlight.current = null;
+        }
       }
     })();
 
-    notificationsRefreshInFlight.current = request;
+    notificationsRefreshInFlight.current = { sequence, promise: request };
     return request;
   }, [authToken]);
 
@@ -285,7 +291,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       if (!document.hidden) {
         syncNotifications();
       }
-    }, 1500);
+    }, 8000);
 
     window.addEventListener('focus', syncNotifications);
     document.addEventListener('visibilitychange', visibilityHandler);
@@ -395,7 +401,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     });
 
     setNotifications((current) => current.map((item) => ({ ...item, isRead: true })));
-    void refreshNotifications(authToken);
+    void refreshNotifications(authToken, true);
   }, [authToken, refreshNotifications]);
 
   const markNotificationRead = useCallback(async (id: string) => {
@@ -409,7 +415,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     });
 
     setNotifications((current) => current.map((item) => (item.id === id ? { ...item, isRead: true } : item)));
-    void refreshNotifications(authToken);
+    void refreshNotifications(authToken, true);
   }, [authToken, refreshNotifications]);
 
   const deleteNotification = useCallback(async (id: string) => {
@@ -423,7 +429,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     });
 
     setNotifications((current) => current.filter((item) => item.id !== id));
-    void refreshNotifications(authToken);
+    void refreshNotifications(authToken, true);
   }, [authToken, refreshNotifications]);
 
   const deleteAllNotifications = useCallback(async () => {
@@ -437,7 +443,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     });
 
     setNotifications([]);
-    void refreshNotifications(authToken);
+    void refreshNotifications(authToken, true);
   }, [authToken, refreshNotifications]);
 
   const value = useMemo(
