@@ -30,9 +30,11 @@ export default function HomePage() {
   const canManageTrainings = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
   const canManageCollaborators = isRootAccess || hasPermission('view_user_list') || hasPermission('manage_user_active') || hasPermission('manage_permissions');
   const isManagerFlow = canReviewApprovals || canManageTrainings || canManageCollaborators;
+  const shortName = profile.nomeAbreviado?.trim();
+  const fullName = profile.nomeCompleto?.trim();
   const displayName = isTPeople
     ? 'T People'
-    : profile.nomeCompleto?.trim() || profile.nomeAbreviado || 'Colaborador';
+    : shortName || fullName || currentUser?.username || 'Colaborador';
   const [pendingProfileRequests, setPendingProfileRequests] = useState(0);
   const [pendingVacationRequests, setPendingVacationRequests] = useState(0);
   const [assignedTrainings, setAssignedTrainings] = useState(0);
