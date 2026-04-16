@@ -29,8 +29,7 @@ const createUserSchema = z.object({
 });
 
 const updateAdminUserSchema = z.object({
-  primeiroNome: z.string().optional(),
-  apelido: z.string().optional(),
+  nomeCompleto: z.string().optional(),
   nomeAbreviado: z.string().optional(),
   dataNascimento: z.string().optional(),
   genero: z.string().optional(),
@@ -375,8 +374,7 @@ router.get('/users', requireAuth, async (req, res) => {
             OR: [
               { username: { contains: q, mode: 'insensitive' } },
               { email: { contains: q, mode: 'insensitive' } },
-              { profile: { primeiroNome: { contains: q, mode: 'insensitive' } } },
-              { profile: { apelido: { contains: q, mode: 'insensitive' } } },
+              { profile: { nomeCompleto: { contains: q, mode: 'insensitive' } } },
               { profile: { nacionalidade: { contains: q, mode: 'insensitive' } } },
               { profile: { cargo: { contains: q, mode: 'insensitive' } } },
               { profile: { categoriaProfissional: { contains: q, mode: 'insensitive' } } },
@@ -415,9 +413,7 @@ router.get('/users', requireAuth, async (req, res) => {
       },
       profile: {
         select: {
-          nomeAbreviado: true,
-          primeiroNome: true,
-          apelido: true,
+          nomeAbreviado: true, nomeCompleto: true,
           dataNascimento: true,
           genero: true,
           estadoCivil: true,
@@ -519,8 +515,7 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
         { username: { contains: q, mode: 'insensitive' } },
         { email: { contains: q, mode: 'insensitive' } },
         { profile: { nomeAbreviado: { contains: q, mode: 'insensitive' } } },
-        { profile: { primeiroNome: { contains: q, mode: 'insensitive' } } },
-        { profile: { apelido: { contains: q, mode: 'insensitive' } } },
+        { profile: { nomeCompleto: { contains: q, mode: 'insensitive' } } },
         { profile: { nacionalidade: { contains: q, mode: 'insensitive' } } },
         { profile: { cargo: { contains: q, mode: 'insensitive' } } },
         { profile: { categoriaProfissional: { contains: q, mode: 'insensitive' } } },
@@ -580,9 +575,7 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
         },
         profile: {
           select: {
-            nomeAbreviado: true,
-            primeiroNome: true,
-            apelido: true,
+            nomeAbreviado: true, nomeCompleto: true,
             dataNascimento: true,
             genero: true,
             estadoCivil: true,
@@ -725,9 +718,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
             username: true,
             profile: {
               select: {
-                nomeAbreviado: true,
-                primeiroNome: true,
-                apelido: true,
+                nomeAbreviado: true, nomeCompleto: true,
               },
             },
           },
@@ -789,7 +780,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       id: item.id,
       userId: item.user?.id || '',
       collaborator: item.user?.profile?.nomeAbreviado?.trim()
-        || `${item.user?.profile?.primeiroNome || ''} ${item.user?.profile?.apelido || ''}`.trim()
+        || String(item.user?.profile?.nomeCompleto || '').trim()
         || item.user?.username
         || 'Colaborador',
       promotedTo: String(((item.approvedFields as Record<string, unknown>)?.cargo || (item.requestedData as Record<string, unknown>)?.cargo || '')).trim() || 'Nível atualizado',
@@ -1058,14 +1049,14 @@ router.get('/teams/me', requireAuth, async (req, res) => {
           select: {
             id: true,
             username: true,
-            profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
+            profile: { select: { nomeAbreviado: true, nomeCompleto: true } },
           },
         },
         coordinator: {
           select: {
             id: true,
             username: true,
-            profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
+            profile: { select: { nomeAbreviado: true, nomeCompleto: true } },
           },
         },
         parentTeam: { select: { id: true, name: true } },
@@ -1095,14 +1086,14 @@ router.get('/teams/me', requireAuth, async (req, res) => {
         select: {
           id: true,
           username: true,
-          profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
+          profile: { select: { nomeAbreviado: true, nomeCompleto: true } },
         },
       },
       coordinator: {
         select: {
           id: true,
           username: true,
-          profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
+          profile: { select: { nomeAbreviado: true, nomeCompleto: true } },
         },
       },
       parentTeam: { select: { id: true, name: true } },
@@ -1122,9 +1113,7 @@ router.get('/teams/me', requireAuth, async (req, res) => {
               teamId: true,
               profile: {
                 select: {
-                  nomeAbreviado: true,
-                  primeiroNome: true,
-                  apelido: true,
+                  nomeAbreviado: true, nomeCompleto: true,
                   nacionalidade: true,
                   cargo: true,
                   categoriaProfissional: true,
@@ -1208,14 +1197,14 @@ router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
         select: {
           id: true,
           username: true,
-          profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
+          profile: { select: { nomeAbreviado: true, nomeCompleto: true } },
         },
       },
       coordinator: {
         select: {
           id: true,
           username: true,
-          profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
+          profile: { select: { nomeAbreviado: true, nomeCompleto: true } },
         },
       },
       parentTeam: { select: { id: true, name: true } },
@@ -1235,9 +1224,7 @@ router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
               teamId: true,
               profile: {
                 select: {
-                  nomeAbreviado: true,
-                  primeiroNome: true,
-                  apelido: true,
+                  nomeAbreviado: true, nomeCompleto: true,
                   nacionalidade: true,
                   cargo: true,
                   categoriaProfissional: true,
@@ -1458,9 +1445,7 @@ router.get('/admin/users', requireAuth, async (req, res) => {
       },
       profile: {
         select: {
-          nomeAbreviado: true,
-          primeiroNome: true,
-          apelido: true,
+          nomeAbreviado: true, nomeCompleto: true,
           workCountry: true,
           localidade: true,
         },
@@ -1479,8 +1464,7 @@ router.get('/admin/users', requireAuth, async (req, res) => {
     profile: user.profile
       ? {
           nomeAbreviado: user.profile.nomeAbreviado,
-          primeiroNome: user.profile.primeiroNome,
-          apelido: user.profile.apelido,
+          nomeCompleto: user.profile.nomeCompleto,
         }
       : null,
     teamId: user.teamId,
@@ -1524,7 +1508,7 @@ router.get('/admin/teams', requireAuth, async (req, res) => {
         select: {
           id: true,
           username: true,
-          profile: { select: { nomeAbreviado: true, primeiroNome: true, apelido: true } },
+          profile: { select: { nomeAbreviado: true, nomeCompleto: true } },
         },
       },
       parentTeam: { select: { id: true, name: true } },
@@ -1771,8 +1755,7 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
   }
 
   const profilePayload = {
-    ...(data.primeiroNome !== undefined ? { primeiroNome: data.primeiroNome } : {}),
-    ...(data.apelido !== undefined ? { apelido: data.apelido } : {}),
+    ...(data.nomeCompleto !== undefined ? { nomeCompleto: data.nomeCompleto } : {}),
     ...(data.nomeAbreviado !== undefined ? { nomeAbreviado: data.nomeAbreviado } : {}),
     ...(data.dataNascimento !== undefined ? { dataNascimento: data.dataNascimento } : {}),
     ...(data.genero !== undefined ? { genero: data.genero } : {}),
@@ -2050,11 +2033,8 @@ router.post('/users', requireAuth, async (req, res, next) => {
     const data = createUserSchema.parse(req.body);
     const passwordHash = await bcrypt.hash('pola123', 10);
 
-    // Parse fullName into firstName, lastName, and shortName
-    const nameParts = data.fullName.trim().split(/\s+/).filter(Boolean);
-    const firstName = nameParts[0] || data.fullName;
-    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
-    const shortName = `${firstName}${lastName ? ` ${lastName}` : ''}`.trim();
+    const fullName = data.fullName.trim();
+    const shortName = fullName;
 
     // Get current date as dataInicioContrato default
     const today = new Date();
@@ -2081,8 +2061,7 @@ router.post('/users', requireAuth, async (req, res, next) => {
           : {}),
         profile: {
           create: {
-            primeiroNome: firstName,
-            apelido: lastName,
+            nomeCompleto: fullName,
             nomeAbreviado: shortName,
             nacionalidade: '',
             emailPessoal: data.email,

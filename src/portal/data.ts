@@ -78,8 +78,7 @@ export const regimeHorarioOptions = ['10%', '20%', '50%', '100%'];
 export const irsJovemOptions = ['Sim', 'Nao'];
 
 export const initialProfileData: ProfileData = {
-  primeiroNome: 'Patricia',
-  apelido: 'Silva',
+  nomeCompleto: 'Patricia Silva',
   nomeAbreviado: 'P. Silva',
   dataNascimento: '1994-07-11',
   genero: 'Feminino',

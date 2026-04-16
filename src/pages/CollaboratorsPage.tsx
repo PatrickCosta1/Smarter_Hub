@@ -32,8 +32,7 @@ type CollaboratorRow = {
   }>;
   profile?: {
     nomeAbreviado?: string;
-    primeiroNome?: string;
-    apelido?: string;
+    nomeCompleto?: string;
     dataNascimento?: string;
     genero?: string;
     estadoCivil?: string;
@@ -82,8 +81,7 @@ type CollaboratorEditDraft = {
   teamId: string;
   isActive: boolean;
   workCountry: 'PT' | 'BR';
-  primeiroNome: string;
-  apelido: string;
+  nomeCompleto: string;
   nomeAbreviado: string;
   dataNascimento: string;
   genero: string;
@@ -127,8 +125,7 @@ type CollaboratorEditDraft = {
 };
 
 const EDIT_PROFILE_FIELDS: Array<{ key: keyof CollaboratorEditDraft; label: string; section: 'identificacao' | 'contactos' | 'fiscal' | 'emergencia' | 'contrato' }> = [
-  { key: 'primeiroNome', label: 'Primeiro nome', section: 'identificacao' },
-  { key: 'apelido', label: 'Apelido', section: 'identificacao' },
+  { key: 'nomeCompleto', label: 'Nome completo', section: 'identificacao' },
   { key: 'nomeAbreviado', label: 'Nome abreviado', section: 'identificacao' },
   { key: 'dataNascimento', label: 'Data de nascimento', section: 'identificacao' },
   { key: 'genero', label: 'Género', section: 'identificacao' },
@@ -176,8 +173,7 @@ const EMPTY_EDIT_DRAFT: CollaboratorEditDraft = {
   teamId: '',
   isActive: true,
   workCountry: 'PT',
-  primeiroNome: '',
-  apelido: '',
+  nomeCompleto: '',
   nomeAbreviado: '',
   dataNascimento: '',
   genero: '',
@@ -284,8 +280,7 @@ function buildEditDraftFromRow(item: CollaboratorRow): CollaboratorEditDraft {
     teamId: item.teamId || '',
     isActive: item.isActive,
     workCountry: profile.workCountry || 'PT',
-    primeiroNome: profile.primeiroNome || '',
-    apelido: profile.apelido || '',
+    nomeCompleto: profile.nomeCompleto || '',
     nomeAbreviado: profile.nomeAbreviado || '',
     dataNascimento: profile.dataNascimento || '',
     genero: profile.genero || '',
@@ -366,8 +361,7 @@ type PermissionGrantUser = {
   username: string;
   profile?: {
     nomeAbreviado?: string;
-    primeiroNome?: string;
-    apelido?: string;
+    nomeCompleto?: string;
   } | null;
 };
 
@@ -399,8 +393,7 @@ type UserPermissionsResponse = {
     isRootAccess: boolean;
     profile?: {
       nomeAbreviado?: string;
-      primeiroNome?: string;
-      apelido?: string;
+      nomeCompleto?: string;
     } | null;
   };
   accessTotal: boolean;
@@ -491,7 +484,7 @@ function getDisplayName(item: CollaboratorRow) {
     return shortName;
   }
 
-  const fullName = `${item.profile?.primeiroNome ?? ''} ${item.profile?.apelido ?? ''}`.trim();
+  const fullName = item?.profile?.nomeCompleto ?? '';
   return fullName || item.username;
 }
 
@@ -501,7 +494,7 @@ function getGrantDisplayName(user?: PermissionGrantUser | null) {
     return shortName;
   }
 
-  const fullName = `${user?.profile?.primeiroNome ?? ''} ${user?.profile?.apelido ?? ''}`.trim();
+  const fullName = user?.profile?.nomeCompleto ?? '';
   return fullName || user?.username || 'Sistema';
 }
 
@@ -557,6 +550,82 @@ function buildDraftFromAssignment(item: PermissionItem, forceEnabled = false): P
   };
 }
 
+function formatDateForExport(value?: string | null) {
+  if (!value) {
+    return '-';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}
+
+function sanitizeFileName(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase() || 'colaborador';
+}
+
+function buildExportRows(item: CollaboratorRow) {
+  const profile = item.profile || {};
+  const teamInfo = getCollaboratorTeamInfo(item);
+
+  return [
+    { section: 'Conta', field: 'Nome', value: getDisplayName(item), note: '' },
+    { section: 'Conta', field: 'Username', value: item.username, note: '' },
+    { section: 'Conta', field: 'Email login', value: item.email, note: '' },
+    { section: 'Conta', field: 'País de trabalho', value: profile.workCountry || 'PT', note: '' },
+    { section: 'Conta', field: 'Equipa principal', value: teamInfo.name === '-' ? 'Sem equipa' : teamInfo.name, note: teamInfo.isLeader ? 'Colaborador com papel de chefia na equipa.' : '' },
+    { section: 'Identificação', field: 'Nome completo', value: profile.nomeCompleto || '-', note: '' },
+    { section: 'Identificação', field: 'Nome abreviado', value: profile.nomeAbreviado || '-', note: '' },
+    { section: 'Identificação', field: 'Data de nascimento', value: formatDateForExport(profile.dataNascimento), note: '' },
+    { section: 'Identificação', field: 'Género', value: profile.genero || '-', note: '' },
+    { section: 'Identificação', field: 'Estado civil', value: profile.estadoCivil || '-', note: '' },
+    { section: 'Identificação', field: 'Habilitações literárias', value: profile.habilitacoesLiterarias || '-', note: '' },
+    { section: 'Identificação', field: 'Curso', value: profile.curso || '-', note: '' },
+    { section: 'Identificação', field: 'Faculdade', value: profile.faculdade || '-', note: '' },
+    { section: 'Identificação', field: 'Nacionalidade', value: profile.nacionalidade || '-', note: '' },
+    { section: 'Contactos', field: 'Email pessoal', value: profile.emailPessoal || '-', note: '' },
+    { section: 'Contactos', field: 'Telemóvel', value: profile.telemovel || '-', note: '' },
+    { section: 'Contactos', field: 'GitHub', value: profile.githubUser || '-', note: '' },
+    { section: 'Contactos', field: 'Morada fiscal', value: profile.moradaFiscal || '-', note: '' },
+    { section: 'Contactos', field: 'Morada habitual', value: profile.endereco || '-', note: '' },
+    { section: 'Contactos', field: 'Localidade', value: profile.localidade || '-', note: '' },
+    { section: 'Contactos', field: 'Código postal', value: profile.codigoPostal || '-', note: '' },
+    { section: 'Fiscal e documentos', field: 'Matrícula', value: profile.matriculaCarro || '-', note: '' },
+    { section: 'Fiscal e documentos', field: 'Cartão de cidadão', value: profile.cartaoCidadao || '-', note: '' },
+    { section: 'Fiscal e documentos', field: 'Validade cartão cidadão', value: formatDateForExport(profile.validadeCartaoCidadao), note: '' },
+    { section: 'Fiscal e documentos', field: 'NIF', value: profile.nif || '-', note: '' },
+    { section: 'Fiscal e documentos', field: 'NISS', value: profile.niss || '-', note: '' },
+    { section: 'Fiscal e documentos', field: 'IBAN', value: profile.iban || '-', note: '' },
+    { section: 'Fiscal e documentos', field: 'Situação IRS', value: profile.situacaoIrs || '-', note: '' },
+    { section: 'Fiscal e documentos', field: 'Dependentes', value: profile.numeroDependentes || '-', note: '' },
+    { section: 'Fiscal e documentos', field: 'IRS jovem', value: profile.irsJovem || '-', note: '' },
+    { section: 'Fiscal e documentos', field: 'Ano primeiro desconto', value: profile.anoPrimeiroDesconto || '-', note: '' },
+    { section: 'Fiscal e documentos', field: 'Cartão Continente', value: profile.numeroCartaoContinente || '-', note: '' },
+    { section: 'Fiscal e documentos', field: 'Voucher NOS data', value: profile.voucherNosData || '-', note: '' },
+    { section: 'Emergência', field: 'Nome contacto', value: profile.contactoEmergenciaNome || '-', note: '' },
+    { section: 'Emergência', field: 'Parentesco', value: profile.contactoEmergenciaParentesco || '-', note: '' },
+    { section: 'Emergência', field: 'Número', value: profile.contactoEmergenciaNumero || '-', note: '' },
+    { section: 'Contrato', field: 'Cargo', value: profile.cargo || '-', note: '' },
+    { section: 'Contrato', field: 'Função', value: profile.funcao || '-', note: '' },
+    { section: 'Contrato', field: 'Início contrato', value: formatDateForExport(profile.dataInicioContrato), note: '' },
+    { section: 'Contrato', field: 'Fim contrato', value: formatDateForExport(profile.dataFimContrato), note: '' },
+    { section: 'Contrato', field: 'Tipo contrato', value: profile.tipoContrato || '-', note: '' },
+    { section: 'Contrato', field: 'Regime horário', value: profile.regimeHorario || '-', note: '' },
+  ];
+}
+
 export default function CollaboratorsPage() {
   const { hasPermission, isRootAccess, isAccessTotal, currentUser } = usePortal();
   const canView = isRootAccess || hasPermission('view_user_list');
@@ -576,6 +645,12 @@ export default function CollaboratorsPage() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isLoadingExportCandidates, setIsLoadingExportCandidates] = useState(false);
+  const [isExportingWorkbook, setIsExportingWorkbook] = useState(false);
+  const [exportCandidates, setExportCandidates] = useState<CollaboratorRow[]>([]);
+  const [exportSearch, setExportSearch] = useState('');
+  const [selectedExportUserId, setSelectedExportUserId] = useState('');
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [activeConfirmTarget, setActiveConfirmTarget] = useState<CollaboratorRow | null>(null);
   const [selectedRow, setSelectedRow] = useState<CollaboratorRow | null>(null);
@@ -700,6 +775,36 @@ export default function CollaboratorsPage() {
     () => permissionTeams.filter((team) => !selectedRestrictedTeamIds.includes(team.id)),
     [permissionTeams, selectedRestrictedTeamIds],
   );
+  const exportCandidatesFiltered = useMemo(() => {
+    const normalized = exportSearch.trim().toLowerCase();
+    const source = exportCandidates.filter((item) => item.id !== currentUser?.id);
+    if (!normalized) {
+      return source;
+    }
+
+    return source.filter((item) => {
+      const teamInfo = getCollaboratorTeamInfo(item);
+      return `${getDisplayName(item)} ${item.username} ${item.email} ${item.profile?.cargo || ''} ${item.profile?.funcao || ''} ${teamInfo.name}`
+        .toLowerCase()
+        .includes(normalized);
+    });
+  }, [currentUser?.id, exportCandidates, exportSearch]);
+  const selectedExportCandidate = useMemo(
+    () => exportCandidatesFiltered.find((item) => item.id === selectedExportUserId) || null,
+    [exportCandidatesFiltered, selectedExportUserId],
+  );
+
+  useEffect(() => {
+    if (!isExportModalOpen) {
+      return;
+    }
+
+    if (selectedExportUserId && exportCandidatesFiltered.some((item) => item.id === selectedExportUserId)) {
+      return;
+    }
+
+    setSelectedExportUserId(exportCandidatesFiltered[0]?.id || '');
+  }, [exportCandidatesFiltered, isExportModalOpen, selectedExportUserId]);
 
   useEffect(() => {
     if (filteredCategoryPermissions.length === 0) {
@@ -791,6 +896,287 @@ export default function CollaboratorsPage() {
       if (!signal?.aborted) {
         setLoading(false);
       }
+    }
+  }
+
+  function buildCollaboratorsParams(targetPage: number, targetPageSize: number, targetSortBy = sortBy, targetSortDirection = sortDirection) {
+    const params = new URLSearchParams();
+    params.set('page', String(targetPage));
+    params.set('pageSize', String(targetPageSize));
+    params.set('sortBy', targetSortBy);
+    params.set('sortDirection', targetSortDirection);
+
+    if (query.trim()) {
+      params.set('q', query.trim());
+    }
+    if (roleFilter !== 'ALL') {
+      params.set('role', roleFilter);
+    }
+    if (activeFilter !== 'ALL') {
+      params.set('active', activeFilter === 'ACTIVE' ? 'true' : 'false');
+    }
+    if (countryFilter !== 'ALL') {
+      params.set('workCountry', countryFilter);
+    }
+
+    return params;
+  }
+
+  async function loadExportCandidates() {
+    setIsLoadingExportCandidates(true);
+
+    try {
+      const collected: CollaboratorRow[] = [];
+      let currentPage = 1;
+      const chunkSize = 100;
+      let totalRows = 0;
+
+      do {
+        const params = buildCollaboratorsParams(currentPage, chunkSize, 'username', 'asc');
+        const data = await apiRequestCached<CollaboratorsResponse>(`/users/collaborators?${params.toString()}`, {
+          headers: getAuthHeaders(),
+        }, 5000, true);
+
+        totalRows = data.total;
+        collected.push(...data.rows);
+        currentPage += 1;
+      } while (collected.length < totalRows && currentPage <= 10);
+
+      setExportCandidates(collected);
+      setStatus('');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Falha ao carregar colaboradores para exportação.');
+    } finally {
+      setIsLoadingExportCandidates(false);
+    }
+  }
+
+  function openExportModal() {
+    setIsExportModalOpen(true);
+    setExportSearch('');
+    setSelectedExportUserId('');
+    void loadExportCandidates();
+  }
+
+  async function exportSelectedCollaboratorWorkbook() {
+    if (!selectedExportCandidate) {
+      setStatus('Seleciona um colaborador para exportar.');
+      return;
+    }
+
+    setIsExportingWorkbook(true);
+
+    try {
+      const ExcelJS = await import('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Ficha colaborador', {
+        views: [{ state: 'frozen', ySplit: 9 }],
+      });
+
+      workbook.creator = 'Smarter Hub';
+      workbook.created = new Date();
+
+      worksheet.columns = [
+        { header: 'Secção', key: 'section', width: 28 },
+        { header: 'Campo', key: 'field', width: 34 },
+        { header: 'Valor', key: 'value', width: 48 },
+        { header: 'Observações', key: 'note', width: 46 },
+      ];
+
+      const collaboratorName = getDisplayName(selectedExportCandidate);
+
+      const profile = selectedExportCandidate.profile || {};
+      const teamInfo = getCollaboratorTeamInfo(selectedExportCandidate);
+
+      worksheet.mergeCells('A1:B4');
+      worksheet.mergeCells('C1:D2');
+      worksheet.mergeCells('C3:D3');
+      worksheet.mergeCells('A5:D5');
+
+      const titleCell = worksheet.getCell('C1');
+      titleCell.value = `Ficha de Colaborador · ${collaboratorName}`;
+      titleCell.font = { name: 'Calibri', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleCell.alignment = { horizontal: 'left', vertical: 'middle' };
+      titleCell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF0F3B78' },
+      };
+
+      const subtitleCell = worksheet.getCell('C3');
+      subtitleCell.value = 'Documento de consulta corporativa';
+      subtitleCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF0F3B78' } };
+      subtitleCell.alignment = { horizontal: 'left', vertical: 'middle' };
+      subtitleCell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFEAF2FF' },
+      };
+
+      const generatedAtCell = worksheet.getCell('A5');
+      generatedAtCell.value = `Exportado em: ${new Intl.DateTimeFormat('pt-PT', { dateStyle: 'full', timeStyle: 'medium' }).format(new Date())}`;
+      generatedAtCell.font = { name: 'Calibri', size: 10, color: { argb: 'FF0F3B78' } };
+      generatedAtCell.alignment = { horizontal: 'left', vertical: 'middle' };
+      generatedAtCell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFEAF2FF' },
+      };
+
+      const summaryHeaders = worksheet.addRow(['Nome', 'Email', 'Cargo', 'Função']);
+      summaryHeaders.height = 20;
+      summaryHeaders.eachCell((cell) => {
+        cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1B4F9A' } };
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF4F8FF' },
+        };
+      });
+
+      const summaryValues = worksheet.addRow([
+        collaboratorName,
+        selectedExportCandidate.email,
+        profile.cargo || '-',
+        profile.funcao || '-',
+      ]);
+      summaryValues.height = 20;
+      summaryValues.eachCell((cell) => {
+        cell.font = { name: 'Calibri', size: 10, color: { argb: 'FF0F172A' } };
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFFFFF' },
+        };
+      });
+
+      const summaryExtraHeaders = worksheet.addRow(['Equipa', 'País', 'Início contrato', 'Nacionalidade']);
+      summaryExtraHeaders.height = 20;
+      summaryExtraHeaders.eachCell((cell) => {
+        cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1B4F9A' } };
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF4F8FF' },
+        };
+      });
+
+      const summaryExtraValues = worksheet.addRow([
+        teamInfo.name === '-' ? 'Sem equipa' : teamInfo.name,
+        profile.workCountry || 'PT',
+        formatDateForExport(profile.dataInicioContrato),
+        profile.nacionalidade || '-',
+      ]);
+      summaryExtraValues.height = 20;
+      summaryExtraValues.eachCell((cell) => {
+        cell.font = { name: 'Calibri', size: 10, color: { argb: 'FF0F172A' } };
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFFFFF' },
+        };
+      });
+
+      worksheet.addRow([]);
+
+      const headersRow = worksheet.addRow(['Secção', 'Campo', 'Valor', 'Observações']);
+      headersRow.height = 22;
+      headersRow.eachCell((cell) => {
+        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF1B4F9A' },
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF0E2E5A' } },
+          left: { style: 'thin', color: { argb: 'FF0E2E5A' } },
+          bottom: { style: 'thin', color: { argb: 'FF0E2E5A' } },
+          right: { style: 'thin', color: { argb: 'FF0E2E5A' } },
+        };
+      });
+
+      const exportRows = buildExportRows(selectedExportCandidate);
+      exportRows.forEach((entry, index) => {
+        const row = worksheet.addRow([entry.section, entry.field, entry.value, entry.note]);
+        row.height = 21;
+
+        row.eachCell((cell, colNumber) => {
+          cell.font = { name: 'Calibri', size: 10, color: { argb: 'FF0F172A' } };
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: colNumber === 3 ? 'left' : 'left',
+            wrapText: true,
+          };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFD6E2F1' } },
+            left: { style: 'thin', color: { argb: 'FFD6E2F1' } },
+            bottom: { style: 'thin', color: { argb: 'FFD6E2F1' } },
+            right: { style: 'thin', color: { argb: 'FFD6E2F1' } },
+          };
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: index % 2 === 0 ? 'FFF8FBFF' : 'FFFFFFFF' },
+          };
+        });
+      });
+
+      worksheet.autoFilter = {
+        from: { row: headersRow.number, column: 1 },
+        to: { row: headersRow.number, column: 4 },
+      };
+
+      try {
+        const logoResponse = await fetch('/logo.png');
+        if (logoResponse.ok) {
+          const logoBlob = await logoResponse.blob();
+          const logoBase64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('Falha a ler logo para exportação.'));
+            reader.readAsDataURL(logoBlob);
+          });
+
+          const logoId = workbook.addImage({
+            base64: logoBase64,
+            extension: 'png',
+          });
+
+          worksheet.addImage(logoId, {
+            tl: { col: 0.15, row: 0.15 },
+            ext: { width: 260, height: 86 },
+          });
+        }
+      } catch {
+        // Se o logo não estiver disponível, mantém exportação sem bloquear o download.
+      }
+
+      const rawBuffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([rawBuffer as ArrayBuffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const fileName = `ficha_colaborador_${sanitizeFileName(collaboratorName)}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      setIsExportModalOpen(false);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Falha ao exportar ficheiro Excel.');
+    } finally {
+      setIsExportingWorkbook(false);
     }
   }
 
@@ -1011,8 +1397,7 @@ export default function CollaboratorsPage() {
           teamId: editDraft.role === 'ADMIN' ? null : (editDraft.teamId || null),
           isActive: editDraft.isActive,
           workCountry: editDraft.workCountry,
-          primeiroNome: editDraft.primeiroNome,
-          apelido: editDraft.apelido,
+          nomeCompleto: editDraft.nomeCompleto,
           nomeAbreviado: editDraft.nomeAbreviado,
           dataNascimento: editDraft.dataNascimento,
           genero: editDraft.genero,
@@ -1464,6 +1849,16 @@ export default function CollaboratorsPage() {
               <option value={50}>50</option>
             </select>
           </label>
+        </div>
+
+        <div className="collaborators-export-actions">
+          <div>
+            <strong>Exportar ficha de colaborador</strong>
+            <p>Gera um Excel estruturado e pronto para cliente.</p>
+          </div>
+          <Button type="button" variant="primary" onClick={openExportModal}>
+            Exportar
+          </Button>
         </div>
 
         <div className="collaborators-table">
@@ -1964,6 +2359,106 @@ export default function CollaboratorsPage() {
             </section>
           )}
         </section>
+      </Modal>
+
+      <Modal
+        open={isExportModalOpen}
+        title="Exportar ficha de colaborador"
+        onClose={() => setIsExportModalOpen(false)}
+        width="min(980px, 96vw)"
+        showCloseButton={false}
+        footer={(
+          <div className="modal-footer-split">
+            <Button type="button" variant="ghost" onClick={() => setIsExportModalOpen(false)} disabled={isExportingWorkbook}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              isLoading={isExportingWorkbook}
+              disabled={!selectedExportCandidate || isLoadingExportCandidates || isExportingWorkbook}
+              onClick={() => void exportSelectedCollaboratorWorkbook()}
+            >
+              Exportar Excel
+            </Button>
+          </div>
+        )}
+      >
+        <div className="collaborator-export-modal">
+          <label className="collaborator-export-modal__search">
+            <span>Pesquisar colaborador</span>
+            <input
+              type="search"
+              value={exportSearch}
+              placeholder="Nome, username, email, cargo, função, equipa..."
+              onChange={(event) => setExportSearch(event.target.value)}
+            />
+          </label>
+
+          {isLoadingExportCandidates ? (
+            <Skeleton lines={4} />
+          ) : exportCandidatesFiltered.length === 0 ? (
+            <EmptyState
+              title="Sem colaboradores para exportação."
+              message="Ajusta os filtros da listagem ou a pesquisa da janela de exportação."
+            />
+          ) : (
+            <div className="collaborator-export-modal__layout">
+              <aside className="collaborator-export-list" aria-label="Selecionar colaborador para exportação">
+                {exportCandidatesFiltered.map((item) => {
+                  const teamInfo = getCollaboratorTeamInfo(item);
+                  const isSelected = selectedExportUserId === item.id;
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`collaborator-export-item${isSelected ? ' is-selected' : ''}`}
+                      onClick={() => setSelectedExportUserId(item.id)}
+                    >
+                      <strong>{getDisplayName(item)}</strong>
+                      <span>{item.email}</span>
+                      <small>{item.profile?.cargo || '-'} · {teamInfo.name === '-' ? 'Sem equipa' : teamInfo.name}</small>
+                    </button>
+                  );
+                })}
+              </aside>
+
+              <section className="collaborator-export-preview" aria-live="polite">
+                {selectedExportCandidate ? (
+                  <>
+                    <h4>{getDisplayName(selectedExportCandidate)}</h4>
+                    <p>{selectedExportCandidate.email}</p>
+                    <div className="collaborator-export-preview__grid">
+                      <article>
+                        <span>Cargo</span>
+                        <strong>{selectedExportCandidate.profile?.cargo || '-'}</strong>
+                      </article>
+                      <article>
+                        <span>Função</span>
+                        <strong>{selectedExportCandidate.profile?.funcao || '-'}</strong>
+                      </article>
+                      <article>
+                        <span>País</span>
+                        <strong>{selectedExportCandidate.profile?.workCountry || 'PT'}</strong>
+                      </article>
+                      <article>
+                        <span>Equipa</span>
+                        <strong>{getCollaboratorTeamInfo(selectedExportCandidate).name === '-' ? 'Sem equipa' : getCollaboratorTeamInfo(selectedExportCandidate).name}</strong>
+                      </article>
+                    </div>
+                    <small>O ficheiro inclui logo, resumo executivo e detalhe da ficha por secções para leitura profissional.</small>
+                  </>
+                ) : (
+                  <EmptyState
+                    title="Seleciona um colaborador"
+                    message="Escolhe um registo na lista para preparar a exportação."
+                  />
+                )}
+              </section>
+            </div>
+          )}
+        </div>
       </Modal>
 
       <Modal

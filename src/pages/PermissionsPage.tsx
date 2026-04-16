@@ -24,8 +24,7 @@ type AdminUser = {
   isRootAccess?: boolean;
   profile?: {
     nomeAbreviado?: string;
-    primeiroNome?: string;
-    apelido?: string;
+    nomeCompleto?: string;
     workCountry?: 'PT' | 'BR';
     localidade?: string;
   } | null;
@@ -37,8 +36,7 @@ type PermissionGrantUser = {
   username: string;
   profile?: {
     nomeAbreviado?: string;
-    primeiroNome?: string;
-    apelido?: string;
+    nomeCompleto?: string;
   } | null;
 };
 
@@ -116,13 +114,13 @@ function getAuthHeaders() {
   return authHeaders(token);
 }
 
-function getDisplayName(user?: { username: string; profile?: { nomeAbreviado?: string; primeiroNome?: string; apelido?: string } | null } | null) {
+function getDisplayName(user?: { username: string; profile?: { nomeAbreviado?: string; nomeCompleto?: string } | null } | null) {
   const shortName = user?.profile?.nomeAbreviado?.trim();
   if (shortName) {
     return shortName;
   }
 
-  const fullName = `${user?.profile?.primeiroNome ?? ''} ${user?.profile?.apelido ?? ''}`.trim();
+  const fullName = user?.profile?.nomeCompleto ?? '';
   return fullName || user?.username || '-';
 }
 

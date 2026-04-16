@@ -136,8 +136,7 @@ router.get('/users/:id/permissions', requireAuth, async (req, res) => {
         profile: {
           select: {
             nomeAbreviado: true,
-            primeiroNome: true,
-            apelido: true,
+            nomeCompleto: true,
           },
         },
       },
@@ -163,8 +162,7 @@ router.get('/users/:id/permissions', requireAuth, async (req, res) => {
             profile: {
               select: {
                 nomeAbreviado: true,
-                primeiroNome: true,
-                apelido: true,
+                nomeCompleto: true,
               },
             },
           },
@@ -260,8 +258,7 @@ router.post('/users/:id/permissions', requireAuth, async (req, res) => {
             profile: {
               select: {
                 nomeAbreviado: true,
-                primeiroNome: true,
-                apelido: true,
+                nomeCompleto: true,
               },
             },
           },
@@ -525,8 +522,7 @@ router.get('/audit/permission-grants', requireAuth, async (req, res) => {
           profile: {
             select: {
               nomeAbreviado: true,
-              primeiroNome: true,
-              apelido: true,
+              nomeCompleto: true,
             },
           },
         },
@@ -538,8 +534,7 @@ router.get('/audit/permission-grants', requireAuth, async (req, res) => {
           profile: {
             select: {
               nomeAbreviado: true,
-              primeiroNome: true,
-              apelido: true,
+              nomeCompleto: true,
             },
           },
         },

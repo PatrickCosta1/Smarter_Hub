@@ -203,8 +203,7 @@ router.post('/profile/options', requireAuth, async (req, res) => {
 });
 
 const profileFields = [
-  "primeiroNome",
-  "apelido",
+  "nomeCompleto",
   "nomeAbreviado",
   "dataNascimento",
   "genero",
@@ -272,8 +271,7 @@ function normalizeProfilePayload(payload: unknown) {
 const optionalStringField = z.union([z.string(), z.null()]).transform((value) => value ?? '').optional();
 
 const updateProfileSchema = z.object({
-  primeiroNome: optionalStringField,
-  apelido: optionalStringField,
+  nomeCompleto: optionalStringField,
   nomeAbreviado: optionalStringField,
   dataNascimento: optionalStringField,
   genero: optionalStringField,
@@ -325,8 +323,7 @@ const reviewRequestSchema = z.object({
 });
 
 const friendlyProfileFieldLabels: Partial<Record<(typeof profileFields)[number], string>> = {
-  primeiroNome: 'Primeiro nome',
-  apelido: 'Apelido',
+  nomeCompleto: 'Nome completo',
   nomeAbreviado: 'Nome abreviado',
   dataNascimento: 'Data de nascimento',
   genero: 'Género',
@@ -414,14 +411,14 @@ function buildProfileChangeDetails(
 }
 
 function resolveRequesterDisplayName(
-  profile: { nomeAbreviado?: string | null; primeiroNome?: string | null; apelido?: string | null } | null | undefined,
+  profile: { nomeAbreviado?: string | null; nomeCompleto?: string | null } | null | undefined,
 ) {
   const shortName = String(profile?.nomeAbreviado ?? '').trim();
   if (shortName) {
     return shortName;
   }
 
-  const fullName = `${String(profile?.primeiroNome ?? '').trim()} ${String(profile?.apelido ?? '').trim()}`.trim();
+  const fullName = String(profile?.nomeCompleto ?? '').trim();
   if (fullName) {
     return fullName;
   }
@@ -600,8 +597,7 @@ router.get('/profile/requests', requireAuth, async (req, res) => {
           profile: {
             select: {
               nomeAbreviado: true,
-              primeiroNome: true,
-              apelido: true,
+              nomeCompleto: true,
             },
           },
         },
@@ -666,8 +662,7 @@ router.get('/profile/requests/history', requireAuth, async (req, res) => {
           profile: {
             select: {
               nomeAbreviado: true,
-              primeiroNome: true,
-              apelido: true,
+              nomeCompleto: true,
             },
           },
         },
@@ -679,8 +674,7 @@ router.get('/profile/requests/history', requireAuth, async (req, res) => {
           profile: {
             select: {
               nomeAbreviado: true,
-              primeiroNome: true,
-              apelido: true,
+              nomeCompleto: true,
             },
           },
         },

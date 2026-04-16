@@ -124,9 +124,7 @@ async function provisionUserFromMicrosoft(email: string, decodedToken: Awaited<R
   const localPart = email.split('@')[0] ?? '';
 
   const fullName = displayName || `${givenName} ${familyName}`.trim() || localPart;
-  const firstName = givenName || fullName.split(' ')[0] || localPart;
-  const lastName = familyName || fullName.split(' ').slice(1).join(' ');
-  const shortName = `${firstName}${lastName ? ` ${lastName}` : ''}`.trim();
+  const shortName = fullName.trim() || localPart;
 
   const username = await generateUniqueUsername(localPart || fullName);
   const passwordHash = await bcrypt.hash('pola123', 10);
@@ -142,8 +140,7 @@ async function provisionUserFromMicrosoft(email: string, decodedToken: Awaited<R
       teamId: null,
       profile: {
         create: {
-          primeiroNome: firstName,
-          apelido: lastName,
+          nomeCompleto: fullName,
           nomeAbreviado: shortName || username,
           nacionalidade: '',
           emailPessoal: email,

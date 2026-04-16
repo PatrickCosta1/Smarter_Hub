@@ -9,8 +9,7 @@ export type MenuItem = {
 };
 
 export type ProfileData = {
-  primeiroNome: string;
-  apelido: string;
+  nomeCompleto: string;
   nomeAbreviado: string;
   dataNascimento: string;
   genero: string;

@@ -36,8 +36,7 @@ type TrainingRecord = {
     role: string;
     profile?: {
       nomeAbreviado?: string;
-      primeiroNome?: string;
-      apelido?: string;
+      nomeCompleto?: string;
     } | null;
   } | null;
 };
@@ -48,8 +47,7 @@ type Collaborator = {
   email: string;
   role: string;
   profile?: {
-    primeiroNome: string;
-    apelido: string;
+    nomeCompleto: string;
     cargo: string;
     funcao: string;
   } | null;
@@ -89,7 +87,7 @@ function formatHours(value: number): string {
   return new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(value);
 }
 
-function formatAbbreviatedUserName(user?: { username: string; profile?: { nomeAbreviado?: string; primeiroNome?: string; apelido?: string } | null } | null) {
+function formatAbbreviatedUserName(user?: { username: string; profile?: { nomeAbreviado?: string; nomeCompleto?: string } | null } | null) {
   if (!user) {
     return 'Próprio';
   }
@@ -99,9 +97,7 @@ function formatAbbreviatedUserName(user?: { username: string; profile?: { nomeAb
     return profileShort;
   }
 
-  const first = user.profile?.primeiroNome?.trim() || '';
-  const last = user.profile?.apelido?.trim() || '';
-  const fullName = `${first} ${last}`.trim();
+  const fullName = user.profile?.nomeCompleto?.trim() || '';
 
   return fullName || user.username;
 }
@@ -274,7 +270,7 @@ export default function TrainingsPage() {
 
     try {
       const selectedName = selectedCollaborator
-        ? `${selectedCollaborator.profile?.primeiroNome ?? ''} ${selectedCollaborator.profile?.apelido ?? ''}`.trim() || selectedCollaborator.username
+        ? (selectedCollaborator?.profile?.nomeCompleto ?? selectedCollaborator.username)
         : assignDraft.userId;
 
       const created = await apiRequest<TrainingRecord>('/trainings/assign', {
@@ -398,7 +394,7 @@ export default function TrainingsPage() {
 
                     {selectedCollaborator ? (
                       <div className="rh-selected-collaborator">
-                        <strong>{`${selectedCollaborator.profile?.primeiroNome ?? ''} ${selectedCollaborator.profile?.apelido ?? ''}`.trim() || selectedCollaborator.username}</strong>
+                        <strong>{selectedCollaborator?.profile?.nomeCompleto ?? selectedCollaborator.username}</strong>
                         <span>{selectedCollaborator.email}</span>
                         <button type="button" onClick={() => updateAssignDraft('userId', '')}>Trocar colaborador</button>
                       </div>
@@ -409,7 +405,7 @@ export default function TrainingsPage() {
                         {!isSearchingCollaborators && collaboratorQuery.trim() && collaborators.length === 0 && <p>Sem resultados para a pesquisa.</p>}
                         {!isSearchingCollaborators &&
                           collaborators.map((collaborator) => {
-                            const displayName = `${collaborator.profile?.primeiroNome ?? ''} ${collaborator.profile?.apelido ?? ''}`.trim() || collaborator.username;
+                            const displayName = collaborator?.profile?.nomeCompleto ?? collaborator.username;
 
                             return (
                               <button

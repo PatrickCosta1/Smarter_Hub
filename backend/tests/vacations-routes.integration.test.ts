@@ -97,8 +97,7 @@ describe('vacations routes integration', () => {
     prismaMock.teamMembership.findMany.mockResolvedValue([]);
     prismaMock.profile.findUnique.mockResolvedValue({
       workCountry: 'PT',
-      primeiroNome: 'Teste',
-      apelido: 'User',
+      nomeCompleto: 'Teste User',
       nomeAbreviado: 'Teste User',
     });
 

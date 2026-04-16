@@ -20,8 +20,7 @@ type AdminUser = {
   localidade: string;
   profile?: {
     nomeAbreviado?: string;
-    primeiroNome?: string;
-    apelido?: string;
+    nomeCompleto?: string;
     workCountry?: 'PT' | 'BR';
   } | null;
 };
@@ -31,13 +30,13 @@ function getAuthHeaders() {
   return authHeaders(token);
 }
 
-function getDisplayName(user?: { username: string; profile?: { nomeAbreviado?: string; primeiroNome?: string; apelido?: string } | null } | null) {
+function getDisplayName(user?: { username: string; profile?: { nomeAbreviado?: string; nomeCompleto?: string } | null } | null) {
   const shortName = user?.profile?.nomeAbreviado?.trim();
   if (shortName) {
     return shortName;
   }
 
-  const fullName = `${user?.profile?.primeiroNome ?? ''} ${user?.profile?.apelido ?? ''}`.trim();
+  const fullName = user?.profile?.nomeCompleto ?? '';
   return fullName || user?.username || '-';
 }
 
@@ -97,8 +96,7 @@ export default function AdminPage() {
   const [credentialsDraft, setCredentialsDraft] = useState({ username: '', email: '' });
   const loadDataInFlightRef = useRef<Promise<void> | null>(null);
   const [newUserDraft, setNewUserDraft] = useState({
-    firstName: '',
-    lastName: '',
+    fullName: '',
     username: '',
     email: '',
     workCountry: 'PT' as 'PT' | 'BR',
@@ -172,12 +170,15 @@ export default function AdminPage() {
   }, [editingUser]);
 
   useEffect(() => {
+    const parts = newUserDraft.fullName.trim().split(/\s+/).filter(p => p.length > 0);
+    const firstName = parts[0] || '';
+    const lastName = parts[parts.length - 1] || '';
     setNewUserDraft((current) => ({
       ...current,
-      username: buildAutoUsername(current.firstName, current.lastName),
-      email: buildAutoEmailFromName(current.firstName, current.lastName),
+      username: buildAutoUsername(firstName, lastName),
+      email: buildAutoEmailFromName(firstName, lastName),
     }));
-  }, [newUserDraft.firstName, newUserDraft.lastName]);
+  }, [newUserDraft.fullName]);
 
   async function loadData(signal?: AbortSignal) {
     if (signal?.aborted) {
@@ -224,25 +225,26 @@ export default function AdminPage() {
   }
 
   function openCreateModal() {
-    setNewUserDraft({ firstName: '', lastName: '', username: '', email: '', workCountry: 'PT' });
+    setNewUserDraft({ fullName: '', username: '', email: '', workCountry: 'PT' });
     setIsCreateModalOpen(true);
   }
 
   function closeCreateModal() {
     setIsCreateModalOpen(false);
-    setNewUserDraft({ firstName: '', lastName: '', username: '', email: '', workCountry: 'PT' });
+    setNewUserDraft({ fullName: '', username: '', email: '', workCountry: 'PT' });
   }
 
   async function createUser() {
-    const firstName = newUserDraft.firstName.trim();
-    const lastName = newUserDraft.lastName.trim();
+    const parts = newUserDraft.fullName.trim().split(/\s+/).filter(p => p.length > 0);
+    const firstName = parts[0] || '';
+      const lastName = parts[parts.length - 1] || '';
     const fullName = `${firstName} ${lastName}`.trim();
     const username = newUserDraft.username.trim().toLowerCase();
     const email = newUserDraft.email.trim().toLowerCase();
     const workCountry = newUserDraft.workCountry;
 
     if (!firstName || !lastName || !username || !email) {
-      setStatus('Preenche primeiro nome, apelido, username e email.');
+      setStatus('Preenche nome completo, username e email.');
       return;
     }
 
@@ -510,21 +512,11 @@ export default function AdminPage() {
         >
           <form className="trainings-form" onSubmit={(event) => { event.preventDefault(); void createUser(); }}>
             <label>
-              <span>Primeiro nome</span>
+              <span>Nome completo</span>
               <input
                 type="text"
-                value={newUserDraft.firstName}
-                onChange={(event) => setNewUserDraft((current) => ({ ...current, firstName: event.target.value }))}
-                autoComplete="off"
-              />
-            </label>
-
-            <label>
-              <span>Apelido</span>
-              <input
-                type="text"
-                value={newUserDraft.lastName}
-                onChange={(event) => setNewUserDraft((current) => ({ ...current, lastName: event.target.value }))}
+                value={newUserDraft.fullName}
+                onChange={(event) => setNewUserDraft((current) => ({ ...current, fullName: event.target.value }))}
                 autoComplete="off"
               />
             </label>
@@ -534,7 +526,7 @@ export default function AdminPage() {
               <input
                 type="text"
                 value={newUserDraft.username}
-                readOnly
+                onChange={(event) => setNewUserDraft((current) => ({ ...current, username: event.target.value }))}
                 autoComplete="off"
               />
             </label>
@@ -544,7 +536,7 @@ export default function AdminPage() {
               <input
                 type="email"
                 value={newUserDraft.email}
-                readOnly
+                onChange={(event) => setNewUserDraft((current) => ({ ...current, email: event.target.value }))}
                 autoComplete="off"
               />
             </label>

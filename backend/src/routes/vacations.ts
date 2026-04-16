@@ -907,7 +907,7 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
 
     const profile = await prisma.profile.findUnique({
       where: { userId },
-      select: { workCountry: true, primeiroNome: true, apelido: true, nomeAbreviado: true },
+      select: { workCountry: true, nomeCompleto: true, nomeAbreviado: true },
     });
     const country = profile?.workCountry ?? 'PT';
 
@@ -972,7 +972,7 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
 
     if (approvalGroups.length > 0) {
       const requesterName = String(profile?.nomeAbreviado ?? '').trim()
-        || `${String(profile?.primeiroNome ?? '').trim()} ${String(profile?.apelido ?? '').trim()}`.trim()
+        || String(profile?.nomeCompleto ?? '').trim()
         || 'Colaborador';
       const requestLabel = data.requestType === 'VACATION' ? 'férias' : 'ausência';
       await notifyUsersByPermission(
@@ -1046,7 +1046,7 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
           email: true,
           role: true,
           team: { select: { id: true, name: true } },
-          profile: { select: { workCountry: true, nomeAbreviado: true, primeiroNome: true, apelido: true } },
+          profile: { select: { workCountry: true, nomeAbreviado: true, nomeCompleto: true } },
         },
       },
       contextTeam: { select: { id: true, name: true } },

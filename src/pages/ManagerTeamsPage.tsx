@@ -38,8 +38,7 @@ type TeamMember = {
   approvalLevel: number | null;
   profile?: {
     nomeAbreviado?: string;
-    primeiroNome?: string;
-    apelido?: string;
+    nomeCompleto?: string;
     cargo?: string;
     funcao?: string;
   } | null;
@@ -55,8 +54,7 @@ type TeamSummary = {
     username: string;
     profile?: {
       nomeAbreviado?: string;
-      primeiroNome?: string;
-      apelido?: string;
+      nomeCompleto?: string;
     } | null;
   } | null;
   manager?: {
@@ -64,8 +62,7 @@ type TeamSummary = {
     username: string;
     profile?: {
       nomeAbreviado?: string;
-      primeiroNome?: string;
-      apelido?: string;
+      nomeCompleto?: string;
     } | null;
   } | null;
   coordinator?: {
@@ -73,8 +70,7 @@ type TeamSummary = {
     username: string;
     profile?: {
       nomeAbreviado?: string;
-      primeiroNome?: string;
-      apelido?: string;
+      nomeCompleto?: string;
     } | null;
   } | null;
   parentTeam?: { id: string; name: string } | null;
@@ -93,8 +89,7 @@ type CollaboratorOption = {
   isActive?: boolean;
   profile?: {
     nomeAbreviado?: string;
-    primeiroNome?: string;
-    apelido?: string;
+    nomeCompleto?: string;
   } | null;
   teamMemberships?: Array<{
     teamId: string;
@@ -165,16 +160,14 @@ function getDaysBetween(startIso: string, endIso: string) {
 
 function getProfileDisplayName(input: {
   username: string;
-  profile?: { nomeAbreviado?: string; primeiroNome?: string; apelido?: string } | null;
+  profile?: { nomeAbreviado?: string; nomeCompleto?: string } | null;
 }) {
   const short = input.profile?.nomeAbreviado?.trim() || '';
   if (short) {
     return short;
   }
 
-  const first = input.profile?.primeiroNome?.trim() || '';
-  const last = input.profile?.apelido?.trim() || '';
-  const fullName = `${first} ${last}`.trim();
+  const fullName = input.profile?.nomeCompleto?.trim() || '';
   return fullName || input.username;
 }
 

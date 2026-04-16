@@ -45,8 +45,7 @@ router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => 
             profile: {
               select: {
                 nomeAbreviado: true,
-                primeiroNome: true,
-                apelido: true,
+                nomeCompleto: true,
               },
             },
           },
@@ -97,8 +96,7 @@ router.get('/trainings/assigned', requireAuth, async (req: Request, res: Respons
           profile: {
             select: {
               nomeAbreviado: true,
-              primeiroNome: true,
-              apelido: true,
+              nomeCompleto: true,
             },
           },
         },

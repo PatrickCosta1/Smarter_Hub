@@ -32,7 +32,7 @@ export default function HomePage() {
   const isManagerFlow = canReviewApprovals || canManageTrainings || canManageCollaborators;
   const displayName = isTPeople
     ? 'T People'
-    : `${profile.primeiroNome} ${profile.apelido}`.trim() || profile.primeiroNome || 'Colaborador';
+    : profile.nomeCompleto?.trim() || profile.nomeAbreviado || 'Colaborador';
   const [pendingProfileRequests, setPendingProfileRequests] = useState(0);
   const [pendingVacationRequests, setPendingVacationRequests] = useState(0);
   const [assignedTrainings, setAssignedTrainings] = useState(0);

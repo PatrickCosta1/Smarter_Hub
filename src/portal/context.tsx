@@ -6,8 +6,7 @@ import { AuthUser, PortalNotification, ProfileData, UserRole } from './types';
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
 const profileKeys: Array<keyof ProfileData> = [
-  'primeiroNome',
-  'apelido',
+  'nomeCompleto',
   'nomeAbreviado',
   'dataNascimento',
   'genero',

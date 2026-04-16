@@ -72,8 +72,7 @@ async function createUser(params: {
       teamId: null,
       profile: {
         create: {
-          primeiroNome: firstName,
-          apelido: lastName,
+          nomeCompleto: `${firstName} ${lastName}`,
           nomeAbreviado: shortName,
           dataNascimento: params.profileData?.dataNascimento ?? '',
           genero: params.profileData?.genero ?? '',

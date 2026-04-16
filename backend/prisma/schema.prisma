@@ -139,8 +139,7 @@ model TeamMembership {
 model Profile {
   id                             String   @id @default(ulid())
   userId                         String   @unique
-  primeiroNome                   String   @default("")
-  apelido                        String   @default("")
+  nomeCompleto                   String   @default("")
   nomeAbreviado                  String   @default("")
   dataNascimento                 String   @default("")
   genero                         String   @default("")

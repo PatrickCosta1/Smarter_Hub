@@ -45,8 +45,7 @@ type ProfileTrainingRecord = {
     username: string;
     profile?: {
       nomeAbreviado?: string;
-      primeiroNome?: string;
-      apelido?: string;
+      nomeCompleto?: string;
     } | null;
   } | null;
 };
@@ -54,8 +53,7 @@ type ProfileTrainingRecord = {
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
 const profileFieldLabels: Partial<Record<keyof ProfileData, string>> = {
-  primeiroNome: 'Primeiro nome',
-  apelido: 'Apelido',
+  nomeCompleto: 'Nome completo',
   nomeAbreviado: 'Nome abreviado',
   dataNascimento: 'Data de nascimento',
   genero: 'Género',
@@ -417,8 +415,7 @@ function validateProfile(profile: ProfileData, canEditContract: boolean = true):
   ];
 
   const requiredKeys: Array<keyof ProfileData> = [
-    'primeiroNome',
-    'apelido',
+    'nomeCompleto',
     'nomeAbreviado',
     'dataNascimento',
     'genero',
@@ -508,9 +505,7 @@ function resolveTrainingOrigin(record: ProfileTrainingRecord) {
     return shortName;
   }
 
-  const first = record.assignedBy?.profile?.primeiroNome?.trim() || '';
-  const last = record.assignedBy?.profile?.apelido?.trim() || '';
-  const fullName = `${first} ${last}`.trim();
+  const fullName = record.assignedBy?.profile?.nomeCompleto?.trim() || '';
 
   return fullName || record.assignedBy?.username || 'Próprio';
 }
@@ -587,7 +582,7 @@ export default function ProfilePage() {
   );
   const completionIssueCount = completionIssueEntries.length;
 
-  const collaboratorName = useMemo(() => `${draftProfile.primeiroNome} ${draftProfile.apelido}`.trim(), [draftProfile.apelido, draftProfile.primeiroNome]);
+  const collaboratorName = useMemo(() => `${draftProfile.nomeCompleto} ${draftProfile.nomeAbreviado}`.trim(), [draftProfile.nomeAbreviado, draftProfile.nomeCompleto]);
   const hasUnsavedChanges = useMemo(() => JSON.stringify(draftProfile) !== JSON.stringify(profile), [draftProfile, profile]);
   const sortedOwnTrainings = useMemo(
     () => [...ownTrainings].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
@@ -1069,16 +1064,11 @@ export default function ProfilePage() {
               </button>
             )}
           </div>
-          <div className="profile-fields profile-fields--3">
+          <div className="profile-fields profile-fields--2">
             <label>
-              <span>Primeiro nome</span>
-              <input type="text" value={draftProfile.primeiroNome} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('primeiroNome', event.target.value)} />
-              {profileErrors.primeiroNome && <small>{profileErrors.primeiroNome}</small>}
-            </label>
-            <label>
-              <span>Apelido</span>
-              <input type="text" value={draftProfile.apelido} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('apelido', event.target.value)} />
-              {profileErrors.apelido && <small>{profileErrors.apelido}</small>}
+              <span>Nome completo</span>
+              <input type="text" value={draftProfile.nomeCompleto} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('nomeCompleto', event.target.value)} />
+              {profileErrors.nomeCompleto && <small>{profileErrors.nomeCompleto}</small>}
             </label>
             <label>
               <span>Nome abreviado</span>
