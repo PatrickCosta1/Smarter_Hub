@@ -48,6 +48,7 @@ type TeamMember = {
 type TeamSummary = {
   id: string;
   name: string;
+  costCenter?: string | null;
   leaderId?: string | null;
   leader?: {
     id: string;
@@ -106,6 +107,7 @@ type TeamDraft = {
   leaderId: string;
   memberIds: string[];
   parentTeamId: string;
+  costCenter: string;
 };
 
 const EMPTY_TEAM_DRAFT: TeamDraft = {
@@ -113,6 +115,7 @@ const EMPTY_TEAM_DRAFT: TeamDraft = {
   leaderId: '',
   memberIds: [],
   parentTeamId: '',
+  costCenter: '',
 };
 
 function formatVacationType(value: TeamVacation['requestType']) {
@@ -183,6 +186,7 @@ function isFutureOrCurrentVacation(vacation: TeamVacation) {
 
 export default function ManagerTeamsPage() {
   const { hasPermission, isRootAccess, isAccessTotal } = usePortal();
+  const canViewCostCenter = isRootAccess || isAccessTotal;
   const canManageAllTeams = isRootAccess || isAccessTotal;
   const canManageTeamMembers = isRootAccess || hasPermission('manage_team_members');
   const canCreateTeam = isRootAccess || hasPermission('create_team');
@@ -208,6 +212,7 @@ export default function ManagerTeamsPage() {
   const [isDeletingTeam, setIsDeletingTeam] = useState(false);
   const [isDeleteTeamConfirmOpen, setIsDeleteTeamConfirmOpen] = useState(false);
   const [manageQuery, setManageQuery] = useState('');
+  const [teamSearchQuery, setTeamSearchQuery] = useState('');
 
   const selectedTeamSummary = useMemo(
     () => teams.find((team) => team.id === selectedTeamId) || null,
@@ -334,6 +339,7 @@ export default function ManagerTeamsPage() {
       leaderId: selectedTeam.leaderId || selectedTeam.manager?.id || selectedTeam.coordinator?.id || '',
       memberIds: selectedTeamMembers.map((member) => member.id),
       parentTeamId: selectedTeam.parentTeam?.id || '',
+      costCenter: selectedTeam.parentTeam ? '' : (selectedTeam.costCenter || ''),
     });
     setManageQuery('');
     setIsManageTeamModalOpen(true);
@@ -347,10 +353,17 @@ export default function ManagerTeamsPage() {
     }
 
     const nextName = teamDraft.name.trim();
+    const nextParentTeamId = teamDraft.parentTeamId || '';
+    const normalizedCostCenter = teamDraft.costCenter.trim();
+    const nextCostCenter = nextParentTeamId ? '' : normalizedCostCenter;
     const nextLeaderId = teamDraft.leaderId || '';
+    const currentParentTeamId = selectedTeam.parentTeam?.id || '';
+    const currentCostCenter = selectedTeam.parentTeam ? '' : ((selectedTeam.costCenter || '').trim());
     const currentLeaderId = selectedTeam.leaderId || selectedTeam.manager?.id || selectedTeam.coordinator?.id || '';
     const hasBasicChanges = nextName !== selectedTeam.name
-      || nextLeaderId !== currentLeaderId;
+      || nextLeaderId !== currentLeaderId
+      || nextParentTeamId !== currentParentTeamId
+      || (canViewCostCenter && nextCostCenter !== currentCostCenter);
 
     const currentMemberIds = new Set(selectedTeamMembers.map((member) => member.id));
     const nextMemberIds = new Set(teamDraft.memberIds.filter((id) => id && id !== teamDraft.leaderId));
@@ -382,7 +395,8 @@ export default function ManagerTeamsPage() {
           body: JSON.stringify({
             name: nextName,
             leaderId: teamDraft.leaderId || null,
-            parentTeamId: selectedTeam.parentTeam?.id || null,
+            parentTeamId: nextParentTeamId || null,
+            ...(canViewCostCenter ? { costCenter: nextParentTeamId ? null : (nextCostCenter || null) } : {}),
           }),
         });
       }
@@ -548,6 +562,25 @@ export default function ManagerTeamsPage() {
       .slice(0, 12);
   }, [leaderOptions, manageQuery, teamDraft.leaderId, teamDraft.memberIds]);
 
+  const filteredTeams = useMemo(() => {
+    const normalized = teamSearchQuery.trim().toLowerCase();
+
+    if (!normalized) {
+      return teams;
+    }
+
+    return teams.filter((team) => {
+      return [
+        team.name,
+        team.parentTeam?.name ?? '',
+        team.costCenter ?? '',
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(normalized);
+    });
+  }, [teamSearchQuery, teams]);
+
   function openPicker(mode: 'leader' | 'members') {
     setPickerMode(mode);
     setPickerQuery('');
@@ -598,6 +631,7 @@ export default function ManagerTeamsPage() {
           leaderId: teamDraft.leaderId || null,
           memberIds: teamDraft.memberIds,
           parentTeamId: teamDraft.parentTeamId || null,
+          ...(canViewCostCenter ? { costCenter: teamDraft.parentTeamId ? null : (teamDraft.costCenter.trim() || null) } : {}),
         }),
       });
 
@@ -696,24 +730,20 @@ export default function ManagerTeamsPage() {
 
   return (
     <section className="trainings-shell">
-      <header className="trainings-hero">
-        <div>
-          <p className="hero-kicker">Equipas</p>
-          <h2>{heroTitle}</h2>
-          <p>{heroDescription}</p>
-        </div>
-
-        <div className="trainings-hours-summary">
-          <article>
-            <span>Equipas visíveis</span>
-            <strong>{loading && teams.length === 0 ? <LoadingInline variant="metric" /> : teams.length}</strong>
-          </article>
-        </div>
-      </header>
+      
 
       <section className="trainings-list-card">
         <div className="trainings-list-head">
           <h3>{canManageTeamMembers ? 'As equipas' : 'As tuas equipas'}</h3>
+          <label>
+            <span>Pesquisar</span>
+            <input
+              type="search"
+              value={teamSearchQuery}
+              onChange={(event) => setTeamSearchQuery(event.target.value)}
+              placeholder="Nome da equipa, equipa-mãe ou centro de custo..."
+            />
+          </label>
           {canCreateTeam && (
             <Button type="button" variant="primary" className="team-create-btn" onClick={openNewTeamModal}>Nova equipa</Button>
           )}
@@ -736,7 +766,13 @@ export default function ManagerTeamsPage() {
               message="Assim que existirem equipas no teu âmbito, elas aparecem aqui."
             />
           )}
-          {!loading && teams.map((team) => (
+          {!loading && teams.length > 0 && filteredTeams.length === 0 && (
+            <EmptyState
+              title="Sem equipas para a pesquisa atual."
+              message="Ajusta o termo de pesquisa para ver outras equipas."
+            />
+          )}
+          {!loading && filteredTeams.map((team) => (
             <button
               key={team.id}
               type="button"
@@ -747,6 +783,7 @@ export default function ManagerTeamsPage() {
               <h3>{team.name}</h3>
               <p>{team._count?.members ?? 0} membro(s)</p>
               <small>{team.parentTeam ? `Subequipa de ${team.parentTeam.name}` : 'Equipa base'}</small>
+              
             </button>
           ))}
         </div>
@@ -797,6 +834,12 @@ export default function ManagerTeamsPage() {
                     <span>Estrutura</span>
                     <strong>{selectedTeam.parentTeam ? `Subequipa de ${selectedTeam.parentTeam.name}` : 'Equipa base'}</strong>
                   </article>
+                  {canViewCostCenter && !selectedTeam.parentTeam && (
+                    <article>
+                      <span>Centro de custo</span>
+                      <strong>{selectedTeam.costCenter || '-'}</strong>
+                    </article>
+                  )}
                   <article>
                     <span>Pessoas</span>
                     <strong>{selectedTeamMembers.length}</strong>
@@ -905,13 +948,33 @@ export default function ManagerTeamsPage() {
 
             <label>
               <span>Subequipa de</span>
-              <select value={teamDraft.parentTeamId} onChange={(event) => setTeamDraft((current) => ({ ...current, parentTeamId: event.target.value }))}>
+              <select
+                value={teamDraft.parentTeamId}
+                onChange={(event) => setTeamDraft((current) => ({
+                  ...current,
+                  parentTeamId: event.target.value,
+                  costCenter: event.target.value ? '' : current.costCenter,
+                }))}
+              >
                 <option value="">Sem equipa-mãe</option>
                 {teams.map((team) => (
                   <option key={team.id} value={team.id}>{team.name}</option>
                 ))}
               </select>
             </label>
+
+            {canViewCostCenter && (
+              <label>
+                <span>Centro de custo (equipa mãe)</span>
+                <input
+                  type="text"
+                  value={teamDraft.costCenter}
+                  disabled={Boolean(teamDraft.parentTeamId)}
+                  onChange={(event) => setTeamDraft((current) => ({ ...current, costCenter: event.target.value }))}
+                  placeholder="Ex: 185010"
+                />
+              </label>
+            )}
           </div>
 
           <div className="team-create-form__pickers">
@@ -1044,6 +1107,39 @@ export default function ManagerTeamsPage() {
                 ))}
               </select>
             </label>
+
+            <label>
+              <span>Subequipa de</span>
+              <select
+                value={teamDraft.parentTeamId}
+                disabled={!canEditTeam}
+                onChange={(event) => setTeamDraft((current) => ({
+                  ...current,
+                  parentTeamId: event.target.value,
+                  costCenter: event.target.value ? '' : current.costCenter,
+                }))}
+              >
+                <option value="">Sem equipa-mãe</option>
+                {teams
+                  .filter((team) => team.id !== selectedTeam?.id)
+                  .map((team) => (
+                    <option key={team.id} value={team.id}>{team.name}</option>
+                  ))}
+              </select>
+            </label>
+
+            {canViewCostCenter && (
+              <label>
+                <span>Centro de custo (equipa mãe)</span>
+                <input
+                  type="text"
+                  value={teamDraft.costCenter}
+                  disabled={!canEditTeam || Boolean(teamDraft.parentTeamId)}
+                  onChange={(event) => setTeamDraft((current) => ({ ...current, costCenter: event.target.value }))}
+                  placeholder="Ex: 185010"
+                />
+              </label>
+            )}
 
             <p className="team-manage-panel__hint">
               Membros selecionados: <strong>{teamDraft.memberIds.filter((id) => id !== teamDraft.leaderId).length}</strong>

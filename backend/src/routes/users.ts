@@ -104,6 +104,7 @@ const adminTeamSchema = z.object({
   leaderId: z.string().nullable().optional(),
   memberIds: z.array(z.string().min(1)).optional().default([]),
   parentTeamId: z.string().nullable().optional(),
+  costCenter: z.string().max(120).nullable().optional(),
 });
 
 const managerTeamMemberUpdateSchema = z.object({
@@ -118,6 +119,15 @@ const managerTeamMemberUpdateSchema = z.object({
 
 const AUTO_DEFAULT_EMPLOYEE_NOTE = '[AUTO_PRESET_DEFAULT_EMPLOYEE]';
 const AUTO_TEAM_LEADER_NOTE = '[AUTO_PRESET_TEAM_LEADER]';
+
+function normalizeTeamCostCenter(value?: string | null) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
 
 function parseIsoDate(value?: string | null) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -1025,6 +1035,7 @@ router.get('/teams', requireAuth, async (req, res) => {
 
 router.get('/teams/me', requireAuth, async (req, res) => {
   const userId = req.authUser!.id;
+  const actorHasAccessTotal = req.authUser!.isRootAccess || await isAccessTotal(userId);
   const detailsMode = typeof req.query.details === 'string' ? req.query.details.toLowerCase() : 'full';
   const includeMembers = detailsMode !== 'none';
   const year = Number(typeof req.query.year === 'string' ? req.query.year : new Date().getFullYear());
@@ -1044,6 +1055,7 @@ router.get('/teams/me', requireAuth, async (req, res) => {
       select: {
         id: true,
         name: true,
+        costCenter: true,
         parentTeamId: true,
         manager: {
           select: {
@@ -1067,6 +1079,7 @@ router.get('/teams/me', requireAuth, async (req, res) => {
 
     return res.json(teams.map((team) => ({
       ...team,
+      costCenter: actorHasAccessTotal && !team.parentTeamId ? team.costCenter : null,
       _count: {
         members: team._count.memberships,
         memberships: team._count.memberships,
@@ -1079,6 +1092,7 @@ router.get('/teams/me', requireAuth, async (req, res) => {
     select: {
       id: true,
       name: true,
+      costCenter: true,
       managerId: true,
       coordinatorId: true,
       parentTeamId: true,
@@ -1153,6 +1167,7 @@ router.get('/teams/me', requireAuth, async (req, res) => {
 
   return res.json(teams.map((team) => ({
     ...team,
+    costCenter: actorHasAccessTotal && !team.parentTeamId ? team.costCenter : null,
     members: team.memberships.map((membership) => ({
       id: membership.user.id,
       username: membership.user.username,
@@ -1174,6 +1189,7 @@ router.get('/teams/me', requireAuth, async (req, res) => {
 
 router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
   const userId = req.authUser!.id;
+  const actorHasAccessTotal = req.authUser!.isRootAccess || await isAccessTotal(userId);
   const teamId = String(req.params.teamId || '');
   const year = Number(typeof req.query.year === 'string' ? req.query.year : new Date().getFullYear());
   const yearStart = `${year}-01-01`;
@@ -1190,6 +1206,7 @@ router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
     select: {
       id: true,
       name: true,
+      costCenter: true,
       managerId: true,
       coordinatorId: true,
       parentTeamId: true,
@@ -1267,6 +1284,7 @@ router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
 
   return res.json({
     ...team,
+    costCenter: actorHasAccessTotal && !team.parentTeamId ? team.costCenter : null,
     members: team.memberships.map((membership) => ({
       id: membership.user.id,
       username: membership.user.username,
@@ -1487,6 +1505,7 @@ router.get('/admin/teams', requireAuth, async (req, res) => {
   }
 
   const scope = await getPermissionScope(req.authUser!.id, 'view_teams');
+  const actorHasAccessTotal = req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id);
   if (!scope) {
     return res.status(403).json({ message: 'Sem permissões para gerir equipas.' });
   }
@@ -1502,6 +1521,7 @@ router.get('/admin/teams', requireAuth, async (req, res) => {
     select: {
       id: true,
       name: true,
+      costCenter: true,
       managerId: true,
       parentTeamId: true,
       manager: {
@@ -1519,6 +1539,7 @@ router.get('/admin/teams', requireAuth, async (req, res) => {
 
   return res.json(teams.map((team) => ({
     ...team,
+    costCenter: actorHasAccessTotal && !team.parentTeamId ? team.costCenter : null,
     leaderId: team.managerId ?? null,
     leader: team.manager ?? null,
     _count: {
@@ -1537,6 +1558,12 @@ router.post('/admin/teams', requireAuth, async (req, res) => {
   const payload = adminTeamSchema.safeParse(req.body);
   if (!payload.success) {
     return res.status(400).json({ message: payload.error.issues[0].message });
+  }
+
+  const parentTeamId = payload.data.parentTeamId ?? null;
+  const normalizedCostCenter = normalizeTeamCostCenter(payload.data.costCenter);
+  if (parentTeamId && normalizedCostCenter) {
+    return res.status(400).json({ message: 'Centro de custo só pode ser definido em equipas mãe.' });
   }
 
   const leaderId = payload.data.leaderId ?? null;
@@ -1581,11 +1608,13 @@ router.post('/admin/teams', requireAuth, async (req, res) => {
         managerId: leaderId,
         coordinatorId: null,
         name: payload.data.name.trim(),
-        parentTeamId: payload.data.parentTeamId ?? null,
+        parentTeamId,
+        costCenter: parentTeamId ? null : normalizedCostCenter,
       },
       select: {
         id: true,
         name: true,
+        costCenter: true,
         managerId: true,
         coordinatorId: true,
         parentTeamId: true,
@@ -1634,6 +1663,18 @@ router.patch('/admin/teams/:id', requireAuth, async (req, res) => {
     return res.status(404).json({ message: 'Equipa não encontrada.' });
   }
 
+  const nextParentTeamId = payload.data.parentTeamId !== undefined
+    ? payload.data.parentTeamId
+    : existing.parentTeamId;
+
+  const nextCostCenter = payload.data.costCenter !== undefined
+    ? normalizeTeamCostCenter(payload.data.costCenter)
+    : existing.costCenter;
+
+  if (nextParentTeamId && nextCostCenter) {
+    return res.status(400).json({ message: 'Centro de custo só pode ser definido em equipas mãe.' });
+  }
+
   const previousLeaderId = existing.managerId ?? null;
   const nextLeaderId = payload.data.leaderId !== undefined
     ? payload.data.leaderId
@@ -1649,10 +1690,17 @@ router.patch('/admin/teams/:id', requireAuth, async (req, res) => {
           : {}
       ),
       ...(payload.data.parentTeamId !== undefined ? { parentTeamId: payload.data.parentTeamId } : {}),
+      ...(payload.data.costCenter !== undefined
+        ? { costCenter: nextParentTeamId ? null : nextCostCenter }
+        : {}),
+      ...(payload.data.parentTeamId !== undefined && payload.data.parentTeamId !== null && payload.data.costCenter === undefined
+        ? { costCenter: null }
+        : {}),
     },
     select: {
       id: true,
       name: true,
+      costCenter: true,
       managerId: true,
       coordinatorId: true,
       parentTeamId: true,

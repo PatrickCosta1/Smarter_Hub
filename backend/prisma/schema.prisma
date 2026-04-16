@@ -63,6 +63,7 @@ enum ProfileOptionType {
 model Team {
   id            String      @id @default(ulid())
   name          String      @unique
+  costCenter    String?
   managerId     String?
   coordinatorId String?
   parentTeamId  String?

@@ -1771,13 +1771,6 @@ export default function CollaboratorsPage() {
 
   return (
     <section className="trainings-shell">
-      <header className="trainings-hero">
-        <div>
-          <p className="hero-kicker">Colaboradores</p>
-          <h2>Gestão transversal de colaboradores</h2>
-          <p>Consulta, filtra e ativa/desativa sem perder histórico de dados.</p>
-        </div>
-      </header>
 
       <section className="trainings-list-card">
         <div className="collaborators-filter-grid">

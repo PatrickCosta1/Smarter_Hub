@@ -356,13 +356,6 @@ export default function AdminPage() {
 
   return (
     <section className="trainings-shell">
-      <header className="trainings-hero">
-        <div>
-          <p className="hero-kicker">Administração</p>
-          <h2>Gestão de utilizadores</h2>
-          <p>Painel de controlo para consulta e edição segura de contas.</p>
-        </div>
-      </header>
 
       <section className="trainings-list-card">
         <div className="trainings-list-head">

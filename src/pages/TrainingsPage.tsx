@@ -128,7 +128,6 @@ export default function TrainingsPage() {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [isSearchingCollaborators, setIsSearchingCollaborators] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  const [isAssignedModalOpen, setIsAssignedModalOpen] = useState(false);
   const [isRecordsLoading, setIsRecordsLoading] = useState(false);
   const [recordsLoaded, setRecordsLoaded] = useState(false);
   const [completeConfirmRecordId, setCompleteConfirmRecordId] = useState<string | null>(null);
@@ -171,17 +170,6 @@ export default function TrainingsPage() {
 
     return () => controller.abort();
   }, [canManage]);
-
-  useEffect(() => {
-    if (!canManage || !isAssignedModalOpen || recordsLoaded || isRecordsLoading) {
-      return;
-    }
-
-    const controller = new AbortController();
-    void loadTrainings(controller.signal);
-
-    return () => controller.abort();
-  }, [canManage, isAssignedModalOpen, recordsLoaded, isRecordsLoading]);
 
   useEffect(() => {
     if (!canManage) {
@@ -345,10 +333,6 @@ export default function TrainingsPage() {
 
         <div className="trainings-hours-summary">
           <article>
-            <span>Horas totais</span>
-            <strong>{(isRecordsLoading && !recordsLoaded) ? <span className="trainings-summary-loading">A carregar</span> : `${formatHours(totalHours)} h`}</strong>
-          </article>
-          <article>
             <span>{canManage ? 'Por concluir' : 'Por concluir'}</span>
             <strong>{(isRecordsLoading && !recordsLoaded) ? <span className="trainings-summary-loading">A carregar</span> : criticalCount}</strong>
           </article>
@@ -359,223 +343,48 @@ export default function TrainingsPage() {
         </div>
       </header>
 
-      {canManage ? (
-        <>
-          <section className="trainings-list-card trainings-launchpad">
-            <article>
-              <h3>Atribuir nova formação</h3>
-              <p>Abre o formulário para atribuir formações.</p>
-              <Button type="button" variant="primary" onClick={() => setIsAssignModalOpen(true)}>Abrir formulário</Button>
-            </article>
-            <article>
-              <h3>Formações atribuídas</h3>
-              <p>Abre a tabela completa com pesquisa e filtros rápidos.</p>
-              <Button type="button" variant="secondary" onClick={() => setIsAssignedModalOpen(true)}>Abrir lista</Button>
-            </article>
-          </section>
-
-          {isAssignModalOpen && (
-            <div className="quick-overlay" onClick={() => setIsAssignModalOpen(false)}>
-              <section className="quick-modal trainings-modal" onClick={(event) => event.stopPropagation()} aria-modal="true" role="dialog" aria-label="Atribuir nova formação">
-                <div className="quick-modal__head">
-                  <h3>Atribuir nova formação</h3>
-                  <Button type="button" variant="ghost" onClick={() => setIsAssignModalOpen(false)}>Fechar</Button>
-                </div>
-
-                <form className="trainings-form" onSubmit={handleAssignTraining} noValidate>
-                  <div className="field-span-2 rh-collaborator-picker">
-                    <span>Colaborador *</span>
-                    <input
-                      type="search"
-                      value={collaboratorQuery}
-                      onChange={(event) => setCollaboratorQuery(event.target.value)}
-                      placeholder="Pesquisar por nome, username, email, cargo ou função..."
-                    />
-
-                    {selectedCollaborator ? (
-                      <div className="rh-selected-collaborator">
-                        <strong>{selectedCollaborator?.profile?.nomeCompleto ?? selectedCollaborator.username}</strong>
-                        <span>{selectedCollaborator.email}</span>
-                        <button type="button" onClick={() => updateAssignDraft('userId', '')}>Trocar colaborador</button>
-                      </div>
-                    ) : (
-                      <div className="rh-collaborator-results" role="listbox" aria-label="Resultados de colaboradores">
-                        {!isSearchingCollaborators && !collaboratorQuery.trim() && <p>Escreve para pesquisar colaboradores.</p>}
-                        {isSearchingCollaborators && <p>A pesquisar colaboradores...</p>}
-                        {!isSearchingCollaborators && collaboratorQuery.trim() && collaborators.length === 0 && <p>Sem resultados para a pesquisa.</p>}
-                        {!isSearchingCollaborators &&
-                          collaborators.map((collaborator) => {
-                            const displayName = collaborator?.profile?.nomeCompleto ?? collaborator.username;
-
-                            return (
-                              <button
-                                key={collaborator.id}
-                                type="button"
-                                className="rh-collaborator-result"
-                                onClick={() => updateAssignDraft('userId', collaborator.id)}
-                              >
-                                <strong>{displayName}</strong>
-                                <span>{collaborator.email}</span>
-                                <small>{collaborator.profile?.cargo || formatRoleLabel(collaborator.role)}</small>
-                              </button>
-                            );
-                          })}
-                      </div>
-                    )}
-                  </div>
-
-                  <label>
-                    <span>Nome da formação *</span>
-                    <input type="text" value={assignDraft.nome} onChange={(event) => updateAssignDraft('nome', event.target.value)} />
-                  </label>
-
-                  <label>
-                    <span>Horas *</span>
-                    <input type="text" inputMode="decimal" value={assignDraft.horas} onChange={(event) => updateAssignDraft('horas', event.target.value)} />
-                  </label>
-
-                  <label>
-                    <span>Link</span>
-                    <input type="url" value={assignDraft.link} onChange={(event) => updateAssignDraft('link', event.target.value)} placeholder="https://..." />
-                  </label>
-
-                  <label>
-                    <span>Data de início</span>
-                    <input type="date" value={assignDraft.dataInicio} onChange={(event) => updateAssignDraft('dataInicio', event.target.value)} />
-                  </label>
-
-                  <label>
-                    <span>Entidade</span>
-                    <input type="text" value={assignDraft.entidade} onChange={(event) => updateAssignDraft('entidade', event.target.value)} placeholder="Ex: Udemy" />
-                  </label>
-
-                  <div className="trainings-form-actions field-span-2">
-                    <Button type="submit" variant="primary">Atribuir formação</Button>
-                  </div>
-                </form>
-
-                {assignStatus && <p className="trainings-status">{assignStatus}</p>}
-
-                {recentAssigned.length > 0 && (
-                  <section className="trainings-recent-created" aria-label="Últimas formações criadas">
-                    <h4>Últimas formações criadas</h4>
-                    <ul>
-                      {recentAssigned.map((item) => (
-                        <li key={item.id}>
-                          <strong>{item.nome}</strong>
-                          <span>{item.collaborator}</span>
-                          <small>{new Intl.DateTimeFormat('pt-PT', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(item.createdAt))}</small>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                )}
-              </section>
-            </div>
+      <section className="trainings-list-card">
+        <div className="trainings-list-head">
+          <h3>{canManage ? 'Lista de formações' : 'Formações atribuídas a mim'}</h3>
+          <label>
+            <span>Pesquisar</span>
+            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome, entidade, colaborador..." />
+          </label>
+          {canManage && (
+            <Button type="button" variant="primary" onClick={() => setIsAssignModalOpen(true)}>Nova formação</Button>
           )}
+        </div>
 
-          {isAssignedModalOpen && (
-            <div className="quick-overlay" onClick={() => setIsAssignedModalOpen(false)}>
-              <section className="quick-modal trainings-modal trainings-modal--wide" onClick={(event) => event.stopPropagation()} aria-modal="true" role="dialog" aria-label="Formações atribuídas">
-                <div className="quick-modal__head">
-                  <h3>Formações atribuídas</h3>
-                  <Button type="button" variant="ghost" onClick={() => setIsAssignedModalOpen(false)}>Fechar</Button>
-                </div>
-
-                <div className="trainings-list-head">
-                  <label>
-                    <span>Pesquisar</span>
-                    <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome, entidade, colaborador..." />
-                  </label>
-                </div>
-
-                <div className="trainings-table-wrap">
-                  <table className="trainings-table" aria-label="Lista de formações">
-                    <thead>
-                      <tr>
-                        <th>Formação</th>
-                        <th>Colaborador</th>
-                        <th>Origem</th>
-                        <th>Link</th>
-                        <th>Horas</th>
-                        <th>Data de início</th>
-                        <th>Entidade</th>
-                        <th>Data conclusão</th>
-                        <th>Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(isRecordsLoading && !recordsLoaded) ? (
-                        <tr>
-                          <td colSpan={9}>A carregar formações...</td>
-                        </tr>
-                      ) : visibleRecords.length === 0 ? (
-                        <tr>
-                          <td colSpan={9}>Sem formações para apresentar.</td>
-                        </tr>
-                      ) : (
-                        visibleRecords.map((record) => (
-                          <tr key={record.id}>
-                            <td>{record.nome}</td>
-                            <td>{record.user?.username || '-'}</td>
-                            <td>{getTrainingOriginLabel(record)}</td>
-                            <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
-                            <td>{formatHours(record.horas)} h</td>
-                            <td>{getTrainingStartDate(record) || '-'}</td>
-                            <td>{record.entidade || '-'}</td>
-                            <td>{record.dataConclusao || '-'}</td>
-                            <td>
-                              <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
-                                {formatTrainingStatusLabel(record.status)}
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {status && <p className="trainings-status">{status}</p>}
-              </section>
-            </div>
-          )}
-        </>
-      ) : (
-        <section className="trainings-list-card">
-          <div className="trainings-list-head">
-            <h3>{canManage ? 'Formações atribuídas' : 'Formações atribuídas a mim'}</h3>
-            <label>
-              <span>Pesquisar</span>
-              <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome, entidade, colaborador..." />
-            </label>
-          </div>
-
-          <div className="trainings-table-wrap">
-            <table className="trainings-table" aria-label="Lista de formações">
-              <thead>
+        <div className="trainings-table-wrap">
+          <table className="trainings-table" aria-label="Lista de formações">
+            <thead>
+              <tr>
+                <th>Formação</th>
+                {canManage && <th>Colaborador</th>}
+                <th>Origem</th>
+                <th>Link</th>
+                <th>Horas</th>
+                <th>Data de início</th>
+                <th>Entidade</th>
+                <th>Data conclusão</th>
+                <th>Estado</th>
+                {!canManage && <th>Ações</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {(isRecordsLoading && !recordsLoaded) ? (
                 <tr>
-                  <th>Formação</th>
-                  <th>Origem</th>
-                  <th>Link</th>
-                  <th>Horas</th>
-                  <th>Data de início</th>
-                  <th>Entidade</th>
-                  <th>Data conclusão</th>
-                  <th>Estado</th>
-                  <th>Ações</th>
+                  <td colSpan={canManage ? 9 : 9}>A carregar formações...</td>
                 </tr>
-              </thead>
-              <tbody>
-                {visibleRecords.length === 0 && (
-                  <tr>
-                    <td colSpan={9}>Sem formações para apresentar.</td>
-                  </tr>
-                )}
-
-                {visibleRecords.map((record) => (
+              ) : visibleRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={canManage ? 9 : 9}>Sem formações para apresentar.</td>
+                </tr>
+              ) : (
+                visibleRecords.map((record) => (
                   <tr key={record.id}>
                     <td>{record.nome}</td>
+                    {canManage && <td>{record.user?.username || '-'}</td>}
                     <td>{getTrainingOriginLabel(record)}</td>
                     <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
                     <td>{formatHours(record.horas)} h</td>
@@ -587,85 +396,192 @@ export default function TrainingsPage() {
                         {formatTrainingStatusLabel(record.status)}
                       </Badge>
                     </td>
-                    <td>
-                      {record.status === 'ASSIGNED' ? (
-                        <div className="trainings-row-actions">
-                          <Button type="button" size="sm" variant="secondary" onClick={() => openCompleteConfirm(record.id)}>Concluir</Button>
-                        </div>
-                      ) : (
-                        '-'
-                      )}
-                    </td>
+                    {!canManage && (
+                      <td>
+                        {record.status === 'ASSIGNED' ? (
+                          <div className="trainings-row-actions">
+                            <Button type="button" size="sm" variant="secondary" onClick={() => openCompleteConfirm(record.id)}>Concluir</Button>
+                          </div>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
+                    )}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
-          <div className="trainings-mobile-list">
-            {visibleRecords.length === 0 && <article className="trainings-mobile-card">Sem formações para apresentar.</article>}
+        <div className="trainings-mobile-list">
+          {visibleRecords.length === 0 && !isRecordsLoading && <article className="trainings-mobile-card">Sem formações para apresentar.</article>}
 
-            {visibleRecords.map((record) => (
-              <article key={`mobile-${record.id}`} className="trainings-mobile-card">
-                <header>
-                  <h4>{record.nome}</h4>
-                  <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
-                    {formatTrainingStatusLabel(record.status)}
-                  </Badge>
-                </header>
+          {visibleRecords.map((record) => (
+            <article key={`mobile-${record.id}`} className="trainings-mobile-card">
+              <header>
+                <h4>{record.nome}</h4>
+                <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
+                  {formatTrainingStatusLabel(record.status)}
+                </Badge>
+              </header>
+              {canManage && (
                 <p>
-                  <span>Origem:</span> {getTrainingOriginLabel(record)}
+                  <span>Colaborador:</span> {record.user?.username || '-'}
                 </p>
-                <p>
-                  <span>Horas:</span> {formatHours(record.horas)} h
-                </p>
-                <p>
-                  <span>Data de início:</span> {getTrainingStartDate(record) || '-'}
-                </p>
-                <p>
-                  <span>Entidade:</span> {record.entidade || '-'}
-                </p>
-                <p>
-                  <span>Data:</span> {record.dataConclusao || '-'}
-                </p>
+              )}
+              <p>
+                <span>Origem:</span> {getTrainingOriginLabel(record)}
+              </p>
+              <p>
+                <span>Horas:</span> {formatHours(record.horas)} h
+              </p>
+              <p>
+                <span>Data de início:</span> {getTrainingStartDate(record) || '-'}
+              </p>
+              <p>
+                <span>Entidade:</span> {record.entidade || '-'}
+              </p>
+              <p>
+                <span>Data:</span> {record.dataConclusao || '-'}
+              </p>
 
-                <div className="trainings-mobile-links">
-                  {record.link && (
-                    <a href={record.link} target="_blank" rel="noreferrer">Abrir link</a>
-                  )}
+              <div className="trainings-mobile-links">
+                {record.link && (
+                  <a href={record.link} target="_blank" rel="noreferrer">Abrir link</a>
+                )}
+              </div>
+
+              {!canManage && record.status === 'ASSIGNED' && (
+                <div className="trainings-row-actions">
+                  <Button type="button" size="sm" variant="secondary" onClick={() => openCompleteConfirm(record.id)}>Concluir</Button>
                 </div>
+              )}
+            </article>
+          ))}
+        </div>
 
-                {record.status === 'ASSIGNED' && (
-                  <div className="trainings-row-actions">
-                    <Button type="button" size="sm" variant="secondary" onClick={() => openCompleteConfirm(record.id)}>Concluir</Button>
+        {status && <p className="trainings-status">{status}</p>}
+      </section>
+
+      {isAssignModalOpen && (
+        <div className="quick-overlay" onClick={() => setIsAssignModalOpen(false)}>
+          <section className="quick-modal trainings-modal" onClick={(event) => event.stopPropagation()} aria-modal="true" role="dialog" aria-label="Atribuir nova formação">
+            <div className="quick-modal__head">
+              <h3>Nova formação</h3>
+              <Button type="button" variant="ghost" onClick={() => setIsAssignModalOpen(false)}>Fechar</Button>
+            </div>
+
+            <form className="trainings-form" onSubmit={handleAssignTraining} noValidate>
+              <div className="field-span-2 rh-collaborator-picker">
+                <span>Colaborador *</span>
+                <input
+                  type="search"
+                  value={collaboratorQuery}
+                  onChange={(event) => setCollaboratorQuery(event.target.value)}
+                  placeholder="Pesquisar por nome, username, email, cargo ou função..."
+                />
+
+                {selectedCollaborator ? (
+                  <div className="rh-selected-collaborator">
+                    <strong>{selectedCollaborator?.profile?.nomeCompleto ?? selectedCollaborator.username}</strong>
+                    <span>{selectedCollaborator.email}</span>
+                    <button type="button" onClick={() => updateAssignDraft('userId', '')}>Trocar colaborador</button>
+                  </div>
+                ) : (
+                  <div className="rh-collaborator-results" role="listbox" aria-label="Resultados de colaboradores">
+                    {!isSearchingCollaborators && !collaboratorQuery.trim() && <p>Escreve para pesquisar colaboradores.</p>}
+                    {isSearchingCollaborators && <p>A pesquisar colaboradores...</p>}
+                    {!isSearchingCollaborators && collaboratorQuery.trim() && collaborators.length === 0 && <p>Sem resultados para a pesquisa.</p>}
+                    {!isSearchingCollaborators &&
+                      collaborators.map((collaborator) => {
+                        const displayName = collaborator?.profile?.nomeCompleto ?? collaborator.username;
+
+                        return (
+                          <button
+                            key={collaborator.id}
+                            type="button"
+                            className="rh-collaborator-result"
+                            onClick={() => updateAssignDraft('userId', collaborator.id)}
+                          >
+                            <strong>{displayName}</strong>
+                            <span>{collaborator.email}</span>
+                            <small>{collaborator.profile?.cargo || formatRoleLabel(collaborator.role)}</small>
+                          </button>
+                        );
+                      })}
                   </div>
                 )}
-              </article>
-            ))}
-          </div>
-
-          <Modal
-            open={Boolean(completeConfirmRecordId)}
-            title="Confirmar conclusão"
-            onClose={() => setCompleteConfirmRecordId(null)}
-            width="min(640px, 92vw)"
-            showCloseButton={false}
-            footer={
-              <div className="modal-footer-split">
-                <Button type="button" variant="ghost" onClick={() => setCompleteConfirmRecordId(null)}>Cancelar</Button>
-                <Button type="button" variant="primary" onClick={() => void confirmCompleteRecord()}>Confirmar</Button>
               </div>
-            }
-          >
-            <div className="permissions-access-modal">
-              <p>Esta ação vai marcar a formação como concluída.</p>
-              <p className="permissions-access-warning">A alteração só é aplicada depois de confirmares.</p>
-            </div>
-          </Modal>
 
-          {status && <p className="trainings-status">{status}</p>}
-        </section>
+              <label>
+                <span>Nome da formação *</span>
+                <input type="text" value={assignDraft.nome} onChange={(event) => updateAssignDraft('nome', event.target.value)} />
+              </label>
+
+              <label>
+                <span>Horas *</span>
+                <input type="text" inputMode="decimal" value={assignDraft.horas} onChange={(event) => updateAssignDraft('horas', event.target.value)} />
+              </label>
+
+              <label>
+                <span>Link</span>
+                <input type="url" value={assignDraft.link} onChange={(event) => updateAssignDraft('link', event.target.value)} placeholder="https://..." />
+              </label>
+
+              <label>
+                <span>Data de início</span>
+                <input type="date" value={assignDraft.dataInicio} onChange={(event) => updateAssignDraft('dataInicio', event.target.value)} />
+              </label>
+
+              <label>
+                <span>Entidade</span>
+                <input type="text" value={assignDraft.entidade} onChange={(event) => updateAssignDraft('entidade', event.target.value)} placeholder="Ex: Udemy" />
+              </label>
+
+              <div className="trainings-form-actions field-span-2">
+                <Button type="submit" variant="primary">Criar formação</Button>
+              </div>
+            </form>
+
+            {assignStatus && <p className="trainings-status">{assignStatus}</p>}
+
+            {recentAssigned.length > 0 && (
+              <section className="trainings-recent-created" aria-label="Últimas formações criadas">
+                <h4>Últimas formações criadas</h4>
+                <ul>
+                  {recentAssigned.map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.nome}</strong>
+                      <span>{item.collaborator}</span>
+                      <small>{new Intl.DateTimeFormat('pt-PT', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' }).format(new Date(item.createdAt))}</small>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </section>
+        </div>
       )}
+
+      <Modal
+        open={Boolean(completeConfirmRecordId)}
+        title="Confirmar conclusão"
+        onClose={() => setCompleteConfirmRecordId(null)}
+        width="min(640px, 92vw)"
+        showCloseButton={false}
+        footer={
+          <div className="modal-footer-split">
+            <Button type="button" variant="ghost" onClick={() => setCompleteConfirmRecordId(null)}>Cancelar</Button>
+            <Button type="button" variant="primary" onClick={() => void confirmCompleteRecord()}>Confirmar</Button>
+          </div>
+        }
+      >
+        <div className="permissions-access-modal">
+          <p>Esta ação vai marcar a formação como concluída.</p>
+          <p className="permissions-access-warning">A alteração só é aplicada depois de confirmares.</p>
+        </div>
+      </Modal>
     </section>
   );
 }
