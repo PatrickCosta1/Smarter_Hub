@@ -104,6 +104,11 @@ type DraftErrors = Partial<Record<keyof VacationDraft, string>>;
 
 type Subtab = 'overview' | 'calendar' | 'requests';
 
+type SubmissionNotice = {
+  tone: 'success' | 'error' | 'info';
+  message: string;
+} | null;
+
 const EMPTY_DRAFT: VacationDraft = {
   requestKind: 'VACATION',
   absenceReason: 'MEDICAL',
@@ -285,6 +290,7 @@ export default function VacationsPage() {
   const [overviewError, setOverviewError] = useState('');
   const [calendarError, setCalendarError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionNotice, setSubmissionNotice] = useState<SubmissionNotice>(null);
   const [toast, setToast] = useState<{ tone: 'success' | 'error' | 'info'; message: string; visible: boolean }>({
     tone: 'info',
     message: '',
@@ -604,6 +610,7 @@ export default function VacationsPage() {
       delete next[field];
       return next;
     });
+    setSubmissionNotice(null);
   }
 
   function handleRequestKindChange(value: RequestKind) {
@@ -613,6 +620,7 @@ export default function VacationsPage() {
       absenceReason: value === 'VACATION' ? current.absenceReason : current.absenceReason,
       partialDay: value === 'VACATION' ? current.partialDay : 'FULL',
     }));
+    setSubmissionNotice(null);
   }
 
   async function handleAttachmentChange(event: ChangeEvent<HTMLInputElement>) {
@@ -650,11 +658,14 @@ export default function VacationsPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSubmissionNotice(null);
 
     const errors = buildValidationErrors(draft);
     if (Object.keys(errors).length > 0) {
       setDraftErrors(errors);
-      showToast('error', 'Existem erros no formulário.');
+      const message = 'Existem erros no formulário. Corrige os campos assinalados antes de enviar.';
+      setSubmissionNotice({ tone: 'error', message });
+      showToast('error', message);
       return;
     }
 
@@ -688,12 +699,24 @@ export default function VacationsPage() {
       });
 
       clearApiCache('/vacations');
-      await Promise.all([loadMine(), loadOverview(), loadCalendar()]);
+      void loadMine();
+      if (activeTab === 'overview') {
+        void loadOverview();
+      }
+      if (activeTab === 'calendar') {
+        void loadCalendar();
+      }
       void refreshNotifications();
       resetForm();
-      showToast('success', editingId ? 'Pedido atualizado por versionamento com sucesso.' : 'Pedido submetido com sucesso e enviado para aprovação.');
+      const message = editingId
+        ? 'Pedido atualizado. A nova versão já foi enviada para aprovação.'
+        : 'Pedido submetido. O histórico e os painéis vão atualizar em segundo plano.';
+      setSubmissionNotice({ tone: 'success', message });
+      showToast('success', message);
     } catch (error) {
-      showToast('error', error instanceof Error ? error.message : 'Falha ao submeter pedido.');
+      const message = error instanceof Error ? error.message : 'Falha ao submeter pedido.';
+      setSubmissionNotice({ tone: 'error', message });
+      showToast('error', message);
     } finally {
       setIsSubmitting(false);
     }
@@ -732,7 +755,13 @@ export default function VacationsPage() {
       });
 
       clearApiCache('/vacations');
-      await Promise.all([loadMine(), loadOverview(), loadCalendar()]);
+      void loadMine();
+      if (activeTab === 'overview') {
+        void loadOverview();
+      }
+      if (activeTab === 'calendar') {
+        void loadCalendar();
+      }
       void refreshNotifications();
       showToast('success', 'Pedido cancelado.');
     } catch (error) {
@@ -1056,6 +1085,13 @@ export default function VacationsPage() {
               <div className="trainings-form-actions field-span-2">
                 <Button type="submit" variant="primary" isLoading={isSubmitting}>{editingId ? 'Guardar nova versão' : 'Enviar pedido'}</Button>
               </div>
+
+              {submissionNotice && (
+                <div className={`vacations-panel-state field-span-2 vacations-panel-state--${submissionNotice.tone}`}>
+                  <strong>{submissionNotice.tone === 'error' ? 'Atenção' : submissionNotice.tone === 'success' ? 'Pedido enviado' : 'Informação'}</strong>
+                  <p>{submissionNotice.message}</p>
+                </div>
+              )}
             </form>
           </section>
 

@@ -92,7 +92,7 @@ export async function apiRequest<T>(path: string, options?: RequestInit): Promis
       throw new Error(`Payload inválido. ${issueText}`);
     }
 
-    throw new Error((payload.message as string) || 'Falha na comunicacao com a API.');
+    throw new Error((payload.message as string) || (payload.error as string) || 'Falha na comunicacao com a API.');
   }
 
   if (response.status === 204) {

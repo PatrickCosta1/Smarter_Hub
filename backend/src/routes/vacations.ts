@@ -115,6 +115,21 @@ function isBusinessDayIso(iso: string, holidayDates: Set<string>) {
   return !isWeekendIso(iso) && !holidayDates.has(iso);
 }
 
+function isVacationBusinessRuleError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return [
+    'Política PT:',
+    'Política BR:',
+    'Pedido de férias',
+    'Pedidos de férias',
+    'Não existem aprovadores configurados',
+    'Capacidade da equipa excedida',
+  ].some((prefix) => error.message.startsWith(prefix));
+}
+
 async function enforceVacationBusinessDays(params: {
   requestType: 'VACATION' | 'ABSENCE_MEDICAL' | 'ABSENCE_TRAINING';
   dataInicio: string;
@@ -181,7 +196,7 @@ async function validateVacationCountryPolicy(params: {
     const requestedDays = vacationDaysForMetrics(requestedPeriod, holidayDates);
 
     if (!hasMandatoryConsecutiveBlock && requestedDays < 10) {
-      throw new Error('Política PT: deve existir pelo menos um período de férias com 10 dias úteis consecutivos no ano.');
+      throw new Error(`Política PT: este pedido tem apenas ${requestedDays} dias úteis. No regime PT tem de existir pelo menos um período de férias com 10 dias úteis consecutivos no ano.`);
     }
 
     return;
@@ -972,7 +987,8 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
     res.status(201).json(vacation);
   } catch (error) {
     console.error('[POST /vacations]', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Falha ao registar pedido.' });
+    const status = isVacationBusinessRuleError(error) ? 400 : 500;
+    res.status(status).json({ error: error instanceof Error ? error.message : 'Falha ao registar pedido.' });
   }
 });
 
@@ -1371,7 +1387,8 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
     res.json(created);
   } catch (error) {
     console.error('[PUT /vacations/:id]', error);
-    res.status(500).json({ error: error instanceof Error ? error.message : 'Falha ao atualizar pedido.' });
+    const status = isVacationBusinessRuleError(error) ? 400 : 500;
+    res.status(status).json({ error: error instanceof Error ? error.message : 'Falha ao atualizar pedido.' });
   }
 });
 
