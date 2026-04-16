@@ -307,6 +307,10 @@ button {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.profile-fields--contract {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .profile-fields label {
   display: grid;
   gap: 7px;
@@ -757,6 +761,7 @@ button {
 .legend-swatch--holiday { background: linear-gradient(145deg, #fff0d8, #ffe0a6); }
 .legend-swatch--weekend { background: #f4f7fc; }
 .legend-swatch--absence { background: linear-gradient(145deg, #fff2f2, #ffd9d9); }
+.legend-swatch--approved-absence { background: linear-gradient(145deg, #ffd7d7, #ffb3b3); }
 .legend-swatch--pending { background: linear-gradient(145deg, #fff9e5, #ffeab1); }
 .legend-swatch--approved { background: linear-gradient(145deg, #eafcf0, #c9f1d7); }
 .legend-swatch--extra { background: linear-gradient(145deg, #eef1ff, #d8dcff); }
@@ -1394,10 +1399,22 @@ button {
   color: #a12a2a;
 }
 
+.vacations-day--approved-absence {
+  background: linear-gradient(145deg, #ffd7d7, #ffb3b3);
+  border-color: #e87f7f;
+  color: #8c1f1f;
+}
+
 .vacations-day--pending {
   background: linear-gradient(145deg, #fff9e5, #ffeab1);
   border-color: #f1c24e;
   color: #876100;
+}
+
+.vacations-day--pending-absence {
+  background: linear-gradient(145deg, #fff0f0, #ffd3d3);
+  border-color: #e6a0a0;
+  color: #9a2b2b;
 }
 
 .vacations-day--approved {

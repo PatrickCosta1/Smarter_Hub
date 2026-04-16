@@ -39,18 +39,31 @@ describe('vacations rules', () => {
     expect(__vacationTestables.vacationDailyWeight({ dataInicio: '2026-04-10', partialDay: 'FULL' }, '2026-04-10')).toBe(1);
   });
 
-  it('enforceVacationBusinessDays rejects weekend vacation request', async () => {
-    await expect(
-      __vacationTestables.enforceVacationBusinessDays({
-        requestType: 'VACATION',
-        dataInicio: '2026-04-11',
-        dataFim: '2026-04-11',
-        country: 'PT',
-      }),
-    ).rejects.toThrow('Pedidos de férias só podem incluir dias úteis');
+  it('vacationDailyWeight ignores weekend and holiday days for vacation capacity', () => {
+    const holidayDates = new Set(['2026-04-21']);
+
+    expect(__vacationTestables.vacationDailyWeight({ dataInicio: '2026-04-20', partialDay: 'FULL' }, '2026-04-18', holidayDates)).toBe(0);
+    expect(__vacationTestables.vacationDailyWeight({ dataInicio: '2026-04-20', partialDay: 'FULL' }, '2026-04-21', holidayDates)).toBe(0);
+    expect(__vacationTestables.vacationDailyWeight({ dataInicio: '2026-04-20', partialDay: 'FULL' }, '2026-04-22', holidayDates)).toBe(1);
   });
 
-  it('enforceVacationBusinessDays accepts weekday request without holidays', async () => {
+  it('vacationDaysForMetrics counts only business days for vacations', () => {
+    const holidayDates = new Set(['2026-04-21']);
+
+    expect(
+      __vacationTestables.vacationDaysForMetrics(
+        {
+          requestType: 'VACATION',
+          dataInicio: '2026-04-20',
+          dataFim: '2026-04-22',
+          partialDay: 'FULL',
+        },
+        holidayDates,
+      ),
+    ).toBe(2);
+  });
+
+  it('enforceVacationBusinessDays accepts weekend vacation request', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -62,8 +75,8 @@ describe('vacations rules', () => {
     await expect(
       __vacationTestables.enforceVacationBusinessDays({
         requestType: 'VACATION',
-        dataInicio: '2026-04-14',
-        dataFim: '2026-04-15',
+        dataInicio: '2026-04-11',
+        dataFim: '2026-04-11',
         country: 'PT',
       }),
     ).resolves.toBeUndefined();

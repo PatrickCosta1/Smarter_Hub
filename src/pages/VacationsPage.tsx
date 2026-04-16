@@ -81,6 +81,7 @@ type CalendarPayload = {
   holidays: string[];
   weekendDays: string[];
   approvedDays: string[];
+  approvedAbsenceDays: string[];
   pendingDays: string[];
   absencesDays: string[];
   extraDays: string[];
@@ -197,6 +198,18 @@ function dayISO(year: number, monthIndex: number, day: number) {
   return `${year}-${month}-${dayText}`;
 }
 
+function enumerateDates(startText: string, endText: string) {
+  const start = toLocalDate(startText);
+  const end = toLocalDate(endText);
+  const days: string[] = [];
+
+  for (let current = new Date(start); current <= end; current.setDate(current.getDate() + 1)) {
+    days.push(dayISO(current.getFullYear(), current.getMonth(), current.getDate()));
+  }
+
+  return days;
+}
+
 function getVacationTypeLabel(requestType: VacationRequestType) {
   if (requestType === 'VACATION') {
     return 'Férias';
@@ -219,6 +232,10 @@ function getVacationTypeTag(requestType: VacationRequestType) {
   }
 
   return 'training';
+}
+
+function getVacationRequestKind(requestType: VacationRequestType) {
+  return requestType === 'VACATION' ? 'Férias' : 'Ausência';
 }
 
 function getPartialDayLabel(partialDay?: VacationPartialDay) {
@@ -289,6 +306,56 @@ export default function VacationsPage() {
     () => [...records].sort((a, b) => new Date(b.dataInicio).getTime() - new Date(a.dataInicio).getTime()),
     [records],
   );
+
+  const calendarRequestDays = useMemo(() => {
+    if (!calendarData) {
+      return {
+        approvedVacationDays: new Set<string>(),
+        approvedAbsenceDays: new Set<string>(),
+        pendingVacationDays: new Set<string>(),
+        pendingAbsenceDays: new Set<string>(),
+        absenceDays: new Set<string>(),
+      };
+    }
+
+    const approvedVacationDays = new Set<string>();
+    const approvedAbsenceDays = new Set<string>();
+    const pendingVacationDays = new Set<string>();
+    const pendingAbsenceDays = new Set<string>();
+    const absenceDays = new Set<string>();
+
+    for (const request of calendarData.requests) {
+      const days = enumerateDates(request.dataInicio, request.dataFim);
+
+      if (request.status !== 'CANCELLED' && request.requestType !== 'VACATION') {
+        days.forEach((day: string) => absenceDays.add(day));
+      }
+
+      if (request.status === 'APPROVED' && request.requestType === 'VACATION') {
+        days.forEach((day: string) => approvedVacationDays.add(day));
+      }
+
+      if (request.status === 'APPROVED' && request.requestType !== 'VACATION') {
+        days.forEach((day: string) => approvedAbsenceDays.add(day));
+      }
+
+      if (request.status === 'PENDING' && request.requestType === 'VACATION') {
+        days.forEach((day: string) => pendingVacationDays.add(day));
+      }
+
+      if (request.status === 'PENDING' && request.requestType !== 'VACATION') {
+        days.forEach((day: string) => pendingAbsenceDays.add(day));
+      }
+    }
+
+    return {
+      approvedVacationDays,
+      approvedAbsenceDays,
+      pendingVacationDays,
+      pendingAbsenceDays,
+      absenceDays,
+    };
+  }, [calendarData]);
 
   const overviewStats = useMemo(() => {
     const approvedVacationDays = sortedRecords
@@ -679,8 +746,10 @@ export default function VacationsPage() {
     }
 
     if (calendarData.extraDays.includes(iso)) return 'extra';
-    if (calendarData.approvedDays.includes(iso)) return 'approved';
-    if (calendarData.pendingDays.includes(iso)) return 'pending';
+    if (calendarRequestDays.approvedAbsenceDays.has(iso)) return 'approved-absence';
+    if (calendarRequestDays.approvedVacationDays.has(iso)) return 'approved';
+    if (calendarRequestDays.pendingAbsenceDays.has(iso)) return 'pending-absence';
+    if (calendarRequestDays.pendingVacationDays.has(iso)) return 'pending';
     if (calendarData.absencesDays.includes(iso)) return 'absence';
     if (calendarData.holidays.includes(iso)) return 'holiday';
     if (calendarData.weekendDays.includes(iso)) return 'weekend';
@@ -733,8 +802,10 @@ export default function VacationsPage() {
     if (calendarData.holidays.includes(iso)) labels.push('Feriado');
     if (calendarData.extraDays.includes(iso)) labels.push('Dia extra automático');
     if (observedBirthdayIso && iso === observedBirthdayIso) labels.push('Aniversário');
-    if (calendarData.approvedDays.includes(iso)) labels.push('Férias aprovadas');
-    if (calendarData.pendingDays.includes(iso)) labels.push('Pedido pendente');
+    if (calendarRequestDays.approvedVacationDays.has(iso)) labels.push('Férias aprovadas');
+    if (calendarRequestDays.approvedAbsenceDays.has(iso)) labels.push('Ausência aprovada');
+    if (calendarRequestDays.pendingVacationDays.has(iso)) labels.push('Pedido de férias pendente');
+    if (calendarRequestDays.pendingAbsenceDays.has(iso)) labels.push('Pedido de ausência pendente');
     if (calendarData.absencesDays.includes(iso)) labels.push('Ausência');
     if (calendarData.weekendDays.includes(iso)) labels.push('Fim de semana');
 
@@ -846,8 +917,9 @@ export default function VacationsPage() {
           <div className="vacations-legend vacations-legend--sticky" aria-label="Legenda do calendário">
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--holiday" />Feriado</span>
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--weekend" />Fim de semana</span>
-            <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--absence" />Ausência</span>
-            <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--pending" />Pedido pendente</span>
+            <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--absence" />Ausência pendente</span>
+            <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--approved-absence" />Ausência aprovada</span>
+            <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--pending" />Férias Pendentes</span>
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--approved" />Férias aprovadas</span>
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--extra" />Dia extra automático</span>
           </div>

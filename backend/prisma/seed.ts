@@ -26,13 +26,16 @@ async function createUser(params: {
     habilitacoesLiterarias: string;
     curso: string;
     faculdade: string;
+    nacionalidade: string;
     emailPessoal: string;
     telemovel: string;
+    githubUser: string;
     moradaFiscal: string;
     endereco: string;
     codigoPostal: string;
     matriculaCarro: string;
     cartaoCidadao: string;
+    validadeCartaoCidadao: string;
     nif: string;
     niss: string;
     iban: string;
@@ -45,9 +48,9 @@ async function createUser(params: {
     contactoEmergenciaNome: string;
     contactoEmergenciaParentesco: string;
     contactoEmergenciaNumero: string;
+    categoriaProfissional: string;
     dataInicioContrato: string;
     dataFimContrato: string;
-    remuneracao: string;
     tipoContrato: string;
     regimeHorario: string;
   }>;
@@ -78,14 +81,17 @@ async function createUser(params: {
           habilitacoesLiterarias: params.profileData?.habilitacoesLiterarias ?? '',
           curso: params.profileData?.curso ?? '',
           faculdade: params.profileData?.faculdade ?? '',
+          nacionalidade: params.profileData?.nacionalidade ?? '',
           emailPessoal: params.profileData?.emailPessoal ?? params.email,
           telemovel: params.profileData?.telemovel ?? '',
+          githubUser: params.profileData?.githubUser ?? '',
           moradaFiscal: params.profileData?.moradaFiscal ?? '',
           endereco: params.profileData?.endereco ?? '',
           localidade: params.localidade,
           codigoPostal: params.profileData?.codigoPostal ?? '',
           matriculaCarro: params.profileData?.matriculaCarro ?? '',
           cartaoCidadao: params.profileData?.cartaoCidadao ?? '',
+          validadeCartaoCidadao: params.profileData?.validadeCartaoCidadao ?? '',
           nif: params.profileData?.nif ?? '',
           niss: params.profileData?.niss ?? '',
           iban: params.profileData?.iban ?? '',
@@ -103,10 +109,10 @@ async function createUser(params: {
           contactoEmergenciaParentesco: params.profileData?.contactoEmergenciaParentesco ?? '',
           contactoEmergenciaNumero: params.profileData?.contactoEmergenciaNumero ?? '',
           cargo: params.cargo,
+          categoriaProfissional: params.profileData?.categoriaProfissional ?? '',
           funcao: params.funcao,
           dataInicioContrato: params.profileData?.dataInicioContrato ?? '2024-01-01',
           dataFimContrato: params.profileData?.dataFimContrato ?? '',
-          remuneracao: params.profileData?.remuneracao ?? '',
           tipoContrato: params.profileData?.tipoContrato ?? '',
           regimeHorario: params.profileData?.regimeHorario ?? '',
           workCountry: params.workCountry,
@@ -208,7 +214,6 @@ async function main() {
       anoPrimeiroDesconto: '2024',
       numeroCartaoContinente: 'XPRTO',
       tipoContrato: 'Outro',
-      remuneracao: '123123123',
       dataInicioContrato: '2026-04-13',
     },
   });

@@ -63,14 +63,17 @@ const profileFieldLabels: Partial<Record<keyof ProfileData, string>> = {
   habilitacoesLiterarias: 'Habilitações literárias',
   curso: 'Curso',
   faculdade: 'Faculdade',
+  nacionalidade: 'Nacionalidade',
   emailPessoal: 'Email pessoal',
   telemovel: 'Telemóvel',
+  githubUser: 'Utilizador GitHub',
   moradaFiscal: 'Morada normal',
   endereco: 'Morada normal',
   localidade: 'Localidade',
   codigoPostal: 'Código postal',
   matriculaCarro: 'Matrícula do carro',
   cartaoCidadao: 'Cartão de cidadão',
+  validadeCartaoCidadao: 'Validade do cartão de cidadão',
   nif: 'NIF',
   niss: 'NISS',
   iban: 'IBAN',
@@ -88,10 +91,10 @@ const profileFieldLabels: Partial<Record<keyof ProfileData, string>> = {
   contactoEmergenciaParentesco: 'Contacto de emergência - parentesco',
   contactoEmergenciaNumero: 'Contacto de emergência - número',
   cargo: 'Cargo',
+  categoriaProfissional: 'Categoria profissional',
   funcao: 'Função',
   dataInicioContrato: 'Data de início do contrato',
   dataFimContrato: 'Data de fim do contrato',
-  remuneracao: 'Remuneração',
   tipoContrato: 'Tipo de contrato',
   regimeHorario: 'Regime horário',
   workCountry: 'País de trabalho',
@@ -229,6 +232,7 @@ function SearchableDropdown({ label, value, placeholder, options, columns = 1, d
   const [opensUpward, setOpensUpward] = useState(false);
   const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const inputId = `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-dropdown`;
 
@@ -285,7 +289,9 @@ function SearchableDropdown({ label, value, placeholder, options, columns = 1, d
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
-      if (containerRef.current && target && !containerRef.current.contains(target)) {
+      const isInsideTrigger = Boolean(containerRef.current && target && containerRef.current.contains(target));
+      const isInsideMenu = Boolean(menuRef.current && target && menuRef.current.contains(target));
+      if (!isInsideTrigger && !isInsideMenu) {
         setIsOpen(false);
       }
     };
@@ -345,7 +351,7 @@ function SearchableDropdown({ label, value, placeholder, options, columns = 1, d
       </button>
 
       {isOpen && !disabled && createPortal(
-        <div className={`profile-combobox__menu${opensUpward ? ' is-upward' : ''}`} style={menuStyle} role="listbox" id={inputId}>
+        <div ref={menuRef} className={`profile-combobox__menu${opensUpward ? ' is-upward' : ''}`} style={menuStyle} role="listbox" id={inputId}>
           <div className="profile-combobox__search-wrap">
             <input
               className="profile-combobox__search"
@@ -403,9 +409,9 @@ function validateProfile(profile: ProfileData, canEditContract: boolean = true):
 
   const contractFields: Array<keyof ProfileData> = [
     'cargo',
+    'categoriaProfissional',
     'funcao',
     'dataInicioContrato',
-    'remuneracao',
     'tipoContrato',
     'regimeHorario',
   ];
@@ -579,6 +585,7 @@ export default function ProfilePage() {
     })),
     [completionIssues],
   );
+  const completionIssueCount = completionIssueEntries.length;
 
   const collaboratorName = useMemo(() => `${draftProfile.primeiroNome} ${draftProfile.apelido}`.trim(), [draftProfile.apelido, draftProfile.primeiroNome]);
   const hasUnsavedChanges = useMemo(() => JSON.stringify(draftProfile) !== JSON.stringify(profile), [draftProfile, profile]);
@@ -1009,8 +1016,8 @@ export default function ProfilePage() {
               className="completion-card__button"
               onClick={() => setIsCompletionHelpOpen(true)}
             >
-              <span className="completion-card__button-label">O que falta?</span>
-              <span className="completion-card__button-count">{completionIssueEntries.length}</span>
+              <span className="completion-card__button-label">Checklist</span>
+              <span className="completion-card__button-count">{completionIssueCount}</span>
             </Button>
           </div>
         </div>
@@ -1121,6 +1128,10 @@ export default function ProfilePage() {
               <span>Faculdade</span>
               <input type="text" value={draftProfile.faculdade} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('faculdade', event.target.value)} />
             </label>
+            <label>
+              <span>Nacionalidade</span>
+              <input type="text" value={draftProfile.nacionalidade} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('nacionalidade', event.target.value)} />
+            </label>
           </div>
         </article>
         )}
@@ -1145,6 +1156,10 @@ export default function ProfilePage() {
               <span>Telemóvel</span>
               <input type="text" value={draftProfile.telemovel} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('telemovel', event.target.value)} />
               {profileErrors.telemovel && <small>{profileErrors.telemovel}</small>}
+            </label>
+            <label>
+              <span>GitHub (se aplicável)</span>
+              <input type="text" value={draftProfile.githubUser} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('githubUser', event.target.value)} placeholder="username" />
             </label>
             <label>
               <span>Matrícula do carro</span>
@@ -1238,6 +1253,10 @@ export default function ProfilePage() {
               <span>Cartão Cidadão</span>
               <input type="text" value={draftProfile.cartaoCidadao} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('cartaoCidadao', event.target.value)} />
               {profileErrors.cartaoCidadao && <small>{profileErrors.cartaoCidadao}</small>}
+            </label>
+            <label>
+              <span>Validade do cartão de cidadão</span>
+              <input type="date" value={draftProfile.validadeCartaoCidadao} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('validadeCartaoCidadao', event.target.value)} />
             </label>
             <label>
               <span>NIF</span>
@@ -1393,7 +1412,7 @@ export default function ProfilePage() {
               )}
             </div>
           </div>
-          <div className="profile-fields">
+          <div className="profile-fields profile-fields--contract">
             <label>
               <span>Cargo</span>
               <SearchableDropdown
@@ -1405,6 +1424,16 @@ export default function ProfilePage() {
                 onChange={(value) => handleProfileChange('cargo', value)}
               />
               {profileErrors.cargo && <small>{profileErrors.cargo}</small>}
+            </label>
+            <label>
+              <span>Categoria profissional</span>
+              <input
+                type="text"
+                value={draftProfile.categoriaProfissional}
+                disabled={!canEditContract || !editingSections.contract}
+                onChange={(event) => handleProfileChange('categoriaProfissional', event.target.value)}
+              />
+              {profileErrors.categoriaProfissional && <small>{profileErrors.categoriaProfissional}</small>}
             </label>
             <label className="field-span-2">
               <span>Função</span>
@@ -1427,11 +1456,6 @@ export default function ProfilePage() {
             <label>
               <span>Data fim do contrato</span>
               <input type="date" value={draftProfile.dataFimContrato} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('dataFimContrato', event.target.value)} />
-            </label>
-            <label>
-              <span>Remuneração</span>
-              <input type="number" min="0" value={draftProfile.remuneracao} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('remuneracao', event.target.value)} />
-              {profileErrors.remuneracao && <small>{profileErrors.remuneracao}</small>}
             </label>
             <label>
               <span>Tipo de contrato</span>
@@ -1553,9 +1577,9 @@ export default function ProfilePage() {
 
       <Modal
         open={isCompletionHelpOpen}
-        title="O que falta completar"
+        title="Checklist da ficha"
         onClose={() => setIsCompletionHelpOpen(false)}
-        width="80%"
+        width="560px"
         footer={(
           <Button type="button" variant="primary" onClick={() => setIsCompletionHelpOpen(false)}>
             Fechar
@@ -1565,36 +1589,34 @@ export default function ProfilePage() {
         <div className="profile-completion-help profile-completion-help--modal">
           <header className="profile-completion-help__header">
             <div>
-              <p className="profile-completion-help__eyebrow">Resumo rápido</p>
-              <h4>{completionIssueEntries.length === 0 ? 'A ficha está completa' : 'Campos por concluir'}</h4>
+              <p className="profile-completion-help__eyebrow">Estado atual</p>
+              <h4>{completionIssueCount === 0 ? 'Ficha completa' : `${completionIssueCount} campo${completionIssueCount === 1 ? '' : 's'} pendente${completionIssueCount === 1 ? '' : 's'}`}</h4>
             </div>
             <div className="profile-completion-help__score">
               <strong>{profileCompletion}%</strong>
-              <span>concluída</span>
+              <span>feito</span>
             </div>
           </header>
 
           <div className="profile-completion-help__body">
             <div className="profile-completion-help__summary">
-              <p>{completionIssueEntries.length === 0 ? 'Não há campos em falta no momento.' : `Faltam ${completionIssueEntries.length} campos para concluir a ficha.`}</p>
-              <small>Usa esta lista como atalho para perceber o que precisa de atenção.</small>
+              <p>{completionIssueCount === 0 ? 'Sem pendências no momento.' : 'Preenche os itens abaixo para concluir a ficha.'}</p>
             </div>
 
-            {completionIssueEntries.length > 0 ? (
+            {completionIssueCount > 0 ? (
               <ul className="profile-completion-help__list">
                 {completionIssueEntries.map((entry) => (
                   <li key={entry.field}>
                     <div>
                       <span>{entry.label}</span>
-                      <small>{entry.message}</small>
                     </div>
                   </li>
                 ))}
               </ul>
             ) : (
               <div className="profile-completion-help__empty">
-                <strong>Perfeito.</strong>
-                <p>Não precisas de corrigir nada agora.</p>
+                <strong>Perfeito</strong>
+                <p>Não há nada por completar.</p>
               </div>
             )}
           </div>

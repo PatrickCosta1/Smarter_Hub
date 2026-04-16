@@ -111,6 +111,10 @@ function isWeekendIso(iso: string) {
   return day === 0 || day === 6;
 }
 
+function isBusinessDayIso(iso: string, holidayDates: Set<string>) {
+  return !isWeekendIso(iso) && !holidayDates.has(iso);
+}
+
 async function enforceVacationBusinessDays(params: {
   requestType: 'VACATION' | 'ABSENCE_MEDICAL' | 'ABSENCE_TRAINING';
   dataInicio: string;
@@ -121,26 +125,7 @@ async function enforceVacationBusinessDays(params: {
     return;
   }
 
-  const requestedDays = enumerateDates(params.dataInicio, params.dataFim);
-  if (requestedDays.some(isWeekendIso)) {
-    throw new Error('Pedidos de férias só podem incluir dias úteis. Para fim de semana/feriado, usa um pedido de ausência.');
-  }
-
-  const startYear = toLocalDate(params.dataInicio).getFullYear();
-  const endYear = toLocalDate(params.dataFim).getFullYear();
-  const years = new Set<number>([startYear, endYear]);
-  const holidaysByIso = new Set<string>();
-
-  for (const year of years) {
-    const holidays = await fetchHolidays(params.country, year);
-    for (const holiday of holidays) {
-      holidaysByIso.add(holiday.date);
-    }
-  }
-
-  if (requestedDays.some((day) => holidaysByIso.has(day))) {
-    throw new Error('Pedidos de férias só podem incluir dias úteis. Para fim de semana/feriado, usa um pedido de ausência.');
-  }
+  void params;
 }
 
 async function validateVacationCountryPolicy(params: {
@@ -186,8 +171,14 @@ async function validateVacationCountryPolicy(params: {
   };
 
   if (params.country === 'PT') {
-    const hasMandatoryConsecutiveBlock = currentYearPeriods.some((period) => vacationDaysForMetrics(period) >= 10);
-    const requestedDays = vacationDaysForMetrics(requestedPeriod);
+    const years = new Set<number>([
+      toLocalDate(params.dataInicio).getFullYear(),
+      toLocalDate(params.dataFim).getFullYear(),
+      ...currentYearPeriods.flatMap((period) => [toLocalDate(period.dataInicio).getFullYear(), toLocalDate(period.dataFim).getFullYear()]),
+    ]);
+    const holidayDates = await collectHolidayDates(params.country, years);
+    const hasMandatoryConsecutiveBlock = currentYearPeriods.some((period) => vacationDaysForMetrics(period, holidayDates) >= 10);
+    const requestedDays = vacationDaysForMetrics(requestedPeriod, holidayDates);
 
     if (!hasMandatoryConsecutiveBlock && requestedDays < 10) {
       throw new Error('Política PT: deve existir pelo menos um período de férias com 10 dias úteis consecutivos no ano.');
@@ -205,7 +196,13 @@ async function validateVacationCountryPolicy(params: {
     throw new Error('Política BR: férias só podem ser divididas em, no máximo, 3 períodos por ano.');
   }
 
-  const periodLengths = allPeriods.map((period) => vacationDaysForMetrics(period));
+  const years = new Set<number>([
+    toLocalDate(params.dataInicio).getFullYear(),
+    toLocalDate(params.dataFim).getFullYear(),
+    ...allPeriods.flatMap((period) => [toLocalDate(period.dataInicio).getFullYear(), toLocalDate(period.dataFim).getFullYear()]),
+  ]);
+  const holidayDates = await collectHolidayDates(params.country, years);
+  const periodLengths = allPeriods.map((period) => vacationDaysForMetrics(period, holidayDates));
   if (periodLengths.some((days) => days < 5)) {
     throw new Error('Política BR: cada período de férias deve ter, no mínimo, 5 dias corridos.');
   }
@@ -219,7 +216,10 @@ function hasDateOverlap(startA: string, endA: string, startB: string, endB: stri
   return !(endA < startB || endB < startA);
 }
 
-function vacationDaysForMetrics(record: { requestType: string; dataInicio: string; dataFim: string; partialDay?: 'FULL' | 'AM' | 'PM' }) {
+function vacationDaysForMetrics(
+  record: { requestType: string; dataInicio: string; dataFim: string; partialDay?: 'FULL' | 'AM' | 'PM' },
+  holidayDates: Set<string> = new Set(),
+) {
   if (record.requestType !== 'VACATION') {
     return enumerateDates(record.dataInicio, record.dataFim).length;
   }
@@ -228,10 +228,14 @@ function vacationDaysForMetrics(record: { requestType: string; dataInicio: strin
     return 0.5;
   }
 
-  return enumerateDates(record.dataInicio, record.dataFim).length;
+  return enumerateDates(record.dataInicio, record.dataFim).filter((iso) => isBusinessDayIso(iso, holidayDates)).length;
 }
 
-function vacationDailyWeight(record: { dataInicio: string; partialDay?: 'FULL' | 'AM' | 'PM' }, iso: string) {
+function vacationDailyWeight(record: { dataInicio: string; partialDay?: 'FULL' | 'AM' | 'PM' }, iso: string, holidayDates: Set<string> = new Set()) {
+  if (!isBusinessDayIso(iso, holidayDates)) {
+    return 0;
+  }
+
   if (!record.partialDay || record.partialDay === 'FULL') {
     return 1;
   }
@@ -332,6 +336,19 @@ async function fetchHolidays(countryCode: 'PT' | 'BR', year: number) {
   });
 
   return filtered;
+}
+
+async function collectHolidayDates(countryCode: 'PT' | 'BR', years: Iterable<number>) {
+  const holidayDates = new Set<string>();
+
+  for (const year of years) {
+    const holidays = await fetchHolidays(countryCode, year);
+    for (const holiday of holidays) {
+      holidayDates.add(holiday.date);
+    }
+  }
+
+  return holidayDates;
 }
 
 export const __vacationTestables = {
@@ -523,6 +540,7 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
 async function enforceOneThirdCapacity(
   db: Pick<Prisma.TransactionClient, 'teamMembership' | 'user' | 'vacation'>,
   contextTeamId: string,
+  country: 'PT' | 'BR',
   dataInicio: string,
   dataFim: string,
   partialDay: 'FULL' | 'AM' | 'PM',
@@ -554,16 +572,21 @@ async function enforceOneThirdCapacity(
   });
 
   const targetDates = enumerateDates(dataInicio, dataFim);
+  const years = new Set<number>([
+    ...targetDates.map((iso) => toLocalDate(iso).getFullYear()),
+    ...overlapping.flatMap((item) => [toLocalDate(item.dataInicio).getFullYear(), toLocalDate(item.dataFim).getFullYear()]),
+  ]);
+  const holidayDates = await collectHolidayDates(country, years);
 
   for (const iso of targetDates) {
     let usedCapacity = 0;
     for (const item of overlapping) {
       if (hasDateOverlap(iso, iso, item.dataInicio, item.dataFim)) {
-        usedCapacity += vacationDailyWeight(item, iso);
+        usedCapacity += vacationDailyWeight(item, iso, holidayDates);
       }
     }
 
-    const requestedCapacity = vacationDailyWeight({ dataInicio, partialDay }, iso);
+    const requestedCapacity = vacationDailyWeight({ dataInicio, partialDay }, iso, holidayDates);
 
     if (usedCapacity + requestedCapacity > maxSimultaneous) {
       throw new Error(`Capacidade da equipa excedida em ${iso}. Limite: ${maxSimultaneous} colaborador(es) em férias simultâneas.`);
@@ -729,11 +752,12 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
 
     const country = profile?.workCountry ?? 'PT';
     const currentYear = new Date().getFullYear();
+    const holidayDates = await collectHolidayDates(country, [currentYear]);
 
     if (country === 'PT') {
       const approvedVacationDays = vacations
         .filter((item) => item.status === 'APPROVED' && item.requestType === 'VACATION')
-        .reduce((sum, item) => sum + vacationDaysForMetrics(item), 0);
+        .reduce((sum, item) => sum + vacationDaysForMetrics(item, holidayDates), 0);
 
       return res.json({
         country: 'PT',
@@ -897,7 +921,7 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
 
       if (data.requestType === 'VACATION' && contextTeamId) {
         await acquireTeamCapacityLock(tx, contextTeamId);
-        await enforceOneThirdCapacity(tx, contextTeamId, data.dataInicio, data.dataFim, data.partialDay);
+        await enforceOneThirdCapacity(tx, contextTeamId, country, data.dataInicio, data.dataFim, data.partialDay);
       }
 
       const created = await tx.vacation.create({
@@ -1102,6 +1126,7 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
     await enforceOneThirdCapacity(
       tx,
       currentVacation.contextTeamId,
+      (vacation.user.profile?.workCountry ?? 'PT'),
       currentVacation.dataInicio,
       currentVacation.dataFim,
       currentVacation.partialDay,
@@ -1288,7 +1313,7 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
 
       if (data.requestType === 'VACATION' && contextTeamId) {
         await acquireTeamCapacityLock(tx, contextTeamId);
-        await enforceOneThirdCapacity(tx, contextTeamId, data.dataInicio, data.dataFim, data.partialDay, id);
+        await enforceOneThirdCapacity(tx, contextTeamId, country, data.dataInicio, data.dataFim, data.partialDay, id);
       }
 
       await tx.vacation.update({

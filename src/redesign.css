@@ -3690,6 +3690,7 @@
   border-radius: 10px;
   padding: 8px 10px;
   margin-bottom: 10px;
+  background-color: white;
 }
 .vacation-history-row--approved td:first-child,
 .vacation-history-row--rejected td:first-child,

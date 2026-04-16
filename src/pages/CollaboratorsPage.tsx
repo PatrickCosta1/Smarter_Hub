@@ -40,8 +40,10 @@ type CollaboratorRow = {
     habilitacoesLiterarias?: string;
     curso?: string;
     faculdade?: string;
+    nacionalidade?: string;
     emailPessoal?: string;
     telemovel?: string;
+    githubUser?: string;
     moradaFiscal?: string;
     endereco?: string;
     cargo?: string;
@@ -49,6 +51,7 @@ type CollaboratorRow = {
     codigoPostal?: string;
     matriculaCarro?: string;
     cartaoCidadao?: string;
+    validadeCartaoCidadao?: string;
     nif?: string;
     niss?: string;
     iban?: string;
@@ -67,7 +70,6 @@ type CollaboratorRow = {
     contactoEmergenciaNumero?: string;
     dataInicioContrato?: string;
     dataFimContrato?: string;
-    remuneracao?: string;
     tipoContrato?: string;
     regimeHorario?: string;
     workCountry?: 'PT' | 'BR';
@@ -89,14 +91,17 @@ type CollaboratorEditDraft = {
   habilitacoesLiterarias: string;
   curso: string;
   faculdade: string;
+  nacionalidade: string;
   emailPessoal: string;
   telemovel: string;
+  githubUser: string;
   moradaFiscal: string;
   endereco: string;
   localidade: string;
   codigoPostal: string;
   matriculaCarro: string;
   cartaoCidadao: string;
+  validadeCartaoCidadao: string;
   nif: string;
   niss: string;
   iban: string;
@@ -117,7 +122,6 @@ type CollaboratorEditDraft = {
   funcao: string;
   dataInicioContrato: string;
   dataFimContrato: string;
-  remuneracao: string;
   tipoContrato: string;
   regimeHorario: string;
 };
@@ -132,14 +136,17 @@ const EDIT_PROFILE_FIELDS: Array<{ key: keyof CollaboratorEditDraft; label: stri
   { key: 'habilitacoesLiterarias', label: 'Habilitações literárias', section: 'identificacao' },
   { key: 'curso', label: 'Curso', section: 'identificacao' },
   { key: 'faculdade', label: 'Faculdade', section: 'identificacao' },
+  { key: 'nacionalidade', label: 'Nacionalidade', section: 'identificacao' },
   { key: 'emailPessoal', label: 'Email pessoal', section: 'contactos' },
   { key: 'telemovel', label: 'Telemóvel', section: 'contactos' },
+  { key: 'githubUser', label: 'GitHub', section: 'contactos' },
   { key: 'moradaFiscal', label: 'Morada fiscal', section: 'contactos' },
   { key: 'endereco', label: 'Morada habitual', section: 'contactos' },
   { key: 'localidade', label: 'Localidade', section: 'contactos' },
   { key: 'codigoPostal', label: 'Código postal', section: 'contactos' },
   { key: 'matriculaCarro', label: 'Matrícula do carro', section: 'fiscal' },
   { key: 'cartaoCidadao', label: 'Cartão de cidadão', section: 'fiscal' },
+  { key: 'validadeCartaoCidadao', label: 'Validade cartão de cidadão', section: 'fiscal' },
   { key: 'nif', label: 'NIF', section: 'fiscal' },
   { key: 'niss', label: 'NISS', section: 'fiscal' },
   { key: 'iban', label: 'IBAN', section: 'fiscal' },
@@ -160,7 +167,6 @@ const EDIT_PROFILE_FIELDS: Array<{ key: keyof CollaboratorEditDraft; label: stri
   { key: 'funcao', label: 'Função', section: 'contrato' },
   { key: 'dataInicioContrato', label: 'Data início contrato', section: 'contrato' },
   { key: 'dataFimContrato', label: 'Data fim contrato', section: 'contrato' },
-  { key: 'remuneracao', label: 'Remuneração', section: 'contrato' },
   { key: 'tipoContrato', label: 'Tipo contrato', section: 'contrato' },
   { key: 'regimeHorario', label: 'Regime horário', section: 'contrato' },
 ];
@@ -179,14 +185,17 @@ const EMPTY_EDIT_DRAFT: CollaboratorEditDraft = {
   habilitacoesLiterarias: '',
   curso: '',
   faculdade: '',
+  nacionalidade: '',
   emailPessoal: '',
   telemovel: '',
+  githubUser: '',
   moradaFiscal: '',
   endereco: '',
   localidade: '',
   codigoPostal: '',
   matriculaCarro: '',
   cartaoCidadao: '',
+  validadeCartaoCidadao: '',
   nif: '',
   niss: '',
   iban: '',
@@ -207,7 +216,6 @@ const EMPTY_EDIT_DRAFT: CollaboratorEditDraft = {
   funcao: '',
   dataInicioContrato: '',
   dataFimContrato: '',
-  remuneracao: '',
   tipoContrato: '',
   regimeHorario: '',
 };
@@ -285,14 +293,17 @@ function buildEditDraftFromRow(item: CollaboratorRow): CollaboratorEditDraft {
     habilitacoesLiterarias: profile.habilitacoesLiterarias || '',
     curso: profile.curso || '',
     faculdade: profile.faculdade || '',
+    nacionalidade: profile.nacionalidade || '',
     emailPessoal: profile.emailPessoal || '',
     telemovel: profile.telemovel || '',
+    githubUser: profile.githubUser || '',
     moradaFiscal: profile.moradaFiscal || '',
     endereco: profile.endereco || '',
     localidade: profile.localidade || '',
     codigoPostal: profile.codigoPostal || '',
     matriculaCarro: profile.matriculaCarro || '',
     cartaoCidadao: profile.cartaoCidadao || '',
+    validadeCartaoCidadao: profile.validadeCartaoCidadao || '',
     nif: profile.nif || '',
     niss: profile.niss || '',
     iban: profile.iban || '',
@@ -313,7 +324,6 @@ function buildEditDraftFromRow(item: CollaboratorRow): CollaboratorEditDraft {
     funcao: profile.funcao || '',
     dataInicioContrato: profile.dataInicioContrato || '',
     dataFimContrato: profile.dataFimContrato || '',
-    remuneracao: profile.remuneracao || '',
     tipoContrato: profile.tipoContrato || '',
     regimeHorario: profile.regimeHorario || '',
   };
@@ -944,14 +954,17 @@ export default function CollaboratorsPage() {
           habilitacoesLiterarias: editDraft.habilitacoesLiterarias,
           curso: editDraft.curso,
           faculdade: editDraft.faculdade,
+          nacionalidade: editDraft.nacionalidade,
           emailPessoal: editDraft.emailPessoal,
           telemovel: editDraft.telemovel,
+          githubUser: editDraft.githubUser,
           moradaFiscal: editDraft.moradaFiscal,
           endereco: editDraft.endereco,
           localidade: editDraft.localidade,
           codigoPostal: editDraft.codigoPostal,
           matriculaCarro: editDraft.matriculaCarro,
           cartaoCidadao: editDraft.cartaoCidadao,
+          validadeCartaoCidadao: editDraft.validadeCartaoCidadao,
           nif: editDraft.nif,
           niss: editDraft.niss,
           iban: editDraft.iban,
@@ -972,7 +985,6 @@ export default function CollaboratorsPage() {
           funcao: editDraft.funcao,
           dataInicioContrato: editDraft.dataInicioContrato,
           dataFimContrato: editDraft.dataFimContrato,
-          remuneracao: editDraft.remuneracao,
           tipoContrato: editDraft.tipoContrato,
           regimeHorario: editDraft.regimeHorario,
         }),
@@ -1171,6 +1183,17 @@ export default function CollaboratorsPage() {
           <option value="">Selecionar</option>
           {parentescoOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
+      );
+    }
+
+    if (fieldKey === 'validadeCartaoCidadao') {
+      return (
+        <input
+          type="date"
+          value={value}
+          onChange={(event) => onChangeValue(event.target.value)}
+          disabled={!canEditUser}
+        />
       );
     }
 
