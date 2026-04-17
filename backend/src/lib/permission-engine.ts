@@ -1,6 +1,60 @@
 import type { AuthUser } from '../types/auth.js';
 import { prisma } from './prisma.js';
 
+const PERMISSION_CACHE_TTL_MS = Number(process.env.PERMISSION_CACHE_TTL_MS ?? 15000);
+
+type PermissionCacheEntry<T> = {
+  expiresAt: number;
+  value: T;
+};
+
+const hasPermissionCache = new Map<string, PermissionCacheEntry<boolean>>();
+const accessTotalCache = new Map<string, PermissionCacheEntry<boolean>>();
+const permissionScopeCache = new Map<string, PermissionCacheEntry<PermissionScope | null>>();
+
+function getCachedValue<T>(cache: Map<string, PermissionCacheEntry<T>>, key: string) {
+  const entry = cache.get(key);
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return null;
+  }
+
+  return entry.value;
+}
+
+function setCachedValue<T>(cache: Map<string, PermissionCacheEntry<T>>, key: string, value: T) {
+  cache.set(key, {
+    expiresAt: Date.now() + PERMISSION_CACHE_TTL_MS,
+    value,
+  });
+}
+
+export function clearPermissionEngineCacheForUser(userId: string) {
+  accessTotalCache.delete(userId);
+
+  for (const key of hasPermissionCache.keys()) {
+    if (key.startsWith(`${userId}|`)) {
+      hasPermissionCache.delete(key);
+    }
+  }
+
+  for (const key of permissionScopeCache.keys()) {
+    if (key.startsWith(`${userId}|`)) {
+      permissionScopeCache.delete(key);
+    }
+  }
+}
+
+export function clearPermissionEngineCache() {
+  hasPermissionCache.clear();
+  accessTotalCache.clear();
+  permissionScopeCache.clear();
+}
+
 export type PermissionRestrictionPayload = {
   restrictedToTeams?: string[];
   restrictedToCountries?: Array<'PT' | 'BR'>;
@@ -22,16 +76,24 @@ export function isRootAccess(user: Pick<AuthUser, 'isRootAccess'>) {
 }
 
 export async function hasPermission(userId: string, permissionCode: string) {
+  const cacheKey = `${userId}|${permissionCode}`;
+  const cached = getCachedValue(hasPermissionCache, cacheKey);
+  if (cached !== null) {
+    return cached;
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, isRootAccess: true, hasAccessTotal: true },
   });
 
   if (!user) {
+    setCachedValue(hasPermissionCache, cacheKey, false);
     return false;
   }
 
   if (user.isRootAccess || user.hasAccessTotal) {
+    setCachedValue(hasPermissionCache, cacheKey, true);
     return true;
   }
 
@@ -44,7 +106,9 @@ export async function hasPermission(userId: string, permissionCode: string) {
     select: { id: true },
   });
 
-  return Boolean(assignment);
+  const result = Boolean(assignment);
+  setCachedValue(hasPermissionCache, cacheKey, result);
+  return result;
 }
 
 export async function canManagePermissions(user: Pick<AuthUser, 'id' | 'isRootAccess'>) {
@@ -136,16 +200,23 @@ export async function canRevokeAccessTotal(actor: Pick<AuthUser, 'id' | 'isRootA
 }
 
 export async function isAccessTotal(userId: string) {
+  const cached = getCachedValue(accessTotalCache, userId);
+  if (cached !== null) {
+    return cached;
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { isRootAccess: true, hasAccessTotal: true },
   });
 
   if (!user) {
+    setCachedValue(accessTotalCache, userId, false);
     return false;
   }
 
   if (user.isRootAccess || user.hasAccessTotal) {
+    setCachedValue(accessTotalCache, userId, true);
     return true;
   }
 
@@ -159,7 +230,9 @@ export async function isAccessTotal(userId: string) {
     }),
   ]);
 
-  return totalPermissions > 0 && enabledAssignments === totalPermissions;
+  const result = totalPermissions > 0 && enabledAssignments === totalPermissions;
+  setCachedValue(accessTotalCache, userId, result);
+  return result;
 }
 
 export function normalizePermissionRestrictionPayload(payload: PermissionRestrictionPayload) {
@@ -239,23 +312,32 @@ function parseCustomRestrictions(customRestrictions: unknown) {
 }
 
 export async function getPermissionScope(userId: string, permissionCode: string): Promise<PermissionScope | null> {
+  const cacheKey = `${userId}|${permissionCode}`;
+  const cached = getCachedValue(permissionScopeCache, cacheKey);
+  if (cached !== null) {
+    return cached;
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { id: true, isRootAccess: true, hasAccessTotal: true },
   });
 
   if (!user) {
+    setCachedValue(permissionScopeCache, cacheKey, null);
     return null;
   }
 
   if (user.isRootAccess || user.hasAccessTotal) {
-    return {
+    const result = {
       isGlobal: true,
       restrictedToTeams: null,
       restrictedToCountries: null,
       restrictedToLevels: null,
       customRestrictions: null,
     };
+    setCachedValue(permissionScopeCache, cacheKey, result);
+    return result;
   }
 
   const assignment = await prisma.userPermission.findFirst({
@@ -273,6 +355,7 @@ export async function getPermissionScope(userId: string, permissionCode: string)
   });
 
   if (!assignment) {
+    setCachedValue(permissionScopeCache, cacheKey, null);
     return null;
   }
 
@@ -283,13 +366,15 @@ export async function getPermissionScope(userId: string, permissionCode: string)
 
   const isGlobal = !restrictedToTeams && !restrictedToCountries && !restrictedToLevels && !customRestrictions;
 
-  return {
+  const result = {
     isGlobal,
     restrictedToTeams,
     restrictedToCountries,
     restrictedToLevels,
     customRestrictions,
   };
+  setCachedValue(permissionScopeCache, cacheKey, result);
+  return result;
 }
 
 export function buildUserWhereFromScope(scope: PermissionScope): Record<string, unknown> | null {

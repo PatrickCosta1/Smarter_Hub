@@ -13,6 +13,7 @@ import {
 } from "../lib/permission-engine.js";
 import { requireAuth } from "../middleware/auth.js";
 import { notifyUsersByPermission } from "../lib/notifications.js";
+import { createRequestTimer } from '../lib/request-timing.js';
 
 const router = Router();
 
@@ -459,6 +460,7 @@ router.get("/profile/me", requireAuth, async (req, res) => {
 });
 
 router.get('/profile/requests/me', requireAuth, async (req, res) => {
+  const timer = createRequestTimer('GET /profile/requests/me');
   const userId = req.authUser!.id;
 
   const request = await prisma.profileChangeRequest.findFirst({
@@ -469,12 +471,34 @@ router.get('/profile/requests/me', requireAuth, async (req, res) => {
       status: true,
       createdAt: true,
       updatedAt: true,
+      requestedData: true,
     },
   });
+  timer.mark('find-pending-request');
+
+  if (!request) {
+    timer.done({ pending: false });
+    return res.json({ pending: false, request: null });
+  }
+
+  const currentProfile = await prisma.profile.findUnique({ where: { userId } });
+  timer.mark('load-current-profile');
+  const requestedData = (request.requestedData as Record<string, unknown>) ?? {};
+  const changedKeys = getChangedKeys(currentProfile as Record<string, unknown> | null, requestedData);
+  const changeDetails = buildProfileChangeDetails(currentProfile as Record<string, unknown> | null, requestedData, changedKeys);
+  timer.mark('build-change-details');
+  timer.done({ pending: true, changedKeys: changedKeys.length });
 
   return res.json({
-    pending: Boolean(request),
-    request,
+    pending: true,
+    request: {
+      id: request.id,
+      changesSummary: request.changesSummary,
+      status: request.status,
+      createdAt: request.createdAt,
+      updatedAt: request.updatedAt,
+      changeDetails,
+    },
   });
 });
 
@@ -571,14 +595,17 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
 });
 
 router.get('/profile/requests', requireAuth, async (req, res) => {
+  const timer = createRequestTimer('GET /profile/requests');
   if (!await hasPermission(req.authUser!.id, 'approve_profile_change')) {
     return res.status(403).json({ message: 'Sem permissões para consultar pedidos.' });
   }
+  timer.mark('check-permission');
 
   const scope = await getPermissionScope(req.authUser!.id, 'approve_profile_change');
   if (!scope) {
     return res.status(403).json({ message: 'Sem permissões para consultar pedidos.' });
   }
+  timer.mark('resolve-scope');
 
   const userScopeWhere = buildUserWhereFromScope(scope);
 
@@ -605,11 +632,20 @@ router.get('/profile/requests', requireAuth, async (req, res) => {
     },
     orderBy: { createdAt: 'desc' },
   });
+  timer.mark('load-requests');
 
-  const enriched = await Promise.all(requests.map(async (request) => {
-    const currentProfile = await prisma.profile.findUnique({
-      where: { userId: request.userId },
-    });
+  const currentProfiles = await prisma.profile.findMany({
+    where: {
+      userId: {
+        in: requests.map((request) => request.userId),
+      },
+    },
+  });
+  timer.mark('load-current-profiles');
+  const profileByUserId = new Map(currentProfiles.map((item) => [item.userId, item]));
+
+  const enriched = requests.map((request) => {
+    const currentProfile = profileByUserId.get(request.userId) ?? null;
 
     const requestedData = (request.requestedData as Record<string, unknown>) ?? {};
     const changedKeys = getChangedKeys(currentProfile as Record<string, unknown> | null, requestedData);
@@ -619,7 +655,9 @@ router.get('/profile/requests', requireAuth, async (req, res) => {
       requesterName: resolveRequesterDisplayName(request.user.profile),
       changeDetails: buildProfileChangeDetails(currentProfile as Record<string, unknown> | null, requestedData, changedKeys),
     };
-  }));
+  });
+  timer.mark('enrich-response');
+  timer.done({ count: enriched.length });
 
   return res.json(enriched);
 });

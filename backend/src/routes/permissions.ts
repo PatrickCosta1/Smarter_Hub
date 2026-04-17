@@ -8,10 +8,12 @@ import {
   canManagePermissions,
   canRevokeAccessTotal,
   canRevokePermission,
+  clearPermissionEngineCacheForUser,
   isAccessTotal,
   normalizePermissionRestrictionPayload,
 } from '../lib/permission-engine.js';
 import { requireAuth } from '../middleware/auth.js';
+import { createRequestTimer } from '../lib/request-timing.js';
 
 const router = Router();
 let permissionCatalogSyncPromise: Promise<void> | null = null;
@@ -117,14 +119,16 @@ router.get('/permissions', requireAuth, async (_req, res) => {
 });
 
 router.get('/users/:id/permissions', requireAuth, async (req, res) => {
+  const timer = createRequestTimer('GET /users/:id/permissions');
   const targetUserId = String(req.params.id || '');
 
   const canManage = await canManagePermissions(req.authUser!);
   if (!canManage && req.authUser!.id !== targetUserId) {
     return res.status(403).json({ message: 'Sem permissões para consultar permissões de outros utilizadores.' });
   }
+  timer.mark('check-can-manage');
 
-  const [user, permissions, assignments, accessTotal] = await Promise.all([
+  const [user, permissions, assignments] = await Promise.all([
     prisma.user.findUnique({
       where: { id: targetUserId },
       select: {
@@ -133,6 +137,7 @@ router.get('/users/:id/permissions', requireAuth, async (req, res) => {
         email: true,
         isActive: true,
         isRootAccess: true,
+        hasAccessTotal: true,
         profile: {
           select: {
             nomeAbreviado: true,
@@ -169,18 +174,20 @@ router.get('/users/:id/permissions', requireAuth, async (req, res) => {
         },
       },
     }),
-    isAccessTotal(targetUserId),
   ]);
+  timer.mark('load-user-permissions-data');
 
   if (!user) {
     return res.status(404).json({ message: 'Utilizador não encontrado.' });
   }
 
   const assignmentByPermissionId = new Map(assignments.map((item) => [item.permissionId, item]));
+  timer.mark('build-assignment-map');
+  timer.done({ permissions: permissions.length, assignments: assignments.length });
 
   return res.json({
     user,
-    accessTotal,
+    accessTotal: Boolean(user.isRootAccess || user.hasAccessTotal),
     permissions: permissions.map((permission) => {
       const assignment = assignmentByPermissionId.get(permission.id);
 
@@ -279,6 +286,9 @@ router.post('/users/:id/permissions', requireAuth, async (req, res) => {
     return next;
   });
 
+  clearPermissionEngineCacheForUser(targetUserId);
+  clearPermissionEngineCacheForUser(req.authUser!.id);
+
   return res.json({ permission: updated });
 });
 
@@ -347,6 +357,9 @@ router.patch('/users/:id/permissions/:permissionId', requireAuth, async (req, re
     },
   });
 
+  clearPermissionEngineCacheForUser(targetUserId);
+  clearPermissionEngineCacheForUser(req.authUser!.id);
+
   return res.json({ permission: updated });
 });
 
@@ -394,6 +407,9 @@ router.delete('/users/:id/permissions/:permissionId', requireAuth, async (req, r
       reason: 'Permissão revogada manualmente.',
     },
   });
+
+  clearPermissionEngineCacheForUser(targetUserId);
+  clearPermissionEngineCacheForUser(req.authUser!.id);
 
   return res.json({ permission: updated });
 });
@@ -492,6 +508,9 @@ router.patch('/users/:id/access-total', requireAuth, async (req, res) => {
       }
     });
   }
+
+  clearPermissionEngineCacheForUser(targetUserId);
+  clearPermissionEngineCacheForUser(req.authUser!.id);
 
   const accessTotal = await isAccessTotal(targetUserId);
   return res.json({ success: true, accessTotal });

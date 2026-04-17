@@ -10,7 +10,7 @@ import {
   situacaoIrsOptions,
   tipoContratoOptions,
 } from '../portal/data';
-import { apiRequest, getApiBase, getBackendBase, authHeaders, isAbortError } from '../portal/api';
+import { apiRequest, apiRequestCached, getApiBase, getBackendBase, authHeaders, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { useFeedbackToast } from '../portal/useFeedbackToast';
 import { formatTrainingStatusLabel, getTrainingStatusTone } from '../portal/labels';
@@ -19,16 +19,17 @@ import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 
-type SectionKey = 'personal' | 'contacts' | 'documents' | 'tax' | 'emergency' | 'contract' | 'trainings';
+type SectionKey = 'personal' | 'contacts' | 'documents' | 'tax' | 'emergency' | 'contract' | 'trainings' | 'benefits';
 
 const profileSections: Array<{ key: SectionKey; label: string }> = [
-  { key: 'personal', label: 'Identificação' },
-  { key: 'contacts', label: 'Contactos' },
-  { key: 'documents', label: 'Documentos' },
-  { key: 'tax', label: 'IRS e benefícios' },
-  { key: 'emergency', label: 'Emergência' },
-  { key: 'contract', label: 'Contrato' },
-  { key: 'trainings', label: 'Formações' },
+  { key: 'personal', label: 'Dados Pessoais' },
+  { key: 'contacts', label: 'Dados de Contacto' },
+  { key: 'documents', label: 'Documentos de Identificação' },
+  { key: 'tax', label: 'Dados Fiscais e Bancários' },
+  { key: 'emergency', label: 'Contacto de Emergência' },
+  { key: 'contract', label: 'Dados Contratuais' },
+  { key: 'trainings', label: 'Dados de Formação' },
+  { key: 'benefits', label: 'Pedido de Benefícios' },
 ];
 
 type ProfileTrainingRecord = {
@@ -522,14 +523,18 @@ export default function ProfilePage() {
     emergency: false,
     contract: false,
     trainings: false,
+    benefits: false,
   });
   const [profileErrors, setProfileErrors] = useState<ProfileFieldError>({});
   const { toast, showToast } = useFeedbackToast(3400);
   const [isSaving, setIsSaving] = useState(false);
   const [currentSection, setCurrentSection] = useState<SectionKey>('personal');
+  type PendingChangeDetail = { fieldKey: string; field: string; oldValue: string; newValue: string };
   const [hasPendingRequest, setHasPendingRequest] = useState(false);
   const [pendingRequestLabel, setPendingRequestLabel] = useState('');
   const [pendingChanges, setPendingChanges] = useState<string[]>([]);
+  const [pendingChangeDetails, setPendingChangeDetails] = useState<PendingChangeDetail[]>([]);
+  const [isPendingDetailOpen, setIsPendingDetailOpen] = useState(false);
   const [isRequestFeedbackOpen, setIsRequestFeedbackOpen] = useState(false);
   const [showSeparateAddresses, setShowSeparateAddresses] = useState(false);
   const [isCompletionHelpOpen, setIsCompletionHelpOpen] = useState(false);
@@ -610,40 +615,25 @@ export default function ProfilePage() {
 
     (async () => {
       try {
-        const response = await fetch(`${getApiBase()}/profile/requests/me`, {
-          headers: authHeaders(token),
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = (await response.json()) as {
+        const payload = await apiRequestCached<{
           pending?: boolean;
           request?: {
             changesSummary?: string;
             createdAt?: string;
+            changeDetails?: Array<{ fieldKey: string; field: string; oldValue: string; newValue: string }>;
           } | null;
-        };
+        }>('/profile/requests/me', {
+          headers: authHeaders(token),
+          signal: controller.signal,
+        }, 15000);
 
         const pending = Boolean(payload.pending);
         setHasPendingRequest(pending);
         const summary = pending ? payload.request?.changesSummary || 'Pedido de alteração em análise pela equipa RH.' : '';
         setPendingRequestLabel(summary);
-        
-        // Parse campos individuais da lista
-        if (summary && summary.includes(':')) {
-          const parts = summary.split(':');
-          const fieldsList = parts[1] || '';
-          const fields = fieldsList
-            .split(',')
-            .map(f => f.trim())
-            .filter(f => f.length > 0);
-          setPendingChanges(fields);
-        } else {
-          setPendingChanges([]);
-        }
+        const details = payload.request?.changeDetails ?? [];
+        setPendingChangeDetails(details);
+        setPendingChanges(details.map((d) => d.field));
       } catch (error) {
         if (isAbortError(error) || controller.signal.aborted) {
           return;
@@ -666,13 +656,13 @@ export default function ProfilePage() {
 
     (async () => {
       try {
-        const payload = await apiRequest<{
+        const payload = await apiRequestCached<{
           cargo?: CustomProfileOption[];
           funcao?: CustomProfileOption[];
         }>('/profile/options', {
           headers: authHeaders(token),
           signal: controller.signal,
-        });
+        }, 60000);
 
         setCustomCargoOptions(payload.cargo ?? []);
         setCustomFuncaoOptions(payload.funcao ?? []);
@@ -745,6 +735,7 @@ export default function ProfilePage() {
       emergency: false,
       contract: false,
       trainings: false,
+      benefits: false,
     });
   }
 
@@ -1020,19 +1011,63 @@ export default function ProfilePage() {
 
       {hasPendingRequest && (
         <section className="profile-request-banner" role="status" aria-live="polite">
-          <div>
-            <strong>Pedido em análise</strong>
-            {pendingChanges.length > 0 && (
-              <div className="profile-request-fields">
-                {pendingChanges.map((field) => (
-                  <span key={field} className="profile-request-field-badge">
-                    {field}
-                  </span>
-                ))}
-              </div>
-            )}
+          <div className="profile-request-banner__inner">
+            <div className="profile-request-banner__content">
+              <span className="profile-request-banner__chip">Em análise</span>
+              <strong>Pedido de atualização da ficha</strong>
+              <span>{pendingChanges.length > 0 ? `${pendingChanges.length} alteração(ões) aguardam aprovação` : 'A aguardar aprovação pela equipa RH'}</span>
+            </div>
+            <button
+              type="button"
+              className="profile-request-banner__btn"
+              onClick={() => setIsPendingDetailOpen(true)}
+            >
+              Ver pedido
+            </button>
           </div>
         </section>
+      )}
+
+      {isPendingDetailOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pending-modal-title" onClick={(e) => { if (e.target === e.currentTarget) setIsPendingDetailOpen(false); }}>
+          <div className="pending-modal">
+            <div className="pending-modal__header">
+              <div>
+                <p className="pending-modal__kicker">Ficha colaborador</p>
+                <h2 id="pending-modal-title">Pedido em análise</h2>
+              </div>
+              <button type="button" className="pending-modal__close" onClick={() => setIsPendingDetailOpen(false)} aria-label="Fechar">×</button>
+            </div>
+            <p className="pending-modal__sub">Alterações submetidas e pendentes de aprovação pela equipa RH.</p>
+            {pendingChangeDetails.length > 0 ? (
+              <div className="pending-modal__table-wrap">
+                <table className="pending-modal__table">
+                  <thead>
+                    <tr>
+                      <th>Campo</th>
+                      <th>Valor anterior</th>
+                      <th>Novo valor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingChangeDetails.map((detail) => (
+                      <tr key={detail.fieldKey}>
+                        <td className="pending-modal__field">{detail.field}</td>
+                        <td className="pending-modal__old">{detail.oldValue}</td>
+                        <td className="pending-modal__new">{detail.newValue}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="pending-modal__empty">Detalhes do pedido indisponíveis.</p>
+            )}
+            <div className="pending-modal__footer">
+              <button type="button" className="pending-modal__dismiss" onClick={() => setIsPendingDetailOpen(false)}>Fechar</button>
+            </div>
+          </div>
+        </div>
       )}
 
       <nav className="profile-stepper" aria-label="Navegação por etapas da ficha">
@@ -1057,7 +1092,7 @@ export default function ProfilePage() {
         {currentSection === 'personal' && (
         <article className="profile-card profile-card--full">
           <div className="section-headline">
-            <h2>1. Identificação pessoal</h2>
+            <h2>1. Dados Pessoais</h2>
             {canEdit && (
               <button className={`section-edit-button${editingSections.personal ? ' is-active' : ''}`} type="button" onClick={() => toggleSectionEdit('personal')}>
                 ✏️
@@ -1091,16 +1126,6 @@ export default function ProfilePage() {
               {profileErrors.genero && <small>{profileErrors.genero}</small>}
             </label>
             <label>
-              <span>Estado civil</span>
-              <select value={draftProfile.estadoCivil} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('estadoCivil', event.target.value)}>
-                <option value="">Selecionar</option>
-                {estadoCivilOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
-              {profileErrors.estadoCivil && <small>{profileErrors.estadoCivil}</small>}
-            </label>
-            <label>
               <span>Habilitações literárias</span>
               <select value={draftProfile.habilitacoesLiterarias} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('habilitacoesLiterarias', event.target.value)}>
                 <option value="">Selecionar</option>
@@ -1122,6 +1147,24 @@ export default function ProfilePage() {
               <span>Nacionalidade</span>
               <input type="text" value={draftProfile.nacionalidade} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('nacionalidade', event.target.value)} />
             </label>
+            <label>
+              <span>Email pessoal</span>
+              <input type="email" value={draftProfile.emailPessoal} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('emailPessoal', event.target.value)} />
+              {profileErrors.emailPessoal && <small>{profileErrors.emailPessoal}</small>}
+            </label>
+            <label>
+              <span>Telemóvel</span>
+              <input type="text" value={draftProfile.telemovel} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('telemovel', event.target.value)} />
+              {profileErrors.telemovel && <small>{profileErrors.telemovel}</small>}
+            </label>
+            <label>
+              <span>GitHub (se aplicável)</span>
+              <input type="text" value={draftProfile.githubUser} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('githubUser', event.target.value)} placeholder="username" />
+            </label>
+            <label>
+              <span>Matrícula do carro</span>
+              <input type="text" value={draftProfile.matriculaCarro} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('matriculaCarro', event.target.value)} />
+            </label>
           </div>
         </article>
         )}
@@ -1129,7 +1172,7 @@ export default function ProfilePage() {
         {currentSection === 'contacts' && (
         <article className="profile-card profile-card--full">
           <div className="section-headline">
-            <h2>2. Contactos e moradas</h2>
+            <h2>2. Dados de Contacto</h2>
             {canEdit && (
               <button className={`section-edit-button${editingSections.contacts ? ' is-active' : ''}`} type="button" onClick={() => toggleSectionEdit('contacts')}>
                 ✏️
@@ -1137,24 +1180,6 @@ export default function ProfilePage() {
             )}
           </div>
           <div className="profile-fields profile-fields--3">
-            <label>
-              <span>Email pessoal</span>
-              <input type="email" value={draftProfile.emailPessoal} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('emailPessoal', event.target.value)} />
-              {profileErrors.emailPessoal && <small>{profileErrors.emailPessoal}</small>}
-            </label>
-            <label>
-              <span>Telemóvel</span>
-              <input type="text" value={draftProfile.telemovel} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('telemovel', event.target.value)} />
-              {profileErrors.telemovel && <small>{profileErrors.telemovel}</small>}
-            </label>
-            <label>
-              <span>GitHub (se aplicável)</span>
-              <input type="text" value={draftProfile.githubUser} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('githubUser', event.target.value)} placeholder="username" />
-            </label>
-            <label>
-              <span>Matrícula do carro</span>
-              <input type="text" value={draftProfile.matriculaCarro} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('matriculaCarro', event.target.value)} />
-            </label>
             <div className="profile-address-switch field-span-3">
               <div className="profile-address-switch__copy">
                 <span>Morada fiscal e endereço são diferentes?</span>
@@ -1231,7 +1256,7 @@ export default function ProfilePage() {
         {currentSection === 'documents' && (
         <article className="profile-card">
           <div className="section-headline">
-            <h2>3. Documentos e fiscalidade</h2>
+            <h2>3. Documentos de Identificação</h2>
             {canEdit && (
               <button className={`section-edit-button${editingSections.documents ? ' is-active' : ''}`} type="button" onClick={() => toggleSectionEdit('documents')}>
                 ✏️
@@ -1248,21 +1273,6 @@ export default function ProfilePage() {
               <span>Validade do cartão de cidadão</span>
               <input type="date" value={draftProfile.validadeCartaoCidadao} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('validadeCartaoCidadao', event.target.value)} />
             </label>
-            <label>
-              <span>NIF</span>
-              <input type="text" value={draftProfile.nif} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('nif', event.target.value)} />
-              {profileErrors.nif && <small>{profileErrors.nif}</small>}
-            </label>
-            <label>
-              <span>NISS</span>
-              <input type="text" value={draftProfile.niss} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('niss', event.target.value)} />
-              {profileErrors.niss && <small>{profileErrors.niss}</small>}
-            </label>
-            <label>
-              <span>IBAN</span>
-              <input type="text" value={draftProfile.iban} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('iban', event.target.value)} />
-              {profileErrors.iban && <small>{profileErrors.iban}</small>}
-            </label>
             <label className="field-span-2">
               <span>Comprovativo cartão cidadão (PDF/JPG)</span>
               <input
@@ -1275,18 +1285,6 @@ export default function ProfilePage() {
               {renderFileLink(draftProfile.comprovativoCartaoCidadao)}
               {profileErrors.comprovativoCartaoCidadao && <small>{profileErrors.comprovativoCartaoCidadao}</small>}
             </label>
-            <label className="field-span-2">
-              <span>Comprovativo IBAN</span>
-              <input
-                type="file"
-                accept=".pdf,.jpg,.jpeg"
-                disabled={!editingSections.documents}
-                onClick={handleFileInputClick}
-                onChange={(event) => handleFileChange('comprovativoIban', event)}
-              />
-              {renderFileLink(draftProfile.comprovativoIban)}
-              {profileErrors.comprovativoIban && <small>{profileErrors.comprovativoIban}</small>}
-            </label>
           </div>
         </article>
         )}
@@ -1294,7 +1292,7 @@ export default function ProfilePage() {
         {currentSection === 'tax' && (
         <article className="profile-card">
           <div className="section-headline">
-            <h2>4. IRS e benefícios</h2>
+            <h2>4. Dados Fiscais e Bancários</h2>
             {canEdit && (
               <button className={`section-edit-button${editingSections.tax ? ' is-active' : ''}`} type="button" onClick={() => toggleSectionEdit('tax')}>
                 ✏️
@@ -1302,6 +1300,43 @@ export default function ProfilePage() {
             )}
           </div>
           <div className="profile-fields">
+            <label>
+              <span>NIF</span>
+              <input type="text" value={draftProfile.nif} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('nif', event.target.value)} />
+              {profileErrors.nif && <small>{profileErrors.nif}</small>}
+            </label>
+            <label>
+              <span>NISS</span>
+              <input type="text" value={draftProfile.niss} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('niss', event.target.value)} />
+              {profileErrors.niss && <small>{profileErrors.niss}</small>}
+            </label>
+            <label>
+              <span>IBAN</span>
+              <input type="text" value={draftProfile.iban} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('iban', event.target.value)} />
+              {profileErrors.iban && <small>{profileErrors.iban}</small>}
+            </label>
+            <label className="field-span-2">
+              <span>Comprovativo IBAN</span>
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg"
+                disabled={!editingSections.tax}
+                onClick={handleFileInputClick}
+                onChange={(event) => handleFileChange('comprovativoIban', event)}
+              />
+              {renderFileLink(draftProfile.comprovativoIban)}
+              {profileErrors.comprovativoIban && <small>{profileErrors.comprovativoIban}</small>}
+            </label>
+            <label>
+              <span>Estado civil</span>
+              <select value={draftProfile.estadoCivil} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('estadoCivil', event.target.value)}>
+                <option value="">Selecionar</option>
+                {estadoCivilOptions.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+              {profileErrors.estadoCivil && <small>{profileErrors.estadoCivil}</small>}
+            </label>
             <label className="field-span-2">
               <span>Situação IRS</span>
               <select value={draftProfile.situacaoIrs} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('situacaoIrs', event.target.value)}>
@@ -1331,25 +1366,6 @@ export default function ProfilePage() {
               <span>Ano do primeiro desconto</span>
               <input type="text" inputMode="numeric" value={draftProfile.anoPrimeiroDesconto} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('anoPrimeiroDesconto', event.target.value)} />
               {profileErrors.anoPrimeiroDesconto && <small>{profileErrors.anoPrimeiroDesconto}</small>}
-            </label>
-            <label>
-              <span>Número cartão continente (opcional)</span>
-              <input type="text" value={draftProfile.numeroCartaoContinente} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('numeroCartaoContinente', event.target.value)} />
-            </label>
-            <label>
-              <span>Voucher NOS (data)</span>
-              <input type="date" value={draftProfile.voucherNosData} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('voucherNosData', event.target.value)} />
-            </label>
-            <label className="field-span-2">
-              <span>Comprovativo cartão continente (opcional)</span>
-              <input
-                type="file"
-                accept=".pdf,.jpg,.jpeg"
-                disabled={!editingSections.tax}
-                onClick={handleFileInputClick}
-                onChange={(event) => handleFileChange('comprovativoCartaoContinente', event)}
-              />
-              {renderFileLink(draftProfile.comprovativoCartaoContinente)}
             </label>
           </div>
         </article>
@@ -1393,7 +1409,7 @@ export default function ProfilePage() {
         {currentSection === 'contract' && (
         <article className="profile-card">
           <div className="section-headline">
-            <h2>6. Situação contratual</h2>
+            <h2>6. Dados Contratuais</h2>
             <div className="profile-contract__actions">
               {canEditContract && (
                 <button className={`section-edit-button${editingSections.contract ? ' is-active' : ''}`} type="button" onClick={() => toggleSectionEdit('contract')}>
@@ -1474,7 +1490,7 @@ export default function ProfilePage() {
         {currentSection === 'trainings' && (
         <article className="profile-card profile-card--full profile-trainings-card">
           <div className="section-headline">
-            <h2>7. Formações</h2>
+            <h2>7. Dados de Formação</h2>
           </div>
 
           <div className="profile-trainings-summary" aria-live="polite">
@@ -1544,6 +1560,18 @@ export default function ProfilePage() {
                 )}
               </article>
             ))}
+          </div>
+        </article>
+        )}
+
+        {currentSection === 'benefits' && (
+        <article className="profile-card profile-card--full">
+          <div className="section-headline">
+            <h2>8. Pedido de Benefícios</h2>
+          </div>
+          <div className="profile-trainings-empty">
+            <strong>Em breve</strong>
+            <p>Esta secção ficará disponível numa próxima fase.</p>
           </div>
         </article>
         )}

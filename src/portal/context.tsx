@@ -4,6 +4,8 @@ import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from './api'
 import { AuthUser, PortalNotification, ProfileData, UserRole } from './types';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
+const NOTIFICATIONS_REFRESH_INTERVAL_MS = 45000;
+const NOTIFICATIONS_FOCUS_DEBOUNCE_MS = 12000;
 
 const profileKeys: Array<keyof ProfileData> = [
   'nomeCompleto',
@@ -142,6 +144,8 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   const [profile, setProfileState] = useState<ProfileData>(initialProfileData);
   const notificationsRefreshInFlight = useRef<{ sequence: number; promise: Promise<void> } | null>(null);
   const notificationsRefreshSequence = useRef(0);
+  const notificationsLastSyncAt = useRef(0);
+  const notificationsPostMutationSyncTimeoutRef = useRef<number | null>(null);
   const notificationsSnapshotRef = useRef<PortalNotification[]>([]);
   const notificationsMutationSequence = useRef(0);
 
@@ -193,12 +197,13 @@ export function PortalProvider({ children }: { children: ReactNode }) {
 
     const request = (async () => {
       try {
-        const data = await apiRequest<PortalNotification[]>('/notifications/me', {
+        const data = await apiRequestCached<PortalNotification[]>('/notifications/me', {
           headers: authHeaders(token),
-        });
+        }, 15000, forceRefresh, 45000);
 
         if (window.localStorage.getItem(STORAGE_TOKEN_KEY) === token && notificationsRefreshSequence.current === sequence) {
           setNotifications(data);
+          notificationsLastSyncAt.current = Date.now();
         }
       } catch {
         // Refresh silencioso: falhas temporárias não devem bloquear a UI.
@@ -218,9 +223,9 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     const fallbackAccessTotal = Boolean(user.hasAccessTotal);
 
     try {
-      const response = await apiRequest<UserPermissionsResponse>(`/users/${user.id}/permissions`, {
+      const response = await apiRequestCached<UserPermissionsResponse>(`/users/${user.id}/permissions`, {
         headers: authHeaders(token),
-      });
+      }, 30000);
 
       const permissionCodes = (response.permissions ?? [])
         .filter((item) => item.assignment?.isEnabled)
@@ -241,11 +246,12 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     setAuthToken(token);
     setCurrentUser(user);
     setUserRole(mapBackendRole(user.role));
-    await Promise.all([
+    setIsAuthenticated(true);
+
+    void Promise.all([
       loadAccessData(token, user),
       loadPortalData(token),
     ]);
-    setIsAuthenticated(true);
   }, [loadAccessData, loadPortalData]);
 
   useEffect(() => {
@@ -266,11 +272,12 @@ export function PortalProvider({ children }: { children: ReactNode }) {
 
         setCurrentUser(response.user);
         setUserRole(mapBackendRole(response.user.role));
-        await Promise.all([
+        setIsAuthenticated(true);
+
+        void Promise.all([
           loadAccessData(existingToken, response.user),
           loadPortalData(existingToken),
         ]);
-        setIsAuthenticated(true);
       } catch {
         window.localStorage.removeItem(STORAGE_TOKEN_KEY);
         setAuthToken('');
@@ -287,12 +294,17 @@ export function PortalProvider({ children }: { children: ReactNode }) {
 
     let disposed = false;
 
-    const syncNotifications = () => {
+    const syncNotifications = (force = false) => {
       if (disposed) {
         return;
       }
 
-      void refreshNotifications(authToken);
+      const elapsed = Date.now() - notificationsLastSyncAt.current;
+      if (!force && elapsed < NOTIFICATIONS_FOCUS_DEBOUNCE_MS) {
+        return;
+      }
+
+      void refreshNotifications(authToken, force);
     };
 
     const visibilityHandler = () => {
@@ -301,21 +313,25 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    syncNotifications();
+    const focusHandler = () => {
+      syncNotifications();
+    };
+
+    syncNotifications(true);
 
     const intervalId = window.setInterval(() => {
       if (!document.hidden) {
         syncNotifications();
       }
-    }, 8000);
+    }, NOTIFICATIONS_REFRESH_INTERVAL_MS);
 
-    window.addEventListener('focus', syncNotifications);
+    window.addEventListener('focus', focusHandler);
     document.addEventListener('visibilitychange', visibilityHandler);
 
     return () => {
       disposed = true;
       window.clearInterval(intervalId);
-      window.removeEventListener('focus', syncNotifications);
+      window.removeEventListener('focus', focusHandler);
       document.removeEventListener('visibilitychange', visibilityHandler);
     };
   }, [authToken, isAuthenticated, refreshNotifications]);
@@ -428,7 +444,14 @@ export function PortalProvider({ children }: { children: ReactNode }) {
       }
       throw error;
     } finally {
-      void refreshNotifications(authToken, true);
+      if (notificationsPostMutationSyncTimeoutRef.current !== null) {
+        window.clearTimeout(notificationsPostMutationSyncTimeoutRef.current);
+      }
+
+      notificationsPostMutationSyncTimeoutRef.current = window.setTimeout(() => {
+        notificationsPostMutationSyncTimeoutRef.current = null;
+        void refreshNotifications(authToken, false);
+      }, 2500);
     }
   }, [authToken, refreshNotifications]);
 

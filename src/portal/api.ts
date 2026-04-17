@@ -45,9 +45,10 @@ const apiGetInFlight = new Map<string, Promise<unknown>>();
 const MAX_GET_CACHE_ENTRIES = 500;
 const apiPerfByEndpoint = new Map<string, ApiPerfEntry>();
 const apiPerfLastBudgetWarningAt = new Map<string, number>();
-const NETWORK_BUDGET_WARNING_MS = 650;
-const NETWORK_BUDGET_CRITICAL_MS = 1200;
-const BUDGET_WARNING_COOLDOWN_MS = 60000;
+const API_BUDGET_LOGS_ENABLED = import.meta.env.VITE_API_BUDGET_LOGS !== 'false';
+const NETWORK_BUDGET_WARNING_MS = Number(import.meta.env.VITE_API_BUDGET_WARNING_MS ?? 1800);
+const NETWORK_BUDGET_CRITICAL_MS = Number(import.meta.env.VITE_API_BUDGET_CRITICAL_MS ?? 4000);
+const BUDGET_WARNING_COOLDOWN_MS = Number(import.meta.env.VITE_API_BUDGET_COOLDOWN_MS ?? 180000);
 
 function normalizeEndpointForPerf(path: string) {
   const [withoutQuery] = path.split('?');
@@ -81,7 +82,7 @@ function getOrCreatePerfEntry(endpoint: string) {
 }
 
 function maybeWarnNetworkBudget(endpoint: string, durationMs: number) {
-  if (!import.meta.env.DEV || durationMs < NETWORK_BUDGET_WARNING_MS) {
+  if (!import.meta.env.DEV || !API_BUDGET_LOGS_ENABLED || durationMs < NETWORK_BUDGET_WARNING_MS) {
     return;
   }
 

@@ -105,6 +105,7 @@ const adminTeamSchema = z.object({
   memberIds: z.array(z.string().min(1)).optional().default([]),
   parentTeamId: z.string().nullable().optional(),
   costCenter: z.string().max(120).nullable().optional(),
+  color: z.string().max(30).nullable().optional(),
 });
 
 const managerTeamMemberUpdateSchema = z.object({
@@ -1056,6 +1057,7 @@ router.get('/teams/me', requireAuth, async (req, res) => {
         id: true,
         name: true,
         costCenter: true,
+        color: true,
         parentTeamId: true,
         manager: {
           select: {
@@ -1093,6 +1095,7 @@ router.get('/teams/me', requireAuth, async (req, res) => {
       id: true,
       name: true,
       costCenter: true,
+      color: true,
       managerId: true,
       coordinatorId: true,
       parentTeamId: true,
@@ -1207,6 +1210,7 @@ router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
       id: true,
       name: true,
       costCenter: true,
+      color: true,
       managerId: true,
       coordinatorId: true,
       parentTeamId: true,
@@ -1522,6 +1526,7 @@ router.get('/admin/teams', requireAuth, async (req, res) => {
       id: true,
       name: true,
       costCenter: true,
+      color: true,
       managerId: true,
       parentTeamId: true,
       manager: {
@@ -1610,11 +1615,13 @@ router.post('/admin/teams', requireAuth, async (req, res) => {
         name: payload.data.name.trim(),
         parentTeamId,
         costCenter: parentTeamId ? null : normalizedCostCenter,
+        color: payload.data.color ?? null,
       },
       select: {
         id: true,
         name: true,
         costCenter: true,
+        color: true,
         managerId: true,
         coordinatorId: true,
         parentTeamId: true,
@@ -1696,11 +1703,13 @@ router.patch('/admin/teams/:id', requireAuth, async (req, res) => {
       ...(payload.data.parentTeamId !== undefined && payload.data.parentTeamId !== null && payload.data.costCenter === undefined
         ? { costCenter: null }
         : {}),
+      ...(payload.data.color !== undefined ? { color: payload.data.color } : {}),
     },
     select: {
       id: true,
       name: true,
       costCenter: true,
+      color: true,
       managerId: true,
       coordinatorId: true,
       parentTeamId: true,

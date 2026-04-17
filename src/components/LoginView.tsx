@@ -57,7 +57,7 @@ export default function LoginView() {
 
     try {
       const popupResult = await signInWithPopup(firebaseAuth, createMicrosoftProvider());
-      const idToken = await popupResult.user.getIdToken(true);
+      const idToken = await popupResult.user.getIdToken();
       const result = await loginWithMicrosoft(idToken);
 
       if (!result.success) {

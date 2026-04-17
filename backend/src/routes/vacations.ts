@@ -11,6 +11,7 @@ import {
 } from '../lib/permission-engine.js';
 import { requireAuth } from '../middleware/auth.js';
 import { notifyUsersByPermission } from '../lib/notifications.js';
+import { createRequestTimer } from '../lib/request-timing.js';
 
 const router = Router();
 
@@ -993,6 +994,7 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
 });
 
 router.get('/vacations/requests', requireAuth, async (req: Request, res: Response) => {
+  const timer = createRequestTimer('GET /vacations/requests');
   const userId = req.authUser!.id;
   const [canApproveVacation, canRejectVacation, canViewAllVacations, isFullAccess, viewAllScope] = await Promise.all([
     hasPermission(userId, 'approve_vacation'),
@@ -1001,6 +1003,7 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
     isAccessTotal(userId),
     getPermissionScope(userId, 'view_all_vacations'),
   ]);
+  timer.mark('resolve-permissions-and-scope');
 
   const canViewPendingVacations = canApproveVacation
     || canRejectVacation
@@ -1060,6 +1063,8 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
     },
     orderBy: [{ createdAt: 'desc' }],
   });
+  timer.mark('load-pending-vacations');
+  timer.done({ count: pendingByStep.length });
 
   return res.json(pendingByStep);
 });

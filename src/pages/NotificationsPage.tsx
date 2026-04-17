@@ -492,10 +492,8 @@ export default function NotificationsPage() {
                           return;
                         }
 
-                        void runNotificationAction(`mark-notification-${notification.id}`, MICROCOPY.notifications.markReadSuccess, MICROCOPY.notifications.markReadError, async () => {
-                          await markNotificationRead(notification.id);
-                          navigate(details.action!.path);
-                        });
+                        navigate(details.action!.path);
+                        void markNotificationRead(notification.id);
                       }}
                     >
                       {details.action!.label}

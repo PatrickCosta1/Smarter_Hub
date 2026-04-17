@@ -21,6 +21,13 @@ function getAuthHeaders() {
   return authHeaders(token);
 }
 
+function getTimeGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Bom dia';
+  if (hour < 19) return 'Boa tarde';
+  return 'Boa noite';
+}
+
 export default function HomePage() {
   const navigate = useNavigate();
   const { profile, unreadNotifications, hasPermission, isRootAccess, currentUser } = usePortal();
@@ -141,41 +148,73 @@ export default function HomePage() {
     return () => controller.abort();
   }, [canViewUserList, isManagerFlow, isTPeople]);
 
+  const greeting = getTimeGreeting();
+
   return (
     <>
       <section className="home-hero">
-        <div className="home-main">
-          <p className="hero-kicker">Portal interno</p>
-          <h1>{`Olá, ${displayName}!`}</h1>
-          <p>{isTPeople
-            ? 'Centro executivo com foco em decisões e operação.'
-            : isManagerFlow
-              ? 'Pendências e equipa num painel objetivo.'
-              : 'Resumo direto com o essencial do dia.'}</p>
-
-          <div className="home-metrics">
-            <article>
-              <span>Pendências</span>
-              <strong>{isLoadingMetrics ? <LoadingInline variant="metric" /> : totalPending}</strong>
-            </article>
-            <article>
-              <span>Notificações</span>
-              <strong>{unreadNotifications}</strong>
-            </article>
-            <article>
-              <span>Formações ativas</span>
-              <strong>{isLoadingMetrics ? <LoadingInline variant="metric" /> : assignedTrainings}</strong>
-            </article>
+        <div className="home-hero__content">
+          <div className="home-hero__text">
+            <p className="home-hero__kicker">
+              {isTPeople ? 'Centro executivo' : isManagerFlow ? 'Painel de gestão' : 'Portal interno'}
+            </p>
+            <h1 className="home-hero__title">
+              {greeting}, <span className="home-hero__name">{displayName}</span>
+            </h1>
+            <p className="home-hero__sub">
+              {isTPeople
+                ? 'Visão global da organização com foco em decisões e operação.'
+                : isManagerFlow
+                  ? 'Consulta as pendências da equipa e age com rapidez.'
+                  : 'O teu espaço pessoal — ficha, férias, formações e notificações.'}
+            </p>
           </div>
 
-          {!isManagerFlow && ownPendingProfileRequest && !isLoadingOwnPendingProfileRequest && (
-            <div className="home-pending-banner">
-              <strong>Pedido de alteração da ficha em análise</strong>
-              <p>O teu pedido foi submetido e está à espera de aprovação. Vais receber uma notificação quando houver decisão.</p>
-            </div>
-          )}
+          <div className="home-hero__metrics">
+            {isLoadingMetrics ? (
+              <>
+                <div className="home-metric home-metric--loading"><LoadingInline variant="metric" /></div>
+                <div className="home-metric home-metric--loading"><LoadingInline variant="metric" /></div>
+                <div className="home-metric home-metric--loading"><LoadingInline variant="metric" /></div>
+              </>
+            ) : isManagerFlow || isTPeople ? (
+              <>
+                <div className={`home-metric${pendingProfileRequests > 0 ? ' home-metric--alert' : ''}`}>
+                  <span>Fichas pendentes</span>
+                  <strong>{pendingProfileRequests}</strong>
+                </div>
+                <div className={`home-metric${pendingVacationRequests > 0 ? ' home-metric--alert' : ''}`}>
+                  <span>Férias pendentes</span>
+                  <strong>{pendingVacationRequests}</strong>
+                </div>
+                <div className="home-metric">
+                  <span>Formações ativas</span>
+                  <strong>{assignedTrainings}</strong>
+                </div>
+                <div className={`home-metric${unreadNotifications > 0 ? ' home-metric--info' : ''}`}>
+                  <span>Notificações</span>
+                  <strong>{unreadNotifications}</strong>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className={`home-metric${ownPendingProfileRequest ? ' home-metric--alert' : ''}`}>
+                  <span>Ficha</span>
+                  <strong>{ownPendingProfileRequest ? 'Em análise' : 'OK'}</strong>
+                </div>
+                <div className={`home-metric${unreadNotifications > 0 ? ' home-metric--info' : ''}`}>
+                  <span>Notificações</span>
+                  <strong>{unreadNotifications}</strong>
+                </div>
+                <div className="home-metric">
+                  <span>Formações ativas</span>
+                  <strong>{assignedTrainings}</strong>
+                </div>
+              </>
+            )}
+          </div>
 
-          <div className="home-actions">
+          <div className="home-hero__actions">
             {isTPeople ? (
               <>
                 <Button variant="primary" type="button" onClick={() => navigate('/colaboradores')}>Gerir colaboradores</Button>
@@ -183,63 +222,109 @@ export default function HomePage() {
               </>
             ) : isManagerFlow ? (
               <>
-                <Button variant="primary" type="button" onClick={() => navigate('/aprovacoes')}>Ver pendências</Button>
+                <Button variant="primary" type="button" onClick={() => navigate('/aprovacoes')}>
+                  Ver pendências {totalPending > 0 && <span className="home-cta-badge">{totalPending}</span>}
+                </Button>
                 <Button variant="ghost" type="button" onClick={() => navigate('/colaboradores')}>Colaboradores</Button>
               </>
             ) : (
-              <Button variant="primary" type="button" onClick={() => navigate('/profile')}>Abrir minha ficha</Button>
+              <>
+                <Button variant="primary" type="button" onClick={() => navigate('/profile')}>Abrir minha ficha</Button>
+                <Button variant="ghost" type="button" onClick={() => navigate('/ferias')}>Férias</Button>
+              </>
             )}
           </div>
         </div>
       </section>
 
+      {!isManagerFlow && !isTPeople && ownPendingProfileRequest && !isLoadingOwnPendingProfileRequest && (
+        <div className="home-pending-alert">
+          <span className="home-pending-alert__icon" aria-hidden="true">⏳</span>
+          <div>
+            <strong>Pedido de alteração da ficha em análise</strong>
+            <p>O teu pedido foi submetido e está à espera de aprovação. Vais receber uma notificação quando houver decisão.</p>
+          </div>
+          <Button variant="ghost" size="sm" type="button" onClick={() => navigate('/notifications')}>Ver notificações</Button>
+        </div>
+      )}
+
       <section className="home-grid">
         {isLoadingMetrics ? (
           <>
-            <Card as="article" className="home-card home-card--loading">
-              <LoadingInline variant="cardTitle" />
-              <LoadingInline variant="cardBody" />
-              <LoadingInline variant="button" />
-            </Card>
-            <Card as="article" className="home-card home-card--loading">
-              <LoadingInline variant="cardTitle" />
-              <LoadingInline variant="cardBody" />
-              <LoadingInline variant="button" />
-            </Card>
+            {[0, 1, 2].map((i) => (
+              <Card key={i} as="article" className="home-card home-card--loading">
+                <LoadingInline variant="cardTitle" />
+                <LoadingInline variant="cardBody" />
+                <LoadingInline variant="button" />
+              </Card>
+            ))}
           </>
         ) : isTPeople || isManagerFlow ? (
           <>
             <Card as="article" className="home-card">
-              <p>Operação</p>
+              <p className="home-card__label">Gestão</p>
               <h3>Colaboradores</h3>
               <small>Ver ficha, permissões e estado da conta.</small>
               <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/colaboradores')}>Abrir</Button>
             </Card>
 
-            <Card as="article" className="home-card">
-              <p>Aprovações</p>
-              <h3>Fila atual</h3>
-              <small>{totalPending} pendência(s) no momento.</small>
+            <Card as="article" className={`home-card${pendingProfileRequests > 0 ? ' home-card--alert' : ''}`}>
+              <p className="home-card__label">Aprovações</p>
+              <h3>Fichas pendentes</h3>
+              <small>{pendingProfileRequests > 0 ? `${pendingProfileRequests} pedido(s) aguardam revisão.` : 'Sem fichas por aprovar.'}</small>
               <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/aprovacoes')}>Abrir</Button>
+            </Card>
+
+            <Card as="article" className={`home-card${pendingVacationRequests > 0 ? ' home-card--alert' : ''}`}>
+              <p className="home-card__label">Aprovações</p>
+              <h3>Férias pendentes</h3>
+              <small>{pendingVacationRequests > 0 ? `${pendingVacationRequests} pedido(s) de férias por validar.` : 'Sem pedidos de férias pendentes.'}</small>
+              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/aprovacoes')}>Abrir</Button>
+            </Card>
+
+            <Card as="article" className="home-card">
+              <p className="home-card__label">Equipa</p>
+              <h3>Formações ativas</h3>
+              <small>{assignedTrainings > 0 ? `${assignedTrainings} formação(ões) atribuídas à equipa.` : 'Sem formações atribuídas.'}</small>
+              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/formacoes')}>Ver formações</Button>
+            </Card>
+
+            <Card as="article" className={`home-card${unreadNotifications > 0 ? ' home-card--info' : ''}`}>
+              <p className="home-card__label">Comunicação</p>
+              <h3>Notificações</h3>
+              <small>{unreadNotifications > 0 ? `${unreadNotifications} notificação(ões) por ler.` : 'Nenhuma notificação pendente.'}</small>
+              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/notifications')}>Ver todas</Button>
             </Card>
           </>
         ) : (
           <>
-            <Card as="article" className="home-card">
-              <p>Dados pessoais</p>
-              <h3>Ficha colaborador</h3>
-              <small>Atualizar dados essenciais.</small>
-              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/profile')}>Ver</Button>
+            <Card as="article" className={`home-card${ownPendingProfileRequest ? ' home-card--alert' : ''}`}>
+              <p className="home-card__label">Dados pessoais</p>
+              <h3>Minha ficha</h3>
+              <small>{ownPendingProfileRequest ? 'Pedido de alteração em análise pela equipa RH.' : 'Mantém os teus dados atualizados.'}</small>
+              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/profile')}>Ver ficha</Button>
             </Card>
 
-            {ownPendingProfileRequest && !isLoadingOwnPendingProfileRequest && (
-              <Card as="article" className="home-card home-card--highlight">
-                <p>Pendente</p>
-                <h3>Pedido de ficha em aprovação</h3>
-                <small>Existe um pedido de alteração à espera de validação.</small>
-                <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/notifications')}>Ver detalhe</Button>
-              </Card>
-            )}
+            <Card as="article" className="home-card">
+              <p className="home-card__label">Ausências</p>
+              <h3>Férias</h3>
+              <small>Consulta o teu calendário e submete pedidos de férias.</small>
+              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/ferias')}>Consultar</Button>
+            </Card>
+
+            <Card as="article" className={`home-card${unreadNotifications > 0 ? ' home-card--info' : ''}`}>
+              <p className="home-card__label">Comunicação</p>
+              <h3>Notificações</h3>
+              <small>{unreadNotifications > 0 ? `Tens ${unreadNotifications} notificação(ões) por ler.` : 'Estás a par de tudo.'}</small>
+              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/notifications')}>Ver todas</Button>
+            </Card>
+
+            <Card as="article" className="home-card">
+              <p className="home-card__label">Desenvolvimento</p>
+              <h3>Formações</h3>
+              <small>Acede às tuas formações atribuídas e regista novas.</small>
+              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/formacoes')}>Ver formações</Button>
+            </Card>
           </>
         )}
       </section>

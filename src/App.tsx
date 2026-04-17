@@ -5,6 +5,7 @@ import { PortalProvider, usePortal } from './portal/context';
 import { apiRequestCached, authHeaders } from './portal/api';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
+const ENABLE_AGGRESSIVE_PREFETCH = import.meta.env.VITE_ENABLE_AGGRESSIVE_PREFETCH === 'true';
 
 const LoginView = lazy(() => import('./components/LoginView'));
 const PortalLayout = lazy(() => import('./layouts/PortalLayout'));
@@ -65,6 +66,7 @@ function AppRoutes() {
     const token = window.localStorage.getItem(STORAGE_TOKEN_KEY) || '';
     const prefetchFingerprint = [
       token,
+      ENABLE_AGGRESSIVE_PREFETCH ? 'prefetch-aggressive' : 'prefetch-minimal',
       isConstrainedNetwork ? 'net-constrained' : 'net-normal',
       isRootAccess ? 'root' : 'no-root',
       isAccessTotal ? 'access-total' : 'no-access-total',
@@ -99,6 +101,11 @@ function AppRoutes() {
       requests.push(safePrefetch('/notifications/me', 10000));
       requests.push(safePrefetch('/profile/me', 30000));
 
+      if (!ENABLE_AGGRESSIVE_PREFETCH) {
+        void Promise.allSettled(requests);
+        return;
+      }
+
       if (canViewTeams) {
         requests.push(safePrefetch('/users/collaborators?page=1&pageSize=250&sortBy=username&sortDirection=asc', 60000));
       }
@@ -106,10 +113,6 @@ function AppRoutes() {
       if (canViewUserList) {
         requests.push(safePrefetch('/admin/teams', 60000));
         requests.push(safePrefetch('/teams', 60000));
-      }
-
-      if (canManagePermissions && currentUser?.id) {
-        requests.push(safePrefetch(`/users/${currentUser.id}/permissions`, 60000));
       }
 
       if (isRootAccess || isAccessTotal) {
@@ -122,7 +125,8 @@ function AppRoutes() {
       }
 
       if (canViewVacations) {
-        requests.push(safePrefetch('/vacations', 30000));
+        requests.push(safePrefetch('/vacations/me', 30000));
+        requests.push(safePrefetch('/vacations/overview', 30000));
       }
 
       if (canManageTrainings || canViewOwnTrainings) {

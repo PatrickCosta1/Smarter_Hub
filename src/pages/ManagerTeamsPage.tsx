@@ -45,10 +45,17 @@ type TeamMember = {
   vacations: TeamVacation[];
 };
 
+const TEAM_COLORS = [
+  '#4B79F5', '#8B5CF6', '#EC4899', '#EF4444', '#F97316',
+  '#EAB308', '#22C55E', '#06B6D4', '#14B8A6', '#6B7280',
+  '#1E40AF', '#7C3AED',
+];
+
 type TeamSummary = {
   id: string;
   name: string;
   costCenter?: string | null;
+  color?: string | null;
   leaderId?: string | null;
   leader?: {
     id: string;
@@ -108,6 +115,7 @@ type TeamDraft = {
   memberIds: string[];
   parentTeamId: string;
   costCenter: string;
+  color: string;
 };
 
 const EMPTY_TEAM_DRAFT: TeamDraft = {
@@ -116,6 +124,7 @@ const EMPTY_TEAM_DRAFT: TeamDraft = {
   memberIds: [],
   parentTeamId: '',
   costCenter: '',
+  color: '#4B79F5',
 };
 
 function formatVacationType(value: TeamVacation['requestType']) {
@@ -340,6 +349,7 @@ export default function ManagerTeamsPage() {
       memberIds: selectedTeamMembers.map((member) => member.id),
       parentTeamId: selectedTeam.parentTeam?.id || '',
       costCenter: selectedTeam.parentTeam ? '' : (selectedTeam.costCenter || ''),
+      color: selectedTeam.color || '#4B79F5',
     });
     setManageQuery('');
     setIsManageTeamModalOpen(true);
@@ -363,7 +373,8 @@ export default function ManagerTeamsPage() {
     const hasBasicChanges = nextName !== selectedTeam.name
       || nextLeaderId !== currentLeaderId
       || nextParentTeamId !== currentParentTeamId
-      || (canViewCostCenter && nextCostCenter !== currentCostCenter);
+      || (canViewCostCenter && nextCostCenter !== currentCostCenter)
+      || teamDraft.color !== (selectedTeam.color || '#4B79F5');
 
     const currentMemberIds = new Set(selectedTeamMembers.map((member) => member.id));
     const nextMemberIds = new Set(teamDraft.memberIds.filter((id) => id && id !== teamDraft.leaderId));
@@ -396,6 +407,7 @@ export default function ManagerTeamsPage() {
             name: nextName,
             leaderId: teamDraft.leaderId || null,
             parentTeamId: nextParentTeamId || null,
+            color: teamDraft.color || null,
             ...(canViewCostCenter ? { costCenter: nextParentTeamId ? null : (nextCostCenter || null) } : {}),
           }),
         });
@@ -631,6 +643,7 @@ export default function ManagerTeamsPage() {
           leaderId: teamDraft.leaderId || null,
           memberIds: teamDraft.memberIds,
           parentTeamId: teamDraft.parentTeamId || null,
+          color: teamDraft.color || null,
           ...(canViewCostCenter ? { costCenter: teamDraft.parentTeamId ? null : (teamDraft.costCenter.trim() || null) } : {}),
         }),
       });
@@ -777,6 +790,7 @@ export default function ManagerTeamsPage() {
               key={team.id}
               type="button"
               className="manager-team-card"
+              style={{ '--team-color': team.color || '#4B79F5' } as React.CSSProperties}
               onClick={() => setSelectedTeamId(team.id)}
             >
               <span className="manager-team-card__label">Equipa</span>
@@ -975,6 +989,23 @@ export default function ManagerTeamsPage() {
                 />
               </label>
             )}
+
+            <label>
+              <span>Cor da equipa</span>
+              <div className="team-color-picker">
+                {TEAM_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={`team-color-swatch${teamDraft.color === c ? ' is-active' : ''}`}
+                    style={{ '--swatch-color': c } as React.CSSProperties}
+                    onClick={() => setTeamDraft((current) => ({ ...current, color: c }))}
+                    title={c}
+                    aria-label={`Cor ${c}`}
+                  />
+                ))}
+              </div>
+            </label>
           </div>
 
           <div className="team-create-form__pickers">
@@ -1140,6 +1171,24 @@ export default function ManagerTeamsPage() {
                 />
               </label>
             )}
+
+            <label>
+              <span>Cor da equipa</span>
+              <div className="team-color-picker">
+                {TEAM_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    disabled={!canEditTeam}
+                    className={`team-color-swatch${teamDraft.color === c ? ' is-active' : ''}`}
+                    style={{ '--swatch-color': c } as React.CSSProperties}
+                    onClick={() => setTeamDraft((current) => ({ ...current, color: c }))}
+                    title={c}
+                    aria-label={`Cor ${c}`}
+                  />
+                ))}
+              </div>
+            </label>
 
             <p className="team-manage-panel__hint">
               Membros selecionados: <strong>{teamDraft.memberIds.filter((id) => id !== teamDraft.leaderId).length}</strong>
