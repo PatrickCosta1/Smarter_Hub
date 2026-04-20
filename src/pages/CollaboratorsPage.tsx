@@ -2413,7 +2413,7 @@ export default function CollaboratorsPage() {
         sortedSubTeams.forEach((subTeamName, index) => {
           listsSheet.getCell(`${colLetter}${index + 2}`).value = subTeamName;
         });
-        workbook.definedNames.add(toExcelDefinedName(parentTeamName), `Listas!$${colLetter}$2:$${colLetter}$${sortedSubTeams.length + 1}`);
+        workbook.definedNames.add(`Listas!$${colLetter}$2:$${colLetter}$${sortedSubTeams.length + 1}`, toExcelDefinedName(parentTeamName));
         namedRangeColumn += 1;
       }
 
