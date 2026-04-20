@@ -561,6 +561,25 @@ function toExcelDefinedName(value: string) {
   return `SUBTEAM_${fallback}`;
 }
 
+let excelJsModulePromise: Promise<any> | null = null;
+
+async function loadExcelJsWorkbook() {
+  if (!excelJsModulePromise) {
+    excelJsModulePromise = (async () => {
+      try {
+        const browserEntry = 'exceljs/dist/exceljs.min.js';
+        const browserModule = await import(/* @vite-ignore */ browserEntry);
+        return browserModule.default ?? browserModule;
+      } catch {
+        const defaultModule = await import('exceljs');
+        return defaultModule.default ?? defaultModule;
+      }
+    })();
+  }
+
+  return excelJsModulePromise;
+}
+
 function readSpreadsheetCellValue(value: unknown): string {
   if (value == null) {
     return '';
@@ -2209,13 +2228,13 @@ export default function CollaboratorsPage() {
       return buildImportRowsFromMatrix(parseDelimitedText(text));
     }
 
-    const ExcelJS = await import('exceljs');
+    const ExcelJS = await loadExcelJsWorkbook();
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(await file.arrayBuffer());
     const worksheet = workbook.getWorksheet('Importacao')
-      ?? workbook.worksheets.find((sheet) => /^importa[cç][aã]o$/i.test(sheet.name))
-      ?? workbook.worksheets.find((sheet) => !/^instrucoes$/i.test(sheet.name) && !/^listas$/i.test(sheet.name) && sheet.actualRowCount > 0)
-      ?? workbook.worksheets.find((sheet) => sheet.actualRowCount > 0);
+      ?? workbook.worksheets.find((sheet: any) => /^importa[cç][aã]o$/i.test(sheet.name))
+      ?? workbook.worksheets.find((sheet: any) => !/^instrucoes$/i.test(sheet.name) && !/^listas$/i.test(sheet.name) && sheet.actualRowCount > 0)
+      ?? workbook.worksheets.find((sheet: any) => sheet.actualRowCount > 0);
 
     if (!worksheet) {
       return {
@@ -2225,7 +2244,7 @@ export default function CollaboratorsPage() {
     }
 
     const matrix: string[][] = [];
-    worksheet.eachRow({ includeEmpty: true }, (row) => {
+    worksheet.eachRow({ includeEmpty: true }, (row: any) => {
       const values: string[] = [];
       const totalCells = Math.max(row.cellCount, Array.isArray(row.values) ? row.values.length - 1 : 0);
       for (let columnIndex = 1; columnIndex <= totalCells; columnIndex += 1) {
@@ -2274,7 +2293,7 @@ export default function CollaboratorsPage() {
 
   async function downloadImportTemplate() {
     try {
-      const ExcelJS = await import('exceljs');
+      const ExcelJS = await loadExcelJsWorkbook();
       const workbook = new ExcelJS.Workbook();
       const [teamData, profileOptionsData] = await Promise.allSettled([
         apiRequestCached<Array<{ id: string; name: string; parentTeamId?: string | null }>>('/admin/teams', { headers: getAuthHeaders() }, 8000, true),
@@ -2320,7 +2339,7 @@ export default function CollaboratorsPage() {
       requirementRow.values = IMPORT_TEMPLATE_FIELDS.map((field) => (field.required ? 'Obrigatório' : 'Opcional'));
       requirementRow.font = { bold: true, color: { argb: 'FF123D75' } };
       requirementRow.alignment = { vertical: 'middle', horizontal: 'center' };
-      requirementRow.eachCell((cell, columnNumber) => {
+      requirementRow.eachCell((cell: any, columnNumber: number) => {
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
@@ -2451,6 +2470,7 @@ export default function CollaboratorsPage() {
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (error) {
+      console.error('Falha ao gerar modelo de importacao XLSX', error);
       setStatus(error instanceof Error ? error.message : 'Falha ao gerar modelo de importação.');
     }
   }
