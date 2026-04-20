@@ -413,6 +413,39 @@ type TeamOption = {
   name: string;
 };
 
+type CollaboratorImportProfile = Partial<Record<Exclude<keyof CollaboratorEditDraft, 'role' | 'teamId' | 'isActive' | 'workCountry' | 'nomeCompleto'>, string>>;
+
+type CollaboratorImportRow = {
+  rowNumber: number;
+  fullName: string;
+  username: string;
+  email: string;
+  workCountry: 'PT' | 'BR';
+  teamName: string;
+  subTeamName: string;
+  profile: CollaboratorImportProfile;
+};
+
+type CollaboratorImportIssue = {
+  rowNumber: number;
+  message: string;
+};
+
+type CollaboratorImportResultItem = {
+  rowNumber: number;
+  fullName: string;
+  username: string;
+  email: string;
+  status: 'CREATED' | 'FAILED';
+  message: string;
+};
+
+type CollaboratorImportResponse = {
+  createdCount: number;
+  failedCount: number;
+  results: CollaboratorImportResultItem[];
+};
+
 type CustomProfileOption = {
   id: string;
   label: string;
@@ -437,9 +470,339 @@ const EMPTY_PERMISSION_DRAFT: PermissionDraft = {
   notes: '',
 };
 
+const IMPORT_PROFILE_FIELD_KEYS = EDIT_PROFILE_FIELDS
+  .filter((field) => field.key !== 'nomeCompleto'
+    && field.key !== 'comprovativoMoradaFiscal'
+    && field.key !== 'comprovativoCartaoCidadao'
+    && field.key !== 'comprovativoIban'
+    && field.key !== 'comprovativoCartaoContinente')
+  .map((field) => field.key) as Array<Exclude<keyof CollaboratorEditDraft, 'role' | 'teamId' | 'isActive' | 'workCountry' | 'nomeCompleto'>>;
+
+const IMPORT_FILE_ACCEPT = '.xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
+
+const IMPORT_TEMPLATE_FIELDS: Array<{ key: string; label: string; required?: boolean; example: string; aliases?: string[]; dropdownKey?: string }> = [
+  { key: 'fullName', label: 'Nome completo', required: true, example: '', aliases: ['nomecompleto', 'fullname', 'nome'] },
+  { key: 'username', label: 'Username', required: true, example: '', aliases: ['utilizador'] },
+  { key: 'email', label: 'Email', required: true, example: '', aliases: ['emaillogin'] },
+  { key: 'workCountry', label: 'País de trabalho', example: '', aliases: ['paisdetrabalho', 'workcountry', 'pais'], dropdownKey: 'workCountry' },
+  { key: 'teamName', label: 'Equipa principal', example: '', aliases: ['equipa', 'team', 'teamname'], dropdownKey: 'teamName' },
+  { key: 'subTeamName', label: 'Subequipa', example: '', aliases: ['subequipa', 'subteam', 'subteamname'], dropdownKey: 'subTeamName' },
+  ...EDIT_PROFILE_FIELDS
+    .filter((field) => field.key !== 'nomeCompleto'
+      && field.key !== 'comprovativoMoradaFiscal'
+      && field.key !== 'comprovativoCartaoCidadao'
+      && field.key !== 'comprovativoIban'
+      && field.key !== 'comprovativoCartaoContinente')
+    .map((field) => ({
+      key: field.key,
+      label: field.label,
+      example: '',
+      aliases: [field.key],
+      dropdownKey:
+        field.key === 'genero' ? 'genero'
+        : field.key === 'estadoCivil' ? 'estadoCivil'
+        : field.key === 'habilitacoesLiterarias' ? 'habilitacoesLiterarias'
+        : field.key === 'situacaoIrs' ? 'situacaoIrs'
+        : field.key === 'irsJovem' ? 'irsJovem'
+        : field.key === 'contactoEmergenciaParentesco' ? 'contactoEmergenciaParentesco'
+        : field.key === 'tipoContrato' ? 'tipoContrato'
+        : field.key === 'regimeHorario' ? 'regimeHorario'
+        : field.key === 'cargo' ? 'cargo'
+        : field.key === 'funcao' ? 'funcao'
+        : undefined,
+    })),
+];
+
+const IMPORT_FIELD_TARGETS = new Map<string, string>(
+  IMPORT_TEMPLATE_FIELDS.flatMap((field) => {
+    const candidates = [field.label, field.key, ...(field.aliases ?? [])];
+    return candidates.map((candidate) => [normalizeImportHeader(candidate), field.key] as const);
+  }),
+);
+
 function getAuthHeaders() {
   const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
   return authHeaders(token);
+}
+
+function normalizeImportHeader(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function normalizeImportText(value: string) {
+  return value.replace(/^\uFEFF/, '').trim();
+}
+
+function toExcelColumnLetter(columnNumber: number) {
+  let current = columnNumber;
+  let result = '';
+  while (current > 0) {
+    const modulo = (current - 1) % 26;
+    result = String.fromCharCode(65 + modulo) + result;
+    current = Math.floor((current - modulo) / 26);
+  }
+  return result;
+}
+
+function toExcelDefinedName(value: string) {
+  const normalized = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  const fallback = normalized || 'TEAM';
+  return `SUBTEAM_${fallback}`;
+}
+
+function readSpreadsheetCellValue(value: unknown): string {
+  if (value == null) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value).trim();
+  }
+
+  if (value instanceof Date) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
+
+  if (typeof value === 'object') {
+    const cell = value as {
+      text?: string;
+      result?: unknown;
+      richText?: Array<{ text?: string }>;
+      hyperlink?: string;
+    };
+
+    if (typeof cell.text === 'string') {
+      return cell.text.trim();
+    }
+    if (Array.isArray(cell.richText)) {
+      return cell.richText.map((item) => item.text ?? '').join('').trim();
+    }
+    if (cell.result != null) {
+      return readSpreadsheetCellValue(cell.result);
+    }
+    if (typeof cell.hyperlink === 'string') {
+      return cell.hyperlink.trim();
+    }
+  }
+
+  return String(value).trim();
+}
+
+function parseDelimitedLine(line: string, delimiter: string) {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === delimiter && !inQuotes) {
+      values.push(current);
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current);
+  return values.map((item) => normalizeImportText(item));
+}
+
+function parseDelimitedText(text: string) {
+  const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalizedText.split('\n').filter((line) => line.trim().length > 0);
+  if (lines.length === 0) {
+    return [] as string[][];
+  }
+
+  const firstLine = lines[0];
+  const semicolonCount = (firstLine.match(/;/g) ?? []).length;
+  const commaCount = (firstLine.match(/,/g) ?? []).length;
+  const delimiter = semicolonCount > commaCount ? ';' : ',';
+
+  return lines.map((line) => parseDelimitedLine(line, delimiter));
+}
+
+function createEmptyImportRow(rowNumber: number): CollaboratorImportRow {
+  return {
+    rowNumber,
+    fullName: '',
+    username: '',
+    email: '',
+    workCountry: 'PT',
+    teamName: '',
+    subTeamName: '',
+    profile: {},
+  };
+}
+
+function assignImportField(row: CollaboratorImportRow, targetKey: string, value: string) {
+  if (!value) {
+    return;
+  }
+
+  switch (targetKey) {
+    case 'fullName':
+      row.fullName = value.replace(/\s+/g, ' ').trim();
+      return;
+    case 'username':
+      row.username = value.trim().toLowerCase();
+      return;
+    case 'email':
+      row.email = value.trim().toLowerCase();
+      return;
+    case 'workCountry':
+      row.workCountry = value.trim().toUpperCase() === 'BR' ? 'BR' : 'PT';
+      return;
+    case 'teamName':
+      row.teamName = value.trim();
+      return;
+    case 'subTeamName':
+      row.subTeamName = value.trim();
+      return;
+    default:
+      if (IMPORT_PROFILE_FIELD_KEYS.includes(targetKey as Exclude<keyof CollaboratorEditDraft, 'role' | 'teamId' | 'isActive' | 'workCountry' | 'nomeCompleto'>)) {
+        row.profile[targetKey as keyof CollaboratorImportProfile] = value.trim();
+      }
+  }
+}
+
+function validateImportRows(rows: CollaboratorImportRow[]) {
+  const issues: CollaboratorImportIssue[] = [];
+  const usernameCounts = new Map<string, number>();
+  const emailCounts = new Map<string, number>();
+
+  for (const row of rows) {
+    if (row.username) {
+      usernameCounts.set(row.username, (usernameCounts.get(row.username) ?? 0) + 1);
+    }
+    if (row.email) {
+      emailCounts.set(row.email, (emailCounts.get(row.email) ?? 0) + 1);
+    }
+  }
+
+  for (const row of rows) {
+    if (!row.fullName) {
+      issues.push({ rowNumber: row.rowNumber, message: 'Nome completo em falta.' });
+    }
+    if (!row.username) {
+      issues.push({ rowNumber: row.rowNumber, message: 'Username em falta.' });
+    }
+    if (!row.email) {
+      issues.push({ rowNumber: row.rowNumber, message: 'Email em falta.' });
+    }
+    if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) {
+      issues.push({ rowNumber: row.rowNumber, message: 'Email inválido.' });
+    }
+    if ((usernameCounts.get(row.username) ?? 0) > 1) {
+      issues.push({ rowNumber: row.rowNumber, message: 'Username duplicado no ficheiro.' });
+    }
+    if ((emailCounts.get(row.email) ?? 0) > 1) {
+      issues.push({ rowNumber: row.rowNumber, message: 'Email duplicado no ficheiro.' });
+    }
+  }
+
+  if (rows.length > 200) {
+    issues.push({ rowNumber: 1, message: 'Máximo suportado por importação: 200 linhas.' });
+  }
+
+  return issues;
+}
+
+function buildImportRowsFromMatrix(matrix: string[][]) {
+  if (matrix.length === 0) {
+    return { rows: [] as CollaboratorImportRow[], issues: [{ rowNumber: 1, message: 'O ficheiro está vazio.' }] as CollaboratorImportIssue[] };
+  }
+
+  const findHeaderRowIndex = () => {
+    for (let index = 0; index < matrix.length; index += 1) {
+      const recognized = matrix[index]
+        .map((header) => IMPORT_FIELD_TARGETS.get(normalizeImportHeader(header)) ?? '')
+        .filter(Boolean).length;
+      if (recognized >= 3) {
+        return index;
+      }
+    }
+    return -1;
+  };
+
+  const headerRowIndex = findHeaderRowIndex();
+  if (headerRowIndex < 0) {
+    return {
+      rows: [] as CollaboratorImportRow[],
+      issues: [{ rowNumber: 1, message: 'Não foi possível identificar a linha de cabeçalhos no ficheiro.' }] as CollaboratorImportIssue[],
+    };
+  }
+
+  const headerTargets = matrix[headerRowIndex].map((header) => IMPORT_FIELD_TARGETS.get(normalizeImportHeader(header)) ?? '');
+  const rows = matrix
+    .slice(headerRowIndex + 1)
+    .map((cells, index) => {
+      const row = createEmptyImportRow(headerRowIndex + index + 2);
+      cells.forEach((cell, columnIndex) => {
+        const targetKey = headerTargets[columnIndex];
+        if (!targetKey) {
+          return;
+        }
+        assignImportField(row, targetKey, normalizeImportText(cell));
+      });
+      return row;
+    })
+    .filter((row) => Boolean(row.fullName || row.username || row.email || row.teamName || row.subTeamName || Object.values(row.profile).some(Boolean)));
+
+  const issues = validateImportRows(rows);
+  return { rows, issues };
+}
+
+function normalizeUsernamePart(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .trim();
+}
+
+function buildAutoUsername(firstName: string, lastName: string) {
+  const first = normalizeUsernamePart(firstName);
+  const last = normalizeUsernamePart(lastName);
+  if (!first && !last) return '';
+  if (!first) return last;
+  if (!last) return first;
+  return `${first}.${last}`;
+}
+
+function buildAutoEmailFromName(firstName: string, lastName: string) {
+  const username = buildAutoUsername(firstName, lastName);
+  if (!username) return '';
+  return `${username}@tlantic.com`;
 }
 
 function normalizeDropdownValues(values: string[]) {
@@ -663,9 +1026,6 @@ export default function CollaboratorsPage() {
   const [permissionDrafts, setPermissionDrafts] = useState<Record<string, PermissionDraft>>({});
   const [savingPermissionId, setSavingPermissionId] = useState<string | null>(null);
   const [isTogglingAccessTotal, setIsTogglingAccessTotal] = useState(false);
-  const [accessTotalModalOpen, setAccessTotalModalOpen] = useState(false);
-  const [accessTotalAction, setAccessTotalAction] = useState<'grant' | 'revoke'>('grant');
-  const [accessTotalReason, setAccessTotalReason] = useState('');
   const [selectedPermissionId, setSelectedPermissionId] = useState<string | null>(null);
   const [permissionSearch, setPermissionSearch] = useState('');
   const [permissionTeams, setPermissionTeams] = useState<TeamOption[]>([]);
@@ -679,7 +1039,21 @@ export default function CollaboratorsPage() {
   const [profileOptionLabel, setProfileOptionLabel] = useState('');
   const [profileOptionGroup, setProfileOptionGroup] = useState('');
   const [isSavingProfileOption, setIsSavingProfileOption] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [newUserDraft, setNewUserDraft] = useState({ fullName: '', username: '', email: '', workCountry: 'PT' as 'PT' | 'BR' });
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isParsingImportFile, setIsParsingImportFile] = useState(false);
+  const [isImportingUsers, setIsImportingUsers] = useState(false);
+  const [importFileName, setImportFileName] = useState('');
+  const [importRows, setImportRows] = useState<CollaboratorImportRow[]>([]);
+  const [importIssues, setImportIssues] = useState<CollaboratorImportIssue[]>([]);
+  const [importResults, setImportResults] = useState<CollaboratorImportResultItem[]>([]);
+  const [credentialsDraft, setCredentialsDraft] = useState({ username: '', email: '' });
+  const [isSavingCredentials, setIsSavingCredentials] = useState(false);
   const canManageProfileOptions = isRootAccess || isAccessTotal || hasPermission('manage_profile_dropdown_options');
+  const canEditCredentials = Boolean(currentUser?.isRootAccess) || currentUser?.username === 't.people';
+  const canCreateUser = Boolean(isAccessTotal);
   const collaboratorQueryInputRef = useRef<HTMLInputElement | null>(null);
   const collaboratorQueryRef = useRef(query);
   const detailsLoadControllerRef = useRef<AbortController | null>(null);
@@ -717,6 +1091,9 @@ export default function CollaboratorsPage() {
     [rows, currentUser?.id],
   );
   const visibleTotal = Math.max(0, total - (rows.some((item) => item.id === currentUser?.id) ? 1 : 0));
+  const importPreviewRows = useMemo(() => importRows.slice(0, 8), [importRows]);
+  const importCreatedCount = useMemo(() => importResults.filter((item) => item.status === 'CREATED').length, [importResults]);
+  const importFailedCount = useMemo(() => importResults.filter((item) => item.status === 'FAILED').length, [importResults]);
   const categoryPermissions = useMemo(
     () => selectedPermissions.filter((item) => item.category === permissionCategory),
     [permissionCategory, selectedPermissions],
@@ -855,6 +1232,26 @@ export default function CollaboratorsPage() {
       detailsLoadControllerRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    const parts = newUserDraft.fullName.trim().split(/\s+/).filter((p) => p.length > 0);
+    const firstName = parts[0] || '';
+    const lastName = parts[parts.length - 1] || '';
+    setNewUserDraft((current) => ({
+      ...current,
+      username: buildAutoUsername(firstName, lastName),
+      email: buildAutoEmailFromName(firstName, lastName),
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newUserDraft.fullName]);
+
+  useEffect(() => {
+    if (!selectedRow) {
+      setCredentialsDraft({ username: '', email: '' });
+      return;
+    }
+    setCredentialsDraft({ username: selectedRow.username, email: selectedRow.email });
+  }, [selectedRow]);
 
   async function loadCollaborators(signal?: AbortSignal) {
     setLoading(rows.length === 0);
@@ -1515,13 +1912,15 @@ export default function CollaboratorsPage() {
       return false;
     }
 
+    const targetUser = selectedRow;
+
     if (enable === selectedUserAccessTotal) {
       return false;
     }
 
     setIsTogglingAccessTotal(true);
     try {
-      const result = await apiRequest<{ success: boolean; accessTotal: boolean }>(`/users/${selectedRow.id}/access-total`, {
+      const result = await apiRequest<{ success: boolean; accessTotal: boolean }>(`/users/${targetUser.id}/access-total`, {
         method: 'PATCH',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -1529,9 +1928,37 @@ export default function CollaboratorsPage() {
           reason: reason?.trim() || undefined,
         }),
       });
+
+      const refreshedDetails = await apiRequest<UserPermissionsResponse>(`/users/${targetUser.id}/permissions`, {
+        headers: getAuthHeaders(),
+      });
+
+      const refreshedAccessTotal = Boolean(refreshedDetails.accessTotal ?? result.accessTotal);
+      const refreshedPermissions = refreshedDetails.permissions;
+
       clearApiCache();
-      setSelectedUserAccessTotal(Boolean(result.accessTotal));
-      void openDetails(selectedRow, 'permissoes');
+      setSelectedUserAccessTotal(refreshedAccessTotal);
+      setSelectedPermissions(refreshedPermissions);
+      setPermissionDrafts(Object.fromEntries(refreshedPermissions.map((permission) => [permission.id, buildDraftFromAssignment(permission, refreshedAccessTotal)])));
+      setSelectedPermissionId((current) => {
+        if (current && refreshedPermissions.some((permission) => permission.id === current)) {
+          return current;
+        }
+        return refreshedPermissions[0]?.id ?? null;
+      });
+      setDetailsCacheByUserId((current) => {
+        const cached = current[targetUser.id];
+        return {
+          ...current,
+          [targetUser.id]: {
+            selectedPermissions: refreshedPermissions,
+            selectedUserAccessTotal: refreshedAccessTotal,
+            permissionTeams: cached?.permissionTeams ?? permissionTeams,
+            customCargoOptions: cached?.customCargoOptions ?? customCargoOptions,
+            customFuncaoOptions: cached?.customFuncaoOptions ?? customFuncaoOptions,
+          },
+        };
+      });
       setStatus(enable ? 'Acesso total concedido.' : 'Acesso total revogado.');
       return true;
     } catch (error) {
@@ -1758,6 +2185,401 @@ export default function CollaboratorsPage() {
     }
   }
 
+  function openImportModal() {
+    setIsImportModalOpen(true);
+    setImportFileName('');
+    setImportRows([]);
+    setImportIssues([]);
+    setImportResults([]);
+  }
+
+  function closeImportModal() {
+    setIsImportModalOpen(false);
+    setImportFileName('');
+    setImportRows([]);
+    setImportIssues([]);
+    setImportResults([]);
+  }
+
+  async function parseImportFile(file: File) {
+    const lowerName = file.name.toLowerCase();
+
+    if (lowerName.endsWith('.csv')) {
+      const text = await file.text();
+      return buildImportRowsFromMatrix(parseDelimitedText(text));
+    }
+
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await file.arrayBuffer());
+    const worksheet = workbook.getWorksheet('Importacao')
+      ?? workbook.worksheets.find((sheet) => /^importa[cç][aã]o$/i.test(sheet.name))
+      ?? workbook.worksheets.find((sheet) => !/^instrucoes$/i.test(sheet.name) && !/^listas$/i.test(sheet.name) && sheet.actualRowCount > 0)
+      ?? workbook.worksheets.find((sheet) => sheet.actualRowCount > 0);
+
+    if (!worksheet) {
+      return {
+        rows: [] as CollaboratorImportRow[],
+        issues: [{ rowNumber: 1, message: 'O ficheiro Excel não contém folhas com dados.' }] as CollaboratorImportIssue[],
+      };
+    }
+
+    const matrix: string[][] = [];
+    worksheet.eachRow({ includeEmpty: true }, (row) => {
+      const values: string[] = [];
+      const totalCells = Math.max(row.cellCount, Array.isArray(row.values) ? row.values.length - 1 : 0);
+      for (let columnIndex = 1; columnIndex <= totalCells; columnIndex += 1) {
+        values.push(readSpreadsheetCellValue(row.getCell(columnIndex).value));
+      }
+      if (values.some((item) => item.trim().length > 0)) {
+        matrix.push(values);
+      }
+    });
+
+    return buildImportRowsFromMatrix(matrix);
+  }
+
+  async function handleImportFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setIsParsingImportFile(true);
+    setImportResults([]);
+
+    try {
+      const parsed = await parseImportFile(file);
+      setImportFileName(file.name);
+      setImportRows(parsed.rows);
+      setImportIssues(parsed.issues);
+
+      if (parsed.rows.length === 0) {
+        setStatus('O ficheiro não contém linhas válidas para importação.');
+      } else if (parsed.issues.length > 0) {
+        setStatus('Foram detetados problemas no ficheiro. Corrige-os antes de importar.');
+      } else {
+        setStatus('Ficheiro preparado para importação.');
+      }
+    } catch (error) {
+      setImportFileName('');
+      setImportRows([]);
+      setImportIssues([]);
+      setStatus(error instanceof Error ? error.message : 'Falha ao ler ficheiro de importação.');
+    } finally {
+      setIsParsingImportFile(false);
+      event.target.value = '';
+    }
+  }
+
+  async function downloadImportTemplate() {
+    try {
+      const ExcelJS = await import('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const [teamData, profileOptionsData] = await Promise.allSettled([
+        apiRequestCached<Array<{ id: string; name: string; parentTeamId?: string | null }>>('/admin/teams', { headers: getAuthHeaders() }, 8000, true),
+        apiRequestCached<{ cargo?: CustomProfileOption[]; funcao?: CustomProfileOption[] }>('/profile/options', { headers: getAuthHeaders() }, 8000, true),
+      ]);
+
+      const teams = teamData.status === 'fulfilled' ? teamData.value : [];
+      const profileOptions = profileOptionsData.status === 'fulfilled' ? profileOptionsData.value : {};
+      const cargoValues = normalizeDropdownValues([
+        ...CARGO_OPTIONS,
+        ...((profileOptions.cargo ?? []).map((item) => item.label)),
+      ]);
+      const funcaoValues = normalizeDropdownValues([
+        ...FUNCAO_OPTIONS,
+        ...((profileOptions.funcao ?? []).map((item) => item.label)),
+      ]);
+
+      const instructionsSheet = workbook.addWorksheet('Instrucoes');
+      instructionsSheet.columns = [
+        { header: 'Tema', key: 'topic', width: 30 },
+        { header: 'Detalhe', key: 'detail', width: 95 },
+      ];
+      instructionsSheet.addRows([
+        { topic: 'Objetivo', detail: 'Preencher novos colaboradores para criação em massa no SMARTER HUB.' },
+        { topic: 'Folha de preenchimento', detail: 'Usa apenas a folha "Importacao" para inserir dados.' },
+        { topic: 'Campos obrigatórios', detail: 'Nome completo, Username e Email.' },
+        { topic: 'Dropdowns', detail: 'Campos com lista têm validação automática (país, equipa e campos de domínio).' },
+        { topic: 'Equipa', detail: 'Seleciona Equipa principal. Se existir subequipa, preencher também o campo Subequipa com valor da lista.' },
+        { topic: 'Comprovativos', detail: 'Campos de comprovativos não fazem parte da importação. Devem ser anexados depois na ficha de cada colaborador.' },
+        { topic: 'Limite', detail: 'Máximo de 200 linhas por importação.' },
+      ]);
+      instructionsSheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      instructionsSheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF123D75' } };
+
+      const worksheet = workbook.addWorksheet('Importacao');
+      worksheet.columns = IMPORT_TEMPLATE_FIELDS.map((field) => ({
+        header: field.label,
+        key: field.key,
+        width: Math.max(18, field.label.length + 6),
+      }));
+
+      const requirementRow = worksheet.getRow(1);
+      requirementRow.values = IMPORT_TEMPLATE_FIELDS.map((field) => (field.required ? 'Obrigatório' : 'Opcional'));
+      requirementRow.font = { bold: true, color: { argb: 'FF123D75' } };
+      requirementRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      requirementRow.eachCell((cell, columnNumber) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: IMPORT_TEMPLATE_FIELDS[columnNumber - 1]?.required ? 'FFE6F4EA' : 'FFF4F7FB' },
+        };
+      });
+
+      const headerRow = worksheet.getRow(2);
+      headerRow.values = IMPORT_TEMPLATE_FIELDS.map((field) => (field.required ? `${field.label} *` : field.label));
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF123D75' } };
+
+      worksheet.addRow(Object.fromEntries(IMPORT_TEMPLATE_FIELDS.map((field) => [field.key, field.example])));
+      worksheet.views = [{ state: 'frozen', ySplit: 2 }];
+
+      const listsSheet = workbook.addWorksheet('Listas');
+      const listDefinitions: Array<{ key: string; title: string; values: string[] }> = [
+        { key: 'workCountry', title: 'País de trabalho', values: ['PT', 'BR'] },
+        { key: 'teamName', title: 'Equipa principal', values: teams.filter((team) => !team.parentTeamId).map((team) => team.name).sort((a, b) => a.localeCompare(b, 'pt-PT')) },
+        { key: 'subTeamName', title: 'Subequipa', values: teams.filter((team) => Boolean(team.parentTeamId)).map((team) => team.name).sort((a, b) => a.localeCompare(b, 'pt-PT')) },
+        { key: 'genero', title: 'Género', values: [...generoOptions] },
+        { key: 'estadoCivil', title: 'Estado civil', values: [...estadoCivilOptions] },
+        { key: 'habilitacoesLiterarias', title: 'Habilitações literárias', values: [...habilitacoesOptions] },
+        { key: 'situacaoIrs', title: 'Situação IRS', values: [...situacaoIrsOptions] },
+        { key: 'irsJovem', title: 'IRS Jovem', values: [...irsJovemOptions] },
+        { key: 'contactoEmergenciaParentesco', title: 'Parentesco', values: [...parentescoOptions] },
+        { key: 'tipoContrato', title: 'Tipo de contrato', values: [...tipoContratoOptions] },
+        { key: 'regimeHorario', title: 'Regime horário', values: [...regimeHorarioOptions] },
+        { key: 'cargo', title: 'Cargo', values: cargoValues },
+        { key: 'funcao', title: 'Função', values: funcaoValues },
+      ];
+
+      const listRanges = new Map<string, string>();
+      listDefinitions.forEach((definition, listIndex) => {
+        const column = listIndex + 1;
+        const columnLetter = toExcelColumnLetter(column);
+        listsSheet.getCell(1, column).value = definition.title;
+        listsSheet.getCell(1, column).font = { bold: true };
+
+        const values = definition.values.length > 0 ? definition.values : [''];
+        values.forEach((value, valueIndex) => {
+          listsSheet.getCell(valueIndex + 2, column).value = value;
+        });
+
+        listRanges.set(definition.key, `=Listas!$${columnLetter}$2:$${columnLetter}$${values.length + 1}`);
+      });
+
+      const teamToSubTeams = new Map<string, string[]>();
+      for (const team of teams) {
+        if (!team.parentTeamId) {
+          continue;
+        }
+        const parent = teams.find((candidate) => candidate.id === team.parentTeamId);
+        if (!parent) {
+          continue;
+        }
+        const current = teamToSubTeams.get(parent.name) ?? [];
+        current.push(team.name);
+        teamToSubTeams.set(parent.name, current);
+      }
+
+      const placeholderColumn = toExcelColumnLetter(listDefinitions.length + 1);
+      listsSheet.getCell(`${placeholderColumn}1`).value = 'placeholder';
+      listsSheet.getCell(`${placeholderColumn}2`).value = '';
+
+      let namedRangeColumn = listDefinitions.length + 2;
+      for (const [parentTeamName, subTeams] of teamToSubTeams.entries()) {
+        const sortedSubTeams = [...subTeams].sort((a, b) => a.localeCompare(b, 'pt-PT'));
+        const colLetter = toExcelColumnLetter(namedRangeColumn);
+        listsSheet.getCell(`${colLetter}1`).value = parentTeamName;
+        sortedSubTeams.forEach((subTeamName, index) => {
+          listsSheet.getCell(`${colLetter}${index + 2}`).value = subTeamName;
+        });
+        workbook.definedNames.add(toExcelDefinedName(parentTeamName), `Listas!$${colLetter}$2:$${colLetter}$${sortedSubTeams.length + 1}`);
+        namedRangeColumn += 1;
+      }
+
+      listsSheet.state = 'veryHidden';
+
+      const teamColumnIndex = IMPORT_TEMPLATE_FIELDS.findIndex((field) => field.key === 'teamName') + 1;
+      const subTeamColumnIndex = IMPORT_TEMPLATE_FIELDS.findIndex((field) => field.key === 'subTeamName') + 1;
+      const teamColumnLetter = toExcelColumnLetter(teamColumnIndex);
+      const subTeamColumnLetter = toExcelColumnLetter(subTeamColumnIndex);
+
+      IMPORT_TEMPLATE_FIELDS.forEach((field, index) => {
+        if (!field.dropdownKey) {
+          return;
+        }
+        const formula = listRanges.get(field.dropdownKey);
+        if (!formula) {
+          return;
+        }
+        const columnLetter = toExcelColumnLetter(index + 1);
+        for (let rowIndex = 3; rowIndex <= 2002; rowIndex += 1) {
+          const isSubTeamColumn = columnLetter === subTeamColumnLetter;
+          worksheet.getCell(`${columnLetter}${rowIndex}`).dataValidation = isSubTeamColumn
+            ? {
+                type: 'list',
+                allowBlank: true,
+                formulae: [
+                  `=IF($${teamColumnLetter}${rowIndex}="",Listas!$${placeholderColumn}$2:$${placeholderColumn}$2,INDIRECT("SUBTEAM_"&UPPER(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(SUBSTITUTE($${teamColumnLetter}${rowIndex}," ","_"),"-","_"),".","_"),"/","_"))))`,
+                ],
+                showErrorMessage: true,
+                errorTitle: 'Subequipa inválida',
+                error: 'Escolhe uma subequipa pertencente à equipa principal selecionada.',
+              }
+            : {
+                type: 'list',
+                allowBlank: true,
+                formulae: [formula],
+                showErrorMessage: true,
+                errorTitle: 'Valor inválido',
+                error: 'Escolhe um valor da lista disponível.',
+              };
+        }
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer as ArrayBuffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'modelo_importacao_colaboradores.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Falha ao gerar modelo de importação.');
+    }
+  }
+
+  async function importUsersFromFile() {
+    if (importRows.length === 0) {
+      setStatus('Escolhe um ficheiro com linhas válidas para importar.');
+      return;
+    }
+
+    if (importIssues.length > 0) {
+      setStatus('Corrige os problemas do ficheiro antes de iniciar a importação.');
+      return;
+    }
+
+    setIsImportingUsers(true);
+
+    try {
+      const response = await apiRequest<CollaboratorImportResponse>('/users/import', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          rows: importRows.map((row) => ({
+            fullName: row.fullName,
+            username: row.username,
+            email: row.email,
+            workCountry: row.workCountry,
+            teamName: row.teamName || undefined,
+            subTeamName: row.subTeamName || undefined,
+            profile: row.profile,
+          })),
+        }),
+      });
+
+      setImportResults(response.results);
+      clearApiCache('/users/collaborators');
+      await loadCollaborators();
+
+      if (response.failedCount === 0) {
+        setStatus(`${response.createdCount} colaborador(es) criado(s) com sucesso.`);
+        closeImportModal();
+      } else {
+        setStatus(`${response.createdCount} criado(s) e ${response.failedCount} falhado(s). Revê o resultado abaixo.`);
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Falha ao importar colaboradores.');
+    } finally {
+      setIsImportingUsers(false);
+    }
+  }
+
+  function openCreateModal() {
+    setNewUserDraft({ fullName: '', username: '', email: '', workCountry: 'PT' });
+    setIsCreateModalOpen(true);
+  }
+
+  function closeCreateModal() {
+    setIsCreateModalOpen(false);
+    setNewUserDraft({ fullName: '', username: '', email: '', workCountry: 'PT' });
+  }
+
+  async function createUser() {
+    const parts = newUserDraft.fullName.trim().split(/\s+/).filter((p) => p.length > 0);
+    const firstName = parts[0] || '';
+    const lastName = parts[parts.length - 1] || '';
+    const fullName = `${firstName} ${lastName}`.trim();
+    const username = newUserDraft.username.trim().toLowerCase();
+    const email = newUserDraft.email.trim().toLowerCase();
+    const workCountry = newUserDraft.workCountry;
+
+    if (!firstName || !lastName || !username || !email) {
+      setStatus('Preenche nome completo, username e email.');
+      return;
+    }
+
+    setIsCreatingUser(true);
+    try {
+      await apiRequest<{ id: string; username: string; email: string }>('/users', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ fullName, username, email, role: 'COLABORADOR', workCountry }),
+      });
+      clearApiCache('/users/collaborators');
+      closeCreateModal();
+      setStatus('Novo utilizador criado com sucesso.');
+      void loadCollaborators();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Falha ao criar utilizador.');
+    } finally {
+      setIsCreatingUser(false);
+    }
+  }
+
+  async function saveCredentials() {
+    if (!selectedRow) return;
+    const username = credentialsDraft.username.trim().toLowerCase();
+    const email = credentialsDraft.email.trim().toLowerCase();
+
+    if (!username || !email) {
+      setStatus('Username e email são obrigatórios.');
+      return;
+    }
+
+    const payload: { username?: string; email?: string } = {};
+    if (username !== selectedRow.username) payload.username = username;
+    if (email !== selectedRow.email) payload.email = email;
+
+    if (Object.keys(payload).length === 0) {
+      setStatus('Sem alterações para guardar.');
+      return;
+    }
+
+    setIsSavingCredentials(true);
+    try {
+      await apiRequest(`/admin/users/${selectedRow.id}/credentials`, {
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload),
+      });
+      clearApiCache('/users/collaborators');
+      void loadCollaborators();
+      setStatus('Credenciais atualizadas com sucesso.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Falha ao atualizar credenciais.');
+    } finally {
+      setIsSavingCredentials(false);
+    }
+  }
+
   if (!canView) {
     return (
       <section className="trainings-shell">
@@ -1773,6 +2595,24 @@ export default function CollaboratorsPage() {
     <section className="trainings-shell">
 
       <section className="trainings-list-card">
+        <div className="people-page-header">
+          <div>
+            <h3>Colaboradores</h3>
+            <p>Gestão de pessoas, permissões e credenciais de acesso.</p>
+          </div>
+          <div className="people-page-header__actions">
+            {canCreateUser && (
+              <Button type="button" variant="primary" onClick={openCreateModal}>+ Novo utilizador</Button>
+            )}
+            {canCreateUser && (
+              <Button type="button" variant="secondary" onClick={openImportModal}>Importar em massa</Button>
+            )}
+            <Button type="button" variant="primary" onClick={openExportModal}>
+            Exportar
+          </Button>
+          </div>
+        </div>
+
         <div className="collaborators-filter-grid">
           <label>
             <span>Pesquisar</span>
@@ -1842,16 +2682,6 @@ export default function CollaboratorsPage() {
               <option value={50}>50</option>
             </select>
           </label>
-        </div>
-
-        <div className="collaborators-export-actions">
-          <div>
-            <strong>Exportar ficha de colaborador</strong>
-            <p>Gera um Excel estruturado e pronto para cliente.</p>
-          </div>
-          <Button type="button" variant="primary" onClick={openExportModal}>
-            Exportar
-          </Button>
         </div>
 
         <div className="collaborators-table">
@@ -1926,13 +2756,18 @@ export default function CollaboratorsPage() {
 
       <Modal
         open={isDetailsOpen}
-        title={selectedRow ? `Gestão do colaborador · ${getDisplayName(selectedRow)}` : 'Gestão do colaborador'}
+        title={selectedRow ? getDisplayName(selectedRow) : 'Colaborador'}
         onClose={closeDetails}
         width="min(1360px, 97vw)"
         showCloseButton={false}
         footer={
           <div className="modal-footer-split">
             <Button type="button" variant="ghost" onClick={closeDetails}>Fechar</Button>
+            {detailsTab === 'ficha' && canEditUser && (
+              <Button type="button" variant="primary" isLoading={isSavingEditDraft} disabled={isSavingEditDraft} onClick={() => void saveCollaboratorDraft()}>
+                Guardar ficha
+              </Button>
+            )}
           </div>
         }
       >
@@ -1944,54 +2779,49 @@ export default function CollaboratorsPage() {
           </nav>
 
           {selectedRow && detailsTab === 'ficha' && (
-            <section className="collaborator-modal-panel">
-              <div className="collaborator-ficha-actions">
-                <div>
-                  <h4>Ficha editável</h4>
-                  <p>Usa esta área para ajustar todos os dados do colaborador.</p>
+            <section className="cm-panel">
+              <div className="cm-identity-bar">
+                <div className="cm-avatar">{getDisplayName(selectedRow).charAt(0).toUpperCase()}</div>
+                <div className="cm-identity-info">
+                  <strong>{getDisplayName(selectedRow)}</strong>
+                  <span>@{selectedRow.username} · {selectedRow.email}</span>
+                </div>
+                <div className="cm-identity-badges">
+                  <Badge tone="info">{formatRoleLabel(selectedRow.role)}</Badge>
+                  <Badge tone="neutral">{selectedRow.profile?.workCountry || 'PT'}</Badge>
+                  <Badge tone={selectedRow.isActive ? 'success' : 'danger'}>{selectedRow.isActive ? 'Ativo' : 'Inativo'}</Badge>
                 </div>
                 {canManageProfileOptions && (
-                  <div className="profile-contract__actions">
-                    <Button type="button" variant="ghost" size="sm" onClick={() => void openProfileOptionModal('CARGO')}>
-                      + Novo cargo
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => void openProfileOptionModal('FUNCAO')}>
-                      + Nova função
-                    </Button>
+                  <div className="cm-identity-actions">
+                    <Button type="button" variant="ghost" size="sm" onClick={() => void openProfileOptionModal('CARGO')}>+ Cargo</Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => void openProfileOptionModal('FUNCAO')}>+ Função</Button>
                   </div>
                 )}
               </div>
 
-              <div className="collaborator-kpi-grid">
-                <article>
-                  <span>Nome</span>
-                  <strong>{getDisplayName(selectedRow)}</strong>
-                </article>
-                <article>
-                  <span>Email</span>
-                  <strong>{selectedRow.email}</strong>
-                </article>
-                <article>
-                  <span>Role</span>
-                  <strong>{formatRoleLabel(selectedRow.role)}</strong>
-                </article>
-                <article>
-                  <span>Equipa</span>
-                  <strong>{getCollaboratorTeamInfo(selectedRow).name === '-' ? 'Sem equipa' : getCollaboratorTeamInfo(selectedRow).name}</strong>
-                </article>
-              </div>
-
-              <div className="collaborator-edit-workbench">
-                <article className="collaborator-edit-section">
-                  <h4>Dados de conta</h4>
+              <div className="cm-edit-body">
+                <article className="cm-section">
+                  <h5 className="cm-section-title">Conta</h5>
                   <div className="collaborator-edit-grid collaborator-edit-grid--top">
                     <label>
                       <span>Username</span>
-                      <input type="text" value={selectedRow.username} disabled />
+                      <input
+                        type="text"
+                        value={canEditCredentials ? credentialsDraft.username : selectedRow.username}
+                        onChange={(e) => setCredentialsDraft((c) => ({ ...c, username: e.target.value }))}
+                        disabled={!canEditCredentials}
+                        autoComplete="off"
+                      />
                     </label>
                     <label>
                       <span>Email login</span>
-                      <input type="text" value={selectedRow.email} disabled />
+                      <input
+                        type="email"
+                        value={canEditCredentials ? credentialsDraft.email : selectedRow.email}
+                        onChange={(e) => setCredentialsDraft((c) => ({ ...c, email: e.target.value }))}
+                        disabled={!canEditCredentials}
+                        autoComplete="off"
+                      />
                     </label>
                     <label>
                       <span>Role</span>
@@ -2026,11 +2856,19 @@ export default function CollaboratorsPage() {
                       </select>
                     </label>
                   </div>
+                  {canEditCredentials && (
+                    <div className="cm-inline-action">
+                      <Button type="button" size="sm" variant="secondary" isLoading={isSavingCredentials} onClick={() => void saveCredentials()}>
+                        Guardar credenciais
+                      </Button>
+                      <small>Altera username e email de acesso ao sistema.</small>
+                    </div>
+                  )}
                 </article>
 
                 {['identificacao', 'contactos', 'fiscal', 'emergencia', 'contrato'].map((section) => (
-                  <article key={section} className="collaborator-edit-section">
-                    <h4>{section === 'identificacao' ? 'Identificação' : section === 'contactos' ? 'Contactos e moradas' : section === 'fiscal' ? 'Fiscal e documentos' : section === 'emergencia' ? 'Emergência' : 'Contrato'}</h4>
+                  <article key={section} className="cm-section">
+                    <h5 className="cm-section-title">{section === 'identificacao' ? 'Identificação' : section === 'contactos' ? 'Contactos e moradas' : section === 'fiscal' ? 'Fiscal e documentos' : section === 'emergencia' ? 'Emergência' : 'Contrato'}</h5>
                     <div className="collaborator-edit-grid">
                       {EDIT_PROFILE_FIELDS.filter((field) => field.section === section).map((field) => (
                         <label key={field.key}>
@@ -2042,310 +2880,215 @@ export default function CollaboratorsPage() {
                   </article>
                 ))}
 
-                <div className="permission-card__footer">
-                  <Button type="button" variant="primary" isLoading={isSavingEditDraft} disabled={!canEditUser || isSavingEditDraft} onClick={() => void saveCollaboratorDraft()}>
-                    Guardar ficha completa
-                  </Button>
-                  {!canEditUser && <small>Sem permissões para editar dados deste colaborador.</small>}
-                </div>
+                {!canEditUser && <p className="cm-no-permission">Sem permissões para editar dados deste colaborador.</p>}
               </div>
             </section>
           )}
 
           {selectedRow && detailsTab === 'permissoes' && (
-            <section className="collaborator-modal-panel">
+            <section className="cm-panel">
               {isLoadingDetails ? (
                 <Skeleton lines={3} />
               ) : (
                 <>
-              <header className="collaborator-permissions-header">
-                <div>
-                  <h4>Permissões simplificadas</h4>
-                  <p>Seleciona uma permissão na lista e configura em 3 passos rápidos.</p>
-                  <p className="collab-help-inline">Dica: qualquer campo de restrição deixado vazio significa sem restrição nesse critério.</p>
-                  <p className="collab-help-inline">Quando o acesso total estiver ativo, as permissões individuais ficam bloqueadas até revogares esse acesso.</p>
-                </div>
-                <div className="collaborator-permissions-actions">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    isLoading={isTogglingAccessTotal}
-                    onClick={() => {
-                      setAccessTotalAction('grant');
-                      setAccessTotalReason('');
-                      setAccessTotalModalOpen(true);
-                    }}
-                    disabled={!canManagePermissions || selectedRow.username === 't.people' || selectedUserAccessTotal || isTogglingAccessTotal}
-                  >
-                    Dar acesso total
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    isLoading={isTogglingAccessTotal}
-                    onClick={() => {
-                      setAccessTotalAction('revoke');
-                      setAccessTotalReason('');
-                      setAccessTotalModalOpen(true);
-                    }}
-                    disabled={!canManagePermissions || selectedRow.username === 't.people' || !selectedUserAccessTotal || isTogglingAccessTotal}
-                  >
-                    Revogar acesso total
-                  </Button>
-                </div>
-              </header>
+                  {selectedUserAccessTotal && (
+                    <div className="cm-access-total-banner">
+                      <div className="cm-access-total-banner__info">
+                        <strong>Acesso total ativo</strong>
+                        <span>Este utilizador tem acesso efetivo a todas as permissões do sistema. As configurações individuais estão suspensas.</span>
+                      </div>
+                      {canManagePermissions && selectedRow.username !== 't.people' && (
+                        <Button type="button" size="sm" variant="ghost" isLoading={isTogglingAccessTotal} disabled={isTogglingAccessTotal} onClick={() => void toggleAccessTotalForSelected(false)}>
+                          Revogar
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  {!selectedUserAccessTotal && canManagePermissions && selectedRow.username !== 't.people' && (
+                    <div className="cm-perms-top-bar">
+                      <Button type="button" size="sm" variant="secondary" isLoading={isTogglingAccessTotal} disabled={isTogglingAccessTotal} onClick={() => void toggleAccessTotalForSelected(true)}>
+                        Dar acesso total
+                      </Button>
+                    </div>
+                  )}
 
-              <div className="permissions-tabs collaborator-permission-categories">
-                {PERMISSION_CATEGORIES.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    className={item === permissionCategory ? 'is-active' : ''}
-                    onClick={() => setPermissionCategory(item)}
-                  >
-                    {getPermissionCategoryLabel(item)}
-                  </button>
-                ))}
-              </div>
-
-              <div className="collab-permissions-workbench">
-                <aside className="collab-permissions-list">
-                  <label className="collab-permissions-search">
-                    <span>Pesquisar permissão</span>
-                    <input
-                      type="search"
-                      placeholder="Ex: aprovar férias, editar utilizador..."
-                      value={permissionSearch}
-                      onChange={(event) => setPermissionSearch(event.target.value)}
-                    />
-                  </label>
-
-                  <div className="collab-permissions-items">
-                    {filteredCategoryPermissions.length === 0 && (
-                      <EmptyState
-                        title="Sem permissões nesta categoria."
-                        message="Escolhe outra categoria para continuar a configuração."
-                      />
-                    )}
-                    {filteredCategoryPermissions.map((permission) => {
-                      const draft = permissionDrafts[permission.id] ?? buildDraftFromAssignment(permission);
-                      const effectiveEnabled = selectedUserAccessTotal || draft.enabled;
-                      return (
-                        <button
-                          key={permission.id}
-                          type="button"
-                          className={`collab-permission-item${selectedPermission?.id === permission.id ? ' is-selected' : ''}${effectiveEnabled ? ' is-enabled' : ''}`}
-                          onClick={() => setSelectedPermissionId(permission.id)}
-                        >
-                          <strong>{permission.label}</strong>
-                          <span>{effectiveEnabled ? 'Ativa' : 'Inativa'}</span>
+                  <div className="cm-perms-body">
+                    <aside className="cm-perm-categories">
+                      {PERMISSION_CATEGORIES.map((item) => (
+                        <button key={item} type="button" className={item === permissionCategory ? 'is-active' : ''} onClick={() => setPermissionCategory(item)}>
+                          {getPermissionCategoryLabel(item)}
                         </button>
-                      );
-                    })}
-                  </div>
-                </aside>
+                      ))}
+                    </aside>
 
-                <section className="collab-permissions-editor">
-                  {!selectedPermission || !selectedPermissionDraft ? (
-                    <p>Seleciona uma permissão para configurar.</p>
-                  ) : (
-                    <article className="collab-permission-panel">
-                      <header>
-                        <h4>{selectedPermission.label}</h4>
-                        <p>{selectedPermission.description}</p>
-                        <small>Origem atual: {getGrantDisplayName(selectedPermission.assignment?.grantedBy)}</small>
-                      </header>
+                    <div className="cm-perm-main">
+                      <div className="cm-perm-list">
+                        <input
+                          type="search"
+                          className="cm-perm-search"
+                          placeholder="Pesquisar permissão..."
+                          value={permissionSearch}
+                          onChange={(event) => setPermissionSearch(event.target.value)}
+                        />
+                        <div className="cm-perm-items">
+                          {filteredCategoryPermissions.length === 0 && (
+                            <EmptyState title="Sem permissões" message="Escolhe outra categoria." />
+                          )}
+                          {filteredCategoryPermissions.map((permission) => {
+                            const draft = permissionDrafts[permission.id] ?? buildDraftFromAssignment(permission);
+                            const effectiveEnabled = selectedUserAccessTotal || draft.enabled;
+                            return (
+                              <button
+                                key={permission.id}
+                                type="button"
+                                className={`cm-perm-item${selectedPermission?.id === permission.id ? ' is-selected' : ''}${effectiveEnabled ? ' is-on' : ''}`}
+                                onClick={() => setSelectedPermissionId(permission.id)}
+                              >
+                                <strong>{permission.label}</strong>
+                                <span>{effectiveEnabled ? '● Ativa' : '○ Inativa'}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
 
-                      <div className="collab-permission-steps">
-                        <section>
-                          <h5>Passo 1 · Estado</h5>
-                          <div className="collab-choice-row">
-                            <button
-                              type="button"
-                              className={selectedPermissionDraft.enabled ? 'is-active' : ''}
-                              onClick={() => setPermissionDrafts((current) => ({
-                                ...current,
-                                [selectedPermission.id]: { ...selectedPermissionDraft, enabled: true },
-                              }))}
-                              disabled={!canManagePermissions || selectedUserAccessTotal}
-                            >
-                              Ativar
-                            </button>
-                            <button
-                              type="button"
-                              className={!selectedPermissionDraft.enabled ? 'is-active' : ''}
-                              onClick={() => setPermissionDrafts((current) => ({
-                                ...current,
-                                [selectedPermission.id]: { ...selectedPermissionDraft, enabled: false },
-                              }))}
-                              disabled={!canManagePermissions || selectedUserAccessTotal}
-                            >
-                              Desativar
-                            </button>
-                          </div>
-                          {selectedUserAccessTotal && <small>Acesso total ativo: todas as permissões estão efetivamente ativas.</small>}
-                        </section>
+                      <div className="cm-perm-editor">
+                        {!selectedPermission || !selectedPermissionDraft ? (
+                          <p className="cm-perm-empty">Seleciona uma permissão para configurar.</p>
+                        ) : (
+                          <>
+                            <header className="cm-perm-editor-head">
+                              <h5>{selectedPermission.label}</h5>
+                              <p>{selectedPermission.description}</p>
+                            </header>
 
-                        <section>
-                          <h5>Passo 2 · Restrições rápidas</h5>
-                          <div className="collab-permission-form-grid">
-                            <label>
-                              <span>Países</span>
-                              <div className="collab-token-row">
-                                {['PT', 'BR'].map((country) => (
-                                  <button
-                                    key={country}
-                                    type="button"
-                                    className={selectedRestrictionCountries.includes(country) ? 'is-selected' : ''}
-                                    onClick={() => setPermissionDrafts((current) => ({
-                                      ...current,
-                                      [selectedPermission.id]: {
-                                        ...selectedPermissionDraft,
-                                        restrictedToCountries: toggleCommaItem(selectedPermissionDraft.restrictedToCountries, country),
-                                      },
-                                    }))}
-                                    disabled={!canManagePermissions || selectedUserAccessTotal}
-                                  >
-                                    {country}
-                                  </button>
-                                ))}
+                            <div className="cm-perm-editor-form">
+                              <div className="cm-perm-field cm-perm-field--toggle">
+                                <span>Estado</span>
+                                <div className="cm-toggle-btns">
+                                  <button type="button" className={selectedPermissionDraft.enabled ? 'is-on' : ''} onClick={() => setPermissionDrafts((current) => ({ ...current, [selectedPermission.id]: { ...selectedPermissionDraft, enabled: true } }))} disabled={!canManagePermissions || selectedUserAccessTotal}>Ativa</button>
+                                  <button type="button" className={!selectedPermissionDraft.enabled ? 'is-on' : ''} onClick={() => setPermissionDrafts((current) => ({ ...current, [selectedPermission.id]: { ...selectedPermissionDraft, enabled: false } }))} disabled={!canManagePermissions || selectedUserAccessTotal}>Inativa</button>
+                                </div>
                               </div>
-                              <small>Opcional: se não marcares nenhum país, a permissão aplica-se a todos.</small>
-                            </label>
 
-                            <label>
-                              <span>Escopo adicional (opcional)</span>
-                              <input
-                                type="text"
-                                value={selectedPermissionDraft.restrictedToLevels}
-                                onChange={(event) => setPermissionDrafts((current) => ({
-                                  ...current,
-                                  [selectedPermission.id]: {
-                                    ...selectedPermissionDraft,
-                                    restrictedToLevels: event.target.value,
-                                  },
-                                }))}
-                                placeholder="Ex: etiquetas internas separadas por vírgula"
-                                disabled={!canManagePermissions || selectedUserAccessTotal}
-                              />
-                              <small>Opcional: usa apenas se a tua operação tiver etiquetas de escopo próprias.</small>
-                            </label>
-
-                            <label>
-                              <span>Equipas</span>
-                              <div className="collab-team-selector">
-                                <select
-                                  value={pendingTeamToAdd}
-                                  onChange={(event) => setPendingTeamToAdd(event.target.value)}
-                                  disabled={!canManagePermissions || selectedUserAccessTotal || availableTeamsToAdd.length === 0}
-                                >
-                                  <option value="">Selecionar equipa</option>
-                                  {availableTeamsToAdd.map((team) => (
-                                    <option key={team.id} value={team.id}>{team.name}</option>
-                                  ))}
-                                </select>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => addTeamRestriction(pendingTeamToAdd)}
-                                  disabled={!canManagePermissions || selectedUserAccessTotal || !pendingTeamToAdd}
-                                >
-                                  Adicionar
-                                </Button>
-                              </div>
-                              {selectedRestrictedTeams.length > 0 && (
-                                <div className="collab-team-chips">
-                                  {selectedRestrictedTeams.map((team) => (
+                              <div className="cm-perm-field">
+                                <span>Países</span>
+                                <div className="cm-token-pills">
+                                  {['PT', 'BR'].map((country) => (
                                     <button
-                                      key={team.id}
+                                      key={country}
                                       type="button"
-                                      className="collab-team-chip"
-                                      onClick={() => removeTeamRestriction(team.id)}
+                                      className={selectedRestrictionCountries.includes(country) ? 'is-on' : ''}
+                                      onClick={() => setPermissionDrafts((current) => ({
+                                        ...current,
+                                        [selectedPermission.id]: {
+                                          ...selectedPermissionDraft,
+                                          restrictedToCountries: toggleCommaItem(selectedPermissionDraft.restrictedToCountries, country),
+                                        },
+                                      }))}
                                       disabled={!canManagePermissions || selectedUserAccessTotal}
                                     >
-                                      {team.name} ×
+                                      {country}
                                     </button>
                                   ))}
                                 </div>
-                              )}
-                              <small>Opcional: se não adicionares equipas, a permissão aplica-se a todas.</small>
-                            </label>
+                                <small>Vazio = todos os países.</small>
+                              </div>
 
-                            <label>
-                              <span>Notas</span>
-                              <input
-                                type="text"
-                                value={selectedPermissionDraft.notes}
-                                onChange={(event) => setPermissionDrafts((current) => ({
-                                  ...current,
-                                  [selectedPermission.id]: {
-                                    ...selectedPermissionDraft,
-                                    notes: event.target.value,
-                                  },
-                                }))}
-                                placeholder="Contexto opcional para esta permissão"
-                                disabled={!canManagePermissions || selectedUserAccessTotal}
-                              />
-                            </label>
+                              <div className="cm-perm-field">
+                                <span>Equipas</span>
+                                <div className="collab-team-selector">
+                                  <select value={pendingTeamToAdd} onChange={(event) => setPendingTeamToAdd(event.target.value)} disabled={!canManagePermissions || selectedUserAccessTotal || availableTeamsToAdd.length === 0}>
+                                    <option value="">Selecionar equipa</option>
+                                    {availableTeamsToAdd.map((team) => (
+                                      <option key={team.id} value={team.id}>{team.name}</option>
+                                    ))}
+                                  </select>
+                                  <Button type="button" size="sm" variant="secondary" onClick={() => addTeamRestriction(pendingTeamToAdd)} disabled={!canManagePermissions || selectedUserAccessTotal || !pendingTeamToAdd}>+</Button>
+                                </div>
+                                {selectedRestrictedTeams.length > 0 && (
+                                  <div className="collab-team-chips">
+                                    {selectedRestrictedTeams.map((team) => (
+                                      <button key={team.id} type="button" className="collab-team-chip" onClick={() => removeTeamRestriction(team.id)} disabled={!canManagePermissions || selectedUserAccessTotal}>
+                                        {team.name} ×
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                <small>Vazio = todas as equipas.</small>
+                              </div>
 
-                          </div>
-                        </section>
+                              <div className="cm-perm-field">
+                                <span>Notas</span>
+                                <input
+                                  type="text"
+                                  value={selectedPermissionDraft.notes}
+                                  onChange={(event) => setPermissionDrafts((current) => ({
+                                    ...current,
+                                    [selectedPermission.id]: { ...selectedPermissionDraft, notes: event.target.value },
+                                  }))}
+                                  placeholder="Contexto opcional"
+                                  disabled={!canManagePermissions || selectedUserAccessTotal}
+                                />
+                              </div>
+                            </div>
 
-                        <section>
-                          <h5>Passo 3 · Confirmar</h5>
-                          <div className="permission-card__footer">
-                            <Button
-                              type="button"
-                              variant="primary"
-                              size="sm"
-                              isLoading={savingPermissionId === selectedPermission.id}
-                              onClick={() => void savePermission(selectedPermission)}
-                              disabled={!canManagePermissions || selectedUserAccessTotal}
-                            >
-                              Guardar configuração
-                            </Button>
-                          </div>
-                          {selectedUserAccessTotal && <small>Para editar esta permissão individual, revoga primeiro o acesso total.</small>}
-                        </section>
+                            <div className="cm-perm-editor-footer">
+                              <small>Por: {getGrantDisplayName(selectedPermission.assignment?.grantedBy)}</small>
+                              <Button type="button" variant="primary" size="sm" isLoading={savingPermissionId === selectedPermission.id} onClick={() => void savePermission(selectedPermission)} disabled={!canManagePermissions || selectedUserAccessTotal}>
+                                Guardar
+                              </Button>
+                            </div>
+                            {selectedUserAccessTotal && <small className="cm-perm-disabled-hint">Revoga o acesso total para editar permissões individuais.</small>}
+                          </>
+                        )}
                       </div>
-                    </article>
-                  )}
-                </section>
-              </div>
+                    </div>
+                  </div>
                 </>
               )}
             </section>
           )}
 
           {selectedRow && detailsTab === 'estado' && (
-            <section className="collaborator-modal-panel">
+            <section className="cm-panel cm-panel--estado">
               {isLoadingDetails ? (
                 <Skeleton lines={3} />
               ) : (
                 <>
-                  <div className="collaborator-kpi-grid">
-                    <article>
+                  <div className="cm-status-cards">
+                    <div className={`cm-status-card${selectedRow.isActive ? ' cm-status-card--active' : ' cm-status-card--inactive'}`}>
                       <span>Conta</span>
                       <strong>{selectedRow.isActive ? 'Ativa' : 'Inativa'}</strong>
-                    </article>
-                    <article>
+                    </div>
+                    <div className={`cm-status-card${selectedUserAccessTotal ? ' cm-status-card--total' : ''}`}>
                       <span>Acesso total</span>
-                      <strong>{selectedUserAccessTotal ? 'Sim' : 'Não'}</strong>
-                    </article>
+                      <strong>{selectedUserAccessTotal ? 'Ativo' : 'Inativo'}</strong>
+                    </div>
+                    <div className="cm-status-card">
+                      <span>Última atualização</span>
+                      <strong>{new Intl.DateTimeFormat('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(selectedRow.updatedAt))}</strong>
+                    </div>
                   </div>
-
-                  <div className="collaborator-status-actions">
+                  <div className="cm-status-actions">
                     <Button
                       type="button"
-                      variant={selectedRow.isActive ? 'danger' : 'secondary'}
+                      variant={selectedRow.isActive ? 'danger' : 'primary'}
                       onClick={() => openActiveConfirm(selectedRow)}
                       disabled={!canManageActive || selectedRow.username === 't.people'}
                     >
                       {selectedRow.isActive ? 'Desativar conta' : 'Reativar conta'}
                     </Button>
+                    {canManagePermissions && selectedRow.username !== 't.people' && !selectedUserAccessTotal && (
+                      <Button type="button" variant="secondary" size="sm" isLoading={isTogglingAccessTotal} disabled={isTogglingAccessTotal} onClick={() => void toggleAccessTotalForSelected(true)}>
+                        Dar acesso total
+                      </Button>
+                    )}
+                    {canManagePermissions && selectedRow.username !== 't.people' && selectedUserAccessTotal && (
+                      <Button type="button" variant="ghost" size="sm" isLoading={isTogglingAccessTotal} disabled={isTogglingAccessTotal} onClick={() => void toggleAccessTotalForSelected(false)}>
+                        Revogar acesso total
+                      </Button>
+                    )}
                   </div>
                 </>
               )}
@@ -2454,6 +3197,140 @@ export default function CollaboratorsPage() {
         </div>
       </Modal>
 
+      {canCreateUser && (
+        <Modal
+          open={isImportModalOpen}
+          title="Importação em massa de colaboradores"
+          onClose={closeImportModal}
+          width="min(1180px, 96vw)"
+          showCloseButton={false}
+          footer={(
+            <div className="modal-footer-split">
+              <Button type="button" variant="ghost" onClick={closeImportModal} disabled={isImportingUsers || isParsingImportFile}>
+                Fechar
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                isLoading={isImportingUsers}
+                disabled={isParsingImportFile || isImportingUsers || importRows.length === 0 || importIssues.length > 0}
+                onClick={() => void importUsersFromFile()}
+              >
+                Importar {importRows.length > 0 ? `${importRows.length} linha(s)` : ''}
+              </Button>
+            </div>
+          )}
+        >
+          <div className="collaborator-import-modal">
+            <div className="collaborator-import-modal__hero">
+              <div>
+                <strong>Excel ou CSV da ficha</strong>
+                <p>Importa novos colaboradores em lote a partir de um ficheiro com dados da ficha. Campos de comprovativos não entram neste processo e devem ser anexados depois na ficha individual. Esta ação está disponível apenas para quem tem acesso total.</p>
+              </div>
+              <div className="collaborator-import-modal__hero-actions">
+                <Button type="button" variant="ghost" size="sm" onClick={() => void downloadImportTemplate()}>
+                  Descarregar modelo XLSX
+                </Button>
+                <label className="collaborator-import-upload">
+                  <span>{isParsingImportFile ? 'A ler ficheiro...' : 'Escolher ficheiro'}</span>
+                  <input type="file" accept={IMPORT_FILE_ACCEPT} onChange={(event) => void handleImportFileChange(event)} disabled={isParsingImportFile || isImportingUsers} />
+                </label>
+              </div>
+            </div>
+
+            <div className="collaborator-import-meta">
+              <article>
+                <span>Ficheiro</span>
+                <strong>{importFileName || 'Nenhum selecionado'}</strong>
+              </article>
+              <article>
+                <span>Linhas preparadas</span>
+                <strong>{importRows.length}</strong>
+              </article>
+              <article>
+                <span>Problemas locais</span>
+                <strong>{importIssues.length}</strong>
+              </article>
+            </div>
+
+            {importIssues.length > 0 && (
+              <div className="collaborator-import-issues">
+                <strong>Corrigir antes de importar</strong>
+                <div className="collaborator-import-issues__list">
+                  {importIssues.slice(0, 20).map((issue) => (
+                    <p key={`${issue.rowNumber}-${issue.message}`}>Linha {issue.rowNumber}: {issue.message}</p>
+                  ))}
+                  {importIssues.length > 20 && <p>+ {importIssues.length - 20} problema(s) adicional(is)</p>}
+                </div>
+              </div>
+            )}
+
+            <div className="collaborator-import-preview">
+              <div className="collaborator-import-preview__head">
+                <strong>Pré-visualização</strong>
+                <span>{importRows.length > 8 ? `A mostrar 8 de ${importRows.length} linhas` : `${importRows.length} linha(s)`}</span>
+              </div>
+              {importRows.length === 0 ? (
+                <EmptyState title="Sem dados carregados" message="Seleciona um ficheiro Excel ou CSV para validar o conteúdo antes da importação." />
+              ) : (
+                <div className="collaborator-import-preview__table-wrap">
+                  <table className="collaborator-import-preview__table">
+                    <thead>
+                      <tr>
+                        <th>Linha</th>
+                        <th>Nome</th>
+                        <th>Username</th>
+                        <th>Email</th>
+                        <th>País</th>
+                        <th>Equipa</th>
+                        <th>Subequipa</th>
+                        <th>Cargo</th>
+                        <th>Função</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importPreviewRows.map((row) => (
+                        <tr key={`${row.rowNumber}-${row.username}-${row.email}`}>
+                          <td>{row.rowNumber}</td>
+                          <td>{row.fullName}</td>
+                          <td>{row.username}</td>
+                          <td>{row.email}</td>
+                          <td>{row.workCountry}</td>
+                          <td>{row.teamName || 'Sem equipa'}</td>
+                          <td>{row.subTeamName || '-'}</td>
+                          <td>{row.profile.cargo || '-'}</td>
+                          <td>{row.profile.funcao || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {importResults.length > 0 && (
+              <div className="collaborator-import-results">
+                <div className="collaborator-import-results__head">
+                  <strong>Resultado da execução</strong>
+                  <span>{importCreatedCount} criado(s) · {importFailedCount} falhado(s)</span>
+                </div>
+                <div className="collaborator-import-results__list">
+                  {importResults.map((item) => (
+                    <article key={`${item.rowNumber}-${item.username}-${item.status}`} className={`collaborator-import-result${item.status === 'CREATED' ? ' is-success' : ' is-failed'}`}>
+                      <div>
+                        <strong>Linha {item.rowNumber} · {item.fullName || item.username || item.email}</strong>
+                        <p>{item.username} · {item.email}</p>
+                      </div>
+                      <span>{item.message}</span>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
       <Modal
         open={isProfileOptionModalOpen}
         title={profileOptionType === 'CARGO' ? 'Adicionar novo cargo' : 'Adicionar nova função'}
@@ -2535,43 +3412,68 @@ export default function CollaboratorsPage() {
         </div>
       </Modal>
 
-      <Modal
-        open={accessTotalModalOpen}
-        title={accessTotalAction === 'grant' ? 'Dar acesso total' : 'Revogar acesso total'}
-        onClose={() => setAccessTotalModalOpen(false)}
-        width="min(720px, 92vw)"
-        showCloseButton={false}
-        footer={
-          <div className="modal-footer-split">
-            <Button type="button" variant="ghost" onClick={() => setAccessTotalModalOpen(false)}>Cancelar</Button>
-            <Button
-              type="button"
-              variant={accessTotalAction === 'grant' ? 'primary' : 'danger'}
-              isLoading={isTogglingAccessTotal}
-              disabled={isTogglingAccessTotal}
-              onClick={() => {
-                void (async () => {
-                  const success = await toggleAccessTotalForSelected(accessTotalAction === 'grant', accessTotalReason);
-                  if (success) {
-                    setAccessTotalModalOpen(false);
-                    setAccessTotalReason('');
-                  }
-                })();
-              }}
-            >
-              Confirmar
-            </Button>
-          </div>
-        }
-      >
-        <div className="permissions-access-modal">
-          <p>
-            {accessTotalAction === 'grant'
-              ? 'Isto vai conceder acesso total a todas as permissões deste utilizador.'
-              : 'Isto vai revogar o acesso total e repor as permissões padrão de funcionário.'}
-          </p>
-        </div>
-      </Modal>
+      {canCreateUser && (
+        <Modal
+          open={isCreateModalOpen}
+          title="Novo utilizador"
+          onClose={closeCreateModal}
+          width="min(700px, 94vw)"
+          footer={
+            <div className="modal-footer-split">
+              <Button type="button" variant="ghost" onClick={closeCreateModal} disabled={isCreatingUser}>Cancelar</Button>
+              <Button type="button" variant="primary" isLoading={isCreatingUser} onClick={() => void createUser()}>Criar utilizador</Button>
+            </div>
+          }
+        >
+          <form className="trainings-form" onSubmit={(e) => { e.preventDefault(); void createUser(); }}>
+            <label>
+              <span>Nome completo</span>
+              <input
+                type="text"
+                value={newUserDraft.fullName}
+                onChange={(e) => setNewUserDraft((c) => ({ ...c, fullName: e.target.value }))}
+                placeholder="Ex.: Ana Rodrigues"
+                autoComplete="off"
+                disabled={isCreatingUser}
+              />
+              <small>O username e email são derivados automaticamente.</small>
+            </label>
+            <label>
+              <span>Username</span>
+              <input
+                type="text"
+                value={newUserDraft.username}
+                onChange={(e) => setNewUserDraft((c) => ({ ...c, username: e.target.value }))}
+                placeholder="ana.rodrigues"
+                autoComplete="off"
+                disabled={isCreatingUser}
+              />
+            </label>
+            <label>
+              <span>Email</span>
+              <input
+                type="email"
+                value={newUserDraft.email}
+                onChange={(e) => setNewUserDraft((c) => ({ ...c, email: e.target.value }))}
+                placeholder="ana.rodrigues@tlantic.com"
+                autoComplete="off"
+                disabled={isCreatingUser}
+              />
+            </label>
+            <label>
+              <span>País de trabalho</span>
+              <select
+                value={newUserDraft.workCountry}
+                onChange={(e) => setNewUserDraft((c) => ({ ...c, workCountry: e.target.value as 'PT' | 'BR' }))}
+                disabled={isCreatingUser}
+              >
+                <option value="PT">Portugal</option>
+                <option value="BR">Brasil</option>
+              </select>
+            </label>
+          </form>
+        </Modal>
+      )}
 
       {status && <p className="trainings-status">{status}</p>}
     </section>

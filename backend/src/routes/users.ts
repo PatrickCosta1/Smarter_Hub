@@ -28,6 +28,62 @@ const createUserSchema = z.object({
   workCountry: countrySchema.optional(),
 });
 
+const BULK_IMPORT_PROFILE_FIELD_KEYS = [
+  'nomeAbreviado',
+  'dataNascimento',
+  'genero',
+  'estadoCivil',
+  'habilitacoesLiterarias',
+  'curso',
+  'faculdade',
+  'nacionalidade',
+  'emailPessoal',
+  'telemovel',
+  'githubUser',
+  'moradaFiscal',
+  'endereco',
+  'localidade',
+  'codigoPostal',
+  'matriculaCarro',
+  'cartaoCidadao',
+  'validadeCartaoCidadao',
+  'nif',
+  'niss',
+  'iban',
+  'situacaoIrs',
+  'numeroDependentes',
+  'irsJovem',
+  'anoPrimeiroDesconto',
+  'numeroCartaoContinente',
+  'voucherNosData',
+  'contactoEmergenciaNome',
+  'contactoEmergenciaParentesco',
+  'contactoEmergenciaNumero',
+  'cargo',
+  'categoriaProfissional',
+  'funcao',
+  'dataInicioContrato',
+  'dataFimContrato',
+  'tipoContrato',
+  'regimeHorario',
+] as const;
+
+type BulkImportProfileFieldKey = typeof BULK_IMPORT_PROFILE_FIELD_KEYS[number];
+
+const bulkImportUserSchema = z.object({
+  username: z.string().min(3),
+  email: z.string().email(),
+  fullName: z.string().min(2),
+  teamName: z.string().optional(),
+  subTeamName: z.string().optional(),
+  workCountry: countrySchema.optional(),
+  profile: z.record(z.string(), z.string()).optional(),
+});
+
+const bulkImportUsersSchema = z.object({
+  rows: z.array(bulkImportUserSchema).min(1).max(200),
+});
+
 const updateAdminUserSchema = z.object({
   nomeCompleto: z.string().optional(),
   nomeAbreviado: z.string().optional(),
@@ -121,6 +177,130 @@ const managerTeamMemberUpdateSchema = z.object({
 const AUTO_DEFAULT_EMPLOYEE_NOTE = '[AUTO_PRESET_DEFAULT_EMPLOYEE]';
 const AUTO_TEAM_LEADER_NOTE = '[AUTO_PRESET_TEAM_LEADER]';
 
+function normalizeTextField(value?: string | null) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value.trim();
+}
+
+function buildTodayIsoDate() {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+}
+
+function sanitizeBulkImportProfile(profile?: Record<string, string>) {
+  const sanitized: Partial<Record<BulkImportProfileFieldKey, string>> = {};
+
+  for (const key of BULK_IMPORT_PROFILE_FIELD_KEYS) {
+    sanitized[key] = normalizeTextField(profile?.[key]);
+  }
+
+  return sanitized;
+}
+
+async function createManagedUser(params: {
+  actorUserId: string;
+  username: string;
+  email: string;
+  fullName: string;
+  role?: z.infer<typeof roleSchema>;
+  teamId?: string | null;
+  workCountry?: z.infer<typeof countrySchema>;
+  profile?: Partial<Record<BulkImportProfileFieldKey, string>>;
+}) {
+  const passwordHash = await bcrypt.hash('pola123', 10);
+  const fullName = normalizeTextField(params.fullName).replace(/\s+/g, ' ');
+  const profile = params.profile ?? {};
+  const workCountry = params.workCountry ?? 'PT';
+  const shortName = normalizeTextField(profile.nomeAbreviado) || fullName;
+  const dataInicioContrato = normalizeTextField(profile.dataInicioContrato) || buildTodayIsoDate();
+  const user = await prisma.user.create({
+    data: {
+      username: normalizeTextField(params.username).toLowerCase(),
+      email: normalizeTextField(params.email).toLowerCase(),
+      passwordHash,
+      role: params.role ?? 'COLABORADOR',
+      teamId: params.teamId || null,
+      ...(params.teamId
+        ? {
+            teamMemberships: {
+              create: {
+                teamId: params.teamId,
+                membershipRole: 'PARTICIPANT',
+                isApprover: false,
+                isActive: true,
+              },
+            },
+          }
+        : {}),
+      profile: {
+        create: {
+          nomeCompleto: fullName,
+          nomeAbreviado: shortName,
+          dataNascimento: normalizeTextField(profile.dataNascimento),
+          genero: normalizeTextField(profile.genero),
+          estadoCivil: normalizeTextField(profile.estadoCivil),
+          habilitacoesLiterarias: normalizeTextField(profile.habilitacoesLiterarias),
+          curso: normalizeTextField(profile.curso),
+          faculdade: normalizeTextField(profile.faculdade),
+          nacionalidade: normalizeTextField(profile.nacionalidade),
+          emailPessoal: normalizeTextField(profile.emailPessoal) || normalizeTextField(params.email).toLowerCase(),
+          telemovel: normalizeTextField(profile.telemovel),
+          githubUser: normalizeTextField(profile.githubUser),
+          moradaFiscal: normalizeTextField(profile.moradaFiscal),
+          endereco: normalizeTextField(profile.endereco),
+          localidade: normalizeTextField(profile.localidade),
+          codigoPostal: normalizeTextField(profile.codigoPostal),
+          matriculaCarro: normalizeTextField(profile.matriculaCarro),
+          cartaoCidadao: normalizeTextField(profile.cartaoCidadao),
+          validadeCartaoCidadao: normalizeTextField(profile.validadeCartaoCidadao),
+          nif: normalizeTextField(profile.nif),
+          niss: normalizeTextField(profile.niss),
+          iban: normalizeTextField(profile.iban),
+          situacaoIrs: normalizeTextField(profile.situacaoIrs),
+          numeroDependentes: normalizeTextField(profile.numeroDependentes),
+          irsJovem: normalizeTextField(profile.irsJovem),
+          anoPrimeiroDesconto: normalizeTextField(profile.anoPrimeiroDesconto),
+          numeroCartaoContinente: normalizeTextField(profile.numeroCartaoContinente),
+          voucherNosData: normalizeTextField(profile.voucherNosData),
+          contactoEmergenciaNome: normalizeTextField(profile.contactoEmergenciaNome),
+          contactoEmergenciaParentesco: normalizeTextField(profile.contactoEmergenciaParentesco),
+          contactoEmergenciaNumero: normalizeTextField(profile.contactoEmergenciaNumero),
+          cargo: normalizeTextField(profile.cargo),
+          categoriaProfissional: normalizeTextField(profile.categoriaProfissional),
+          funcao: normalizeTextField(profile.funcao),
+          dataInicioContrato,
+          dataFimContrato: normalizeTextField(profile.dataFimContrato),
+          tipoContrato: normalizeTextField(profile.tipoContrato),
+          regimeHorario: normalizeTextField(profile.regimeHorario),
+          workCountry,
+        },
+      },
+    },
+    include: {
+      profile: true,
+    },
+  });
+
+  const createdRole = params.role ?? 'COLABORADOR';
+
+  if (createdRole !== 'CONVIDADO') {
+    await upsertPresetPermissions({
+      userId: user.id,
+      actorUserId: params.actorUserId,
+      codes: DEFAULT_EMPLOYEE_PERMISSION_CODES,
+      note: AUTO_DEFAULT_EMPLOYEE_NOTE,
+    });
+  }
+
+  await syncTeamLeaderPreset(user.id, params.actorUserId);
+
+  const { passwordHash: _ignored, ...safeUser } = user;
+  return safeUser;
+}
+
 function normalizeTeamCostCenter(value?: string | null) {
   if (typeof value !== 'string') {
     return null;
@@ -180,6 +360,7 @@ const DEFAULT_EMPLOYEE_PERMISSION_CODES = [
   'view_notifications',
   'request_vacation',
   'view_own_vacations',
+  'view_team_vacations',
   'request_training',
   'view_trainings',
   'view_receipts',
@@ -2088,74 +2269,185 @@ router.post('/users', requireAuth, async (req, res, next) => {
     }
 
     const data = createUserSchema.parse(req.body);
-    const passwordHash = await bcrypt.hash('pola123', 10);
-
-    const fullName = data.fullName.trim();
-    const shortName = fullName;
-
-    // Get current date as dataInicioContrato default
-    const today = new Date();
-    const dataInicioContrato = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-    const user = await prisma.user.create({
-      data: {
-        username: data.username.trim().toLowerCase(),
-        email: data.email,
-        passwordHash,
-        role: data.role ?? 'COLABORADOR',
-        teamId: data.teamId,
-        ...(data.teamId
-          ? {
-              teamMemberships: {
-                create: {
-                  teamId: data.teamId,
-                  membershipRole: 'PARTICIPANT',
-                  isApprover: false,
-                  isActive: true,
-                },
-              },
-            }
-          : {}),
-        profile: {
-          create: {
-            nomeCompleto: fullName,
-            nomeAbreviado: shortName,
-            nacionalidade: '',
-            emailPessoal: data.email,
-            githubUser: '',
-            dataInicioContrato,
-            tipoContrato: '',
-            regimeHorario: '',
-            cargo: '',
-            categoriaProfissional: '',
-            funcao: '',
-            validadeCartaoCidadao: '',
-            workCountry: data.workCountry ?? 'PT',
-          },
-        },
-      },
-      include: {
-        profile: true,
-      },
+    const safeUser = await createManagedUser({
+      actorUserId: req.authUser!.id,
+      username: data.username,
+      email: data.email,
+      fullName: data.fullName,
+      role: data.role ?? 'COLABORADOR',
+      teamId: data.teamId,
+      workCountry: data.workCountry ?? 'PT',
     });
 
-    const createdRole = data.role ?? 'COLABORADOR';
+    return res.status(201).json(safeUser);
+  } catch (error) {
+    return next(error);
+  }
+});
 
-    if (createdRole !== 'CONVIDADO') {
-      await upsertPresetPermissions({
-        userId: user.id,
-        actorUserId: req.authUser!.id,
-        codes: DEFAULT_EMPLOYEE_PERMISSION_CODES,
-        note: AUTO_DEFAULT_EMPLOYEE_NOTE,
-      });
+router.post('/users/import', requireAuth, async (req, res, next) => {
+  try {
+    const actorHasBulkAccess = req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id);
+    if (!actorHasBulkAccess) {
+      return res.status(403).json({ message: 'A importação em massa está disponível apenas para quem tem acesso total.' });
     }
 
-    // Se o utilizador já estiver como líder em alguma equipa (ex.: fluxo importado), sincroniza o preset de chefe.
-    await syncTeamLeaderPreset(user.id, req.authUser!.id);
+    const payload = bulkImportUsersSchema.parse(req.body);
+    const allTeams = await prisma.team.findMany({
+      select: { id: true, name: true, parentTeamId: true },
+    });
 
-    const { passwordHash: _ignored, ...safeUser } = user;
+    const teamsByName = new Map(allTeams.map((team) => [team.name.trim().toLowerCase(), team]));
 
-    return res.status(201).json(safeUser);
+    const normalizedRows = payload.rows.map((row, index) => ({
+      rowNumber: index + 2,
+      fullName: normalizeTextField(row.fullName).replace(/\s+/g, ' '),
+      username: normalizeTextField(row.username).toLowerCase(),
+      email: normalizeTextField(row.email).toLowerCase(),
+      workCountry: row.workCountry ?? 'PT',
+      teamName: normalizeTextField(row.teamName),
+      subTeamName: normalizeTextField(row.subTeamName),
+      profile: sanitizeBulkImportProfile(row.profile),
+    }));
+
+    const usernameCounts = new Map<string, number>();
+    const emailCounts = new Map<string, number>();
+    for (const row of normalizedRows) {
+      usernameCounts.set(row.username, (usernameCounts.get(row.username) ?? 0) + 1);
+      emailCounts.set(row.email, (emailCounts.get(row.email) ?? 0) + 1);
+    }
+
+    const existingUsers = normalizedRows.length > 0
+      ? await prisma.user.findMany({
+          where: {
+            OR: [
+              { username: { in: normalizedRows.map((row) => row.username) } },
+              { email: { in: normalizedRows.map((row) => row.email) } },
+            ],
+          },
+          select: {
+            username: true,
+            email: true,
+          },
+        })
+      : [];
+
+    const existingUsernames = new Set(existingUsers.map((user) => user.username.toLowerCase()));
+    const existingEmails = new Set(existingUsers.map((user) => user.email.toLowerCase()));
+    const results: Array<{
+      rowNumber: number;
+      fullName: string;
+      username: string;
+      email: string;
+      status: 'CREATED' | 'FAILED';
+      message: string;
+      id?: string;
+    }> = [];
+
+    for (const row of normalizedRows) {
+      const rowErrors: string[] = [];
+
+      if (!row.fullName) {
+        rowErrors.push('Nome completo em falta.');
+      }
+      if (!row.username) {
+        rowErrors.push('Username em falta.');
+      }
+      if (!row.email) {
+        rowErrors.push('Email em falta.');
+      }
+      if ((usernameCounts.get(row.username) ?? 0) > 1) {
+        rowErrors.push('Username duplicado no ficheiro.');
+      }
+      if ((emailCounts.get(row.email) ?? 0) > 1) {
+        rowErrors.push('Email duplicado no ficheiro.');
+      }
+      if (existingUsernames.has(row.username)) {
+        rowErrors.push('Username já existe na plataforma.');
+      }
+      if (existingEmails.has(row.email)) {
+        rowErrors.push('Email já existe na plataforma.');
+      }
+
+      let resolvedTeamId: string | null = null;
+      const resolvedTeam = row.teamName
+        ? teamsByName.get(row.teamName.toLowerCase())
+        : undefined;
+
+      if (row.teamName && !resolvedTeam) {
+        rowErrors.push('Equipa principal não encontrada.');
+      }
+
+      if (row.subTeamName) {
+        const resolvedSubTeam = teamsByName.get(row.subTeamName.toLowerCase());
+        if (!resolvedSubTeam) {
+          rowErrors.push('Subequipa não encontrada.');
+        } else if (!resolvedSubTeam.parentTeamId) {
+          rowErrors.push('A subequipa indicada não é uma subequipa válida.');
+        } else if (resolvedTeam && resolvedSubTeam.parentTeamId !== resolvedTeam.id) {
+          rowErrors.push('A subequipa não pertence à equipa principal indicada.');
+        } else {
+          resolvedTeamId = resolvedSubTeam.id;
+        }
+      } else if (resolvedTeam) {
+        resolvedTeamId = resolvedTeam.id;
+      }
+
+      if (rowErrors.length > 0) {
+        results.push({
+          rowNumber: row.rowNumber,
+          fullName: row.fullName,
+          username: row.username,
+          email: row.email,
+          status: 'FAILED',
+          message: rowErrors.join(' '),
+        });
+        continue;
+      }
+
+      try {
+        const createdUser = await createManagedUser({
+          actorUserId: req.authUser!.id,
+          username: row.username,
+          email: row.email,
+          fullName: row.fullName,
+          role: 'COLABORADOR',
+          teamId: resolvedTeamId,
+          workCountry: row.workCountry,
+          profile: row.profile,
+        });
+
+        existingUsernames.add(row.username);
+        existingEmails.add(row.email);
+        results.push({
+          rowNumber: row.rowNumber,
+          fullName: row.fullName,
+          username: row.username,
+          email: row.email,
+          status: 'CREATED',
+          message: 'Criado com sucesso.',
+          id: createdUser.id,
+        });
+      } catch (error) {
+        results.push({
+          rowNumber: row.rowNumber,
+          fullName: row.fullName,
+          username: row.username,
+          email: row.email,
+          status: 'FAILED',
+          message: error instanceof Error ? error.message : 'Falha inesperada ao criar colaborador.',
+        });
+      }
+    }
+
+    const createdCount = results.filter((item) => item.status === 'CREATED').length;
+    const failedCount = results.length - createdCount;
+
+    return res.json({
+      createdCount,
+      failedCount,
+      results,
+    });
   } catch (error) {
     return next(error);
   }

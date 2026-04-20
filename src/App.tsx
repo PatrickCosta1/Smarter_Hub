@@ -17,7 +17,6 @@ const RHApprovalsPage = lazy(() => import('./pages/RHApprovalsPage'));
 const ReceiptsPage = lazy(() => import('./pages/ReceiptsPage'));
 const TrainingsPage = lazy(() => import('./pages/TrainingsPage'));
 const VacationsPage = lazy(() => import('./pages/VacationsPage'));
-const AdminPage = lazy(() => import('./pages/AdminPage'));
 const ManagerTeamsPage = lazy(() => import('./pages/ManagerTeamsPage'));
 const CollaboratorsPage = lazy(() => import('./pages/CollaboratorsPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
@@ -57,7 +56,6 @@ function AppRoutes() {
       void import('./pages/ReceiptsPage');
       void import('./pages/TrainingsPage');
       void import('./pages/VacationsPage');
-      void import('./pages/AdminPage');
       void import('./pages/ManagerTeamsPage');
       void import('./pages/CollaboratorsPage');
       void import('./pages/DashboardPage');
@@ -192,7 +190,7 @@ function AppRoutes() {
           <Route path="formacoes" element={<TrainingsPage />} />
           <Route path="ferias" element={isTPeople ? <Navigate to="/" replace /> : <VacationsPage />} />
           <Route path="recibos" element={<ReceiptsPage />} />
-          <Route path="admin" element={<AdminPage />} />
+          <Route path="admin" element={<Navigate to="/colaboradores" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

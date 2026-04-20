@@ -25,9 +25,6 @@ export default function PortalLayout() {
       ...(!isTPeople ? [{ id: 'profile', label: 'A Minha Ficha', path: '/profile' }] : []),
       ...(can('view_teams') || can('manage_team_members') ? [{ id: 'equipas', label: 'Equipas', path: '/equipas' }] : []),
       ...(can('view_user_list') ? [{ id: 'colaboradores', label: 'Colaboradores', path: '/colaboradores' }] : []),
-      ...(can('edit_user') || can('create_team') || can('edit_team') || can('delete_team')
-        ? [{ id: 'admin', label: 'Administração', path: '/admin' }]
-        : []),
       ...(can('approve_profile_change') || can('approve_vacation') || can('reject_vacation') || can('view_all_vacations')
         ? [{ id: 'aprovacoes', label: 'Aprovações', path: '/aprovacoes' }]
         : []),
@@ -104,9 +101,6 @@ export default function PortalLayout() {
       case '/colaboradores':
         void import('../pages/CollaboratorsPage');
         break;
-      case '/admin':
-        void import('../pages/AdminPage');
-        break;
       case '/aprovacoes':
         void import('../pages/RHApprovalsPage');
         break;
@@ -143,11 +137,6 @@ export default function PortalLayout() {
 
     if (path === '/colaboradores') {
       void safePrefetch('/users/collaborators?page=1&pageSize=20&sortBy=updatedAt&sortDirection=desc', 30000);
-      return;
-    }
-
-    if (path === '/admin') {
-      void safePrefetch('/admin/users', 30000);
       return;
     }
 

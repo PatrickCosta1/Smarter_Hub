@@ -45,6 +45,7 @@ const DEFAULT_EMPLOYEE_PERMISSION_CODES = [
   'view_notifications',
   'request_vacation',
   'view_own_vacations',
+  'view_team_vacations',
   'request_training',
   'view_trainings',
   'view_receipts',

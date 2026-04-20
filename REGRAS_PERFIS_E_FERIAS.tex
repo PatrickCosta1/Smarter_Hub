@@ -157,6 +157,7 @@ HR (futuro) & A definir, atualmente absorvido pelo admin & A definir & A definir
 \begin{itemize}
   \item Deve ver a sua equipa.
   \item Deve ver as férias e ausências dos membros da sua equipa.
+  \item Esta visibilidade deve existir por predefinição na baseline de permissões do colaborador (\texttt{view\_team\_vacations}).
   \item Deve conseguir pedir e editar pedidos pendentes por versionamento.
 \end{itemize}
 
@@ -236,6 +237,7 @@ HR (futuro) & A definir, atualmente absorvido pelo admin & A definir & A definir
   \item \textbf{Perfil}: ficha colaborador, pedidos de alteração, aprovação e histórico.
   \item \textbf{Perfil (ficha)}: a ficha é organizada em \textbf{Dados Pessoais}, \textbf{Dados de Contacto}, \textbf{Documentos de Identificação}, \textbf{Dados Fiscais e Bancários}, \textbf{Contacto de Emergência}, \textbf{Dados Contratuais}, \textbf{Dados de Formação} e \textbf{Pedido de Benefícios (em breve)}.
   \item \textbf{Perfil (exportação)}: na página de colaboradores deve existir ação global de \textbf{Exportar} com seleção simples do colaborador (pesquisa e filtros) para gerar ficheiro \textbf{Excel} estruturado para cliente.
+  \item \textbf{Perfil (importação)}: na página de colaboradores deve existir ação global de \textbf{Importar em massa} por ficheiro \textbf{Excel} ou \textbf{CSV} para criação de novos colaboradores com a ficha base; o modelo Excel deve incluir \textbf{dropdowns orientados} para campos de domínio, com seleção de \textbf{equipa principal} e campo de \textbf{subequipa} quando aplicável, e os \textbf{campos de comprovativos} ficam excluídos da importação, sendo preenchidos posteriormente na ficha individual; esta ação é reservada a utilizadores com \textbf{acesso total}.
   \item \textbf{Formações}: atribuição, estado de conclusão e consulta.
   \item \textbf{Formações (detalhe funcional)}: o campo de referência temporal da formação é \textbf{Data de início}; a vista \textbf{A Minha Ficha} inclui uma aba \textbf{Formações} apenas para consulta estilizada das formações do colaborador.
   \item \textbf{Notificações}: geração, leitura, limpeza e encaminhamento de ação.
@@ -249,6 +251,15 @@ HR (futuro) & A definir, atualmente absorvido pelo admin & A definir & A definir
   \item Sistema cria conta e ficha base com dados iniciais.
   \item Sistema aplica permissões base de colaborador quando aplicável.
   \item Conta fica disponível para login e gestão de equipa.
+\end{enumerate}
+
+\subsection{Fluxo A2: importação em massa de colaboradores}
+\begin{enumerate}
+  \item Utilizador com acesso total descarrega o modelo e prepara ficheiro Excel ou CSV com os dados da ficha base.
+  \item Sistema valida localmente colunas obrigatórias, duplicados e estrutura mínima antes do envio.
+  \item Backend valida unicidade de username/email e resolve equipa por ID ou nome.
+  \item Cada linha válida cria novo colaborador com ficha inicial, equipa principal opcional e permissões base de colaborador.
+  \item Sistema devolve resultado por linha, distinguindo criações bem sucedidas de falhas para correção pontual.
 \end{enumerate}
 
 \subsection{Fluxo B: gestão de permissões}
