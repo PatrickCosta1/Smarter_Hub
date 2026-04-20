@@ -718,6 +718,92 @@ function validateImportRows(rows: CollaboratorImportRow[]) {
   const usernameCounts = new Map<string, number>();
   const emailCounts = new Map<string, number>();
 
+  const onlyDigits = (value: string) => value.replace(/\D/g, '');
+
+  const isValidIsoDate = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return false;
+    }
+    const [yearRaw, monthRaw, dayRaw] = value.split('-');
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    const day = Number(dayRaw);
+    if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+      return false;
+    }
+    if (month < 1 || month > 12 || day < 1 || day > 31) {
+      return false;
+    }
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day;
+  };
+
+  const isValidNif = (value: string) => {
+    const digits = onlyDigits(value);
+    if (!/^\d{9}$/.test(digits)) {
+      return false;
+    }
+
+    const firstDigit = Number(digits[0]);
+    if (![1, 2, 3, 5, 6, 8, 9].includes(firstDigit)) {
+      return false;
+    }
+
+    let total = 0;
+    for (let index = 0; index < 8; index += 1) {
+      total += Number(digits[index]) * (9 - index);
+    }
+    const modulo = total % 11;
+    const checkDigit = modulo < 2 ? 0 : 11 - modulo;
+    return checkDigit === Number(digits[8]);
+  };
+
+  const isValidNiss = (value: string) => {
+    const digits = onlyDigits(value);
+    return /^\d{11}$/.test(digits);
+  };
+
+  const normalizeIban = (value: string) => value.replace(/\s+/g, '').toUpperCase();
+
+  const isValidIban = (value: string) => {
+    const iban = normalizeIban(value);
+    if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) {
+      return false;
+    }
+
+    const rearranged = `${iban.slice(4)}${iban.slice(0, 4)}`;
+    let remainder = 0;
+
+    for (const char of rearranged) {
+      const expanded = /[A-Z]/.test(char) ? String(char.charCodeAt(0) - 55) : char;
+      for (const digit of expanded) {
+        remainder = (remainder * 10 + Number(digit)) % 97;
+      }
+    }
+
+    return remainder === 1;
+  };
+
+  const isValidPhone = (value: string) => {
+    const compact = value.replace(/[\s().-]/g, '');
+    if (!/^\+?\d+$/.test(compact)) {
+      return false;
+    }
+    const digits = compact.replace(/^\+/, '');
+    return digits.length >= 9 && digits.length <= 15;
+  };
+
+  const isNonNegativeInteger = (value: string) => /^\d+$/.test(value);
+
+  const isReasonableYear = (value: string) => {
+    if (!/^\d{4}$/.test(value)) {
+      return false;
+    }
+    const year = Number(value);
+    const currentYear = new Date().getFullYear();
+    return year >= 1900 && year <= currentYear + 1;
+  };
+
   for (const row of rows) {
     if (row.username) {
       usernameCounts.set(row.username, (usernameCounts.get(row.username) ?? 0) + 1);
@@ -745,6 +831,61 @@ function validateImportRows(rows: CollaboratorImportRow[]) {
     }
     if ((emailCounts.get(row.email) ?? 0) > 1) {
       issues.push({ rowNumber: row.rowNumber, message: 'Email duplicado no ficheiro.' });
+    }
+
+    const profile = row.profile;
+
+    if (profile.nif && !isValidNif(profile.nif)) {
+      issues.push({ rowNumber: row.rowNumber, message: 'NIF inválido. Deve conter 9 dígitos válidos.' });
+    }
+
+    if (profile.niss && !isValidNiss(profile.niss)) {
+      issues.push({ rowNumber: row.rowNumber, message: 'NISS inválido. Deve conter 11 dígitos.' });
+    }
+
+    if (profile.iban && !isValidIban(profile.iban)) {
+      issues.push({ rowNumber: row.rowNumber, message: 'IBAN inválido.' });
+    }
+
+    if (profile.emailPessoal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.emailPessoal)) {
+      issues.push({ rowNumber: row.rowNumber, message: 'Email pessoal inválido.' });
+    }
+
+    if (profile.contactoEmergenciaNumero && !isValidPhone(profile.contactoEmergenciaNumero)) {
+      issues.push({ rowNumber: row.rowNumber, message: 'Contacto de emergência inválido.' });
+    }
+
+    if (profile.numeroDependentes && !isNonNegativeInteger(profile.numeroDependentes)) {
+      issues.push({ rowNumber: row.rowNumber, message: 'Número de dependentes inválido. Usa apenas dígitos.' });
+    }
+
+    if (profile.anoPrimeiroDesconto && !isReasonableYear(profile.anoPrimeiroDesconto)) {
+      issues.push({ rowNumber: row.rowNumber, message: 'Ano primeiro desconto inválido. Usa formato AAAA.' });
+    }
+
+    const dateFields: Array<[keyof CollaboratorImportProfile, string]> = [
+      ['dataNascimento', 'Data de nascimento'],
+      ['validadeCartaoCidadao', 'Validade do cartão de cidadão'],
+      ['voucherNosData', 'Data voucher NOS'],
+      ['dataInicioContrato', 'Data início contrato'],
+      ['dataFimContrato', 'Data fim contrato'],
+    ];
+
+    for (const [key, label] of dateFields) {
+      const rawValue = profile[key];
+      if (!rawValue) {
+        continue;
+      }
+      if (!isValidIsoDate(rawValue)) {
+        issues.push({ rowNumber: row.rowNumber, message: `${label} inválida. Usa formato YYYY-MM-DD.` });
+      }
+    }
+
+    if (profile.dataInicioContrato && profile.dataFimContrato
+      && isValidIsoDate(profile.dataInicioContrato)
+      && isValidIsoDate(profile.dataFimContrato)
+      && profile.dataFimContrato < profile.dataInicioContrato) {
+      issues.push({ rowNumber: row.rowNumber, message: 'Data fim contrato não pode ser anterior à data início contrato.' });
     }
   }
 
