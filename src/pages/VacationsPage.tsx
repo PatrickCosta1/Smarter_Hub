@@ -116,7 +116,7 @@ type VacationDraft = {
 
 type DraftErrors = Partial<Record<keyof VacationDraft, string>>;
 
-type Subtab = 'overview' | 'calendar' | 'requests' | 'company-days' | 'export';
+type Subtab = 'overview' | 'calendar' | 'company-days' | 'export';
 
 type ExportTeam = {
   id: string;
@@ -359,6 +359,11 @@ export default function VacationsPage() {
   const [isLoadingAssignCandidates, setIsLoadingAssignCandidates] = useState(false);
   const [isCreditingVacationBalance, setIsCreditingVacationBalance] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Calendar range selection:
+  // selectionAnchor = first clicked day (waiting for second click)
+  // hoverDay = day being hovered while anchor is set (live range preview)
+  const [selectionAnchor, setSelectionAnchor] = useState<string | null>(null);
+  const [hoverDay, setHoverDay] = useState<string | null>(null);
   const currentMonthRef = useRef<HTMLElement | null>(null);
   const calendarAutoScrolledRef = useRef<string>('');
 
@@ -436,7 +441,7 @@ export default function VacationsPage() {
 
   const allowedTabs = useMemo<Subtab[]>(() => {
     const tabs: Subtab[] = [];
-    if (!isTPeople) tabs.push('overview', 'calendar', 'requests');
+    if (!isTPeople) tabs.push('overview', 'calendar');
     if (isTPeople) tabs.push('calendar');
     if (canManageVacationRules) tabs.push('company-days');
     if (canExport) tabs.push('export');
@@ -919,6 +924,8 @@ export default function VacationsPage() {
     });
     setEditingId(null);
     setDraftErrors({});
+    setSelectionAnchor(null);
+    setHoverDay(null);
   }
 
   function handleDraftChange(field: keyof VacationDraft, value: string) {
@@ -1065,7 +1072,10 @@ export default function VacationsPage() {
       contextTeamId: record.contextTeamId || teamContexts.find((item) => item.isPrimary)?.teamId || teamContexts[0]?.teamId || '',
       partialDay: record.partialDay || 'FULL',
     });
-    setActiveTab('requests');
+    setSelectionAnchor(null);
+    setHoverDay(null);
+    setSubmissionNotice(null);
+    setActiveTab('calendar');
     showToast('info', 'Modo edição ativo. Ao submeter, será criada uma nova versão do pedido.');
   }
 
@@ -1090,6 +1100,76 @@ export default function VacationsPage() {
       showToast('error', error instanceof Error ? error.message : 'Falha ao cancelar pedido.');
     }
   }
+
+  function handleDayClick(iso: string) {
+    if (selectionAnchor === null) {
+      // First click — set anchor and pre-fill single day
+      setSelectionAnchor(iso);
+      setHoverDay(iso);
+      setDraft((current) => ({ ...current, dataInicio: iso, dataFim: iso }));
+      setDraftErrors((current) => {
+        const next = { ...current };
+        delete next.dataInicio;
+        delete next.dataFim;
+        return next;
+      });
+    } else {
+      // Second click — confirm the range
+      const start = selectionAnchor <= iso ? selectionAnchor : iso;
+      const end = selectionAnchor <= iso ? iso : selectionAnchor;
+      setDraft((current) => ({ ...current, dataInicio: start, dataFim: end }));
+      setDraftErrors((current) => {
+        const next = { ...current };
+        delete next.dataInicio;
+        delete next.dataFim;
+        return next;
+      });
+      setSelectionAnchor(null);
+      setHoverDay(null);
+      setSubmissionNotice(null);
+    }
+  }
+
+  function handleDayMouseEnter(iso: string) {
+    if (selectionAnchor !== null) {
+      setHoverDay(iso);
+    }
+  }
+
+  function cancelSelection() {
+    setSelectionAnchor(null);
+    setHoverDay(null);
+    setDraft(EMPTY_DRAFT);
+    setDraftErrors({});
+    setSubmissionNotice(null);
+    setEditingId(null);
+  }
+
+  function getDayRangeClass(iso: string): string {
+    const anchor = selectionAnchor;
+    const hover = hoverDay ?? anchor;
+
+    // Live preview while anchor is set
+    if (anchor !== null && hover !== null) {
+      const previewStart = anchor <= hover ? anchor : hover;
+      const previewEnd = anchor <= hover ? hover : anchor;
+      if (iso === previewStart && iso === previewEnd) return ' cal-range-sole';
+      if (iso === previewStart) return ' cal-range-start';
+      if (iso === previewEnd) return ' cal-range-end';
+      if (iso > previewStart && iso < previewEnd) return ' cal-range-mid';
+      return '';
+    }
+
+    // Confirmed range (no anchor)
+    const { dataInicio, dataFim } = draft;
+    if (!dataInicio || !dataFim) return '';
+    if (iso === dataInicio && iso === dataFim) return ' cal-range-sole cal-range-confirmed';
+    if (iso === dataInicio) return ' cal-range-start cal-range-confirmed';
+    if (iso === dataFim) return ' cal-range-end cal-range-confirmed';
+    if (iso > dataInicio && iso < dataFim) return ' cal-range-mid cal-range-confirmed';
+    return '';
+  }
+
 
   function getDayKind(iso: string) {
     if (!calendarData) {
@@ -1164,14 +1244,24 @@ export default function VacationsPage() {
   }
 
   function renderDayCell(iso: string | null, day: number | null, key: string) {
+    if (!iso) {
+      return <div key={key} className="vacations-day vacations-day--blank" />;
+    }
+
+    const rangeClass = !isTPeople ? getDayRangeClass(iso) : '';
+    const isAnchorDay = iso === selectionAnchor;
+
     return (
-      <div
+      <button
+        type="button"
         key={key}
-        className={`vacations-day${iso ? ` vacations-day--${getDayKind(iso)}` : ' vacations-day--blank'}`}
-        title={iso ? getDayLabel(iso) : undefined}
+        className={`vacations-day vacations-day--${getDayKind(iso)}${rangeClass}${isAnchorDay ? ' cal-day-anchor' : ''}`}
+        title={getDayLabel(iso)}
+        onClick={() => !isTPeople && handleDayClick(iso)}
+        onMouseEnter={() => !isTPeople && handleDayMouseEnter(iso)}
       >
-        {day ?? ''}
-      </div>
+        {day}
+      </button>
     );
   }
 
@@ -1194,9 +1284,6 @@ export default function VacationsPage() {
         )}
         {allowedTabs.includes('calendar') && (
           <button type="button" className={activeTab === 'calendar' ? 'is-active' : ''} onClick={() => setActiveTab('calendar')}>Calendário</button>
-        )}
-        {allowedTabs.includes('requests') && (
-          <button type="button" className={activeTab === 'requests' ? 'is-active' : ''} onClick={() => setActiveTab('requests')}>Os meus pedidos</button>
         )}
         {allowedTabs.includes('company-days') && (
           <button type="button" className={activeTab === 'company-days' ? 'is-active' : ''} onClick={() => setActiveTab('company-days')}>Dias automáticos</button>
@@ -1284,7 +1371,10 @@ export default function VacationsPage() {
       )}
 
       {activeTab === 'calendar' && (
-        <section className="trainings-list-card">
+        <section
+          className="trainings-list-card vacations-calendar-integrated"
+          onMouseLeave={() => selectionAnchor !== null && setHoverDay(selectionAnchor)}
+        >
           <div className="vacations-legend vacations-legend--sticky" aria-label="Legenda do calendário">
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--holiday" />Feriado</span>
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--weekend" />Fim de semana</span>
@@ -1293,6 +1383,15 @@ export default function VacationsPage() {
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--pending" />Férias Pendentes</span>
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--approved" />Férias aprovadas</span>
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--extra" />Dia dado pela empresa</span>
+            {!isTPeople && (
+              <span className="vacations-legend-item vacations-legend-item--hint">
+                {selectionAnchor
+                  ? `📅 ${formatShortDate(selectionAnchor)} — clica no dia de fim`
+                  : draft.dataInicio && draft.dataFim && !selectionAnchor
+                    ? `Selecionado: ${formatShortDate(draft.dataInicio)}${draft.dataInicio !== draft.dataFim ? ' → ' + formatShortDate(draft.dataFim) : ''}`
+                    : 'Clica num dia para iniciar seleção'}
+              </span>
+            )}
           </div>
 
           {calendarError ? (
@@ -1345,6 +1444,167 @@ export default function VacationsPage() {
                 </article>
               ))}
             </div>
+          )}
+
+          {/* ── Floating booking bar ── */}
+          {!isTPeople && (selectionAnchor !== null || (draft.dataInicio && draft.dataFim && !selectionAnchor)) && (
+            <div className={`cal-booking-bar${selectionAnchor !== null ? ' cal-booking-bar--picking' : ' cal-booking-bar--ready'}`} role="region" aria-label="Painel de pedido">
+              {selectionAnchor !== null ? (
+                <div className="cal-booking-bar__hint">
+                  <span className="cal-booking-bar__hint-icon">📅</span>
+                  <div>
+                    <strong>Início: {formatShortDate(selectionAnchor)}</strong>
+                    <p>Clica no dia de fim para definir o intervalo</p>
+                  </div>
+                  <button type="button" className="cal-booking-bar__cancel" onClick={cancelSelection} aria-label="Cancelar seleção">✕</button>
+                </div>
+              ) : (
+                <form className="cal-booking-bar__form" onSubmit={handleSubmit} noValidate>
+                  <div className="cal-booking-bar__range">
+                    <span className="cal-booking-bar__range-icon">📅</span>
+                    <div className="cal-booking-bar__range-dates">
+                      <strong>
+                        {draft.dataInicio === draft.dataFim
+                          ? formatShortDate(draft.dataInicio)
+                          : `${formatShortDate(draft.dataInicio)} → ${formatShortDate(draft.dataFim)}`}
+                      </strong>
+                      <small>
+                        {calculateDays({ dataInicio: draft.dataInicio, dataFim: draft.dataFim })} {calculateDays({ dataInicio: draft.dataInicio, dataFim: draft.dataFim }) === 1 ? 'dia' : 'dias'}
+                        {editingId ? ' · Editando pedido' : ''}
+                      </small>
+                    </div>
+                    <button type="button" className="cal-booking-bar__reselect" title="Alterar intervalo" onClick={() => {
+                      setSelectionAnchor(draft.dataInicio);
+                      setHoverDay(draft.dataFim);
+                    }}>
+                      ✎
+                    </button>
+                  </div>
+
+                  <div className="cal-booking-bar__fields">
+                    <label className="cal-booking-bar__field">
+                      <span>Tipo</span>
+                      <select value={draft.requestKind} onChange={(e) => handleRequestKindChange(e.target.value as RequestKind)}>
+                        <option value="VACATION">Férias</option>
+                        <option value="ABSENCE">Ausência</option>
+                      </select>
+                    </label>
+
+                    {draft.requestKind === 'ABSENCE' ? (
+                      <>
+                        <label className="cal-booking-bar__field">
+                          <span>Motivo</span>
+                          <select value={draft.absenceReason} onChange={(e) => handleDraftChange('absenceReason', e.target.value)}>
+                            <option value="MEDICAL">Médico</option>
+                            <option value="TRAINING">Formação</option>
+                            <option value="OTHER">Outro</option>
+                          </select>
+                        </label>
+                        {draft.absenceReason === 'OTHER' && (
+                          <label className="cal-booking-bar__field cal-booking-bar__field--grow">
+                            <span>Detalhe *</span>
+                            <input type="text" value={draft.absenceReasonText} onChange={(e) => handleDraftChange('absenceReasonText', e.target.value)} placeholder="Motivo da ausência" />
+                            {draftErrors.absenceReasonText && <small className="cal-booking-bar__err">{draftErrors.absenceReasonText}</small>}
+                          </label>
+                        )}
+                      </>
+                    ) : (
+                      <label className="cal-booking-bar__field">
+                        <span>Duração</span>
+                        <select value={draft.partialDay} onChange={(e) => handleDraftChange('partialDay', e.target.value)}>
+                          <option value="FULL">Dia completo</option>
+                          <option value="AM">Meio-dia manhã</option>
+                          <option value="PM">Meio-dia tarde</option>
+                        </select>
+                      </label>
+                    )}
+
+                    <label className="cal-booking-bar__field cal-booking-bar__field--grow">
+                      <span>Observações</span>
+                      <input type="text" value={draft.observacoes} onChange={(e) => handleDraftChange('observacoes', e.target.value)} placeholder="Opcional" />
+                    </label>
+
+                    <label className="cal-booking-bar__field cal-booking-bar__field--file">
+                      <span>Comprovativo</span>
+                      <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={handleAttachmentChange} />
+                    </label>
+                  </div>
+
+                  {(draftErrors.dataInicio || draftErrors.dataFim) && (
+                    <small className="cal-booking-bar__err">{draftErrors.dataInicio || draftErrors.dataFim}</small>
+                  )}
+                  {submissionNotice && (
+                    <div className={`cal-booking-bar__notice cal-booking-bar__notice--${submissionNotice.tone}`}>
+                      {submissionNotice.message}
+                    </div>
+                  )}
+
+                  <div className="cal-booking-bar__actions">
+                    <Button type="submit" variant="primary" isLoading={isSubmitting}>
+                      {editingId ? 'Guardar versão' : 'Enviar pedido'}
+                    </Button>
+                    <button type="button" className="cal-booking-bar__cancel" onClick={cancelSelection} disabled={isSubmitting}>Cancelar</button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
+
+          {!isTPeople && (
+            <section className="vacations-history-card" aria-label="Histórico de pedidos">
+              <div className="trainings-list-head">
+                <h3>Histórico de pedidos</h3>
+              </div>
+
+              <div className="trainings-table-wrap">
+                <table className="trainings-table" aria-label="Lista de pedidos">
+                  <thead>
+                    <tr>
+                      <th>Pedido</th>
+                      <th>Período</th>
+                      <th>Dias</th>
+                      <th>Equipa</th>
+                      <th>Estado</th>
+                      <th>Resumo</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedRecords.length === 0 && (
+                      <tr>
+                        <td colSpan={7}>Sem pedidos submetidos.</td>
+                      </tr>
+                    )}
+                    {sortedRecords.map((record) => (
+                      <tr key={record.id} className={`vacation-history-row vacation-history-row--${record.status.toLowerCase()}`}>
+                        <td>
+                          <strong>{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</strong>
+                        </td>
+                        <td>{formatShortDate(record.dataInicio)} - {formatShortDate(record.dataFim)}</td>
+                        <td>{calculateDuration(record)}</td>
+                        <td>{record.contextTeam?.name || '-'}</td>
+                        <td>
+                          <Badge tone={getVacationStatusTone(record.status) === 'approved' ? 'success' : getVacationStatusTone(record.status) === 'pending' ? 'warning' : getVacationStatusTone(record.status) === 'rejected' ? 'danger' : 'neutral'}>
+                            {formatVacationStatusLabel(record.status)}
+                          </Badge>
+                        </td>
+                        <td>{record.observacoes || 'Sem observações'} · V{record.versionNumber || 1}</td>
+                        <td>
+                          {record.status === 'PENDING' || record.status === 'APPROVED' ? (
+                            <div className="trainings-row-actions">
+                              <button type="button" onClick={() => startEdit(record)}>Editar</button>
+                              {record.status === 'PENDING' && <button type="button" onClick={() => void handleCancelPending(record.id)}>Anular</button>}
+                            </div>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           )}
         </section>
       )}
@@ -1592,151 +1852,6 @@ export default function VacationsPage() {
                   Creditar dias no saldo
                 </Button>
               </div>
-            </div>
-          </section>
-        </>
-      )}
-
-      {activeTab === 'requests' && !isTPeople && (
-        <>
-          <section className="trainings-form-card">
-            <div className="trainings-form-head">
-              <h3>{editingId ? 'Editar pedido por versionamento' : 'Novo pedido de férias/ausência'}</h3>
-            </div>
-
-            <form className="trainings-form" onSubmit={handleSubmit} noValidate>
-              <label>
-                <span>Tipo *</span>
-                <select value={draft.requestKind} onChange={(event) => handleRequestKindChange(event.target.value as RequestKind)}>
-                  <option value="VACATION">Férias</option>
-                  <option value="ABSENCE">Ausência</option>
-                </select>
-              </label>
-
-              {draft.requestKind === 'ABSENCE' && (
-                <>
-                  <label>
-                    <span>Motivo *</span>
-                    <select value={draft.absenceReason} onChange={(event) => handleDraftChange('absenceReason', event.target.value)}>
-                      <option value="MEDICAL">Médico</option>
-                      <option value="TRAINING">Formação</option>
-                      <option value="OTHER">Outro</option>
-                    </select>
-                  </label>
-
-                  {draft.absenceReason === 'OTHER' && (
-                    <label className="field-span-2">
-                      <span>Motivo manual *</span>
-                      <input
-                        type="text"
-                        value={draft.absenceReasonText}
-                        onChange={(event) => handleDraftChange('absenceReasonText', event.target.value)}
-                        placeholder="Escreve o motivo da ausência"
-                      />
-                      {draftErrors.absenceReasonText && <small>{draftErrors.absenceReasonText}</small>}
-                    </label>
-                  )}
-                </>
-              )}
-
-              {draft.requestKind === 'VACATION' && (
-                <label>
-                  <span>Duração *</span>
-                  <select value={draft.partialDay} onChange={(event) => handleDraftChange('partialDay', event.target.value)}>
-                    <option value="FULL">Dia completo</option>
-                    <option value="AM">Meio-dia (manhã)</option>
-                    <option value="PM">Meio-dia (tarde)</option>
-                  </select>
-                </label>
-              )}
-
-              <label>
-                <span>Data de início *</span>
-                <input type="date" value={draft.dataInicio} onChange={(event) => handleDraftChange('dataInicio', event.target.value)} />
-                {draftErrors.dataInicio && <small>{draftErrors.dataInicio}</small>}
-              </label>
-
-              <label>
-                <span>Data de fim *</span>
-                <input type="date" value={draft.dataFim} onChange={(event) => handleDraftChange('dataFim', event.target.value)} />
-                {draftErrors.dataFim && <small>{draftErrors.dataFim}</small>}
-              </label>
-
-              <label>
-                <span>Observações</span>
-                <input type="text" value={draft.observacoes} onChange={(event) => handleDraftChange('observacoes', event.target.value)} placeholder="Contexto adicional do pedido" />
-              </label>
-
-              <label>
-                <span>Comprovativo (opcional)</span>
-                <input type="file" accept=".pdf,.png,.jpg,.jpeg" onChange={handleAttachmentChange} />
-              </label>
-
-              <div className="trainings-form-actions field-span-2">
-                <Button type="submit" variant="primary" isLoading={isSubmitting}>{editingId ? 'Guardar nova versão' : 'Enviar pedido'}</Button>
-              </div>
-
-              {submissionNotice && (
-                <div className={`vacations-panel-state field-span-2 vacations-panel-state--${submissionNotice.tone}`}>
-                  <strong>{submissionNotice.tone === 'error' ? 'Atenção' : submissionNotice.tone === 'success' ? 'Pedido enviado' : 'Informação'}</strong>
-                  <p>{submissionNotice.message}</p>
-                </div>
-              )}
-            </form>
-          </section>
-
-          <section className="trainings-list-card">
-            <div className="trainings-list-head">
-              <h3>Histórico de pedidos</h3>
-            </div>
-
-            <div className="trainings-table-wrap">
-              <table className="trainings-table" aria-label="Lista de pedidos">
-                <thead>
-                  <tr>
-                    <th>Pedido</th>
-                    <th>Período</th>
-                    <th>Dias</th>
-                    <th>Equipa</th>
-                    <th>Estado</th>
-                    <th>Resumo</th>
-                    <th>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedRecords.length === 0 && (
-                    <tr>
-                      <td colSpan={7}>Sem pedidos submetidos.</td>
-                    </tr>
-                  )}
-                  {sortedRecords.map((record) => (
-                    <tr key={record.id} className={`vacation-history-row vacation-history-row--${record.status.toLowerCase()}`}>
-                      <td>
-                        <strong>{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</strong>
-                      </td>
-                      <td>{formatShortDate(record.dataInicio)} - {formatShortDate(record.dataFim)}</td>
-                      <td>{calculateDuration(record)}</td>
-                      <td>{record.contextTeam?.name || '-'}</td>
-                      <td>
-                        <Badge tone={getVacationStatusTone(record.status) === 'approved' ? 'success' : getVacationStatusTone(record.status) === 'pending' ? 'warning' : getVacationStatusTone(record.status) === 'rejected' ? 'danger' : 'neutral'}>
-                          {formatVacationStatusLabel(record.status)}
-                        </Badge>
-                      </td>
-                      <td>{record.observacoes || 'Sem observações'} · V{record.versionNumber || 1}</td>
-                      <td>
-                        {record.status === 'PENDING' || record.status === 'APPROVED' ? (
-                          <div className="trainings-row-actions">
-                            <button type="button" onClick={() => startEdit(record)}>Editar</button>
-                            {record.status === 'PENDING' && <button type="button" onClick={() => void handleCancelPending(record.id)}>Anular</button>}
-                          </div>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           </section>
         </>

@@ -9,12 +9,16 @@
 \usepackage{booktabs}
 \usepackage{longtable}
 \usepackage{tabularx}
-\usepackage{xcolor}
 \usepackage{enumitem}
 \usepackage{hyperref}
 \usepackage{titlesec}
 \usepackage{fancyhdr}
 \usepackage{setspace}
+\usepackage[table]{xcolor}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{float}
+\usepackage{eso-pic}
 
 \hypersetup{
   colorlinks=true,
@@ -41,29 +45,16 @@
 \setlist[enumerate]{leftmargin=1.5em,itemsep=0.2em,topsep=0.2em}
 
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
-
 \begin{document}
 
 \begin{titlepage}
-  \centering
-  {\Large Instituto Superior de Engenharia do Porto\par}
-  \vspace{1.0cm}
-  {\large Unidade Curricular: PROES\par}
-  \vspace{2.2cm}
-  {\Huge\bfseries Ponto de Controlo 2\par}
-  \vspace{0.5cm}
-  {\LARGE\bfseries SMARTER HUB\par}
-  \vspace{2.0cm}
+\thispagestyle{empty}
 
-  \begin{tabular}{rl}
-    \textbf{Curso:} & Engenharia Informatica \\
-    \textbf{Ano letivo:} & 2025/2026 \\
-    \textbf{Docente:} & [Preencher nome do docente] \\
-    \textbf{Equipa:} & Equipa SMARTER HUB \\
-    \textbf{Data:} & 21 de abril de 2026
-  \end{tabular}
+\AddToShipoutPictureBG*{
+  \includegraphics[width=\paperwidth,height=\paperheight]{capa_pc2.png}
+}
 
-  \vfill
+\vspace*{\fill}
 \end{titlepage}
 
 \tableofcontents
@@ -165,15 +156,17 @@ Satisfação de utilizador interno (escala 1-5) & 3.0-3.5/5 & $\geq$ 4.2/5 & Inq
 
 \noindent\textit{Nota}: os valores de baseline representam referência operacional típica para organizações com processos parcialmente manuais e devem ser ajustados com dados reais na fase de operação.
 
-\subsection{Situação futura esperada}
-Com a evolução do SMARTER HUB, espera-se um estado futuro (TO-BE) com:
+\subsection{Situação futura esperada do problema (TO-BE)}
+Independentemente da solução tecnológica adotada, o estado futuro desejado para o problema é:
 
 \begin{itemize}
   \item processo de pedido e aprovação totalmente rastreável de ponta a ponta;
   \item redução consistente do tempo de resposta e do retrabalho administrativo;
   \item governação de acessos mais robusta, com menor risco de escalada indevida;
-  \item maior previsibilidade de capacidade de equipas através de mapa anual de férias e regras automáticas.
+  \item maior previsibilidade de capacidade de equipas e melhor suporte à decisão operacional.
 \end{itemize}
+
+\noindent A materialização concreta destes resultados (arquitetura, funcionalidades e fluxos implementados) é apresentada na secção \textit{Conceção da Solução}.
 
 \section{Estado da Arte}
 \subsection{Como o problema é atualmente resolvido}
@@ -236,6 +229,9 @@ A arquitetura final equilibra rapidez de entrega e robustez:
   \item testes unitários/integração (Vitest + Supertest) e E2E (Playwright) para reduzir regressão.
 \end{itemize}
 
+\subsection{Síntese e implicações para a solução}
+O Estado da Arte é apresentado antes da solução por uma razão metodológica: primeiro caracteriza-se o problema e as alternativas existentes, depois justifica-se tecnicamente a proposta adotada. Assim, a secção seguinte de conceção não é apenas descritiva, mas consequência fundamentada da análise funcional e tecnológica realizada.
+
 \section{Stakeholders}
 \subsection{Matriz de stakeholders}
 \rowcolors{2}{softgray}{white}
@@ -248,10 +244,10 @@ A arquitetura final equilibra rapidez de entrega e robustez:
 \textbf{Stakeholder} & \textbf{Influência} & \textbf{Interesse} & \textbf{Estratégia de gestão} \\
 \midrule
 \endhead
-Direção RH & Alta & Alta & Envolvimento direto na priorização de regras de férias e compliance \\
-Gestores/Coordenadores & Alta & Alta & Validação contínua de fluxos de aprovação e capacidade de equipa \\
+Direção RH & Alta & Alta & Envolvimento direto na priorização de regras de férias, permissões e compliance \\
+Aprovadores e gestores de equipa & Alta & Alta & Validação contínua dos fluxos de aprovação por etapa e capacidade de equipa \\
 Direção executiva & Alta & Média & Reporting periódico de indicadores de produtividade e risco \\
-Administradores (acesso total) & Média/Alta & Alta & Definição de governança operacional e controlo de exceções \\
+Gestores de permissões / acesso total & Média/Alta & Alta & Definição da governança de capacidades, escopo e exceções operacionais \\
 Colaboradores & Baixa/Média & Alta & UX clara, feedback rápido e visibilidade do estado dos pedidos \\
 Equipa TI/Dev & Média & Alta & Hardening técnico, testes automatizados e monitorização \\
 \bottomrule
@@ -259,32 +255,99 @@ Equipa TI/Dev & Média & Alta & Hardening técnico, testes automatizados e monit
 
 \section{Conceção da Solução}
 \subsection{Descrição da solução}
-A solução proposta é o SMARTER HUB, uma plataforma web integrada para gestão de processos de pessoas, com foco em regras de negócio, rastreabilidade e eficiência operacional.
+A solução proposta é o SMARTER HUB, uma plataforma web integrada para gestão operacional de processos de pessoas, com foco em consistência de regras, governação por permissões e rastreabilidade de decisão.
 
-O sistema centraliza pedidos de férias e ausências, aprovações multi-nível, gestão granular de permissões, configuração de regras por país e exportação de informação executiva.
+O sistema implementa um modelo de autorização centrado em permissões efetivas, e não em papéis fixos de interface. Na prática, cada ação é validada pela combinação de:
+
+\begin{itemize}
+  \item permissão atribuída ao utilizador (ex.: \textit{approve\_vacation}, \textit{manage\_permissions});
+  \item restrições de escopo por equipa, país e nível quando aplicável;
+  \item sinalizadores de privilégio elevado (\textit{hasAccessTotal} e \textit{isRootAccess});
+  \item trilho auditável de concessão/revogação de acesso (\textit{PermissionGrant}).
+\end{itemize}
+
+Assim, os fluxos críticos (férias, aprovações, permissões, notificações e exportação) executam-se por capacidade autorizada e contexto real de organização.
 
 \subsection{Princípios da solução final}
 \begin{itemize}
-  \item \textbf{Governança por desenho}: regra de negócio explícita, versionável e auditável.
-  \item \textbf{Experiência orientada a papel}: cada perfil visualiza apenas o que precisa para decidir/operar.
-  \item \textbf{Conformidade operacional}: aplicação consistente de política por país e por cadeia hierárquica.
-  \item \textbf{Escalabilidade funcional}: arquitetura preparada para crescimento de equipas, regras e integrações.
+  \item \textbf{Autorização verificável}: cada endpoint sensível valida permissão e escopo efetivo do ator.
+  \item \textbf{Conformidade por política}: regras PT/BR são avaliadas antes de aceitar/fechar pedidos de férias.
+  \item \textbf{Rastreabilidade de decisão}: aprovações, recusas e alterações de permissões ficam com ator, timestamp e motivo.
+  \item \textbf{Operação contextual}: equipa, memberships e país de trabalho influenciam elegibilidade e visibilidade.
+  \item \textbf{Evolução controlada}: regras de negócio concentradas no backend, UI focada na operação diária.
 \end{itemize}
+
+\subsection{Estrutura funcional da solução}
+\subsubsection{Módulos funcionais}
+\rowcolors{2}{softgray}{white}
+\begin{longtable}{p{3.1cm} p{4.9cm} p{5.1cm}}
+\toprule
+\textbf{Módulo} & \textbf{Objetivo} & \textbf{Capacidades principais} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Módulo} & \textbf{Objetivo} & \textbf{Capacidades principais} \\
+\midrule
+\endhead
+Férias e ausências & Gerir ciclo completo de pedido & Criar pedido, validar políticas, aprovar/rejeitar por etapa, histórico e versionamento \\
+Permissões e acesso total & Governar capacidades por utilizador & Atribuir/revogar permissão, restringir escopo, gerir acesso total, auditar GRANT/REVOKE \\
+Dias extra da empresa & Parametrizar calendário por país & Configurar dias PT/BR para suporte às regras operacionais \\
+Crédito de saldo de férias & Tratar exceções de saldo anual & Creditar dias no saldo anual de colaboradores elegíveis com motivo obrigatório \\
+Notificações & Fechar o ciclo de ação & Notificar eventos relevantes e permitir marcação como lida \\
+Perfil e estrutura & Contextualizar decisão e elegibilidade & Perfil, equipa, memberships e visibilidade operacional \\
+Reporting operacional & Suportar decisão de gestão & Exportação anual XLSX por filtros de ano/equipa \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Modelo de autorização adotado}
+\begin{itemize}
+  \item \textbf{Nível 1 - Catálogo}: capacidades explícitas (ex.: \textit{request\_vacation}, \textit{approve\_vacation}, \textit{manage\_permissions}).
+  \item \textbf{Nível 2 - Escopo}: restrições por equipa, país e nível em permissões marcadas como restritivas.
+  \item \textbf{Nível 3 - Acesso total}: utilizador opera com cobertura funcional alargada e controlada.
+  \item \textbf{Nível 4 - Root}: privilégio máximo de governação/administrador técnico.
+\end{itemize}
+
+\subsubsection{Nota de veracidade funcional}
+\begin{itemize}
+  \item O sistema \textbf{não} implementa atribuição direta de um pedido de férias já aprovado no momento de criação.
+  \item O que existe é \textbf{crédito de saldo de férias} (endpoint de \textit{assign-balance-days}), para ajustar saldo anual de colaboradores elegíveis.
+  \item Em paralelo, existe aprovação/recusa excecional em determinados cenários PT por utilizador com privilégio elevado, sempre com rastreabilidade.
+\end{itemize}
+
+\subsection{Épicos da solução}
+\rowcolors{2}{softgray}{white}
+\begin{longtable}{p{1.2cm} p{4.0cm} p{7.0cm} p{2.2cm}}
+\toprule
+\textbf{ID} & \textbf{Épico} & \textbf{Propósito no SMARTER HUB} & \textbf{Prioridade} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{ID} & \textbf{Épico} & \textbf{Propósito no SMARTER HUB} & \textbf{Prioridade} \\
+\midrule
+\endhead
+E1 & Ciclo de pedidos & Garantir criação, validação e decisão de pedidos com estados explícitos e histórico & Alta \\
+E2 & Governança de acesso & Controlar capacidades por permissão, escopo e acesso total com auditoria & Alta \\
+E3 & Conformidade PT/BR & Aplicar regras legais/operacionais por país antes da decisão final & Alta \\
+E4 & Exceções operacionais & Permitir crédito de saldo e decisões excecionais com controlo e rastreio & Média/Alta \\
+E5 & Operação assistida & Reduzir fricção com notificações, histórico e feedback operacional & Média \\
+E6 & Visão executiva & Suportar planeamento com exportação anual e indicadores operacionais & Média/Alta \\
+\bottomrule
+\end{longtable}
 
 \subsection{Elementos de análise}
 \subsubsection{Diagrama de Use Cases}
 \begin{figure}[h]
   \centering
   \fbox{\parbox{0.92\linewidth}{
-    \textbf{Atores:} Colaborador, Manager, Coordenador, Admin/Acesso Total\\
+    \textbf{Atores:} Colaborador, Aprovador habilitado, Gestor de permissões, Utilizador com acesso total, RH/Gestão\\
     \textbf{Use Cases principais:}\\
     1) Submeter pedido de férias/ausência\\
-    2) Aprovar/Rejeitar pedido por nível\\
-    3) Consultar calendário/mapa de férias\\
-    4) Configurar dias automáticos da empresa\\
-    5) Exportar mapa de férias para XLSX\\
-    6) Atribuir dias adicionais de férias ao saldo (acesso total)\\
-    7) Gerir permissões e escopo de acesso
+    2) Aprovar/Rejeitar pedido por etapa habilitada\\
+    3) Gerir permissões e restrições de escopo\\
+    4) Configurar dias extra da empresa (PT/BR)\\
+    5) Creditar saldo anual de férias a colaborador elegível\\
+    6) Exportar mapa anual de férias (XLSX)\\
+    7) Consultar histórico e notificações operacionais
   }}
   \caption{Use Cases nucleares do SMARTER HUB}
   \label{fig:use-cases}
@@ -302,14 +365,14 @@ O sistema centraliza pedidos de férias e ausências, aprovações multi-nível,
 \endhead
 UC01 & Colaborador & Submeter férias & Define período/contexto e submete pedido para validação e aprovação & Pedido criado \\
 UC02 & Colaborador & Submeter ausência & Seleciona tipo/motivo, anexa informação e submete fluxo & Pedido criado \\
-UC03 & Aprovador & Decidir pedido & Consulta pendentes, analisa contexto e aprova/recusa com motivo & Estado atualizado \\
-UC04 & Admin & Gerir estrutura & Configura equipas, subequipas e memberships de responsabilidade & Estrutura válida \\
-UC05 & Admin/Acesso total & Gerir permissões & Concede/revoga permissões com restrições por escopo & Acesso governado \\
-UC06 & Admin/Acesso total & Configurar dias empresa & Define dias automáticos por país para calendário e regras & Calendário ajustado \\
-UC07 & Gestão & Exportar mapa anual & Filtra por ano/equipa e gera ficheiro executivo para análise & XLSX gerado \\
-UC08 & Admin/Acesso total & Atribuir saldo adicional & Credita dias adicionais no saldo de férias com motivo registado & Saldo atualizado \\
+UC03 & Sistema & Validar pedido & Aplica políticas PT/BR, sobreposição e regras de capacidade & Pedido validado/rejeitado \\
+UC04 & Aprovador habilitado & Decidir pedido & Consulta pendências do seu nível e aprova/recusa com motivo & Etapa decidida \\
+UC05 & Gestor de permissões & Governar acesso & Concede/revoga permissões e define restrições de escopo & Acesso atualizado \\
+UC06 & Utilizador com acesso total & Creditar saldo anual & Credita dias de saldo de férias a colaborador elegível com motivo & Saldo ajustado \\
+UC07 & Admin operacional & Configurar dias extra & Define dias por país para suporte ao calendário de férias & Calendário corporativo atualizado \\
+UC08 & RH/Gestão & Exportar mapa anual & Filtra por ano/equipa e gera ficheiro executivo para análise & XLSX gerado \\
 UC09 & Colaborador & Consultar histórico & Visualiza estados, versões e decisões dos seus pedidos & Transparência \\
-UC10 & Utilizador & Gerir notificações & Consulta, marca como lida e segue ações pendentes & Ação concluída \\
+UC10 & Utilizador autenticado & Gerir notificações & Consulta, marca como lida e segue ações pendentes & Ação concluída \\
 \bottomrule
 \end{longtable}
 
@@ -326,31 +389,32 @@ UC10 & Utilizador & Gerir notificações & Consulta, marca como lida e segue aç
 US01 & Colaborador & submeter pedido de férias com período e contexto de equipa para iniciar aprovação formal & Alta \\
 US02 & Colaborador & pedir ausência médica até 3 dias com validação automática de regra & Alta \\
 US03 & Colaborador & pedir ausência por formação com justificativo e rastreio do estado & Média \\
-US04 & Manager/Aprovador & aprovar ou rejeitar pedidos pendentes do meu nível com motivo de decisão & Alta \\
-US05 & Coordenador & atuar como linha superior de aprovação nas equipas sob supervisão & Alta \\
-US06 & Admin & gerir equipas, memberships e chefias para refletir estrutura real da empresa & Alta \\
-US07 & Admin/Acesso Total & configurar dias automáticos da empresa por país (PT/BR) & Média \\
-US08 & Admin/Acesso Total & exportar mapa de férias anual em XLSX com filtros por equipa & Alta \\
-US09 & Admin/Acesso Total & atribuir dias adicionais ao saldo de férias de um colaborador, com justificação, para acomodar situações excecionais & Alta \\
+US04 & Aprovador habilitado & decidir pedidos pendentes do meu nível com motivo de decisão e registo auditável & Alta \\
+US05 & Gestor de permissões & atribuir/revogar capacidades por utilizador com restrições de escopo para reduzir risco de acesso excessivo & Alta \\
+US06 & Utilizador com acesso total & creditar saldo anual de férias em cenários excecionais, com motivo obrigatório e validação de elegibilidade & Alta \\
+US07 & Admin operacional & configurar dias extra da empresa por país (PT/BR) sem necessidade de alteração de código & Média \\
+US08 & RH/Gestão & exportar mapa anual de férias em XLSX com filtros por equipa e ano & Alta \\
+US09 & Gestor de permissões & consultar trilho de auditoria de grants/revokes para evidência de compliance & Alta \\
 US10 & Colaborador & consultar histórico de pedidos e respetivos estados/versões & Média \\
 US11 & Utilizador autenticado & receber notificações de eventos relevantes e marcá-las como lidas & Média \\
-US12 & Gestor de permissões & conceder/revogar permissões com restrições de equipa/país/nível & Alta \\
-US13 & RH/Gestão & consultar dados agregados para planeamento de capacidade e compliance & Média \\
-US14 & Auditor interno & obter trilho de decisão por pedido para conformidade e auditoria & Alta \\
-US15 & Admin & parametrizar regras sensíveis sem alterar código aplicacional & Média \\
+US12 & RH/Gestão & consultar dados agregados para planeamento de capacidade e compliance & Média \\
+US13 & Auditor interno & obter trilho de decisão por pedido para conformidade e auditoria & Alta \\
+US14 & Admin operacional & parametrizar regras sensíveis sem alterar código aplicacional & Média \\
+US15 & Gestor de estrutura & manter memberships e níveis de aprovação coerentes com a organização real & Alta \\
 US16 & Colaborador & editar pedido pendente sem perder histórico de alterações & Média \\
-US17 & Gestor & visualizar conflitos de capacidade antes de validar aprovação & Alta \\
+US17 & Aprovador habilitado & visualizar conflitos de capacidade antes de validar aprovação & Alta \\
 US18 & Direção & obter indicadores periódicos para suporte à decisão estratégica & Média \\
 \bottomrule
 \end{longtable}
 
 \subsubsection{Critérios de aceitação por épico}
 \begin{itemize}
-  \item \textbf{Épico E1 - Pedido e aprovação}: todo pedido possui estado explícito, timestamps e autor da decisão.
-  \item \textbf{Épico E2 - Regras e conformidade}: políticas por país são aplicadas antes da criação/aprovação final.
-  \item \textbf{Épico E3 - Governança de acesso}: alterações de permissões geram trilho auditável de quem concedeu/revogou.
-  \item \textbf{Épico E4 - Reporting}: exportação anual devolve informação suficiente para planeamento de capacidade.
-  \item \textbf{Épico E5 - Operação assistida}: notificações e feedback de interface reduzem ambiguidade operacional.
+  \item \textbf{Épico E1 - Ciclo de pedidos}: todo pedido possui estado explícito (\textit{PENDING/APPROVED/REJECTED/CANCELLED}), timestamps e decisão rastreável.
+  \item \textbf{Épico E2 - Governança de acesso}: operações sensíveis exigem permissão válida e escopo compatível; grants/revokes e acesso total ficam auditados.
+  \item \textbf{Épico E3 - Conformidade PT/BR}: regras por país são aplicadas antes da aprovação final e retornam motivo claro em caso de bloqueio.
+  \item \textbf{Épico E4 - Exceções operacionais}: crédito de saldo só pode ser efetuado por utilizador elegível e gera notificação ao colaborador.
+  \item \textbf{Épico E5 - Operação assistida}: notificações e histórico reduzem ambiguidade e tempo de acompanhamento de pedidos.
+  \item \textbf{Épico E6 - Visão executiva}: exportação anual devolve dados suficientes para análise de capacidade por equipa.
 \end{itemize}
 
 \subsection{Descrição técnica}
@@ -358,9 +422,9 @@ US18 & Direção & obter indicadores periódicos para suporte à decisão estrat
 A solução é organizada em três camadas:
 
 \begin{itemize}
-  \item \textbf{Frontend} (React + TypeScript + Vite): páginas por domínio (Férias, Aprovações, Perfil, Formações, Administração), componentes reutilizáveis e cache de requests para reduzir duplicação em dev/StrictMode.
-  \item \textbf{Backend} (Express + TypeScript): rotas por bounded context (auth, users, profile, vacations, permissions, trainings, notifications, receipts), validação por Zod, middleware de autenticação, CORS controlado.
-  \item \textbf{Dados} (PostgreSQL + Prisma): modelo relacional com entidades centrais User, Team, TeamMembership, Vacation, VacationApproval, UserPermission, Permission e Profile.
+  \item \textbf{Frontend} (React + TypeScript + Vite): páginas por domínio funcional, componentes reutilizáveis e deduplicação de pedidos para evitar cargas duplicadas em desenvolvimento.
+  \item \textbf{Backend} (Express + TypeScript): rotas por contexto (vacations, permissions, profile, notifications, users, trainings, receipts), validação por Zod e motor de autorização por permissões/escopo.
+  \item \textbf{Dados} (PostgreSQL + Prisma): modelo relacional com entidades de pedido, aprovação, governação de acesso, perfil e estrutura organizacional.
 \end{itemize}
 
 \begin{figure}[h]
@@ -377,48 +441,51 @@ A solução é organizada em três camadas:
 \textbf{Fluxo 1 - Pedido e aprovação de férias}
 \begin{enumerate}
   \item utilizador cria pedido (dataInicio, dataFim, tipo, contextTeamId, partialDay);
-  \item backend valida regras de país, sobreposições e capacidade máxima de 1/3 da equipa;
-  \item sistema cria Vacation + VacationApproval por níveis;
-  \item aprovadores executam decisão por nível até estado final.
+  \item backend valida formato, política por país, sobreposições e capacidade;
+  \item sistema cria \textit{Vacation} e etapas \textit{VacationApproval} de acordo com aprovadores configurados na estrutura;
+  \item decisores habilitados aprovam/rejeitam a sua etapa com motivo;
+  \item pedido transita para estado final e o utilizador é notificado.
 \end{enumerate}
 
-\textbf{Fluxo 2 - Exportação do mapa de férias}
+\textbf{Fluxo 2 - Crédito de saldo de férias}
 \begin{enumerate}
-  \item perfil com acesso total escolhe ano e equipa;
+  \item utilizador com acesso total inicia crédito de saldo para colaborador alvo;
+  \item backend valida payload, elegibilidade do alvo e escopo do ator;
+  \item sistema cria registo de \textit{VacationBalanceCredit} com motivo e autoria;
+  \item colaborador recebe notificação de crédito efetuado.
+\end{enumerate}
+
+\textbf{Fluxo 3 - Exportação do mapa de férias}
+\begin{enumerate}
+  \item utilizador com acesso total/root escolhe ano e equipa;
   \item endpoint gera workbook XLSX (ExcelJS) com informação relevante para gestão;
   \item ficheiro é descarregado para análise e partilha operacional.
 \end{enumerate}
 
-\textbf{Fluxo 3 - Atribuição de dias adicionais ao saldo de férias}
+\textbf{Fluxo 4 - Governança de permissões e acesso total}
 \begin{enumerate}
-  \item perfil com acesso total seleciona colaborador elegível de nível inferior;
-  \item indica a quantidade de dias adicionais e o motivo da atribuição;
-  \item sistema valida permissões, limites e regista a operação em auditoria;
-  \item saldo total de férias do colaborador é atualizado sem criar pedido de férias.
-\end{enumerate}
-
-\textbf{Fluxo 4 - Governança de permissões}
-\begin{enumerate}
-  \item administrador autorizado seleciona utilizador-alvo e permissão a alterar;
-  \item define escopo (equipa, país, nível) e motivo da alteração;
-  \item sistema aplica mudança e regista evento de auditoria;
+  \item gestor de permissões seleciona utilizador-alvo e capacidade a alterar;
+  \item define escopo (equipa, país, nível), estado da permissão e motivo;
+  \item sistema valida autorização do ator, aplica a mudança e limpa cache de autorização;
+  \item sistema regista evento de auditoria (GRANT/REVOKE) com ator, alvo e timestamp;
   \item perfil alvo passa a operar com novo conjunto de capacidades.
 \end{enumerate}
 
 \textbf{Fluxo 5 - Ciclo TO-BE completo (visão integrada)}
 \begin{enumerate}
   \item colaborador inicia pedido em interface orientada por contexto;
-  \item motor de regras valida conformidade legal/organizacional;
-  \item cadeia de aprovação executa decisões com visibilidade e rastreio;
+  \item motor de regras valida conformidade legal/organizacional por país e escopo;
+  \item cadeia de aprovação por etapas habilitadas executa decisões com visibilidade e rastreio;
+  \item exceções de saldo são tratadas por crédito formal e auditável, sem criação direta de férias aprovadas;
   \item notificações fecham o ciclo operacional dos intervenientes;
-  \item gestão extrai indicadores e ajusta regras para melhoria contínua.
+  \item gestão extrai indicadores e ajusta regras/permissões para melhoria contínua.
 \end{enumerate}
 
 \subsubsection{Modelo de dados}
 Entidades principais efetivamente implementadas no schema:
 
 \begin{itemize}
-  \item \textbf{User} (role, flags de acesso total/root, relação com Profile e TeamMembership);
+  \item \textbf{User} (identidade, flags \textit{hasAccessTotal/isRootAccess}, relação com Profile e TeamMembership);
   \item \textbf{Team} e \textbf{TeamMembership} (estrutura organizacional e papéis por equipa);
   \item \textbf{Vacation} e \textbf{VacationApproval} (pedido e trilho de aprovação multi-nível);
   \item \textbf{Permission}, \textbf{UserPermission} e \textbf{PermissionGrant} (governança de acesso);
@@ -432,13 +499,12 @@ Relacionamentos chave:
   \item User 1..N Vacation e Vacation 1..N VacationApproval;
   \item User 1..N UserPermission e Permission 1..N UserPermission;
   \item User 1..1 Profile;
-  \item Team (pai) 1..N Team (subequipa);
-  \item registo de ajustes de saldo de férias com motivo, autor e timestamp para auditoria.
+  \item Team (pai) 1..N Team (subequipa).
 \end{itemize}
 
 \section{Objetivos}
 \subsection{Objetivo geral}
-Conceber e operacionalizar uma plataforma única para gestão de processos de pessoas (férias, ausências, perfil, formações, notificações e permissões), garantindo governança por perfil, rastreabilidade de decisões e melhoria mensurável de eficiência.
+Conceber e operacionalizar uma plataforma única para gestão de processos de pessoas (férias, ausências, perfil, formações, notificações e permissões), garantindo governança por permissões e escopo, rastreabilidade de decisões e melhoria mensurável de eficiência.
 
 \subsection{Objetivos específicos}
 \begin{enumerate}
@@ -446,7 +512,7 @@ Conceber e operacionalizar uma plataforma única para gestão de processos de pe
   \item Aplicar políticas de férias por país (PT/BR), com regras legais e operacionais distintas.
   \item Centralizar controlo de permissões granulares (RBAC + restrições de escopo por equipa/país/nível).
   \item Garantir exportação executiva do mapa de férias em XLSX, com filtro por ano/equipa.
-  \item Permitir atribuição de dias adicionais ao saldo de férias por perfis com acesso total, com motivo obrigatório e rastreabilidade.
+  \item Permitir crédito de saldo de férias por perfis com acesso total em cenários excecionais e auditáveis.
   \item Reforçar auditabilidade de ações sensíveis (grants/revokes, aprovações, exceções).
 \end{enumerate}
 
@@ -454,9 +520,9 @@ Conceber e operacionalizar uma plataforma única para gestão de processos de pe
 Os objetivos foram definidos para atacar diretamente as dores mais críticas identificadas no AS-IS:
 
 \begin{itemize}
-  \item \textbf{Tempo e previsibilidade}: o fluxo de aprovação é automatizado por níveis, com estados explícitos.
+  \item \textbf{Tempo e previsibilidade}: o fluxo de aprovação é automatizado por etapas habilitadas, com estados explícitos.
   \item \textbf{Conformidade}: regras PT/BR e controlo de escopo reduzem decisões fora de norma.
-  \item \textbf{Governança}: acesso total e permissões granulares permitem equilíbrio entre autonomia e controlo.
+  \item \textbf{Governança}: permissões granulares, restrições de escopo e acesso total permitem equilíbrio entre autonomia e controlo.
   \item \textbf{Decisão baseada em dados}: mapa anual exportável e visibilidade agregada por equipa.
 \end{itemize}
 
@@ -518,7 +584,7 @@ No cenário final esperado, a organização passa a operar com maior previsibili
 Sugestões de anexos que podem ser acrescentados no fecho do PC2:
 \begin{itemize}
   \item lista integral de endpoints da API por domínio;
-  \item capturas de ecrã dos fluxos principais (pedido, aprovação, exportação, ajuste de saldo de férias);
+  \item capturas de ecrã dos fluxos principais (pedido, aprovação, exportação, crédito de saldo);
   \item evidências de testes (unitários, integração e E2E);
   \item backlog priorizado por sprint e respetivo estado de implementação.
 \end{itemize}
