@@ -839,6 +839,8 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
         username: true,
         email: true,
         role: true,
+        isRootAccess: true,
+        hasAccessTotal: true,
         isActive: true,
         deactivatedAt: true,
         createdAt: true,

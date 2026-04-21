@@ -117,8 +117,26 @@ model User {
   accessTotalGrantedTo User[] @relation("AccessTotalGrantAuthor")
   permissionGrantEventsAuthored PermissionGrant[] @relation("PermissionGrantActor")
   permissionGrantEventsReceived PermissionGrant[] @relation("PermissionGrantTarget")
+  vacationBalanceCredits VacationBalanceCredit[] @relation("VacationBalanceCreditTarget")
+  vacationBalanceCreditsGranted VacationBalanceCredit[] @relation("VacationBalanceCreditAuthor")
 
   @@index([accessTotalGrantedById])
+}
+
+model VacationBalanceCredit {
+  id          String   @id @default(ulid())
+  userId      String
+  year        Int
+  days        Int
+  reason      String
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation("VacationBalanceCreditTarget", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy   User?    @relation("VacationBalanceCreditAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([userId, year])
+  @@index([createdById])
 }
 
 model TeamMembership {

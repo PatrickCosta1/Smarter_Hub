@@ -68,9 +68,11 @@ type VacationOverview = {
   rules: Record<string, unknown>;
   approvedVacationDays?: number;
   calculation?: {
-    monthsWorked: number;
-    acquisitionComplete: boolean;
-    unjustifiedAbsences: number;
+    monthsWorked?: number;
+    acquisitionComplete?: boolean;
+    unjustifiedAbsences?: number;
+    baseEntitledDays?: number;
+    extraBalanceDays?: number;
     entitledDays: number;
   };
 };
@@ -125,6 +127,8 @@ type ExportCollaborator = {
   id: string;
   username: string;
   role: 'COLABORADOR' | 'MANAGER' | 'COORDENADOR' | 'ADMIN' | 'CONVIDADO';
+  isRootAccess?: boolean;
+  hasAccessTotal?: boolean;
   team?: { id: string; name: string } | null;
   profile?: {
     nomeAbreviado?: string;
@@ -349,11 +353,11 @@ export default function VacationsPage() {
   const [assignSearch, setAssignSearch] = useState('');
   const [assignCandidates, setAssignCandidates] = useState<ExportCollaborator[]>([]);
   const [assignSelectedUserId, setAssignSelectedUserId] = useState('');
-  const [assignStartDate, setAssignStartDate] = useState('');
-  const [assignEndDate, setAssignEndDate] = useState('');
-  const [assignObservacoes, setAssignObservacoes] = useState('');
+  const [assignCreditDays, setAssignCreditDays] = useState('1');
+  const [assignCreditYear, setAssignCreditYear] = useState(String(new Date().getFullYear()));
+  const [assignCreditReason, setAssignCreditReason] = useState('');
   const [isLoadingAssignCandidates, setIsLoadingAssignCandidates] = useState(false);
-  const [isAssigningDirectVacation, setIsAssigningDirectVacation] = useState(false);
+  const [isCreditingVacationBalance, setIsCreditingVacationBalance] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const currentMonthRef = useRef<HTMLElement | null>(null);
   const calendarAutoScrolledRef = useRef<string>('');
@@ -467,13 +471,16 @@ export default function VacationsPage() {
       pendingVacationDays,
       approvedAbsenceDays,
       pendingAbsenceDays,
-      entitlement: overview?.country === 'BR'
-        ? overview.calculation?.entitledDays ?? 0
-        : 22,
+      entitlement: overview?.calculation?.entitledDays ?? (overview?.country === 'BR' ? 0 : 22),
+      creditedDays: overview?.calculation?.extraBalanceDays ?? 0,
     };
   }, [overview, sortedRecords]);
 
   const remainingVacationDays = Math.max(overviewStats.entitlement - overviewStats.approvedVacationDays, 0);
+  const selectedAssignCandidate = useMemo(
+    () => assignCandidates.find((item) => item.id === assignSelectedUserId) ?? null,
+    [assignCandidates, assignSelectedUserId],
+  );
   const yearMonths = useMemo(() => {
     const year = calendarData?.year ?? new Date().getFullYear();
     return MONTHS.map((month, monthIndex) => ({
@@ -574,8 +581,21 @@ export default function VacationsPage() {
   useEffect(() => {
     if (activeTab !== 'export' || !canExport) return;
     void loadExportTeams();
-    void loadAssignCandidates();
   }, [activeTab, canExport]);
+
+  useEffect(() => {
+    if (activeTab !== 'export' || !canExport) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void loadAssignCandidates();
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [activeTab, canExport, assignFilterTeamId, assignSearch]);
 
   useEffect(() => {
     if (activeTab !== 'calendar' || cacheRef.current.calendarLoaded) {
@@ -744,7 +764,12 @@ export default function VacationsPage() {
         headers: getAuthHeaders(),
       });
 
-      const filtered = (data.rows ?? []).filter((item) => item.username !== 't.people');
+      const filtered = (data.rows ?? []).filter((item) => {
+        if (item.username === 't.people') return false;
+        if (item.isRootAccess || item.hasAccessTotal) return false;
+        return true;
+      });
+
       setAssignCandidates(filtered);
       if (filtered.length === 0) {
         setAssignSelectedUserId('');
@@ -752,7 +777,7 @@ export default function VacationsPage() {
         setAssignSelectedUserId(filtered[0].id);
       }
     } catch (error) {
-      showToast('error', error instanceof Error ? error.message : 'Falha ao carregar colaboradores para atribuição direta.');
+      showToast('error', error instanceof Error ? error.message : 'Falha ao carregar colaboradores elegíveis para crédito de saldo.');
     } finally {
       setIsLoadingAssignCandidates(false);
     }
@@ -785,45 +810,51 @@ export default function VacationsPage() {
     }
   }
 
-  async function assignDirectVacation() {
+  async function creditVacationBalance() {
     if (!assignSelectedUserId) {
       showToast('error', 'Seleciona um colaborador.');
       return;
     }
-    if (!assignStartDate || !assignEndDate) {
-      showToast('error', 'Indica data de início e fim.');
+    const days = Number(assignCreditDays);
+    if (!Number.isFinite(days) || days < 1 || !Number.isInteger(days)) {
+      showToast('error', 'Indica um número inteiro de dias a creditar (mínimo 1).');
       return;
     }
-    if (assignStartDate > assignEndDate) {
-      showToast('error', 'A data de fim deve ser igual ou posterior à data de início.');
+    const year = Number(assignCreditYear);
+    if (!Number.isFinite(year) || year < 2000 || year > 2100 || !Number.isInteger(year)) {
+      showToast('error', 'Indica um ano válido.');
+      return;
+    }
+    if (!assignCreditReason.trim()) {
+      showToast('error', 'Indica o motivo do crédito de saldo.');
       return;
     }
 
     try {
-      setIsAssigningDirectVacation(true);
-      await apiRequest('/vacations/assign-direct', {
+      setIsCreditingVacationBalance(true);
+      await apiRequest('/vacations/assign-balance-days', {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
           userId: assignSelectedUserId,
-          dataInicio: assignStartDate,
-          dataFim: assignEndDate,
-          observacoes: assignObservacoes.trim(),
-          contextTeamId: assignFilterTeamId || undefined,
-          partialDay: 'FULL',
+          year,
+          days,
+          reason: assignCreditReason.trim(),
         }),
       });
 
       clearApiCache('/vacations/calendar');
       clearApiCache('/vacations/overview');
-      setAssignStartDate('');
-      setAssignEndDate('');
-      setAssignObservacoes('');
-      showToast('success', 'Férias atribuídas diretamente sem necessidade de aprovação.');
+      setAssignCreditDays('1');
+      setAssignCreditReason('');
+      showToast('success', 'Dias adicionais creditados no saldo de férias do colaborador.');
+      if (activeTab === 'overview' && !isTPeople) {
+        void loadOverview();
+      }
     } catch (error) {
-      showToast('error', error instanceof Error ? error.message : 'Falha ao atribuir férias diretamente.');
+      showToast('error', error instanceof Error ? error.message : 'Falha ao creditar saldo de férias.');
     } finally {
-      setIsAssigningDirectVacation(false);
+      setIsCreditingVacationBalance(false);
     }
   }
 
@@ -1216,6 +1247,11 @@ export default function VacationsPage() {
                   <small>Base disponível para o ano em curso.</small>
                 </article>
                 <article>
+                  <span>Dias extra creditados</span>
+                  <strong>{overviewStats.creditedDays.toLocaleString('pt-PT')} dias</strong>
+                  <small>Créditos adicionais aplicados ao saldo anual.</small>
+                </article>
+                <article>
                   <span>Já gastaste</span>
                   <strong>{overviewStats.approvedVacationDays.toLocaleString('pt-PT')} dias</strong>
                   <small>Pedidos de férias já aprovados.</small>
@@ -1456,7 +1492,7 @@ export default function VacationsPage() {
             </div>
 
             <div className="vacations-export-info">
-              <p>Incluído no ficheiro: nome, equipa, país, dias atribuídos, dias gastos, saldo e períodos aprovados.</p>
+              <p>Incluído no ficheiro: nome, equipa, país, dias atribuídos, dias extra creditados, dias gastos, saldo e períodos aprovados.</p>
               <p>Podes filtrar por equipa antes de exportar para arquivar histórico por contexto.</p>
             </div>
           </section>
@@ -1464,8 +1500,8 @@ export default function VacationsPage() {
           <section className="trainings-list-card vacations-direct-card">
             <div className="trainings-list-head">
               <div>
-                <h3>Atribuição Direta de Férias</h3>
-                <p className="vacations-company-days-subtitle">Acesso total pode atribuir férias diretamente a um colaborador de nível inferior, sem fluxo de aprovação.</p>
+                <h3>Crédito de Saldo de Férias</h3>
+                <p className="vacations-company-days-subtitle">Acesso total pode creditar dias adicionais no saldo anual de colaboradores elegíveis, com motivo obrigatório.</p>
               </div>
             </div>
 
@@ -1486,57 +1522,74 @@ export default function VacationsPage() {
                   type="text"
                   value={assignSearch}
                   onChange={(e) => setAssignSearch(e.target.value)}
-                  placeholder="Nome, username ou email"
+                  placeholder="Escreve nome, username ou email..."
                 />
               </label>
 
-              <div className="vacations-export-form__action">
-                <span>&#8203;</span>
-                <Button type="button" variant="ghost" isLoading={isLoadingAssignCandidates} onClick={() => void loadAssignCandidates()}>
-                  Atualizar lista
-                </Button>
+              <div className="vacations-direct-field--full rh-collaborator-picker">
+                <span>Resultados</span>
+                <div className="rh-collaborator-results">
+                  {isLoadingAssignCandidates ? (
+                    <p>A carregar colaboradores...</p>
+                  ) : assignCandidates.length === 0 ? (
+                    <p>Sem colaboradores elegíveis para crédito de saldo com os filtros atuais.</p>
+                  ) : (
+                    assignCandidates.map((item) => {
+                      const isSelected = item.id === assignSelectedUserId;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className="rh-collaborator-result"
+                          onClick={() => setAssignSelectedUserId(item.id)}
+                          style={isSelected ? { borderColor: '#6da5f1', background: '#eef5ff' } : undefined}
+                        >
+                          <strong>{item.profile?.nomeAbreviado || item.profile?.nomeCompleto || item.username}</strong>
+                          <span>{item.username}</span>
+                          <small>
+                            {item.team?.name ? `${item.team.name} • ` : ''}
+                            {item.profile?.nomeCompleto || 'Sem nome completo'}
+                          </small>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               </div>
 
-              <label className="vacations-export-form__field vacations-direct-field--full">
-                <span>Colaborador</span>
-                <select value={assignSelectedUserId} onChange={(e) => setAssignSelectedUserId(e.target.value)}>
-                  {assignCandidates.length === 0 ? (
-                    <option value="">Sem resultados</option>
-                  ) : (
-                    assignCandidates.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.profile?.nomeAbreviado || item.profile?.nomeCompleto || item.username}
-                        {item.team?.name ? ` • ${item.team.name}` : ''}
-                        {` • ${item.role}`}
-                      </option>
-                    ))
-                  )}
-                </select>
+              {selectedAssignCandidate && (
+                <div className="vacations-direct-field--full rh-selected-collaborator">
+                  <strong>Selecionado: {selectedAssignCandidate.profile?.nomeAbreviado || selectedAssignCandidate.profile?.nomeCompleto || selectedAssignCandidate.username}</strong>
+                  <span>
+                    {selectedAssignCandidate.username}
+                    {selectedAssignCandidate.team?.name ? ` • ${selectedAssignCandidate.team.name}` : ''}
+                  </span>
+                </div>
+              )}
+
+              <label className="vacations-export-form__field">
+                <span>Dias a creditar</span>
+                <input type="number" min={1} step={1} value={assignCreditDays} onChange={(e) => setAssignCreditDays(e.target.value)} />
               </label>
 
               <label className="vacations-export-form__field">
-                <span>Início</span>
-                <input type="date" value={assignStartDate} onChange={(e) => setAssignStartDate(e.target.value)} />
-              </label>
-
-              <label className="vacations-export-form__field">
-                <span>Fim</span>
-                <input type="date" value={assignEndDate} onChange={(e) => setAssignEndDate(e.target.value)} />
+                <span>Ano de referência</span>
+                <input type="number" min={2000} max={2100} step={1} value={assignCreditYear} onChange={(e) => setAssignCreditYear(e.target.value)} />
               </label>
 
               <label className="vacations-export-form__field vacations-direct-field--full">
-                <span>Observações (opcional)</span>
+                <span>Motivo *</span>
                 <input
                   type="text"
-                  value={assignObservacoes}
-                  onChange={(e) => setAssignObservacoes(e.target.value)}
-                  placeholder="Ex.: Alinhado com a coordenação"
+                  value={assignCreditReason}
+                  onChange={(e) => setAssignCreditReason(e.target.value)}
+                  placeholder="Ex.: Crédito extraordinário aprovado pela direção"
                 />
               </label>
 
               <div className="vacations-direct-action-row">
-                <Button type="button" variant="primary" isLoading={isAssigningDirectVacation} onClick={() => void assignDirectVacation()}>
-                  Atribuir férias sem aprovação
+                <Button type="button" variant="primary" isLoading={isCreditingVacationBalance} onClick={() => void creditVacationBalance()}>
+                  Creditar dias no saldo
                 </Button>
               </div>
             </div>

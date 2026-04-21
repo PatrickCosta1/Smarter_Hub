@@ -70,32 +70,18 @@ const approveRejectSchema = z.object({
   reason: z.string().optional(),
 });
 
-const assignDirectVacationSchema = z
+const assignBalanceCreditSchema = z
   .object({
     userId: z.string().min(1, 'Colaborador é obrigatório.'),
-    dataInicio: z.string().min(1, 'Data de início é obrigatória'),
-    dataFim: z.string().min(1, 'Data de fim é obrigatória'),
-    observacoes: z.string().default(''),
-    contextTeamId: z.string().optional(),
-    partialDay: z.enum(['FULL', 'AM', 'PM']).default('FULL'),
+    year: z.number().int().min(2000).max(2100).optional(),
+    days: z.number().int().min(1, 'Dias a creditar deve ser pelo menos 1.'),
+    reason: z.string().trim().min(3, 'Motivo é obrigatório.'),
   })
-  .superRefine((data, ctx) => {
-    if (data.dataInicio > data.dataFim) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['dataFim'],
-        message: 'A data de fim deve ser igual ou posterior à data de início.',
-      });
-    }
-
-    if (data.partialDay !== 'FULL' && data.dataInicio !== data.dataFim) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['dataFim'],
-        message: 'Pedidos de meio-dia devem ter início e fim no mesmo dia.',
-      });
-    }
-  });
+  .transform((data) => ({
+    ...data,
+    year: data.year ?? new Date().getFullYear(),
+    reason: data.reason.trim(),
+  }));
 
 const companyExtraDayItemSchema = z.object({
   date: z.string().regex(/^\d{2}-\d{2}$/, 'Data inválida. Usa formato MM-DD (ex: 12-25).'),
@@ -476,19 +462,28 @@ function brVacationDaysByAbsences(absences: number) {
   return 0;
 }
 
-function roleRank(role: 'COLABORADOR' | 'MANAGER' | 'COORDENADOR' | 'ADMIN' | 'CONVIDADO') {
-  switch (role) {
-    case 'ADMIN':
-      return 4;
-    case 'MANAGER':
-      return 3;
-    case 'COORDENADOR':
-      return 2;
-    case 'COLABORADOR':
-      return 1;
-    default:
-      return 0;
+async function sumVacationBalanceCreditsByUser(params: { userIds: string[]; year: number }) {
+  if (params.userIds.length === 0) {
+    return new Map<string, number>();
   }
+
+  const credits = await prisma.vacationBalanceCredit.findMany({
+    where: {
+      userId: { in: params.userIds },
+      year: params.year,
+    },
+    select: {
+      userId: true,
+      days: true,
+    },
+  });
+
+  const result = new Map<string, number>();
+  for (const credit of credits) {
+    result.set(credit.userId, (result.get(credit.userId) ?? 0) + credit.days);
+  }
+
+  return result;
 }
 
 async function resolveContextTeamId(userId: string, explicitTeamId?: string) {
@@ -960,6 +955,10 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
 
     const country = profile?.workCountry ?? 'PT';
     const currentYear = new Date().getFullYear();
+    const extraBalanceDays = (await prisma.vacationBalanceCredit.aggregate({
+      where: { userId, year: currentYear },
+      _sum: { days: true },
+    }))._sum.days ?? 0;
     const holidayDates = await collectHolidayDates(country, [currentYear]);
     const companyExtraDays = await resolveConfiguredCompanyExtraDays({
       year: currentYear,
@@ -983,6 +982,11 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
           maxTeamShare: '1/3',
         },
         approvedVacationDays,
+        calculation: {
+          entitledDays: 22 + extraBalanceDays,
+          baseEntitledDays: 22,
+          extraBalanceDays,
+        },
       });
     }
 
@@ -991,7 +995,8 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
     const monthsWorked = (now.getFullYear() - hireDate.getFullYear()) * 12 + (now.getMonth() - hireDate.getMonth());
     const acquisitionComplete = monthsWorked >= 12;
     const unjustifiedAbsences = profile?.unjustifiedAbsences ?? 0;
-    const entitledDays = brVacationDaysByAbsences(unjustifiedAbsences);
+    const baseEntitledDays = brVacationDaysByAbsences(unjustifiedAbsences);
+    const entitledDays = baseEntitledDays + extraBalanceDays;
 
     return res.json({
       country: 'BR',
@@ -1011,6 +1016,8 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
         monthsWorked,
         acquisitionComplete,
         unjustifiedAbsences,
+        baseEntitledDays,
+        extraBalanceDays,
         entitledDays,
       },
     });
@@ -1188,15 +1195,15 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-router.post('/vacations/assign-direct', requireAuth, async (req: Request, res: Response) => {
+async function createVacationBalanceCredit(req: Request, res: Response) {
   try {
     const actorId = req.authUser!.id;
     const actorHasAccessTotal = req.authUser!.isRootAccess || req.authUser!.hasAccessTotal || await isAccessTotal(actorId);
     if (!actorHasAccessTotal) {
-      return res.status(403).json({ message: 'Sem permissões para atribuição direta de férias.' });
+      return res.status(403).json({ message: 'Sem permissões para creditar saldo de férias.' });
     }
 
-    const validation = assignDirectVacationSchema.safeParse(req.body);
+    const validation = assignBalanceCreditSchema.safeParse(req.body);
     if (!validation.success) {
       return res.status(400).json({ error: validation.error.issues[0].message });
     }
@@ -1206,7 +1213,6 @@ router.post('/vacations/assign-direct', requireAuth, async (req: Request, res: R
       where: { id: data.userId },
       select: {
         id: true,
-        role: true,
         isActive: true,
         isRootAccess: true,
         hasAccessTotal: true,
@@ -1219,77 +1225,45 @@ router.post('/vacations/assign-direct', requireAuth, async (req: Request, res: R
     }
 
     if (targetUser.isRootAccess || targetUser.hasAccessTotal) {
-      return res.status(400).json({ error: 'Só é permitido atribuir férias diretamente a colaboradores sem acesso total.' });
+      return res.status(400).json({ error: 'Só é permitido creditar saldo para colaboradores sem acesso total.' });
     }
 
-    if (!req.authUser!.isRootAccess && roleRank(targetUser.role) >= roleRank(req.authUser!.role)) {
-      return res.status(403).json({ error: 'Só podes atribuir férias a colaboradores de nível inferior.' });
-    }
-
-    const contextTeamId = await resolveContextTeamId(targetUser.id, data.contextTeamId);
-    const country = targetUser.profile?.workCountry ?? 'PT';
-
-    await enforceVacationBusinessDays({
-      requestType: 'VACATION',
-      dataInicio: data.dataInicio,
-      dataFim: data.dataFim,
-      country,
-    });
-
-    const created = await prisma.$transaction(async (tx) => {
-      await validateVacationCountryPolicy({
-        db: tx,
-        userId: targetUser.id,
-        country,
-        requestType: 'VACATION',
-        dataInicio: data.dataInicio,
-        dataFim: data.dataFim,
-        partialDay: data.partialDay,
-      });
-
-      if (contextTeamId) {
-        await acquireTeamCapacityLock(tx, contextTeamId);
-        await enforceOneThirdCapacity(tx, contextTeamId, country, data.dataInicio, data.dataFim, data.partialDay);
+    if (!req.authUser!.isRootAccess) {
+      const canCreditTarget = await canAccessUserByPermission(actorId, 'manage_vacation_rules', targetUser.id);
+      if (!canCreditTarget) {
+        return res.status(403).json({ error: 'Sem permissões para creditar saldo a este colaborador com as restrições atuais.' });
       }
+    }
 
-      const vacation = await tx.vacation.create({
-        data: {
-          userId: targetUser.id,
-          contextTeamId,
-          dataInicio: data.dataInicio,
-          dataFim: data.dataFim,
-          observacoes: data.observacoes,
-          requestType: 'VACATION',
-          partialDay: data.partialDay,
-          attachmentLink: '',
-          status: 'APPROVED',
-          reviewedById: actorId,
-          reviewedAt: new Date(),
-          reviewReason: 'Atribuição direta por acesso total.',
-          approvedByRole: req.authUser!.role,
-          versionNumber: 1,
-        },
-      });
-
-      return vacation;
+    const created = await prisma.vacationBalanceCredit.create({
+      data: {
+        userId: targetUser.id,
+        year: data.year,
+        days: data.days,
+        reason: data.reason,
+        createdById: actorId,
+      },
     });
 
     const actorLabel = req.authUser!.username;
     await prisma.notification.create({
       data: {
         userId: targetUser.id,
-        title: 'Férias atribuídas diretamente',
-        message: `Foram atribuídas férias de ${formatIsoDatePt(data.dataInicio)} a ${formatIsoDatePt(data.dataFim)} por ${actorLabel}.`,
+        title: 'Saldo de férias creditado',
+        message: `Foram creditados ${data.days} dia(s) ao teu saldo de férias de ${data.year} por ${actorLabel}. Motivo: ${data.reason}`,
       },
     });
 
     return res.status(201).json(created);
   } catch (error) {
-    console.error('[POST /vacations/assign-direct]', error);
+    console.error('[POST /vacations/assign-balance-days]', error);
     const status = isVacationBusinessRuleError(error) ? 400 : 500;
-    return res.status(status).json({ error: error instanceof Error ? error.message : 'Falha ao atribuir férias diretamente.' });
+    return res.status(status).json({ error: error instanceof Error ? error.message : 'Falha ao creditar saldo de férias.' });
   }
-});
+}
+
+router.post('/vacations/assign-balance-days', requireAuth, createVacationBalanceCredit);
+router.post('/vacations/assign-direct', requireAuth, createVacationBalanceCredit);
 
 router.get('/vacations/requests', requireAuth, async (req: Request, res: Response) => {
   const timer = createRequestTimer('GET /vacations/requests');
@@ -1827,12 +1801,18 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
       vacationsByUser.get(v.userId)!.push(v);
     }
 
+    const creditByUser = await sumVacationBalanceCreditsByUser({
+      userIds: users.map((u) => u.id),
+      year,
+    });
+
     const rows: Array<{
       username: string;
       nome: string;
       equipa: string;
       pais: 'PT' | 'BR';
       diasBase: number;
+      diasExtra: number;
       diasAprovados: number;
       saldo: number;
       periodos: string;
@@ -1852,7 +1832,8 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
         0,
       );
 
-      const saldoEstimado = Math.max(baseDays - approvedDays, 0);
+      const extraDays = creditByUser.get(user.id) ?? 0;
+      const saldoEstimado = Math.max(baseDays + extraDays - approvedDays, 0);
 
       const periods = vacations
         .sort((a, b) => a.dataInicio.localeCompare(b.dataInicio))
@@ -1865,6 +1846,7 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
         equipa: user.team?.name || '',
         pais: country,
         diasBase: baseDays,
+        diasExtra: extraDays,
         diasAprovados: approvedDays,
         saldo: saldoEstimado,
         periodos: periods,
@@ -1880,14 +1862,14 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
       properties: { defaultColWidth: 18 },
     });
 
-    sheet.mergeCells('A1:H1');
+    sheet.mergeCells('A1:I1');
     const titleCell = sheet.getCell('A1');
     titleCell.value = `Mapa de Férias ${year}`;
     titleCell.font = { name: 'Calibri', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
     titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
     titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
 
-    sheet.mergeCells('A2:H2');
+    sheet.mergeCells('A2:I2');
     const metaCell = sheet.getCell('A2');
     metaCell.value = `Gerado em ${new Date().toLocaleString('pt-PT')} | Total de colaboradores: ${rows.length}`;
     metaCell.font = { name: 'Calibri', size: 10, color: { argb: 'FF38516B' } };
@@ -1901,6 +1883,7 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
       'Equipa',
       'País',
       'Dias Atribuídos',
+      'Dias Extra',
       'Dias Gastos',
       'Saldo',
       'Períodos de Férias',
@@ -1917,6 +1900,7 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
         row.equipa,
         row.pais,
         row.diasBase,
+        row.diasExtra,
         row.diasAprovados,
         row.saldo,
         row.periodos,
@@ -1929,9 +1913,10 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
       { width: 22 },
       { width: 10 },
       { width: 14 },
+      { width: 11 },
       { width: 12 },
       { width: 10 },
-      { width: 56 },
+      { width: 52 },
     ];
 
     const dataStart = 4;
@@ -1951,10 +1936,10 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
           pattern: 'solid',
           fgColor: { argb: isEven ? 'FFF9FCFF' : 'FFFFFFFF' },
         };
-        if (colNumber >= 5 && colNumber <= 7) {
+        if (colNumber >= 5 && colNumber <= 8) {
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
         } else {
-          cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: colNumber === 8 };
+          cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: colNumber === 9 };
         }
       });
     }
@@ -1967,6 +1952,7 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
       { formula: `SUM(E4:E${dataEnd})` },
       { formula: `SUM(F4:F${dataEnd})` },
       { formula: `SUM(G4:G${dataEnd})` },
+      { formula: `SUM(H4:H${dataEnd})` },
       '',
     ]);
     totalsRow.font = { name: 'Calibri', bold: true, color: { argb: 'FF1D3B58' } };

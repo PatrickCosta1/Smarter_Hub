@@ -1,0 +1,526 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[portuguese]{babel}
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{setspace}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  urlcolor=blue!50!black,
+  pdftitle={PROES - Ponto de Controlo 2},
+  pdfauthor={Equipa SMARTER HUB}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{PROES 2025/2026}
+\rhead{Ponto de Controlo 2}
+\cfoot{\thepage}
+
+\definecolor{titleblue}{HTML}{123F86}
+\definecolor{softgray}{HTML}{F7F9FC}
+
+\titleformat{\section}{\large\bfseries\color{titleblue}}{}{0pt}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{titleblue}}{}{0pt}{}
+
+\renewcommand{\arraystretch}{1.2}
+\setlist[itemize]{leftmargin=1.2em,itemsep=0.2em,topsep=0.2em}
+\setlist[enumerate]{leftmargin=1.5em,itemsep=0.2em,topsep=0.2em}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  {\Large Instituto Superior de Engenharia do Porto\par}
+  \vspace{1.0cm}
+  {\large Unidade Curricular: PROES\par}
+  \vspace{2.2cm}
+  {\Huge\bfseries Ponto de Controlo 2\par}
+  \vspace{0.5cm}
+  {\LARGE\bfseries SMARTER HUB\par}
+  \vspace{2.0cm}
+
+  \begin{tabular}{rl}
+    \textbf{Curso:} & Engenharia Informatica \\
+    \textbf{Ano letivo:} & 2025/2026 \\
+    \textbf{Docente:} & [Preencher nome do docente] \\
+    \textbf{Equipa:} & Equipa SMARTER HUB \\
+    \textbf{Data:} & 21 de abril de 2026
+  \end{tabular}
+
+  \vfill
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{Introdução e Contexto}
+\subsection{Descrição da empresa}
+A Tlantic Portugal - Sistemas De Informação, S.A. é uma empresa portuguesa de desenvolvimento de software especializada em soluções tecnológicas que otimizam a eficiência operacional, a gestão de pessoas e as vendas. Fundada em 2004 no Brasil no seio do Grupo Sonae, a empresa expandiu-se para Portugal em 2007, onde constituiu a sua sede no Porto. Com mais de 20 anos de experiência, a Tlantic tornou-se independente em 2018 e consolidou a sua presença em Portugal, Espanha e Brasil. Hoje conta com uma equipa de cerca de 51 a 200 colaboradores e posiciona-se como parceira estratégica de empresas nos sectores do retalho, indústria e saúde, ajudando-as a aumentar a produtividade, reduzir custos e melhorar a experiência tanto de colaboradores como de clientes através de tecnologia inovadora e centrada nas pessoas.
+
+A empresa no Porto, e as suas soluções são utilizadas por grandes grupos como Continente, Lidl, Worten, CUF e vários outros retalhistas e organizações em Portugal e no estrangeiro.
+
+\subsection{Contextualização da área de negócio}
+A Tlantic atua no mercado de software de gestão operacional para ambientes físicos intensivos em mão-de-obra, com especial enfoque no retalho, que continua a ser o seu principal setor de origem e atuação. A empresa desenvolve plataformas que resolvem desafios reais como a previsão e planeamento de horários de equipas, o cumprimento da legislação laboral, a gestão eficiente de tarefas diárias em loja ou armazém, o controlo de stock e a otimização do processo de vendas e checkout.
+
+Neste contexto, a Tlantic opera num segmento em forte crescimento, impulsionado pela transformação digital do retalho físico, pela necessidade de maior agilidade operacional, pela pressão sobre os custos laborais e pela exigência crescente de compliance e experiência do cliente. As suas soluções combinam tecnologia cloud, aplicações móveis e inteligência para transformar operações complexas em processos mais simples, previsíveis e produtivos. Diferencia-se pela profunda experiência prática no retalho, pela integração entre gestão de pessoas, operações e vendas, e por uma abordagem que coloca as pessoas no centro da tecnologia, oferecendo uma alternativa ágil e especializada face a soluções mais genéricas ou internacionais.
+
+Em suma, a Tlantic ajuda empresas que operam em ambiente de loja, fábrica ou serviços de saúde a serem mais eficientes, competitivas e preparadas para os desafios atuais e futuros da digitalização operacional.
+
+\section{Necessidade / Problema a Resolver}
+\subsection{Situação atual}
+O problema central é a ausência de uma plataforma única de governança operacional para processos de pessoas: pedidos de férias, aprovações multi-nível, gestão de permissões e evidências de auditoria.
+
+Sem esta centralização, a organização perde eficiência, aumenta risco de erro humano e reduz capacidade de decisão com base em dados.
+
+Na maioria das organizações com operações distribuídas, observam-se desafios recorrentes:
+
+\begin{itemize}
+  \item processos fragmentados entre email, folhas de cálculo e aprovações informais;
+  \item baixa padronização de regras entre equipas, subequipas e geografias;
+  \item dificuldade em aplicar políticas legais distintas por país de forma consistente;
+  \item falta de visibilidade operacional sobre capacidade e sobreposição de ausências;
+  \item rastreabilidade insuficiente para auditoria, compliance e melhoria contínua.
+\end{itemize}
+
+\subsection{Fluxogramas e análise de causas}
+\textbf{Fluxograma simplificado do processo atual (AS-IS)}
+
+\begin{figure}[h]
+  \centering
+  \fbox{\parbox{0.92\linewidth}{
+    Colaborador submete pedido $\rightarrow$ validação manual/dispersa $\rightarrow$ aprovação por cadeia pouco visível \\
+    $\rightarrow$ registo parcial de decisão $\rightarrow$ necessidade de reconciliação operacional
+  }}
+  \caption{Fluxo AS-IS com pontos de atrito}
+  \label{fig:as-is-flow}
+\end{figure}
+
+\textbf{Why Tree (resumo textual)}
+
+\begin{figure}[h]
+  \centering
+  \fbox{\parbox{0.9\linewidth}{
+    \textbf{Problema:} Processos de RH lentos e com baixa rastreabilidade\\
+    $\downarrow$\\
+    \textbf{Causa 1:} Fluxo disperso entre email/ficheiros/manutenção manual\\
+    $\downarrow$\\
+    \textbf{Causa 2:} Regras de aprovação não uniformizadas por equipa/subequipa\\
+    $\downarrow$\\
+    \textbf{Causa 3:} Falta de visibilidade em tempo real de estado e capacidade\\
+    $\downarrow$\\
+    \textbf{Causa 4:} Ausência de auditoria consolidada para decisões críticas
+  }}
+  \caption{Why Tree do problema principal no contexto SMARTER HUB}
+  \label{fig:why-tree}
+\end{figure}
+
+\textbf{Empathy Map (persona principal: gestor de equipa)}
+
+\begin{figure}[h]
+  \centering
+  \fbox{\parbox{0.9\linewidth}{
+    \textbf{Diz:} ``Preciso de aprovar rápido sem perder controlo.''\\
+    \textbf{Pensa:} ``Não posso aprovar algo que bloqueie a capacidade da equipa.''\\
+    \textbf{Faz:} valida pedidos, consulta mapa anual, gere exceções.\\
+    \textbf{Sente:} pressão por resposta imediata e risco de erro operacional.
+  }}
+  \caption{Empathy Map sintético do utilizador alvo}
+  \label{fig:empathy-map}
+\end{figure}
+
+\subsection{Métricas atuais vs futuras}
+\rowcolors{2}{softgray}{white}
+\begin{longtable}{p{4.2cm} p{3.0cm} p{3.0cm} p{4.8cm}}
+\toprule
+\textbf{Métrica} & \textbf{Baseline atual} & \textbf{Meta futura} & \textbf{Método de medição} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Métrica} & \textbf{Baseline atual} & \textbf{Meta futura} & \textbf{Método de medição} \\
+\midrule
+\endhead
+Tempo médio de aprovação de pedido & 3-5 dias úteis (referência setorial) & $\leq$ 24h em pedidos padrão & Medição mensal por timestamps de criação/revisão \\
+Pedidos com retrabalho administrativo & 10-20\% (referência setorial) & $\leq$ 5\% & Histórico de alterações, recusa e re-submissão \\
+Tempo de produção de mapa de férias para gestão & 20-40 min (manual) & $<$ 2 min (automatizado) & Exportação estruturada + validação por amostragem \\
+Conflitos de capacidade detetados tardiamente & Frequente (reativo) & Residual (proativo) & Regras de capacidade + alertas de sobreposição \\
+Satisfação de utilizador interno (escala 1-5) & 3.0-3.5/5 & $\geq$ 4.2/5 & Inquérito trimestral por perfil funcional \\
+\bottomrule
+\end{longtable}
+
+\noindent\textit{Nota}: os valores de baseline representam referência operacional típica para organizações com processos parcialmente manuais e devem ser ajustados com dados reais na fase de operação.
+
+\subsection{Situação futura esperada}
+Com a evolução do SMARTER HUB, espera-se um estado futuro (TO-BE) com:
+
+\begin{itemize}
+  \item processo de pedido e aprovação totalmente rastreável de ponta a ponta;
+  \item redução consistente do tempo de resposta e do retrabalho administrativo;
+  \item governação de acessos mais robusta, com menor risco de escalada indevida;
+  \item maior previsibilidade de capacidade de equipas através de mapa anual de férias e regras automáticas.
+\end{itemize}
+
+\section{Estado da Arte}
+\subsection{Como o problema é atualmente resolvido}
+No estado da prática, este tipo de problema é normalmente tratado por uma combinação de ferramentas:
+
+\begin{itemize}
+  \item folhas de cálculo para planeamento de férias e capacidade;
+  \item trocas de email e mensagens para circuito de aprovação;
+  \item sistemas de RH generalistas com baixo nível de adaptação ao fluxo real de cada equipa;
+  \item plataformas enterprise com workflow, mas com custo elevado de parametrização.
+\end{itemize}
+
+\subsection{Revisão bibliográfica e referências de abordagem}
+Foram considerados quatro eixos de referência:
+
+\begin{itemize}
+  \item \textbf{Workflows de aprovação}: sistemas enterprise tendem para motores de estado com transições explícitas (PENDING, APPROVED, REJECTED, CANCELLED) e trilho de decisão por ator.
+  \item \textbf{Controlo de acesso}: a combinação RBAC com restrições contextuais (equipas, país, nível) aproxima-se de modelos ABAC de baixa complexidade, adequados a organizações em crescimento.
+  \item \textbf{Sistemas de RH digitais}: boas práticas exigem histórico imutável, operações auditáveis e consistência entre visão colaborador/chefia/admin.
+  \item \textbf{UX operacional}: interfaces de baixo atrito para tarefas repetitivas (aprovar, exportar, atribuir) melhoram adoção e reduzem erro humano.
+\end{itemize}
+
+\subsection{Limitações das abordagens atuais}
+As abordagens mais comuns apresentam limitações recorrentes no contexto estudado:
+
+\begin{itemize}
+  \item pouca rastreabilidade de decisão em fluxos informais;
+  \item dificuldade em aplicar políticas distintas por país;
+  \item fraca integração entre permissões, hierarquia e operação diária;
+  \item baixa qualidade de reporting para decisão executiva.
+\end{itemize}
+
+\subsection{Comparação de abordagens tecnológicas}
+Compararam-se alternativas de stack e modelo de persistência com base em: produtividade, tipagem, manutenção, maturidade de ecossistema e custo de operação.
+
+\begin{table}[h]
+\centering
+\begin{tabularx}{\linewidth}{p{3.1cm} Y Y Y}
+\toprule
+\textbf{Tecnologia} & \textbf{Vantagens} & \textbf{Limitações} & \textbf{Decisão} \\
+\midrule
+React + TypeScript (Vite) & UI reativa, tipagem forte, produtividade elevada em equipa pequena & Requer disciplina de estado e performance em vistas densas & Escolhida \\
+Node.js + Express & Desenvolvimento rápido de API, grande ecossistema, fácil integração & Necessidade de hardening extra para produção & Escolhida \\
+Prisma + PostgreSQL & Modelagem clara, migrações controladas, queries tipadas & Cuidado com ciclo generate/migrate em Windows & Escolhida \\
+Firebase (auth/serviços auxiliares) & Integração rápida de componentes cloud já utilizados no projeto & Acrescenta heterogeneidade de stack & Escolhida de forma complementar \\
+\bottomrule
+\end{tabularx}
+\caption{Análise comparativa de tecnologias}
+\label{tab:tecnologias}
+\end{table}
+
+\subsection{Fundamentação da stack escolhida}
+A arquitetura final equilibra rapidez de entrega e robustez:
+
+\begin{itemize}
+  \item frontend SPA em React/TypeScript para experiência uniforme por perfil;
+  \item backend Express com validação por Zod e regra de negócio centralizada;
+  \item PostgreSQL como fonte de verdade para entidades críticas;
+  \item Prisma para reduzir fricção entre domínio e persistência;
+  \item testes unitários/integração (Vitest + Supertest) e E2E (Playwright) para reduzir regressão.
+\end{itemize}
+
+\section{Stakeholders}
+\subsection{Matriz de stakeholders}
+\rowcolors{2}{softgray}{white}
+\begin{longtable}{p{4.2cm} p{3.0cm} p{3.0cm} p{4.8cm}}
+\toprule
+\textbf{Stakeholder} & \textbf{Influência} & \textbf{Interesse} & \textbf{Estratégia de gestão} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Stakeholder} & \textbf{Influência} & \textbf{Interesse} & \textbf{Estratégia de gestão} \\
+\midrule
+\endhead
+Direção RH & Alta & Alta & Envolvimento direto na priorização de regras de férias e compliance \\
+Gestores/Coordenadores & Alta & Alta & Validação contínua de fluxos de aprovação e capacidade de equipa \\
+Direção executiva & Alta & Média & Reporting periódico de indicadores de produtividade e risco \\
+Administradores (acesso total) & Média/Alta & Alta & Definição de governança operacional e controlo de exceções \\
+Colaboradores & Baixa/Média & Alta & UX clara, feedback rápido e visibilidade do estado dos pedidos \\
+Equipa TI/Dev & Média & Alta & Hardening técnico, testes automatizados e monitorização \\
+\bottomrule
+\end{longtable}
+
+\section{Conceção da Solução}
+\subsection{Descrição da solução}
+A solução proposta é o SMARTER HUB, uma plataforma web integrada para gestão de processos de pessoas, com foco em regras de negócio, rastreabilidade e eficiência operacional.
+
+O sistema centraliza pedidos de férias e ausências, aprovações multi-nível, gestão granular de permissões, configuração de regras por país e exportação de informação executiva.
+
+\subsection{Princípios da solução final}
+\begin{itemize}
+  \item \textbf{Governança por desenho}: regra de negócio explícita, versionável e auditável.
+  \item \textbf{Experiência orientada a papel}: cada perfil visualiza apenas o que precisa para decidir/operar.
+  \item \textbf{Conformidade operacional}: aplicação consistente de política por país e por cadeia hierárquica.
+  \item \textbf{Escalabilidade funcional}: arquitetura preparada para crescimento de equipas, regras e integrações.
+\end{itemize}
+
+\subsection{Elementos de análise}
+\subsubsection{Diagrama de Use Cases}
+\begin{figure}[h]
+  \centering
+  \fbox{\parbox{0.92\linewidth}{
+    \textbf{Atores:} Colaborador, Manager, Coordenador, Admin/Acesso Total\\
+    \textbf{Use Cases principais:}\\
+    1) Submeter pedido de férias/ausência\\
+    2) Aprovar/Rejeitar pedido por nível\\
+    3) Consultar calendário/mapa de férias\\
+    4) Configurar dias automáticos da empresa\\
+    5) Exportar mapa de férias para XLSX\\
+    6) Atribuir dias adicionais de férias ao saldo (acesso total)\\
+    7) Gerir permissões e escopo de acesso
+  }}
+  \caption{Use Cases nucleares do SMARTER HUB}
+  \label{fig:use-cases}
+\end{figure}
+
+\subsubsection{Catálogo de Use Cases (detalhado)}
+\begin{longtable}{p{1.1cm} p{2.7cm} p{4.2cm} p{5.8cm} p{2.3cm}}
+\toprule
+\textbf{ID} & \textbf{Ator} & \textbf{Objetivo} & \textbf{Fluxo principal (resumo)} & \textbf{Saída esperada} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{ID} & \textbf{Ator} & \textbf{Objetivo} & \textbf{Fluxo principal (resumo)} & \textbf{Saída esperada} \\
+\midrule
+\endhead
+UC01 & Colaborador & Submeter férias & Define período/contexto e submete pedido para validação e aprovação & Pedido criado \\
+UC02 & Colaborador & Submeter ausência & Seleciona tipo/motivo, anexa informação e submete fluxo & Pedido criado \\
+UC03 & Aprovador & Decidir pedido & Consulta pendentes, analisa contexto e aprova/recusa com motivo & Estado atualizado \\
+UC04 & Admin & Gerir estrutura & Configura equipas, subequipas e memberships de responsabilidade & Estrutura válida \\
+UC05 & Admin/Acesso total & Gerir permissões & Concede/revoga permissões com restrições por escopo & Acesso governado \\
+UC06 & Admin/Acesso total & Configurar dias empresa & Define dias automáticos por país para calendário e regras & Calendário ajustado \\
+UC07 & Gestão & Exportar mapa anual & Filtra por ano/equipa e gera ficheiro executivo para análise & XLSX gerado \\
+UC08 & Admin/Acesso total & Atribuir saldo adicional & Credita dias adicionais no saldo de férias com motivo registado & Saldo atualizado \\
+UC09 & Colaborador & Consultar histórico & Visualiza estados, versões e decisões dos seus pedidos & Transparência \\
+UC10 & Utilizador & Gerir notificações & Consulta, marca como lida e segue ações pendentes & Ação concluída \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{User Stories completas}
+\begin{longtable}{p{1.2cm} p{5.0cm} p{7.0cm} p{2.0cm}}
+\toprule
+\textbf{ID} & \textbf{Como} & \textbf{Quero} & \textbf{Prioridade} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{ID} & \textbf{Como} & \textbf{Quero} & \textbf{Prioridade} \\
+\midrule
+\endhead
+US01 & Colaborador & submeter pedido de férias com período e contexto de equipa para iniciar aprovação formal & Alta \\
+US02 & Colaborador & pedir ausência médica até 3 dias com validação automática de regra & Alta \\
+US03 & Colaborador & pedir ausência por formação com justificativo e rastreio do estado & Média \\
+US04 & Manager/Aprovador & aprovar ou rejeitar pedidos pendentes do meu nível com motivo de decisão & Alta \\
+US05 & Coordenador & atuar como linha superior de aprovação nas equipas sob supervisão & Alta \\
+US06 & Admin & gerir equipas, memberships e chefias para refletir estrutura real da empresa & Alta \\
+US07 & Admin/Acesso Total & configurar dias automáticos da empresa por país (PT/BR) & Média \\
+US08 & Admin/Acesso Total & exportar mapa de férias anual em XLSX com filtros por equipa & Alta \\
+US09 & Admin/Acesso Total & atribuir dias adicionais ao saldo de férias de um colaborador, com justificação, para acomodar situações excecionais & Alta \\
+US10 & Colaborador & consultar histórico de pedidos e respetivos estados/versões & Média \\
+US11 & Utilizador autenticado & receber notificações de eventos relevantes e marcá-las como lidas & Média \\
+US12 & Gestor de permissões & conceder/revogar permissões com restrições de equipa/país/nível & Alta \\
+US13 & RH/Gestão & consultar dados agregados para planeamento de capacidade e compliance & Média \\
+US14 & Auditor interno & obter trilho de decisão por pedido para conformidade e auditoria & Alta \\
+US15 & Admin & parametrizar regras sensíveis sem alterar código aplicacional & Média \\
+US16 & Colaborador & editar pedido pendente sem perder histórico de alterações & Média \\
+US17 & Gestor & visualizar conflitos de capacidade antes de validar aprovação & Alta \\
+US18 & Direção & obter indicadores periódicos para suporte à decisão estratégica & Média \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Critérios de aceitação por épico}
+\begin{itemize}
+  \item \textbf{Épico E1 - Pedido e aprovação}: todo pedido possui estado explícito, timestamps e autor da decisão.
+  \item \textbf{Épico E2 - Regras e conformidade}: políticas por país são aplicadas antes da criação/aprovação final.
+  \item \textbf{Épico E3 - Governança de acesso}: alterações de permissões geram trilho auditável de quem concedeu/revogou.
+  \item \textbf{Épico E4 - Reporting}: exportação anual devolve informação suficiente para planeamento de capacidade.
+  \item \textbf{Épico E5 - Operação assistida}: notificações e feedback de interface reduzem ambiguidade operacional.
+\end{itemize}
+
+\subsection{Descrição técnica}
+\subsubsection{Arquitetura lógica}
+A solução é organizada em três camadas:
+
+\begin{itemize}
+  \item \textbf{Frontend} (React + TypeScript + Vite): páginas por domínio (Férias, Aprovações, Perfil, Formações, Administração), componentes reutilizáveis e cache de requests para reduzir duplicação em dev/StrictMode.
+  \item \textbf{Backend} (Express + TypeScript): rotas por bounded context (auth, users, profile, vacations, permissions, trainings, notifications, receipts), validação por Zod, middleware de autenticação, CORS controlado.
+  \item \textbf{Dados} (PostgreSQL + Prisma): modelo relacional com entidades centrais User, Team, TeamMembership, Vacation, VacationApproval, UserPermission, Permission e Profile.
+\end{itemize}
+
+\begin{figure}[h]
+  \centering
+  \fbox{\parbox{0.92\linewidth}{
+    Cliente Web (React) $\rightarrow$ API /api/* (Express) $\rightarrow$ Prisma ORM $\rightarrow$ PostgreSQL\\
+    \hspace*{2mm} $\searrow$ Integrações auxiliares (Firebase, ficheiros uploads, exportação Excel)
+  }}
+  \caption{Diagrama de arquitetura lógica (alto nível)}
+  \label{fig:arquitetura-logica}
+\end{figure}
+
+\subsubsection{Fluxos críticos}
+\textbf{Fluxo 1 - Pedido e aprovação de férias}
+\begin{enumerate}
+  \item utilizador cria pedido (dataInicio, dataFim, tipo, contextTeamId, partialDay);
+  \item backend valida regras de país, sobreposições e capacidade máxima de 1/3 da equipa;
+  \item sistema cria Vacation + VacationApproval por níveis;
+  \item aprovadores executam decisão por nível até estado final.
+\end{enumerate}
+
+\textbf{Fluxo 2 - Exportação do mapa de férias}
+\begin{enumerate}
+  \item perfil com acesso total escolhe ano e equipa;
+  \item endpoint gera workbook XLSX (ExcelJS) com informação relevante para gestão;
+  \item ficheiro é descarregado para análise e partilha operacional.
+\end{enumerate}
+
+\textbf{Fluxo 3 - Atribuição de dias adicionais ao saldo de férias}
+\begin{enumerate}
+  \item perfil com acesso total seleciona colaborador elegível de nível inferior;
+  \item indica a quantidade de dias adicionais e o motivo da atribuição;
+  \item sistema valida permissões, limites e regista a operação em auditoria;
+  \item saldo total de férias do colaborador é atualizado sem criar pedido de férias.
+\end{enumerate}
+
+\textbf{Fluxo 4 - Governança de permissões}
+\begin{enumerate}
+  \item administrador autorizado seleciona utilizador-alvo e permissão a alterar;
+  \item define escopo (equipa, país, nível) e motivo da alteração;
+  \item sistema aplica mudança e regista evento de auditoria;
+  \item perfil alvo passa a operar com novo conjunto de capacidades.
+\end{enumerate}
+
+\textbf{Fluxo 5 - Ciclo TO-BE completo (visão integrada)}
+\begin{enumerate}
+  \item colaborador inicia pedido em interface orientada por contexto;
+  \item motor de regras valida conformidade legal/organizacional;
+  \item cadeia de aprovação executa decisões com visibilidade e rastreio;
+  \item notificações fecham o ciclo operacional dos intervenientes;
+  \item gestão extrai indicadores e ajusta regras para melhoria contínua.
+\end{enumerate}
+
+\subsubsection{Modelo de dados}
+Entidades principais efetivamente implementadas no schema:
+
+\begin{itemize}
+  \item \textbf{User} (role, flags de acesso total/root, relação com Profile e TeamMembership);
+  \item \textbf{Team} e \textbf{TeamMembership} (estrutura organizacional e papéis por equipa);
+  \item \textbf{Vacation} e \textbf{VacationApproval} (pedido e trilho de aprovação multi-nível);
+  \item \textbf{Permission}, \textbf{UserPermission} e \textbf{PermissionGrant} (governança de acesso);
+  \item \textbf{VacationCompanyExtraDay} (dias automáticos da empresa por país);
+  \item \textbf{Notification}, \textbf{Training}, \textbf{ProfileChangeRequest} (módulos de suporte funcional).
+\end{itemize}
+
+Relacionamentos chave:
+\begin{itemize}
+  \item Team 1..N TeamMembership e User 1..N TeamMembership;
+  \item User 1..N Vacation e Vacation 1..N VacationApproval;
+  \item User 1..N UserPermission e Permission 1..N UserPermission;
+  \item User 1..1 Profile;
+  \item Team (pai) 1..N Team (subequipa);
+  \item registo de ajustes de saldo de férias com motivo, autor e timestamp para auditoria.
+\end{itemize}
+
+\section{Objetivos}
+\subsection{Objetivo geral}
+Conceber e operacionalizar uma plataforma única para gestão de processos de pessoas (férias, ausências, perfil, formações, notificações e permissões), garantindo governança por perfil, rastreabilidade de decisões e melhoria mensurável de eficiência.
+
+\subsection{Objetivos específicos}
+\begin{enumerate}
+  \item Implementar cadeia de aprovação de férias por hierarquia real (equipa e subequipa), incluindo validação multi-nível.
+  \item Aplicar políticas de férias por país (PT/BR), com regras legais e operacionais distintas.
+  \item Centralizar controlo de permissões granulares (RBAC + restrições de escopo por equipa/país/nível).
+  \item Garantir exportação executiva do mapa de férias em XLSX, com filtro por ano/equipa.
+  \item Permitir atribuição de dias adicionais ao saldo de férias por perfis com acesso total, com motivo obrigatório e rastreabilidade.
+  \item Reforçar auditabilidade de ações sensíveis (grants/revokes, aprovações, exceções).
+\end{enumerate}
+
+\subsection{Racional dos objetivos}
+Os objetivos foram definidos para atacar diretamente as dores mais críticas identificadas no AS-IS:
+
+\begin{itemize}
+  \item \textbf{Tempo e previsibilidade}: o fluxo de aprovação é automatizado por níveis, com estados explícitos.
+  \item \textbf{Conformidade}: regras PT/BR e controlo de escopo reduzem decisões fora de norma.
+  \item \textbf{Governança}: acesso total e permissões granulares permitem equilíbrio entre autonomia e controlo.
+  \item \textbf{Decisão baseada em dados}: mapa anual exportável e visibilidade agregada por equipa.
+\end{itemize}
+
+\section{Gestão de Riscos}
+\subsection{Lista de riscos identificados}
+\rowcolors{2}{softgray}{white}
+\begin{longtable}{p{1.3cm} p{5.2cm} p{2.2cm} p{2.2cm} p{4.2cm}}
+\toprule
+\textbf{ID} & \textbf{Risco} & \textbf{Prob.} & \textbf{Impacto} & \textbf{Mitigação} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{ID} & \textbf{Risco} & \textbf{Prob.} & \textbf{Impacto} & \textbf{Mitigação} \\
+\midrule
+\endhead
+R1 & Alteração frequente de regras de negócio sem atualizar documentação funcional & Média & Alto & Regra de governance: mudar código implica atualizar documento de regras \\
+R2 & Regressão em fluxos de férias por efeitos colaterais de frontend (StrictMode/double fetch) & Média & Médio & Cache com deduplicação in-flight e testes de regressão por página \\
+R3 & Falha de ciclo Prisma após mudança de schema (cliente desatualizado) & Média & Médio & Pipeline obrigatório: prisma generate antes de build \\
+R4 & Erro de timezone no calendário (desvio de dia) & Baixa & Alto & Uso consistente de data local YYYY-MM-DD sem toISOString para células \\
+R5 & Escalada indevida de privilégios em permissões sensíveis & Baixa & Alto & Auditoria de grants/revokes e validação de ator autorizado \\
+R6 & Dependência de API externa de feriados (Nager.Date) & Média & Médio & Cache local com TTL e fallback para operação degradada \\
+R7 & Dificuldade de adoção por utilizadores de perfil não técnico & Média & Médio & UX orientada a tarefa, labels claras e feedback imediato \\
+R8 & Divergência entre hierarquia real e memberships configurados & Média & Alto & Rotinas de validação de estrutura e revisão periódica por admin \\
+\bottomrule
+\end{longtable}
+
+\subsection{Matriz probabilidade x impacto}
+\begin{table}[h]
+\centering
+\begin{tabular}{p{2.8cm} p{3.5cm} p{3.5cm} p{3.5cm}}
+\toprule
+\textbf{Prob. \textbackslash Impacto} & \textbf{Baixo} & \textbf{Médio} & \textbf{Alto} \\
+\midrule
+Baixa & -- & -- & R4, R5 \\
+Média & -- & R2, R3, R6, R7 & R1, R8 \\
+Alta & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\caption{Matriz probabilidade x impacto dos riscos identificados}
+\label{tab:risk-matrix}
+\end{table}
+
+\subsection{Plano de resposta a risco}
+\begin{itemize}
+  \item \textbf{Prevenir}: checklist de release com foco em permissão, férias e auditoria.
+  \item \textbf{Detetar}: testes unitários/integração e observação de logs por rota crítica.
+  \item \textbf{Responder}: rollback funcional por flag/ajuste de permissão e correção incremental.
+  \item \textbf{Aprender}: registo em memória de repositório para evitar repetição de incidentes.
+\end{itemize}
+
+\section{Conclusão}
+O problema analisado exige uma resposta estrutural e não apenas incremental: é necessário substituir processos dispersos por um modelo integrado, governado e mensurável.
+
+A proposta final apresentada consolida essa resposta através de regras de negócio explícitas, cadeia de decisão auditável, gestão de permissões por escopo, visão executiva por indicadores e experiência operacional orientada a papel.
+
+No cenário final esperado, a organização passa a operar com maior previsibilidade, menor retrabalho e melhor capacidade de decisão, mantendo conformidade e escalabilidade funcional.
+
+\section*{Anexos (opcional)}
+Sugestões de anexos que podem ser acrescentados no fecho do PC2:
+\begin{itemize}
+  \item lista integral de endpoints da API por domínio;
+  \item capturas de ecrã dos fluxos principais (pedido, aprovação, exportação, ajuste de saldo de férias);
+  \item evidências de testes (unitários, integração e E2E);
+  \item backlog priorizado por sprint e respetivo estado de implementação.
+\end{itemize}
+
+\end{document}
