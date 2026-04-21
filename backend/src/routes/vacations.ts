@@ -11,7 +11,7 @@ import {
   isAccessTotal,
 } from '../lib/permission-engine.js';
 import { requireAuth } from '../middleware/auth.js';
-import { notifyUsersByPermission } from '../lib/notifications.js';
+import { notifyUsers } from '../lib/notifications.js';
 import { createRequestTimer } from '../lib/request-timing.js';
 
 const router = Router();
@@ -523,11 +523,64 @@ async function resolveContextTeamId(userId: string, explicitTeamId?: string) {
   return membershipTeamIds[0] ?? null;
 }
 
+function parseApprovalCustomRestrictions(customRestrictions: unknown) {
+  if (!customRestrictions || typeof customRestrictions !== 'object' || Array.isArray(customRestrictions)) {
+    return {
+      allowedUserIds: [] as string[],
+    };
+  }
+
+  const source = customRestrictions as {
+    allowedUserIds?: unknown;
+  };
+
+  const allowedUserIds = Array.isArray(source.allowedUserIds)
+    ? source.allowedUserIds.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+
+  return {
+    allowedUserIds,
+  };
+}
+
+function describeVacationRequestType(requestType: 'VACATION' | 'ABSENCE_MEDICAL' | 'ABSENCE_TRAINING') {
+  if (requestType === 'VACATION') {
+    return 'férias';
+  }
+
+  if (requestType === 'ABSENCE_MEDICAL') {
+    return 'ausência médica';
+  }
+
+  return 'ausência por formação';
+}
+
+function formatVacationNotificationMessage(params: {
+  requesterName: string;
+  requestType: 'VACATION' | 'ABSENCE_MEDICAL' | 'ABSENCE_TRAINING';
+  dataInicio: string;
+  dataFim: string;
+  contextTeamName?: string | null;
+  observacoes?: string;
+}) {
+  const header = `${params.requesterName} submeteu um pedido de ${describeVacationRequestType(params.requestType)}.`;
+  const period = `Período: ${formatIsoDatePt(params.dataInicio)} até ${formatIsoDatePt(params.dataFim)}.`;
+  const team = params.contextTeamName ? `Equipa: ${params.contextTeamName}.` : 'Equipa: sem contexto associado.';
+  const notes = params.observacoes?.trim()
+    ? `Observações: ${params.observacoes.trim().slice(0, 240)}.`
+    : 'Observações: sem detalhes adicionais.';
+
+  return [header, period, team, notes, 'Ação: abre a área de aprovações para decidir.'].join('\n');
+}
+
 async function resolveApprovalGroups(userId: string, contextTeamId: string | null) {
   const requester = await prisma.user.findUnique({
     where: { id: userId },
     select: {
       id: true,
+      hasAccessTotal: true,
+      accessTotalGrantedById: true,
+      teamId: true,
     },
   });
 
@@ -535,122 +588,169 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
     return [] as Array<{ level: number; approverIds: string[] }>;
   }
 
-  type TeamHierarchyNode = { id: string; managerId: string | null; coordinatorId: string | null; parentTeamId: string | null };
+  const activeMemberships = await prisma.teamMembership.findMany({
+    where: { userId, isActive: true },
+    select: { teamId: true },
+  });
 
-  const hierarchy: TeamHierarchyNode[] = [];
-  const visited = new Set<string>();
-  let cursorTeamId: string | null = contextTeamId;
+  const teamIds = Array.from(new Set<string>([
+    ...activeMemberships.map((item) => item.teamId),
+    ...(requester.teamId ? [requester.teamId] : []),
+  ]));
 
-  while (cursorTeamId && !visited.has(cursorTeamId)) {
-    visited.add(cursorTeamId);
-    const team: TeamHierarchyNode | null = await prisma.team.findUnique({
-      where: { id: cursorTeamId },
-      select: {
-        id: true,
-        managerId: true,
-        coordinatorId: true,
-        parentTeamId: true,
-      },
-    });
+  const candidateApproverIds = new Set<string>();
 
-    if (!team) {
-      break;
-    }
-
-    hierarchy.push(team);
-    cursorTeamId = team.parentTeamId;
-  }
-
-  if (hierarchy.length === 0) {
-    return [] as Array<{ level: number; approverIds: string[] }>;
-  }
-
-  const groups: Array<{ level: number; approverIds: string[] }> = [];
-  const seenApprovers = new Set<string>();
-
-  function pushLevel(candidates: Array<string | null | undefined>) {
-    const approverIds = candidates
-      .filter((id): id is string => Boolean(id && id !== userId && !seenApprovers.has(id)));
-
-    if (approverIds.length === 0) {
+  function addApprover(id: string | null | undefined) {
+    if (!id || id === userId) {
       return;
     }
 
-    for (const id of approverIds) {
-      seenApprovers.add(id);
-    }
-
-    groups.push({
-      level: groups.length + 1,
-      approverIds,
-    });
+    candidateApproverIds.add(id);
   }
 
-  for (const team of hierarchy) {
-    const membershipApprovers = await prisma.teamMembership.findMany({
-      where: {
-        teamId: team.id,
-        isActive: true,
-        isApprover: true,
-        approvalLevel: { not: null },
-      },
-      select: {
-        userId: true,
-        approvalLevel: true,
-      },
-    });
-
-    const localLevels = new Map<number, string[]>();
-    for (const item of membershipApprovers) {
-      if (!item.approvalLevel) {
-        continue;
-      }
-
-      if (!localLevels.has(item.approvalLevel)) {
-        localLevels.set(item.approvalLevel, []);
-      }
-
-      localLevels.get(item.approvalLevel)!.push(item.userId);
-    }
-
-    const sortedLocalLevels = Array.from(localLevels.keys()).sort((a, b) => a - b);
-    if (sortedLocalLevels.length > 0) {
-      for (const localLevel of sortedLocalLevels) {
-        pushLevel(localLevels.get(localLevel) ?? []);
-      }
-    } else {
-      pushLevel([team.managerId, team.coordinatorId]);
-    }
-  }
-
-  if (groups.length === 0) {
-    const globalApprovers = await prisma.user.findMany({
+  async function addAccessTotalApprovers() {
+    const users = await prisma.user.findMany({
       where: {
         id: { not: userId },
-        OR: [
-          { isRootAccess: true },
-          {
-            permissionAssignments: {
-              some: {
-                isEnabled: true,
-                permission: {
-                  code: 'approve_vacation',
-                },
-              },
-            },
-          },
-        ],
+        isActive: true,
+        OR: [{ isRootAccess: true }, { hasAccessTotal: true }],
+      },
+      select: {
+        id: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    for (const user of users) {
+      addApprover(user.id);
+    }
+  }
+
+  async function addTPeopleFallback() {
+    const fallback = await prisma.user.findFirst({
+      where: {
+        id: { not: userId },
+        isActive: true,
+        username: {
+          equals: 't.people',
+          mode: 'insensitive',
+        },
       },
       select: { id: true },
       orderBy: { createdAt: 'asc' },
     });
 
-    if (globalApprovers.length > 0) {
-      pushLevel(globalApprovers.map((item) => item.id));
+    if (fallback?.id) {
+      addApprover(fallback.id);
+      return;
+    }
+
+    await addAccessTotalApprovers();
+  }
+
+  if (teamIds.length > 0) {
+    const teams = await prisma.team.findMany({
+      where: { id: { in: teamIds } },
+      select: {
+        id: true,
+        managerId: true,
+        parentTeamId: true,
+      },
+    });
+
+    const teamsById = new Map<string, { id: string; managerId: string | null; parentTeamId: string | null }>(
+      teams.map((team) => [team.id, team]),
+    );
+
+    const unresolvedTeams: string[] = [];
+
+    for (const teamId of teamIds) {
+      const visited = new Set<string>();
+      let cursorTeamId: string | null = teamId;
+      let managerFound = false;
+
+      while (cursorTeamId && !visited.has(cursorTeamId)) {
+        visited.add(cursorTeamId);
+        const node = teamsById.get(cursorTeamId);
+        if (!node) {
+          break;
+        }
+
+        if (node.managerId && node.managerId !== userId) {
+          addApprover(node.managerId);
+          managerFound = true;
+          break;
+        }
+
+        cursorTeamId = node.parentTeamId;
+      }
+
+      if (!managerFound) {
+        unresolvedTeams.push(teamId);
+      }
+    }
+
+    if (unresolvedTeams.length > 0) {
+      await addAccessTotalApprovers();
+    }
+  } else if (requester.hasAccessTotal) {
+    addApprover(requester.accessTotalGrantedById);
+
+    if (candidateApproverIds.size === 0) {
+      await addTPeopleFallback();
+    }
+  } else {
+    await addTPeopleFallback();
+  }
+
+  const customApproverAssignments = await prisma.userPermission.findMany({
+    where: {
+      isEnabled: true,
+      permission: {
+        code: 'approve_vacation',
+      },
+    },
+    select: {
+      userId: true,
+      customRestrictions: true,
+      user: {
+        select: {
+          isActive: true,
+        },
+      },
+    },
+  });
+
+  for (const assignment of customApproverAssignments) {
+    if (!assignment.user.isActive || assignment.userId === userId) {
+      continue;
+    }
+
+    const custom = parseApprovalCustomRestrictions(assignment.customRestrictions);
+    if (custom.allowedUserIds.includes(userId)) {
+      addApprover(assignment.userId);
     }
   }
 
-  return groups;
+  const activeApprovers = await prisma.user.findMany({
+    where: {
+      id: { in: Array.from(candidateApproverIds) },
+      isActive: true,
+    },
+    select: { id: true },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const approverIds = activeApprovers
+    .map((user) => user.id)
+    .filter((id) => id !== userId);
+
+  if (approverIds.length === 0) {
+    return [] as Array<{ level: number; approverIds: string[] }>;
+  }
+
+  void contextTeamId;
+  return [{ level: 1, approverIds }];
 }
 
 async function enforceOneThirdCapacity(
@@ -1177,13 +1277,21 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
       const requesterName = String(profile?.nomeAbreviado ?? '').trim()
         || String(profile?.nomeCompleto ?? '').trim()
         || 'Colaborador';
-      const requestLabel = data.requestType === 'VACATION' ? 'férias' : 'ausência';
-      await notifyUsersByPermission(
+      const approverIds = Array.from(new Set(approvalGroups.flatMap((group) => group.approverIds)));
+      await notifyUsers(
         prisma,
-        ['approve_vacation'],
-        data.requestType === 'VACATION' ? 'Novo pedido de férias' : 'Novo pedido de ausência',
-        `${requesterName} efetuou um pedido de ${requestLabel}, de ${formatIsoDatePt(data.dataInicio)} até ${formatIsoDatePt(data.dataFim)}.`,
-        { excludeUserIds: [userId] },
+        approverIds,
+        data.requestType === 'VACATION' ? 'Novo pedido de férias para aprovação' : 'Novo pedido de ausência para aprovação',
+        formatVacationNotificationMessage({
+          requesterName,
+          requestType: data.requestType,
+          dataInicio: data.dataInicio,
+          dataFim: data.dataFim,
+          contextTeamName: vacation.contextTeamId
+            ? (await prisma.team.findUnique({ where: { id: vacation.contextTeamId }, select: { name: true } }))?.name
+            : null,
+          observacoes: data.observacoes,
+        }),
       );
     }
 
@@ -1433,13 +1541,48 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
     return res.status(400).json({ message: 'Não foi possível finalizar esta aprovação.' });
   }
 
+  const refreshedVacation = await prisma.vacation.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      userId: true,
+      status: true,
+      requestType: true,
+      dataInicio: true,
+      dataFim: true,
+      approvals: {
+        select: {
+          status: true,
+        },
+      },
+    },
+  });
+
+  if (!refreshedVacation) {
+    return res.json({ success: true });
+  }
+
+  const totalApprovals = refreshedVacation.approvals.length;
+  const approvedApprovals = refreshedVacation.approvals.filter((item) => item.status === APPROVAL_APPROVED).length;
+  const actorLabel = req.authUser?.username || 'Aprovador';
+
   await prisma.notification.create({
     data: {
-      userId: vacation.userId,
-      title: vacation.requestType === 'VACATION' ? 'Pedido de férias aprovado' : 'Pedido de ausência aprovado',
-      message: vacation.requestType === 'VACATION'
-        ? 'Pedido aprovado.'
-        : 'Pedido aprovado.',
+      userId: refreshedVacation.userId,
+      title: refreshedVacation.status === 'APPROVED'
+        ? (refreshedVacation.requestType === 'VACATION' ? 'Pedido de férias aprovado' : 'Pedido de ausência aprovado')
+        : (refreshedVacation.requestType === 'VACATION' ? 'Pedido de férias em aprovação' : 'Pedido de ausência em aprovação'),
+      message: refreshedVacation.status === 'APPROVED'
+        ? [
+            `${describeVacationRequestType(refreshedVacation.requestType)} aprovado com sucesso.`,
+            `Período: ${formatIsoDatePt(refreshedVacation.dataInicio)} até ${formatIsoDatePt(refreshedVacation.dataFim)}.`,
+            `Decisão final por: ${actorLabel}.`,
+          ].join('\n')
+        : [
+            `${actorLabel} aprovou a sua etapa do pedido de ${describeVacationRequestType(refreshedVacation.requestType)}.`,
+            `Progresso: ${approvedApprovals}/${Math.max(totalApprovals, 1)} aprovações concluídas.`,
+            `Período: ${formatIsoDatePt(refreshedVacation.dataInicio)} até ${formatIsoDatePt(refreshedVacation.dataFim)}.`,
+          ].join('\n'),
     },
   });
 
@@ -1503,8 +1646,8 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
     return res.status(403).json({ message: 'Este pedido não pertence ao teu nível de aprovação.' });
   }
 
-  await prisma.$transaction([
-    prisma.vacation.update({
+  await prisma.$transaction(async (tx) => {
+    await tx.vacation.update({
       where: { id },
       data: {
         status: 'REJECTED',
@@ -1512,25 +1655,59 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
         reviewedAt: new Date(),
         reviewReason: reason,
       },
-    }),
-    prisma.vacationApproval.updateMany({
+    });
+
+    if (canRejectByException) {
+      await tx.vacationApproval.updateMany({
+        where: {
+          vacationId: id,
+          status: { in: [APPROVAL_PENDING, APPROVAL_WAITING] },
+        },
+        data: {
+          status: APPROVAL_REJECTED,
+          decidedAt: new Date(),
+          reason,
+        },
+      });
+      return;
+    }
+
+    await tx.vacationApproval.updateMany({
       where: {
         vacationId: id,
-        status: { in: [APPROVAL_PENDING, APPROVAL_WAITING] },
+        approverId: req.authUser!.id,
+        status: APPROVAL_PENDING,
       },
       data: {
         status: APPROVAL_REJECTED,
         decidedAt: new Date(),
         reason,
       },
-    }),
-  ]);
+    });
+
+    await tx.vacationApproval.updateMany({
+      where: {
+        vacationId: id,
+        approverId: { not: req.authUser!.id },
+        status: { in: [APPROVAL_PENDING, APPROVAL_WAITING] },
+      },
+      data: {
+        status: APPROVAL_SKIPPED,
+        decidedAt: new Date(),
+        reason: 'Fluxo encerrado após rejeição por outro aprovador.',
+      },
+    });
+  });
 
   await prisma.notification.create({
     data: {
       userId: vacation.userId,
       title: vacation.requestType === 'VACATION' ? 'Pedido de férias recusado' : 'Pedido de ausência recusado',
-      message: `Pedido recusado. ${reason}`,
+      message: [
+        `O pedido de ${describeVacationRequestType(vacation.requestType as 'VACATION' | 'ABSENCE_MEDICAL' | 'ABSENCE_TRAINING')} foi recusado.`,
+        `Motivo: ${reason}`,
+        `Decisor: ${req.authUser?.username || 'Aprovador'}.`,
+      ].join('\n'),
     },
   });
 
@@ -1660,6 +1837,32 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
 
       return nextVersion;
     });
+
+    const requesterProfile = await prisma.profile.findUnique({
+      where: { userId },
+      select: { nomeAbreviado: true, nomeCompleto: true },
+    });
+
+    const contextTeam = created.contextTeamId
+      ? await prisma.team.findUnique({ where: { id: created.contextTeamId }, select: { name: true } })
+      : null;
+    const requesterName = String(requesterProfile?.nomeAbreviado ?? '').trim()
+      || String(requesterProfile?.nomeCompleto ?? '').trim()
+      || 'Colaborador';
+
+    await notifyUsers(
+      prisma,
+      Array.from(new Set(approvalGroups.flatMap((group) => group.approverIds))),
+      data.requestType === 'VACATION' ? 'Nova versão de pedido de férias para aprovação' : 'Nova versão de pedido de ausência para aprovação',
+      formatVacationNotificationMessage({
+        requesterName,
+        requestType: data.requestType,
+        dataInicio: data.dataInicio,
+        dataFim: data.dataFim,
+        contextTeamName: contextTeam?.name,
+        observacoes: data.observacoes,
+      }),
+    );
 
     res.json(created);
   } catch (error) {

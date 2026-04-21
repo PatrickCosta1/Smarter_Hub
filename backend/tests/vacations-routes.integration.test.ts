@@ -4,7 +4,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock, permissionEngineMock } = vi.hoisted(() => ({
   prismaMock: {
-    user: { findUnique: vi.fn() },
+    user: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
+    userPermission: { findMany: vi.fn() },
+    team: { findMany: vi.fn(), findUnique: vi.fn() },
     teamMembership: { findMany: vi.fn() },
     profile: { findUnique: vi.fn() },
   },
@@ -24,7 +26,7 @@ vi.mock('../src/lib/prisma.js', () => ({
 vi.mock('../src/lib/permission-engine.js', () => permissionEngineMock);
 
 vi.mock('../src/lib/notifications.js', () => ({
-  notifyUsersByPermission: vi.fn(),
+  notifyUsers: vi.fn(),
 }));
 
 vi.mock('../src/middleware/auth.js', () => ({
@@ -53,6 +55,11 @@ function buildApp() {
 describe('vacations routes integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    prismaMock.user.findFirst.mockResolvedValue(null);
+    prismaMock.user.findMany.mockResolvedValue([]);
+    prismaMock.userPermission.findMany.mockResolvedValue([]);
+    prismaMock.team.findMany.mockResolvedValue([]);
+    prismaMock.team.findUnique.mockResolvedValue(null);
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -93,7 +100,7 @@ describe('vacations routes integration', () => {
   });
 
   it('POST /api/vacations returns 400 when no approvers are configured', async () => {
-    prismaMock.user.findUnique.mockResolvedValue({ teamId: null });
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'auth-user', teamId: null, hasAccessTotal: false, accessTotalGrantedById: null });
     prismaMock.teamMembership.findMany.mockResolvedValue([]);
     prismaMock.profile.findUnique.mockResolvedValue({
       workCountry: 'PT',

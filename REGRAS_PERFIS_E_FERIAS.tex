@@ -59,10 +59,16 @@
 \begin{itemize}
   \item Um utilizador pode pertencer a mais do que uma equipa.
   \item Um utilizador pode ser chefe de uma equipa e participante noutra.
-  \item O pedido de férias ou ausências deve indicar a equipa ou subequipa de contexto.
-  \item A aprovação segue a cadeia dessa equipa ou subequipa.
-  \item Quando o pedido nasce numa subequipa, a cadeia deve herdar os níveis da equipa mãe até fechar a hierarquia.
-  \item Em multi-chefia, todos os aprovadores relevantes da linha devem aprovar.
+  \item Por omissão, pedidos de colaboradores são aprovados pelo(s) chefe(s) de equipa relevante(s).
+  \item Quando o colaborador pertence a várias equipas, a aprovação é unânime: todos os chefes dessas equipas recebem e têm de aprovar.
+  \item Para chefes sem chefia superior na hierarquia, o fallback de aprovação é o conjunto de utilizadores com acesso total.
+  \item Para utilizadores com acesso total e com equipa, mantém-se a aprovação pelo(s) chefe(s) da(s) equipa(s).
+  \item Para utilizadores com acesso total sem equipa, aprova quem concedeu o acesso total; se indisponível, o fallback é T.People.
+  \item Sem equipa e sem acesso total, o fallback de aprovação é T.People.
+  \item Autoaprovação é sempre proibida.
+  \item A rejeição de um único aprovador encerra o pedido imediatamente como rejeitado.
+  \item A lista de aprovadores é congelada no momento da submissão (incluindo novas versões por versionamento).
+  \item Deve ser possível configurar exceções por colaborador (aprovadores personalizados) sem perder os defaults.
   \item Em Portugal, o admin pode aprovar por exceção e substituir a cadeia normal.
   \item Um pedido aprovado pode ser alterado por versionamento, não por edição direta do registo final.
   \item Deve existir histórico de decisões, versões e motivos.
