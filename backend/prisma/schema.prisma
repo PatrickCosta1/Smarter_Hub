@@ -110,6 +110,7 @@ model User {
   profileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestUser")
   reviewedProfileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestReviewer")
   createdProfileOptions ProfileDropdownOption[] @relation("ProfileOptionAuthor")
+  createdVacationCompanyDays VacationCompanyExtraDay[] @relation("VacationCompanyExtraDayAuthor")
   permissionAssignments UserPermission[] @relation("PermissionTargetUser")
   permissionAssignmentsGranted UserPermission[] @relation("PermissionGrantAuthor")
   accessTotalGrantedBy User?  @relation("AccessTotalGrantAuthor", fields: [accessTotalGrantedById], references: [id], onDelete: SetNull)
@@ -290,6 +291,21 @@ model VacationApproval {
   @@unique([vacationId, approverId])
   @@index([approverId, status])
   @@index([vacationId, approvalLevel, status])
+}
+
+model VacationCompanyExtraDay {
+  id          String      @id @default(ulid())
+  country     WorkCountry
+  date        String
+  label       String      @default("Dia dado pela empresa")
+  createdById String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  createdBy   User?       @relation("VacationCompanyExtraDayAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([country, date])
+  @@index([country, date])
+  @@index([createdById])
 }
 
 model ProfileChangeRequest {

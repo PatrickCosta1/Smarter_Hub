@@ -13,6 +13,10 @@ import {
 } from "../lib/permission-engine.js";
 import { requireAuth } from "../middleware/auth.js";
 import { notifyUsersByPermission } from "../lib/notifications.js";
+import {
+  markCitizenCardExpiryNotificationsAsRead,
+  shouldAutoResolveCitizenCardExpiryNotification,
+} from '../lib/citizen-card-expiry-notifications.js';
 import { createRequestTimer } from '../lib/request-timing.js';
 
 const router = Router();
@@ -572,6 +576,10 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
         },
       });
 
+      if (shouldAutoResolveCitizenCardExpiryNotification(data as Record<string, unknown>)) {
+        await markCitizenCardExpiryNotificationsAsRead(prisma, userId);
+      }
+
       return res.json({ pending: true, message: 'Pedido enviado para aprovação.' });
     }
 
@@ -587,6 +595,10 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
         ...data
       }
     });
+
+    if (shouldAutoResolveCitizenCardExpiryNotification(data as Record<string, unknown>)) {
+      await markCitizenCardExpiryNotificationsAsRead(prisma, userId);
+    }
 
     return res.json(profile);
   } catch (error) {

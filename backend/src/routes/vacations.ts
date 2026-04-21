@@ -1,6 +1,7 @@
 import { Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
+import ExcelJS from 'exceljs';
 import { prisma } from '../lib/prisma.js';
 import {
   buildUserWhereFromScope,
@@ -69,6 +70,43 @@ const approveRejectSchema = z.object({
   reason: z.string().optional(),
 });
 
+const assignDirectVacationSchema = z
+  .object({
+    userId: z.string().min(1, 'Colaborador é obrigatório.'),
+    dataInicio: z.string().min(1, 'Data de início é obrigatória'),
+    dataFim: z.string().min(1, 'Data de fim é obrigatória'),
+    observacoes: z.string().default(''),
+    contextTeamId: z.string().optional(),
+    partialDay: z.enum(['FULL', 'AM', 'PM']).default('FULL'),
+  })
+  .superRefine((data, ctx) => {
+    if (data.dataInicio > data.dataFim) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dataFim'],
+        message: 'A data de fim deve ser igual ou posterior à data de início.',
+      });
+    }
+
+    if (data.partialDay !== 'FULL' && data.dataInicio !== data.dataFim) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dataFim'],
+        message: 'Pedidos de meio-dia devem ter início e fim no mesmo dia.',
+      });
+    }
+  });
+
+const companyExtraDayItemSchema = z.object({
+  date: z.string().regex(/^\d{2}-\d{2}$/, 'Data inválida. Usa formato MM-DD (ex: 12-25).'),
+  label: z.string().trim().min(1).max(120).optional(),
+});
+
+const updateCompanyExtraDaysSchema = z.object({
+  country: z.enum(['PT', 'BR']).optional(),
+  days: z.array(companyExtraDayItemSchema).max(40),
+});
+
 const APPROVAL_PENDING = 'PENDING';
 const APPROVAL_WAITING = 'WAITING';
 const APPROVAL_APPROVED = 'APPROVED';
@@ -84,6 +122,10 @@ function dateToISO(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function extractYearFromIsoDate(iso: string) {
+  return Number(iso.slice(0, 4));
 }
 
 function formatIsoDatePt(iso: string) {
@@ -284,6 +326,54 @@ function carnivalTuesday(year: number) {
   return carnival;
 }
 
+function buildLegacyCompanyExtraDays(params: {
+  year: number;
+  localidade?: string | null;
+}) {
+  const extras: string[] = [
+    `${params.year}-12-24`,
+    `${params.year}-12-31`,
+    dateToISO(carnivalTuesday(params.year)),
+  ];
+
+  if ((params.localidade ?? '').toLowerCase().includes('porto')) {
+    extras.push(`${params.year}-06-24`);
+  }
+
+  return Array.from(new Set(extras));
+}
+
+async function resolveConfiguredCompanyExtraDays(params: {
+  year: number;
+  country: 'PT' | 'BR';
+  localidade?: string | null;
+}) {
+  const dbDays = await prisma.vacationCompanyExtraDay.findMany({
+    where: { country: params.country },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+    select: { date: true, label: true },
+  });
+
+  if (dbDays.length > 0) {
+    return {
+      source: 'configured' as const,
+      days: dbDays.map((item) => ({
+        // Expand MM-DD → YYYY-MM-DD for the requested year
+        date: `${params.year}-${item.date}`,
+        label: item.label || 'Dia dado pela empresa',
+      })),
+    };
+  }
+
+  return {
+    source: 'legacy' as const,
+    days: buildLegacyCompanyExtraDays({ year: params.year, localidade: params.localidade }).map((date) => ({
+      date,
+      label: 'Dia dado pela empresa',
+    })),
+  };
+}
+
 function nextWorkingDay(baseDate: Date, blockedDays: Set<string>) {
   const candidate = new Date(baseDate);
 
@@ -384,6 +474,21 @@ function brVacationDaysByAbsences(absences: number) {
   if (absences <= 23) return 18;
   if (absences <= 32) return 12;
   return 0;
+}
+
+function roleRank(role: 'COLABORADOR' | 'MANAGER' | 'COORDENADOR' | 'ADMIN' | 'CONVIDADO') {
+  switch (role) {
+    case 'ADMIN':
+      return 4;
+    case 'MANAGER':
+      return 3;
+    case 'COORDENADOR':
+      return 2;
+    case 'COLABORADOR':
+      return 1;
+    default:
+      return 0;
+  }
 }
 
 async function resolveContextTeamId(userId: string, explicitTeamId?: string) {
@@ -757,6 +862,93 @@ router.get('/vacations/me', requireAuth, async (req: Request, res: Response) => 
   }
 });
 
+router.get('/vacations/company-extra-days', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const canManageVacationRules = req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id) || await hasPermission(req.authUser!.id, 'manage_vacation_rules');
+    if (!canManageVacationRules) {
+      return res.status(403).json({ message: 'Sem permissões para consultar dias automáticos da empresa.' });
+    }
+
+    const userProfile = await prisma.profile.findUnique({
+      where: { userId: req.authUser!.id },
+      select: { workCountry: true },
+    });
+    const country = (typeof req.query.country === 'string' && (req.query.country === 'PT' || req.query.country === 'BR'))
+      ? req.query.country
+      : (userProfile?.workCountry ?? 'PT');
+
+    // Return raw MM-DD dates from DB (year-agnostic)
+    const dbDays = await prisma.vacationCompanyExtraDay.findMany({
+      where: { country },
+      orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+      select: { date: true, label: true },
+    });
+
+    const source = dbDays.length > 0 ? 'configured' : 'legacy';
+    const days = dbDays.length > 0
+      ? dbDays.map((item) => ({ date: item.date, label: item.label || 'Dia dado pela empresa' }))
+      : buildLegacyCompanyExtraDays({ year: new Date().getFullYear(), localidade: null })
+          .map((fullDate) => ({ date: fullDate.slice(5), label: 'Dia dado pela empresa' }));
+
+    return res.json({ country, source, days });
+  } catch (error) {
+    console.error('[GET /vacations/company-extra-days]', error);
+    return res.status(500).json({ error: 'Falha ao carregar dias automáticos da empresa.' });
+  }
+});
+
+router.put('/vacations/company-extra-days', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const canManageVacationRules = req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id) || await hasPermission(req.authUser!.id, 'manage_vacation_rules');
+    if (!canManageVacationRules) {
+      return res.status(403).json({ message: 'Sem permissões para gerir dias automáticos da empresa.' });
+    }
+
+    const payload = updateCompanyExtraDaysSchema.parse(req.body);
+    const userProfile = await prisma.profile.findUnique({
+      where: { userId: req.authUser!.id },
+      select: { workCountry: true },
+    });
+    const country = payload.country ?? userProfile?.workCountry ?? 'PT';
+
+    const seen = new Set<string>();
+    const uniqueDays = payload.days
+      .map((item) => ({
+        date: item.date,
+        label: item.label?.trim() || 'Dia dado pela empresa',
+      }))
+      .filter((item) => {
+        if (seen.has(item.date)) return false;
+        seen.add(item.date);
+        return true;
+      });
+
+    await prisma.$transaction(async (tx) => {
+      // Replace all days for this country
+      await tx.vacationCompanyExtraDay.deleteMany({ where: { country } });
+
+      if (uniqueDays.length > 0) {
+        await tx.vacationCompanyExtraDay.createMany({
+          data: uniqueDays.map((item) => ({
+            country,
+            date: item.date,
+            label: item.label,
+            createdById: req.authUser!.id,
+          })),
+        });
+      }
+    });
+
+    return res.json({ country, days: uniqueDays });
+  } catch (error) {
+    console.error('[PUT /vacations/company-extra-days]', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ message: 'Payload inválido.', issues: error.issues });
+    }
+    return res.status(500).json({ error: 'Falha ao guardar dias automáticos da empresa.' });
+  }
+});
+
 router.get('/vacations/overview', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
@@ -769,6 +961,11 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
     const country = profile?.workCountry ?? 'PT';
     const currentYear = new Date().getFullYear();
     const holidayDates = await collectHolidayDates(country, [currentYear]);
+    const companyExtraDays = await resolveConfiguredCompanyExtraDays({
+      year: currentYear,
+      country,
+      localidade: profile?.localidade,
+    });
 
     if (country === 'PT') {
       const approvedVacationDays = vacations
@@ -780,7 +977,7 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
         year: currentYear,
         rules: {
           baseDays: 22,
-          extraDays: ['Aniversário', '24/12', '31/12', 'Terça-feira de Carnaval', 'São João (se aplicável)'],
+          extraDays: companyExtraDays.days.map((item) => `${formatIsoDatePt(item.date)}${item.label ? ` (${item.label})` : ''}`),
           mandatoryConsecutiveDays: 10,
           carryOver: true,
           maxTeamShare: '1/3',
@@ -836,6 +1033,11 @@ router.get('/vacations/calendar', requireAuth, async (req: Request, res: Respons
     const country = profile?.workCountry ?? 'PT';
     const holidays = await fetchHolidays(country, year);
     const holidayDates = new Set(holidays.map((item) => item.date));
+    const companyExtraDays = await resolveConfiguredCompanyExtraDays({
+      year,
+      country,
+      localidade: profile?.localidade,
+    });
 
     const weekendDays: string[] = [];
     for (let date = new Date(year, 0, 1); date.getFullYear() === year; date.setDate(date.getDate() + 1)) {
@@ -854,15 +1056,7 @@ router.get('/vacations/calendar', requireAuth, async (req: Request, res: Respons
       .filter((item) => item.requestType !== 'VACATION' && item.status !== 'CANCELLED')
       .flatMap((item) => enumerateDates(item.dataInicio, item.dataFim));
 
-    const extras = [
-      `${year}-12-24`,
-      `${year}-12-31`,
-      dateToISO(carnivalTuesday(year)),
-    ];
-
-    if ((profile?.localidade ?? '').toLowerCase().includes('porto')) {
-      extras.push(`${year}-06-24`);
-    }
+    const extras = companyExtraDays.days.map((item) => item.date);
 
     if (profile?.dataNascimento) {
       const [, month, day] = profile.dataNascimento.split('-');
@@ -886,6 +1080,7 @@ router.get('/vacations/calendar', requireAuth, async (req: Request, res: Respons
       pendingDays: Array.from(new Set(pendingDays)),
       absencesDays: Array.from(new Set(absencesDays)),
       extraDays: Array.from(new Set(extras)),
+      extraDayDetails: companyExtraDays.days,
       requests: vacations,
     });
   } catch (error) {
@@ -990,6 +1185,109 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
     console.error('[POST /vacations]', error);
     const status = isVacationBusinessRuleError(error) ? 400 : 500;
     res.status(status).json({ error: error instanceof Error ? error.message : 'Falha ao registar pedido.' });
+  }
+});
+
+router.post('/vacations/assign-direct', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const actorId = req.authUser!.id;
+    const actorHasAccessTotal = req.authUser!.isRootAccess || req.authUser!.hasAccessTotal || await isAccessTotal(actorId);
+    if (!actorHasAccessTotal) {
+      return res.status(403).json({ message: 'Sem permissões para atribuição direta de férias.' });
+    }
+
+    const validation = assignDirectVacationSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({ error: validation.error.issues[0].message });
+    }
+
+    const data = validation.data;
+    const targetUser = await prisma.user.findUnique({
+      where: { id: data.userId },
+      select: {
+        id: true,
+        role: true,
+        isActive: true,
+        isRootAccess: true,
+        hasAccessTotal: true,
+        profile: { select: { workCountry: true, nomeAbreviado: true, nomeCompleto: true } },
+      },
+    });
+
+    if (!targetUser || !targetUser.isActive) {
+      return res.status(404).json({ error: 'Colaborador não encontrado ou inativo.' });
+    }
+
+    if (targetUser.isRootAccess || targetUser.hasAccessTotal) {
+      return res.status(400).json({ error: 'Só é permitido atribuir férias diretamente a colaboradores sem acesso total.' });
+    }
+
+    if (!req.authUser!.isRootAccess && roleRank(targetUser.role) >= roleRank(req.authUser!.role)) {
+      return res.status(403).json({ error: 'Só podes atribuir férias a colaboradores de nível inferior.' });
+    }
+
+    const contextTeamId = await resolveContextTeamId(targetUser.id, data.contextTeamId);
+    const country = targetUser.profile?.workCountry ?? 'PT';
+
+    await enforceVacationBusinessDays({
+      requestType: 'VACATION',
+      dataInicio: data.dataInicio,
+      dataFim: data.dataFim,
+      country,
+    });
+
+    const created = await prisma.$transaction(async (tx) => {
+      await validateVacationCountryPolicy({
+        db: tx,
+        userId: targetUser.id,
+        country,
+        requestType: 'VACATION',
+        dataInicio: data.dataInicio,
+        dataFim: data.dataFim,
+        partialDay: data.partialDay,
+      });
+
+      if (contextTeamId) {
+        await acquireTeamCapacityLock(tx, contextTeamId);
+        await enforceOneThirdCapacity(tx, contextTeamId, country, data.dataInicio, data.dataFim, data.partialDay);
+      }
+
+      const vacation = await tx.vacation.create({
+        data: {
+          userId: targetUser.id,
+          contextTeamId,
+          dataInicio: data.dataInicio,
+          dataFim: data.dataFim,
+          observacoes: data.observacoes,
+          requestType: 'VACATION',
+          partialDay: data.partialDay,
+          attachmentLink: '',
+          status: 'APPROVED',
+          reviewedById: actorId,
+          reviewedAt: new Date(),
+          reviewReason: 'Atribuição direta por acesso total.',
+          approvedByRole: req.authUser!.role,
+          versionNumber: 1,
+        },
+      });
+
+      return vacation;
+    });
+
+    const actorLabel = req.authUser!.username;
+    await prisma.notification.create({
+      data: {
+        userId: targetUser.id,
+        title: 'Férias atribuídas diretamente',
+        message: `Foram atribuídas férias de ${formatIsoDatePt(data.dataInicio)} a ${formatIsoDatePt(data.dataFim)} por ${actorLabel}.`,
+      },
+    });
+
+    return res.status(201).json(created);
+  } catch (error) {
+    console.error('[POST /vacations/assign-direct]', error);
+    const status = isVacationBusinessRuleError(error) ? 400 : 500;
+    return res.status(status).json({ error: error instanceof Error ? error.message : 'Falha ao atribuir férias diretamente.' });
   }
 });
 
@@ -1433,6 +1731,264 @@ router.delete('/vacations/:id', requireAuth, async (req: Request, res: Response)
   } catch (error) {
     console.error('[DELETE /vacations/:id]', error);
     res.status(500).json({ error: 'Falha ao remover pedido.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /vacations/export  — Mapa de Férias (XLSX)
+// Accessible to users with isAccessTotal or isRootAccess
+// Query params: year (required), teamId (optional), userIds (optional, comma-separated)
+// ---------------------------------------------------------------------------
+router.get('/vacations/export', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.authUser!.id;
+    const canExport = req.authUser!.isRootAccess
+      || req.authUser!.hasAccessTotal
+      || await isAccessTotal(userId);
+
+    if (!canExport) {
+      return res.status(403).json({ message: 'Sem permissões para exportar o mapa de férias.' });
+    }
+
+    const year = Number(typeof req.query.year === 'string' ? req.query.year : new Date().getFullYear());
+    if (!Number.isFinite(year) || year < 2000 || year > 2100) {
+      return res.status(400).json({ message: 'Ano inválido.' });
+    }
+
+    const teamIdFilter = typeof req.query.teamId === 'string' && req.query.teamId ? req.query.teamId : null;
+    const userIdsFilter = typeof req.query.userIds === 'string' && req.query.userIds
+      ? req.query.userIds.split(',').map((s) => s.trim()).filter(Boolean)
+      : null;
+
+    // Build user filter
+    const userWhere: Prisma.UserWhereInput = {
+      isActive: true,
+      username: { not: 't.people' },
+    };
+
+    if (userIdsFilter && userIdsFilter.length > 0) {
+      userWhere.id = { in: userIdsFilter };
+    } else if (teamIdFilter) {
+      userWhere.OR = [
+        { teamId: teamIdFilter },
+        { teamMemberships: { some: { teamId: teamIdFilter, isActive: true } } },
+      ];
+    }
+
+    const users = await prisma.user.findMany({
+      where: userWhere,
+      orderBy: [{ team: { name: 'asc' } }, { username: 'asc' }],
+      select: {
+        id: true,
+        username: true,
+        team: { select: { name: true } },
+        profile: {
+          select: {
+            nomeCompleto: true,
+            nomeAbreviado: true,
+            workCountry: true,
+            unjustifiedAbsences: true,
+          },
+        },
+      },
+    });
+
+    // Pre-fetch holidays for countries we'll need
+    const countriesNeeded = new Set(users.map((u) => u.profile?.workCountry ?? 'PT'));
+    const holidaysByCountry = new Map<string, Set<string>>();
+    for (const c of countriesNeeded) {
+      const holidays = await collectHolidayDates(c as 'PT' | 'BR', [year]);
+      holidaysByCountry.set(c, holidays);
+    }
+
+    // Fetch all vacations for the year in one query
+    const yearStart = `${year}-01-01`;
+    const yearEnd = `${year}-12-31`;
+    const allVacations = await prisma.vacation.findMany({
+      where: {
+        userId: { in: users.map((u) => u.id) },
+        status: 'APPROVED',
+        requestType: 'VACATION',
+        dataInicio: { lte: yearEnd },
+        dataFim: { gte: yearStart },
+      },
+      select: {
+        userId: true,
+        dataInicio: true,
+        dataFim: true,
+        requestType: true,
+        partialDay: true,
+      },
+    });
+
+    const vacationsByUser = new Map<string, typeof allVacations>();
+    for (const v of allVacations) {
+      if (!vacationsByUser.has(v.userId)) vacationsByUser.set(v.userId, []);
+      vacationsByUser.get(v.userId)!.push(v);
+    }
+
+    const rows: Array<{
+      username: string;
+      nome: string;
+      equipa: string;
+      pais: 'PT' | 'BR';
+      diasBase: number;
+      diasAprovados: number;
+      saldo: number;
+      periodos: string;
+    }> = [];
+
+    for (const user of users) {
+      const country = user.profile?.workCountry ?? 'PT';
+      const holidayDates = holidaysByCountry.get(country) ?? new Set<string>();
+      const vacations = vacationsByUser.get(user.id) ?? [];
+
+      const baseDays = country === 'PT'
+        ? 22
+        : brVacationDaysByAbsences(user.profile?.unjustifiedAbsences ?? 0);
+
+      const approvedDays = vacations.reduce(
+        (sum, v) => sum + vacationDaysForMetrics(v, holidayDates),
+        0,
+      );
+
+      const saldoEstimado = Math.max(baseDays - approvedDays, 0);
+
+      const periods = vacations
+        .sort((a, b) => a.dataInicio.localeCompare(b.dataInicio))
+        .map((v) => `${v.dataInicio} → ${v.dataFim}`)
+        .join('; ');
+
+      rows.push({
+        username: user.username,
+        nome: user.profile?.nomeCompleto || user.profile?.nomeAbreviado || '',
+        equipa: user.team?.name || '',
+        pais: country,
+        diasBase: baseDays,
+        diasAprovados: approvedDays,
+        saldo: saldoEstimado,
+        periodos: periods,
+      });
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Smarter Hub';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Mapa de Férias', {
+      views: [{ state: 'frozen', ySplit: 3 }],
+      properties: { defaultColWidth: 18 },
+    });
+
+    sheet.mergeCells('A1:H1');
+    const titleCell = sheet.getCell('A1');
+    titleCell.value = `Mapa de Férias ${year}`;
+    titleCell.font = { name: 'Calibri', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+    titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
+
+    sheet.mergeCells('A2:H2');
+    const metaCell = sheet.getCell('A2');
+    metaCell.value = `Gerado em ${new Date().toLocaleString('pt-PT')} | Total de colaboradores: ${rows.length}`;
+    metaCell.font = { name: 'Calibri', size: 10, color: { argb: 'FF38516B' } };
+    metaCell.alignment = { vertical: 'middle', horizontal: 'left' };
+    metaCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF2FB' } };
+
+    const headerRow = sheet.getRow(3);
+    headerRow.values = [
+      'Username',
+      'Nome',
+      'Equipa',
+      'País',
+      'Dias Atribuídos',
+      'Dias Gastos',
+      'Saldo',
+      'Períodos de Férias',
+    ];
+    headerRow.font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } };
+    headerRow.height = 22;
+
+    for (const row of rows) {
+      sheet.addRow([
+        row.username,
+        row.nome,
+        row.equipa,
+        row.pais,
+        row.diasBase,
+        row.diasAprovados,
+        row.saldo,
+        row.periodos,
+      ]);
+    }
+
+    sheet.columns = [
+      { width: 18 },
+      { width: 30 },
+      { width: 22 },
+      { width: 10 },
+      { width: 14 },
+      { width: 12 },
+      { width: 10 },
+      { width: 56 },
+    ];
+
+    const dataStart = 4;
+    const dataEnd = Math.max(4, rows.length + 3);
+    for (let i = dataStart; i <= dataEnd; i += 1) {
+      const row = sheet.getRow(i);
+      const isEven = i % 2 === 0;
+      row.eachCell((cell, colNumber) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          left: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          bottom: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          right: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+        };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: isEven ? 'FFF9FCFF' : 'FFFFFFFF' },
+        };
+        if (colNumber >= 5 && colNumber <= 7) {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        } else {
+          cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: colNumber === 8 };
+        }
+      });
+    }
+
+    const totalsRow = sheet.addRow([
+      '',
+      'Totais',
+      '',
+      '',
+      { formula: `SUM(E4:E${dataEnd})` },
+      { formula: `SUM(F4:F${dataEnd})` },
+      { formula: `SUM(G4:G${dataEnd})` },
+      '',
+    ]);
+    totalsRow.font = { name: 'Calibri', bold: true, color: { argb: 'FF1D3B58' } };
+    totalsRow.eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE4EEF9' } };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFB8CCE4' } },
+        left: { style: 'thin', color: { argb: 'FFB8CCE4' } },
+        bottom: { style: 'thin', color: { argb: 'FFB8CCE4' } },
+        right: { style: 'thin', color: { argb: 'FFB8CCE4' } },
+      };
+    });
+
+    const xlsxBuffer = await workbook.xlsx.writeBuffer();
+    const filename = `mapa-ferias-${year}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(Buffer.from(xlsxBuffer as ArrayBuffer));
+  } catch (error) {
+    console.error('[GET /vacations/export]', error);
+    return res.status(500).json({ error: 'Falha ao gerar exportação do mapa de férias.' });
   }
 });
 

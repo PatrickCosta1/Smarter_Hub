@@ -201,6 +201,8 @@ HR (futuro) & A definir, atualmente absorvido pelo admin & A definir & A definir
   \item O fluxo de administração de equipas e memberships deve ser feito por admin.
   \item A página de equipas deve ser comum, mas mostrar conteúdo diferente por perfil.
   \item O histórico de férias e decisões deve manter a versão anterior quando houver edição de um pedido já aprovado.
+  \item Utilizadores com acesso total devem poder exportar o mapa de férias em formato Excel (XLSX), com filtros por ano e equipa.
+  \item Utilizadores com acesso total devem poder atribuir férias diretamente a colaboradores de nível inferior, sem fluxo de aprovação intermédia.
 \end{itemize}
 
 \section{Visão global da plataforma}
@@ -234,6 +236,7 @@ HR (futuro) & A definir, atualmente absorvido pelo admin & A definir & A definir
   \item \textbf{Estrutura organizacional}: equipas, subequipas, memberships e chefias.
   \item \textbf{Férias e ausências}: pedidos, validações, calendário, capacidade e aprovação.
   \item \textbf{Férias e ausências (calendário)}: pedidos de férias podem atravessar fins de semana e feriados; apenas os dias úteis contam para o saldo e capacidade. No calendário, pedidos de férias aprovados usam a cor/legenda de \textbf{Férias aprovadas}; pedidos de ausência aprovados usam a cor/legenda própria de \textbf{Ausência aprovada}.
+  \item \textbf{Férias e ausências (dias automáticos da empresa)}: utilizadores com permissão de gestão de regras de férias podem configurar, por ano e país, quais as datas automáticas dadas pela empresa (ex.: trocar 24/12 por 26/12). Se não existir configuração explícita, o sistema usa o conjunto padrão legado.
   \item \textbf{Perfil}: ficha colaborador, pedidos de alteração, aprovação e histórico.
   \item \textbf{Perfil (ficha)}: a ficha é organizada em \textbf{Dados Pessoais}, \textbf{Dados de Contacto}, \textbf{Documentos de Identificação}, \textbf{Dados Fiscais e Bancários}, \textbf{Contacto de Emergência}, \textbf{Dados Contratuais}, \textbf{Dados de Formação} e \textbf{Pedido de Benefícios (em breve)}.
   \item \textbf{Perfil (exportação)}: na página de colaboradores deve existir ação global de \textbf{Exportar} com seleção simples do colaborador (pesquisa e filtros) para gerar ficheiro \textbf{Excel} estruturado para cliente.
@@ -292,6 +295,7 @@ HR (futuro) & A definir, atualmente absorvido pelo admin & A definir & A definir
   \item Eventos de negócio disparam notificações para utilizadores relevantes.
   \item Utilizador consulta lista, marca como lida, remove item ou limpa tudo.
   \item Em fluxos com ação, notificação encaminha para página de decisão.
+  \item \textbf{Validade do cartão de cidadão}: o sistema executa verificação \textbf{diária} e cria \textbf{uma única notificação ativa} para o próprio colaborador quando a validade estiver a \textbf{30 dias ou menos}; esta notificação \textbf{não pode} ser marcada manualmente como lida e só é resolvida quando o colaborador submeter atualização com \textbf{novo comprovativo do cartão de cidadão} e \textbf{nova validade}.
 \end{enumerate}
 
 \section{Regras de integridade e qualidade de dados}

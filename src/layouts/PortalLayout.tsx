@@ -31,7 +31,7 @@ export default function PortalLayout() {
       ...(can('view_trainings') || can('view_all_trainings') || can('request_training') || can('assign_training')
         ? [{ id: 'formacoes', label: 'Formações', path: '/formacoes' }]
         : []),
-      ...(!isTPeople && (can('request_vacation') || can('view_own_vacations') || can('view_all_vacations'))
+      ...((can('request_vacation') || can('view_own_vacations') || can('view_all_vacations') || can('manage_vacation_rules'))
         ? [{ id: 'ferias', label: 'Férias', path: '/ferias' }]
         : []),
       ...(can('view_receipts') || can('view_all_receipts') ? [{ id: 'recibos', label: 'Recibos', path: '/recibos' }] : []),

@@ -188,7 +188,7 @@ function AppRoutes() {
           <Route path="colaboradores" element={<CollaboratorsPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="formacoes" element={<TrainingsPage />} />
-          <Route path="ferias" element={isTPeople ? <Navigate to="/" replace /> : <VacationsPage />} />
+          <Route path="ferias" element={<VacationsPage />} />
           <Route path="recibos" element={<ReceiptsPage />} />
           <Route path="admin" element={<Navigate to="/colaboradores" replace />} />
         </Route>

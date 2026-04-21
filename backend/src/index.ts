@@ -13,6 +13,8 @@ import { receiptsRouter } from "./routes/receipts.js";
 import { trainingsRouter } from "./routes/trainings.js";
 import { usersRouter } from "./routes/users.js";
 import { vacationsRouter } from "./routes/vacations.js";
+import { prisma } from './lib/prisma.js';
+import { runCitizenCardExpiryNotificationSweep } from './lib/citizen-card-expiry-notifications.js';
 
 dotenv.config();
 
@@ -80,6 +82,22 @@ app.use("/api", trainingsRouter);
 app.use("/api", vacationsRouter);
 app.use("/api", receiptsRouter);
 app.use("/api", notificationsRouter);
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+async function runCitizenCardExpirySweepSafely() {
+  try {
+    const result = await runCitizenCardExpiryNotificationSweep(prisma);
+    console.log(`[CC_EXPIRY_SWEEP] scanned=${result.scannedUsers} eligible=${result.eligibleUsers} created=${result.createdNotifications}`);
+  } catch (error) {
+    console.error('[CC_EXPIRY_SWEEP] failed', error);
+  }
+}
+
+void runCitizenCardExpirySweepSafely();
+setInterval(() => {
+  void runCitizenCardExpirySweepSafely();
+}, ONE_DAY_MS);
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (error instanceof ZodError) {
