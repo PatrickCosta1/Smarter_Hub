@@ -18,6 +18,7 @@ import { ProfileData, ProfileFieldError } from '../portal/types';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
+import Toast from '../components/ui/Toast';
 
 type SectionKey = 'personal' | 'contacts' | 'documents' | 'tax' | 'emergency' | 'contract' | 'trainings' | 'benefits';
 
@@ -1510,7 +1511,7 @@ export default function ProfilePage() {
 
           {ownTrainingsStatus && (
             <div className="profile-trainings-error">
-              <p className="trainings-status">{ownTrainingsStatus}</p>
+              <Toast show={Boolean(ownTrainingsStatus)} tone="error" message={ownTrainingsStatus} />
               <Button
                 type="button"
                 size="sm"

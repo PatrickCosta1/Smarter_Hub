@@ -9,6 +9,7 @@ import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Skeleton from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
+import Toast from '../components/ui/Toast';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 const PERMISSION_CATEGORIES = ['SYSTEM', 'USERS', 'TEAMS', 'VACATIONS', 'TRAININGS', 'PROFILE', 'RECEIPTS', 'NOTIFICATIONS'] as const;
@@ -123,6 +124,19 @@ type CollaboratorEditDraft = {
   tipoContrato: string;
   regimeHorario: string;
 };
+
+function resolveStatusTone(message: string): 'success' | 'error' | 'info' {
+  const normalized = message.toLowerCase();
+  if (normalized.includes('falha') || normalized.includes('erro') || normalized.includes('não foi possível')) {
+    return 'error';
+  }
+
+  if (normalized.includes('sucesso') || normalized.includes('atualiz') || normalized.includes('adicion') || normalized.includes('removid') || normalized.includes('reativad') || normalized.includes('desativad')) {
+    return 'success';
+  }
+
+  return 'info';
+}
 
 const EDIT_PROFILE_FIELDS: Array<{ key: keyof CollaboratorEditDraft; label: string; section: 'identificacao' | 'contactos' | 'fiscal' | 'emergencia' | 'contrato' }> = [
   { key: 'nomeCompleto', label: 'Nome completo', section: 'identificacao' },
@@ -3636,7 +3650,7 @@ export default function CollaboratorsPage() {
         </Modal>
       )}
 
-      {status && <p className="trainings-status">{status}</p>}
+      <Toast show={Boolean(status)} tone={resolveStatusTone(status)} message={status} />
     </section>
   );
 }

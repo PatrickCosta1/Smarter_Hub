@@ -5,6 +5,7 @@ import { formatRoleLabel, formatTrainingStatusLabel, getTrainingStatusTone } fro
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
+import Toast from '../components/ui/Toast';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -100,6 +101,19 @@ function formatAbbreviatedUserName(user?: { username: string; profile?: { nomeAb
   const fullName = user.profile?.nomeCompleto?.trim() || '';
 
   return fullName || user.username;
+}
+
+function resolveStatusTone(message: string): 'success' | 'error' | 'info' {
+  const normalized = message.toLowerCase();
+  if (normalized.includes('falha') || normalized.includes('erro') || normalized.includes('não foi possível')) {
+    return 'error';
+  }
+
+  if (normalized.includes('sucesso') || normalized.includes('atribu') || normalized.includes('conclu')) {
+    return 'success';
+  }
+
+  return 'info';
 }
 
 function getTrainingOriginLabel(record: TrainingRecord) {
@@ -461,7 +475,7 @@ export default function TrainingsPage() {
           ))}
         </div>
 
-        {status && <p className="trainings-status">{status}</p>}
+        <Toast show={Boolean(status)} tone={resolveStatusTone(status)} message={status} />
       </section>
 
       {isAssignModalOpen && (
@@ -544,7 +558,7 @@ export default function TrainingsPage() {
               </div>
             </form>
 
-            {assignStatus && <p className="trainings-status">{assignStatus}</p>}
+            <Toast show={Boolean(assignStatus)} tone={resolveStatusTone(assignStatus)} message={assignStatus} />
 
             {recentAssigned.length > 0 && (
               <section className="trainings-recent-created" aria-label="Últimas formações criadas">

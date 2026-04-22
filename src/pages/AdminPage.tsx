@@ -6,6 +6,7 @@ import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import DataTable from '../components/ui/DataTable';
 import Modal from '../components/ui/Modal';
+import Toast from '../components/ui/Toast';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -73,6 +74,19 @@ function buildAutoEmailFromName(firstName: string, lastName: string) {
   }
 
   return `${username}@tlantic.com`;
+}
+
+function resolveStatusTone(message: string): 'success' | 'error' | 'info' {
+  const normalized = message.toLowerCase();
+  if (normalized.includes('falha') || normalized.includes('erro') || normalized.includes('não foi possível') || normalized.includes('obrigat')) {
+    return 'error';
+  }
+
+  if (normalized.includes('sucesso') || normalized.includes('criad') || normalized.includes('atualiz')) {
+    return 'success';
+  }
+
+  return 'info';
 }
 
 export default function AdminPage() {
@@ -551,7 +565,7 @@ export default function AdminPage() {
         </Modal>
       )}
 
-      {status && <p className="trainings-status">{status}</p>}
+      <Toast show={Boolean(status)} tone={resolveStatusTone(status)} message={status} />
     </section>
   );
 }

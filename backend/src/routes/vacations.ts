@@ -183,7 +183,7 @@ async function validateVacationCountryPolicy(params: {
   excludeVacationId?: string;
 }) {
   if (params.requestType !== 'VACATION') {
-    return;
+    return [] as string[];
   }
 
   const year = toLocalDate(params.dataInicio).getFullYear();
@@ -225,10 +225,10 @@ async function validateVacationCountryPolicy(params: {
     const requestedDays = vacationDaysForMetrics(requestedPeriod, holidayDates);
 
     if (!hasMandatoryConsecutiveBlock && requestedDays < 10) {
-      throw new Error(`Política PT: este pedido tem apenas ${requestedDays} dias úteis. No regime PT tem de existir pelo menos um período de férias com 10 dias úteis consecutivos no ano.`);
+      return [`Política PT: este pedido tem apenas ${requestedDays} dias úteis. No regime PT deve existir pelo menos um período de férias com 10 dias úteis consecutivos no ano.`];
     }
 
-    return;
+    return [] as string[];
   }
 
   if (params.partialDay !== 'FULL') {
@@ -254,6 +254,8 @@ async function validateVacationCountryPolicy(params: {
   if (allPeriods.length >= 3 && !periodLengths.some((days) => days >= 14)) {
     throw new Error('Política BR: quando as férias são divididas em 3 períodos, pelo menos um deve ter 14 dias ou mais.');
   }
+
+  return [] as string[];
 }
 
 function hasDateOverlap(startA: string, endA: string, startB: string, endB: string) {
@@ -1226,8 +1228,9 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Não existem aprovadores configurados para esta equipa.' });
     }
 
+    let policyWarnings: string[] = [];
     const vacation = await prisma.$transaction(async (tx) => {
-      await validateVacationCountryPolicy({
+      policyWarnings = await validateVacationCountryPolicy({
         db: tx,
         userId,
         country,
@@ -1295,7 +1298,10 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
       );
     }
 
-    res.status(201).json(vacation);
+    res.status(201).json({
+      ...vacation,
+      warnings: policyWarnings,
+    });
   } catch (error) {
     console.error('[POST /vacations]', error);
     const status = isVacationBusinessRuleError(error) ? 400 : 500;
@@ -1769,8 +1775,9 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
       select: { versionNumber: true },
     });
 
+    let policyWarnings: string[] = [];
     const created = await prisma.$transaction(async (tx) => {
-      await validateVacationCountryPolicy({
+      policyWarnings = await validateVacationCountryPolicy({
         db: tx,
         userId,
         country,
@@ -1864,7 +1871,10 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
       }),
     );
 
-    res.json(created);
+    res.json({
+      ...created,
+      warnings: policyWarnings,
+    });
   } catch (error) {
     console.error('[PUT /vacations/:id]', error);
     const status = isVacationBusinessRuleError(error) ? 400 : 500;

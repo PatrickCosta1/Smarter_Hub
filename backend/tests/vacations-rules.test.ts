@@ -84,24 +84,25 @@ describe('vacations rules', () => {
     vi.unstubAllGlobals();
   });
 
-  it('PT policy rejects vacation request shorter than 10 days when no mandatory block exists yet', async () => {
+  it('PT policy returns warning for vacation request shorter than 10 days when no mandatory block exists yet', async () => {
     const db = {
       vacation: {
         findMany: vi.fn().mockResolvedValue([]),
       },
     };
 
-    await expect(
-      __vacationTestables.validateVacationCountryPolicy({
-        db: db as never,
-        userId: 'u-1',
-        country: 'PT',
-        requestType: 'VACATION',
-        dataInicio: '2026-04-14',
-        dataFim: '2026-04-16',
-        partialDay: 'FULL',
-      }),
-    ).rejects.toThrow('Política PT');
+    const warnings = await __vacationTestables.validateVacationCountryPolicy({
+      db: db as never,
+      userId: 'u-1',
+      country: 'PT',
+      requestType: 'VACATION',
+      dataInicio: '2026-04-14',
+      dataFim: '2026-04-16',
+      partialDay: 'FULL',
+    });
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('Política PT');
   });
 
   it('PT policy accepts request when there is already a 10-day block in the year', async () => {
@@ -123,7 +124,7 @@ describe('vacations rules', () => {
         dataFim: '2026-09-02',
         partialDay: 'FULL',
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual([]);
   });
 
   it('BR policy rejects when resulting split exceeds 3 periods', async () => {

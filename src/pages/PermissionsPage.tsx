@@ -8,6 +8,8 @@ import DataTable from '../components/ui/DataTable';
 import Modal from '../components/ui/Modal';
 import Skeleton from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
+import Toast from '../components/ui/Toast';
+import { useFeedbackToast } from '../portal/useFeedbackToast';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -158,6 +160,39 @@ function parseJsonOrNull(input: string) {
   }
 }
 
+function parseAllowedApproverIds(customRestrictionsRaw: string) {
+  const parsed = parseJsonOrNull(customRestrictionsRaw);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return [] as string[];
+  }
+
+  const source = parsed as { allowedUserIds?: unknown };
+  if (!Array.isArray(source.allowedUserIds)) {
+    return [] as string[];
+  }
+
+  return source.allowedUserIds
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .filter((item, index, collection) => collection.indexOf(item) === index);
+}
+
+function upsertAllowedApproverIds(customRestrictionsRaw: string, ids: string[]) {
+  const parsed = parseJsonOrNull(customRestrictionsRaw);
+  const base = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? { ...(parsed as Record<string, unknown>) }
+    : {};
+
+  const uniqueIds = ids.filter((item, index, collection) => collection.indexOf(item) === index);
+
+  if (uniqueIds.length === 0) {
+    delete base.allowedUserIds;
+  } else {
+    base.allowedUserIds = uniqueIds;
+  }
+
+  return Object.keys(base).length === 0 ? '' : JSON.stringify(base, null, 2);
+}
+
 function buildDraftFromAssignment(item: PermissionItem, forceEnabled = false): PermissionDraft {
   return {
     enabled: forceEnabled || item.assignment?.isEnabled || false,
@@ -172,6 +207,7 @@ function buildDraftFromAssignment(item: PermissionItem, forceEnabled = false): P
 export default function PermissionsPage() {
   const { hasPermission, isRootAccess } = usePortal();
   const canAccess = isRootAccess || hasPermission('manage_permissions');
+  const { toast, showToast } = useFeedbackToast(3600);
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState('');
@@ -182,9 +218,9 @@ export default function PermissionsPage() {
   const [search, setSearch] = useState('');
   const [userFilter, setUserFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE' | 'ROOT'>('ALL');
   const [category, setCategory] = useState<PermissionCategory>('SYSTEM');
+  const [approverCandidateUserId, setApproverCandidateUserId] = useState<Record<string, string>>({});
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [isDetailsLoading, setIsDetailsLoading] = useState(false);
-  const [status, setStatus] = useState('');
   const [savingPermissionId, setSavingPermissionId] = useState<string | null>(null);
   const [auditModalOpen, setAuditModalOpen] = useState(false);
   const [accessTotalModalOpen, setAccessTotalModalOpen] = useState(false);
@@ -251,7 +287,6 @@ export default function PermissionsPage() {
     setSelectedUserAccessTotal(hasAccessTotal);
     setPermissions(data.permissions);
     setDrafts(Object.fromEntries(data.permissions.map((permission) => [permission.id, buildDraftFromAssignment(permission, hasAccessTotal)])));
-    setStatus('');
   }
 
   async function loadUsers(signal?: AbortSignal) {
@@ -269,7 +304,7 @@ export default function PermissionsPage() {
         return;
       }
 
-      setStatus(error instanceof Error ? error.message : 'Falha ao carregar utilizadores.');
+      showToast('error', error instanceof Error ? error.message : 'Falha ao carregar utilizadores.');
     } finally {
       if (!signal?.aborted) {
         setIsUsersLoading(false);
@@ -297,7 +332,7 @@ export default function PermissionsPage() {
         return;
       }
 
-      setStatus(error instanceof Error ? error.message : 'Falha ao carregar permissões.');
+      showToast('error', error instanceof Error ? error.message : 'Falha ao carregar permissões.');
     } finally {
       if (!signal?.aborted) {
         setIsDetailsLoading(false);
@@ -311,14 +346,14 @@ export default function PermissionsPage() {
     }
 
     if (accessTotal) {
-      setStatus('Desativa o acesso total para editar permissões individuais.');
+      showToast('info', 'Desativa o acesso total para editar permissões individuais.');
       return;
     }
 
     const draft = drafts[permission.id] ?? buildDraftFromAssignment(permission);
 
     if (!draft.enabled && !permission.assignment) {
-      setStatus('Ativa a permissão antes de guardar uma nova atribuição.');
+      showToast('info', 'Ativa a permissão antes de guardar uma nova atribuição.');
       return;
     }
 
@@ -361,9 +396,9 @@ export default function PermissionsPage() {
 
       clearApiCache();
       await loadPermissions(selectedUser.id, undefined, { forceRefresh: true });
-      setStatus('Permissão guardada com sucesso.');
+      showToast('success', 'Permissão guardada com sucesso.');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Falha ao guardar permissão.');
+      showToast('error', error instanceof Error ? error.message : 'Falha ao guardar permissão.');
     } finally {
       setSavingPermissionId(null);
     }
@@ -382,7 +417,7 @@ export default function PermissionsPage() {
       }, 5000, true);
       setAudit(data);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Falha ao carregar auditoria.');
+      showToast('error', error instanceof Error ? error.message : 'Falha ao carregar auditoria.');
     } finally {
       setIsLoadingAudit(false);
     }
@@ -411,12 +446,53 @@ export default function PermissionsPage() {
       delete permissionsCacheRef.current[selectedUser.id];
       void loadUsers();
       void loadPermissions(selectedUser.id, undefined, { forceRefresh: true });
-      setStatus(accessTotalAction === 'grant' ? 'Acesso total concedido.' : 'Acesso total revogado.');
+      showToast('success', accessTotalAction === 'grant' ? 'Acesso total concedido.' : 'Acesso total revogado.');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Falha ao alterar acesso total.');
+      showToast('error', error instanceof Error ? error.message : 'Falha ao alterar acesso total.');
     } finally {
       setIsTogglingAccessTotal(false);
     }
+  }
+
+  function addApproverOverride(permissionId: string) {
+    const candidateId = approverCandidateUserId[permissionId];
+    if (!candidateId) {
+      showToast('info', 'Seleciona um utilizador para adicionar como aprovador extra.');
+      return;
+    }
+
+    const draft = drafts[permissionId] ?? EMPTY_PERMISSION_DRAFT;
+    const currentIds = parseAllowedApproverIds(draft.customRestrictions);
+    if (currentIds.includes(candidateId)) {
+      showToast('info', 'Este utilizador já está configurado como aprovador extra.');
+      return;
+    }
+
+    const updated = upsertAllowedApproverIds(draft.customRestrictions, [...currentIds, candidateId]);
+
+    setDrafts((current) => ({
+      ...current,
+      [permissionId]: {
+        ...draft,
+        customRestrictions: updated,
+      },
+    }));
+    showToast('success', 'Aprovador extra adicionado ao draft da permissão.');
+  }
+
+  function removeApproverOverride(permissionId: string, targetUserId: string) {
+    const draft = drafts[permissionId] ?? EMPTY_PERMISSION_DRAFT;
+    const currentIds = parseAllowedApproverIds(draft.customRestrictions);
+    const nextIds = currentIds.filter((id) => id !== targetUserId);
+    const updated = upsertAllowedApproverIds(draft.customRestrictions, nextIds);
+
+    setDrafts((current) => ({
+      ...current,
+      [permissionId]: {
+        ...draft,
+        customRestrictions: updated,
+      },
+    }));
   }
 
   if (!canAccess) {
@@ -561,6 +637,10 @@ export default function PermissionsPage() {
               const effectiveEnabled = accessTotal || draft.enabled;
               const assignedBy = permission.assignment?.grantedBy ? getDisplayName(permission.assignment.grantedBy) : 'Sistema';
               const isDirty = Boolean(permission.assignment) || draft.enabled;
+              const isVacationApproverPermission = permission.code === 'approve_vacation';
+              const allowedApproverIds = parseAllowedApproverIds(draft.customRestrictions);
+              const allowedApprovers = users.filter((user) => allowedApproverIds.includes(user.id));
+              const availableApproverCandidates = users.filter((user) => user.isActive && user.id !== selectedUser?.id);
 
               return (
                 <article key={permission.id} className={`permission-card${effectiveEnabled ? ' is-enabled' : ''}`}>
@@ -629,6 +709,49 @@ export default function PermissionsPage() {
                         disabled={accessTotal}
                       />
                     </label>
+                    {isVacationApproverPermission && (
+                      <div className="field-span-2 permission-approver-overrides" aria-label="Aprovadores extras por colaborador">
+                        <div className="permission-approver-overrides__head">
+                          <strong>Aprovadores extras por colaborador</strong>
+                          <span>Configura aqui quem também pode aprovar pedidos deste colaborador, além dos defaults.</span>
+                        </div>
+
+                        <div className="permission-approver-overrides__toolbar">
+                          <select
+                            value={approverCandidateUserId[permission.id] || ''}
+                            onChange={(event) => setApproverCandidateUserId((current) => ({ ...current, [permission.id]: event.target.value }))}
+                            disabled={accessTotal}
+                          >
+                            <option value="">Seleciona utilizador para adicionar</option>
+                            {availableApproverCandidates.map((candidate) => (
+                              <option key={candidate.id} value={candidate.id}>
+                                {getDisplayName(candidate)} · {candidate.email}
+                              </option>
+                            ))}
+                          </select>
+                          <Button type="button" variant="secondary" size="sm" onClick={() => addApproverOverride(permission.id)} disabled={accessTotal}>
+                            Adicionar
+                          </Button>
+                        </div>
+
+                        <div className="permission-approver-overrides__chips">
+                          {allowedApprovers.length === 0 && <small>Sem aprovadores extras configurados.</small>}
+                          {allowedApprovers.map((approver) => (
+                            <span key={approver.id} className="permission-approver-chip">
+                              <strong>{getDisplayName(approver)}</strong>
+                              <button
+                                type="button"
+                                onClick={() => removeApproverOverride(permission.id, approver.id)}
+                                disabled={accessTotal}
+                                aria-label={`Remover ${getDisplayName(approver)}`}
+                              >
+                                remover
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <label className="field-span-2">
                       <span>Notas internas</span>
                       <textarea
@@ -756,7 +879,7 @@ export default function PermissionsPage() {
         </div>
       </Modal>
 
-      {status && <p className="trainings-status">{status}</p>}
+      <Toast show={toast.visible} tone={toast.tone} message={toast.message} />
     </section>
   );
 }

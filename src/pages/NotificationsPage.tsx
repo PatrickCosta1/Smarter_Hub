@@ -30,6 +30,30 @@ type NotificationDetails = {
   };
 };
 
+function parseStructuredNotificationMessage(message: string) {
+  const lines = humanizeTechnicalText(message)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const firstLine = lines[0] || '';
+  const periodLine = lines.find((line) => /^período:/i.test(line)) || '';
+  const teamLine = lines.find((line) => /^equipa:/i.test(line)) || '';
+  const actionLine = lines.find((line) => /^ação:/i.test(line)) || '';
+  const reasonLine = lines.find((line) => /^motivo:/i.test(line)) || '';
+  const progressLine = lines.find((line) => /^progresso:/i.test(line)) || '';
+
+  return {
+    lines,
+    firstLine,
+    periodLine,
+    teamLine,
+    actionLine,
+    reasonLine,
+    progressLine,
+  };
+}
+
 function buildFriendlyMessage(title: string, message: string) {
   const normalized = `${title} ${message}`.toLowerCase();
 
@@ -153,6 +177,7 @@ function parseProfileChangeNotification(message: string) {
 
 function buildNotificationDetails(title: string, message: string): NotificationDetails {
   const normalized = `${title} ${message}`.toLowerCase();
+  const structured = parseStructuredNotificationMessage(message);
   const profileChange = parseProfileChangeNotification(message);
 
   if (normalized.includes('pedido de alteração de ficha') && (normalized.includes('submeteu') || normalized.includes('efetuou') || normalized.includes('pedido pendente'))) {
@@ -204,7 +229,11 @@ function buildNotificationDetails(title: string, message: string): NotificationD
   if (normalized.includes('novo pedido de férias') || normalized.includes('novo pedido de ausência')) {
     return {
       title: normalized.includes('férias') ? 'Pedido de férias' : 'Pedido de ausência',
-      message: humanizeTechnicalText(message),
+      message: [
+        structured.firstLine || 'Novo pedido recebido para decisão.',
+        structured.periodLine,
+        structured.teamLine,
+      ].filter(Boolean).join(' · '),
       tag: 'Férias',
       icon: '🏖️',
       color: 'yellow',
@@ -215,8 +244,11 @@ function buildNotificationDetails(title: string, message: string): NotificationD
 
   if (normalized.includes('férias') && normalized.includes('aprov')) {
     return {
-      title: 'Férias aprovadas',
-      message: 'O pedido de férias foi aprovado.',
+      title: 'Pedido de férias aprovado',
+      message: [
+        structured.firstLine || 'O pedido de férias foi aprovado.',
+        structured.periodLine,
+      ].filter(Boolean).join(' · '),
       tag: 'Férias',
       icon: '🎉',
       color: 'green',
@@ -226,11 +258,57 @@ function buildNotificationDetails(title: string, message: string): NotificationD
 
   if (normalized.includes('férias') && normalized.includes('recus')) {
     return {
-      title: 'Férias recusadas',
-      message: 'O pedido de férias foi recusado.',
+      title: 'Pedido de férias recusado',
+      message: [
+        structured.firstLine || 'O pedido de férias foi recusado.',
+        structured.reasonLine,
+      ].filter(Boolean).join(' · '),
       tag: 'Férias',
       icon: '❌',
       color: 'red',
+      action: { label: 'Abrir férias', path: '/ferias' },
+    };
+  }
+
+  if ((normalized.includes('pedido de ausência') || normalized.includes('ausência')) && normalized.includes('aprov')) {
+    return {
+      title: 'Pedido de ausência aprovado',
+      message: [
+        structured.firstLine || 'A ausência foi aprovada.',
+        structured.periodLine,
+      ].filter(Boolean).join(' · '),
+      tag: 'Ausências',
+      icon: '✅',
+      color: 'green',
+      action: { label: 'Abrir férias', path: '/ferias' },
+    };
+  }
+
+  if ((normalized.includes('pedido de ausência') || normalized.includes('ausência')) && normalized.includes('recus')) {
+    return {
+      title: 'Pedido de ausência recusado',
+      message: [
+        structured.firstLine || 'A ausência foi recusada.',
+        structured.reasonLine,
+      ].filter(Boolean).join(' · '),
+      tag: 'Ausências',
+      icon: '⚠️',
+      color: 'red',
+      action: { label: 'Abrir férias', path: '/ferias' },
+    };
+  }
+
+  if (normalized.includes('em aprovação') && (normalized.includes('férias') || normalized.includes('ausência'))) {
+    return {
+      title: 'Pedido em aprovação',
+      message: [
+        structured.firstLine || 'O pedido avançou no fluxo de aprovação.',
+        structured.progressLine,
+        structured.periodLine,
+      ].filter(Boolean).join(' · '),
+      tag: 'Aprovação',
+      icon: '⏳',
+      color: 'blue',
       action: { label: 'Abrir férias', path: '/ferias' },
     };
   }
@@ -259,7 +337,7 @@ function buildNotificationDetails(title: string, message: string): NotificationD
 
   return {
     title: title || 'Atualização interna',
-    message: message || 'Tem uma nova atualização no portal.',
+    message: structured.firstLine || message || 'Tem uma nova atualização no portal.',
     tag: 'Portal',
     icon: '🔔',
     color: 'blue',

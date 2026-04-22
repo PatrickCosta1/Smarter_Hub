@@ -6495,8 +6495,8 @@
   pointer-events: none;
 }
 
-.approvals-toast .ui-toast,
-.notifications-toast .ui-toast {
+.approvals-toast .ui-toast:not(.ui-feedback-card),
+.notifications-toast .ui-toast:not(.ui-feedback-card) {
   min-height: 0;
   padding: 10px 12px;
   border-radius: 12px;
@@ -6507,22 +6507,29 @@
   line-height: 1.35;
 }
 
-.approvals-toast .ui-toast--success,
-.notifications-toast .ui-toast--success {
+.approvals-toast .ui-toast--success:not(.ui-feedback-card),
+.notifications-toast .ui-toast--success:not(.ui-feedback-card) {
   border-color: #b8e4c7;
   background: #f3fcf6;
 }
 
-.approvals-toast .ui-toast--error,
-.notifications-toast .ui-toast--error {
+.approvals-toast .ui-toast--error:not(.ui-feedback-card),
+.notifications-toast .ui-toast--error:not(.ui-feedback-card) {
   border-color: #f2c7c7;
   background: #fff5f5;
 }
 
-.approvals-toast .ui-toast--info,
-.notifications-toast .ui-toast--info {
+.approvals-toast .ui-toast--info:not(.ui-feedback-card),
+.notifications-toast .ui-toast--info:not(.ui-feedback-card) {
   border-color: #c6daff;
   background: #f4f8ff;
+}
+
+.approvals-toast,
+.notifications-toast,
+.team-page-toast,
+.vacations-toast {
+  pointer-events: auto;
 }
 
 @keyframes team-manage-pop-in {
@@ -6548,6 +6555,77 @@
   border-radius: 14px;
   background: #fff;
   padding: 12px;
+}
+
+.permission-approver-overrides {
+  border: 1px solid #d5e4fb;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #f7fbff, #ffffff);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.permission-approver-overrides__head {
+  display: grid;
+  gap: 4px;
+}
+
+.permission-approver-overrides__head strong {
+  color: #1a4f94;
+  font-size: 0.88rem;
+}
+
+.permission-approver-overrides__head span {
+  color: #4a6690;
+  font-size: 0.8rem;
+}
+
+.permission-approver-overrides__toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.permission-approver-overrides__toolbar select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.permission-approver-overrides__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.permission-approver-overrides__chips small {
+  color: #60779a;
+}
+
+.permission-approver-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #c8daf8;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #f2f7ff;
+}
+
+.permission-approver-chip strong {
+  font-size: 0.78rem;
+  color: #164786;
+}
+
+.permission-approver-chip button {
+  border: 0;
+  background: transparent;
+  color: #cb2d2d;
+  font-weight: 700;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
 }
 
 .collab-permissions-search {

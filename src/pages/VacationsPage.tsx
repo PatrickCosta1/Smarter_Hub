@@ -142,7 +142,7 @@ type ExportCollaboratorsResponse = {
 };
 
 type SubmissionNotice = {
-  tone: 'success' | 'error' | 'info';
+  tone: 'success' | 'error' | 'info' | 'warning';
   message: string;
 } | null;
 
@@ -330,11 +330,13 @@ export default function VacationsPage() {
   const [calendarError, setCalendarError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionNotice, setSubmissionNotice] = useState<SubmissionNotice>(null);
-  const [toast, setToast] = useState<{ tone: 'success' | 'error' | 'info'; message: string; visible: boolean }>({
+  const [toast, setToast] = useState<{ tone: 'success' | 'error' | 'info' | 'warning'; message: string; visible: boolean }>({
     tone: 'info',
     message: '',
     visible: false,
   });
+  const lastToastRef = useRef<{ tone: 'success' | 'error' | 'info' | 'warning'; message: string; at: number } | null>(null);
+  const toastTimeoutRef = useRef<number | null>(null);
   const [teamContexts, setTeamContexts] = useState<TeamContext[]>([]);
   const [companyExtraDays, setCompanyExtraDays] = useState<CompanyExtraDay[]>([]);
   const [companyExtraDayMonth, setCompanyExtraDayMonth] = useState('12');
@@ -636,11 +638,38 @@ export default function VacationsPage() {
     };
   }, [activeTab]);
 
-  function showToast(tone: 'success' | 'error' | 'info', message: string) {
+  function showToast(
+    tone: 'success' | 'error' | 'info' | 'warning',
+    message: string,
+    options?: { persist?: boolean; autoHideMs?: number },
+  ) {
+    const now = Date.now();
+    if (
+      lastToastRef.current
+      && lastToastRef.current.tone === tone
+      && lastToastRef.current.message === message
+      && now - lastToastRef.current.at < 1500
+    ) {
+      return;
+    }
+
+    lastToastRef.current = { tone, message, at: now };
+
+    if (toastTimeoutRef.current !== null) {
+      window.clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+
     setToast({ tone, message, visible: true });
-    window.setTimeout(() => {
-      setToast((current) => ({ ...current, visible: false }));
-    }, 3200);
+
+    const shouldPersist = options?.persist === true;
+    if (!shouldPersist) {
+      const timeoutMs = options?.autoHideMs ?? 3200;
+      toastTimeoutRef.current = window.setTimeout(() => {
+        setToast((current) => ({ ...current, visible: false }));
+        toastTimeoutRef.current = null;
+      }, timeoutMs);
+    }
   }
 
   async function loadMine(signal?: AbortSignal) {
@@ -1021,7 +1050,7 @@ export default function VacationsPage() {
 
     try {
       setIsSubmitting(true);
-      await apiRequest(editingId ? `/vacations/${editingId}` : '/vacations', {
+      const result = await apiRequest<{ warnings?: string[] }>(editingId ? `/vacations/${editingId}` : '/vacations', {
         method: editingId ? 'PUT' : 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),
@@ -1037,15 +1066,43 @@ export default function VacationsPage() {
       }
       void refreshNotifications();
       resetForm();
-      const message = editingId
-        ? 'Pedido atualizado. A nova versão já foi enviada para aprovação.'
-        : 'Pedido submetido. O histórico e os painéis vão atualizar em segundo plano.';
-      setSubmissionNotice({ tone: 'success', message });
-      showToast('success', message);
+      const actionLabel = editingId ? 'Pedido atualizado com sucesso.' : 'Pedido submetido com sucesso.';
+      const typeLabel = requestType === 'VACATION'
+        ? `Férias${payload.partialDay !== 'FULL' ? ` (${payload.partialDay === 'AM' ? 'meio-dia manhã' : 'meio-dia tarde'})` : ''}`
+        : requestType === 'ABSENCE_MEDICAL'
+          ? 'Ausência médica'
+          : 'Ausência por formação';
+      const periodLabel = `Período: ${formatShortDate(payload.dataInicio)} - ${formatShortDate(payload.dataFim)}.`;
+      const teamLabel = `Equipa: ${teamContexts.find((item) => item.teamId === payload.contextTeamId)?.teamName || 'Contexto principal automático'}.`;
+      const nextStepLabel = 'Próximo passo: o pedido segue para aprovação conforme a cadeia da equipa.';
+      const warnings = Array.isArray(result?.warnings) ? result.warnings.filter(Boolean) : [];
+      if (warnings.length > 0) {
+        const warningMessage = [
+          actionLabel,
+          `Tipo: ${typeLabel}.`,
+          periodLabel,
+          teamLabel,
+          nextStepLabel,
+          '',
+          `Aviso de conformidade PT: ${warnings[0]}`,
+        ].join('\n');
+        setSubmissionNotice({ tone: 'warning', message: warningMessage });
+        showToast('warning', warningMessage, { persist: true });
+      } else {
+        const successPopup = [
+          actionLabel,
+          `Tipo: ${typeLabel}.`,
+          periodLabel,
+          teamLabel,
+          nextStepLabel,
+        ].join('\n');
+        setSubmissionNotice({ tone: 'success', message: successPopup });
+        showToast('success', successPopup, { persist: true });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao submeter pedido.';
       setSubmissionNotice({ tone: 'error', message });
-      showToast('error', message);
+      showToast('error', message, { persist: true });
     } finally {
       setIsSubmitting(false);
     }
@@ -1533,11 +1590,6 @@ export default function VacationsPage() {
                   {(draftErrors.dataInicio || draftErrors.dataFim) && (
                     <small className="cal-booking-bar__err">{draftErrors.dataInicio || draftErrors.dataFim}</small>
                   )}
-                  {submissionNotice && (
-                    <div className={`cal-booking-bar__notice cal-booking-bar__notice--${submissionNotice.tone}`}>
-                      {submissionNotice.message}
-                    </div>
-                  )}
 
                   <div className="cal-booking-bar__actions">
                     <Button type="submit" variant="primary" isLoading={isSubmitting}>
@@ -1858,7 +1910,18 @@ export default function VacationsPage() {
       )}
 
       <div className="vacations-toast" aria-live="polite">
-        <Toast show={toast.visible} tone={toast.tone} message={toast.message} />
+        <Toast
+          show={toast.visible}
+          tone={toast.tone}
+          message={toast.message}
+          onClose={() => {
+            if (toastTimeoutRef.current !== null) {
+              window.clearTimeout(toastTimeoutRef.current);
+              toastTimeoutRef.current = null;
+            }
+            setToast((current) => ({ ...current, visible: false }));
+          }}
+        />
       </div>
     </section>
   );
