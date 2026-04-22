@@ -327,11 +327,11 @@ export default function ManagerTeamsPage() {
     }
   }
 
-  async function loadLeaderOptions() {
+  async function loadLeaderOptions(forceRefresh = false) {
     try {
       const data = await apiRequestCached<CollaboratorsResponse>('/users/collaborators?page=1&pageSize=250&sortBy=username&sortDirection=asc', {
         headers: getAuthHeaders(),
-      }, 10000, true);
+      }, 10000, forceRefresh);
       setLeaderOptions((data.rows || []).filter((item) => item.username !== 't.people' && item.isActive !== false));
     } catch {
       setLeaderOptions([]);
@@ -353,7 +353,7 @@ export default function ManagerTeamsPage() {
     });
     setManageQuery('');
     setIsManageTeamModalOpen(true);
-    void loadLeaderOptions();
+    void loadLeaderOptions(true);
   }
 
   async function updateTeam() {
@@ -422,10 +422,13 @@ export default function ManagerTeamsPage() {
 
       clearApiCache('/teams');
       clearApiCache('/admin/teams');
+      if (hasMemberChanges) {
+        clearApiCache('/users/collaborators');
+      }
       await Promise.all([
         loadTeams(),
         selectedTeamId ? loadTeamDetail(selectedTeamId) : Promise.resolve(),
-        loadLeaderOptions(),
+        loadLeaderOptions(hasMemberChanges),
       ]);
       setIsManageTeamModalOpen(false);
       setStatus('Equipa atualizada com sucesso.');

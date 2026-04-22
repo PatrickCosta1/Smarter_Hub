@@ -339,28 +339,76 @@ function buildEditDraftFromRow(item: CollaboratorRow): CollaboratorEditDraft {
 }
 
 function getCollaboratorTeamInfo(item: CollaboratorRow) {
-  const resolvedTeam = getCollaboratorPrimaryTeam(item);
+  const resolvedTeam = getCollaboratorTeams(item)[0] ?? null;
 
   if (!resolvedTeam) {
     return { name: '-', isLeader: false };
   }
 
-  const isLeader = item.teamRole === 'LEADER'
-    || Boolean(item.managedTeams?.some((team) => team.id === resolvedTeam.id));
-
-  return { name: resolvedTeam.name, isLeader };
+  return { name: resolvedTeam.name, isLeader: resolvedTeam.isLeader };
 }
 
 function getCollaboratorPrimaryTeam(item: CollaboratorRow) {
-  if (item.team?.name) {
-    return item.team;
+  return getCollaboratorTeams(item)[0] ?? null;
+}
+
+function getCollaboratorTeams(item: CollaboratorRow) {
+  const teamMap = new Map<string, { id: string; name: string; isLeader: boolean; isPrimary: boolean }>();
+  const managedTeamIds = new Set((item.managedTeams || []).map((team) => team.id));
+
+  const upsertTeam = (team: { id: string; name: string }, options?: { isLeader?: boolean; isPrimary?: boolean }) => {
+    const existing = teamMap.get(team.id);
+    if (!existing) {
+      teamMap.set(team.id, {
+        id: team.id,
+        name: team.name,
+        isLeader: Boolean(options?.isLeader),
+        isPrimary: Boolean(options?.isPrimary),
+      });
+      return;
+    }
+
+    teamMap.set(team.id, {
+      ...existing,
+      isLeader: existing.isLeader || Boolean(options?.isLeader),
+      isPrimary: existing.isPrimary || Boolean(options?.isPrimary),
+    });
+  };
+
+  if (item.team?.id && item.team.name) {
+    upsertTeam(item.team, {
+      isPrimary: true,
+      isLeader: item.teamRole === 'LEADER' || managedTeamIds.has(item.team.id),
+    });
   }
 
-  if (item.teamMemberships?.[0]?.team?.name) {
-    return item.teamMemberships[0].team;
+  for (const membership of item.teamMemberships || []) {
+    if (!membership.team?.id || !membership.team.name) {
+      continue;
+    }
+
+    upsertTeam(membership.team, {
+      isPrimary: item.teamId === membership.team.id,
+      isLeader: managedTeamIds.has(membership.team.id),
+    });
   }
 
-  return item.managedTeams?.[0] ?? null;
+  for (const managedTeam of item.managedTeams || []) {
+    upsertTeam(managedTeam, {
+      isPrimary: item.teamId === managedTeam.id,
+      isLeader: true,
+    });
+  }
+
+  return Array.from(teamMap.values()).sort((a, b) => {
+    if (a.isPrimary !== b.isPrimary) {
+      return a.isPrimary ? -1 : 1;
+    }
+    if (a.isLeader !== b.isLeader) {
+      return a.isLeader ? -1 : 1;
+    }
+    return a.name.localeCompare(b.name, 'pt-PT');
+  });
 }
 
 type CollaboratorsResponse = {
@@ -1176,7 +1224,7 @@ export default function CollaboratorsPage() {
   const [pageSize, setPageSize] = useState(20);
   const [query, setQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'ALL' | CollaboratorRow['role']>('ALL');
-  const [activeFilter, setActiveFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
+  const [activeFilter, setActiveFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ACTIVE');
   const [countryFilter, setCountryFilter] = useState<'ALL' | 'PT' | 'BR'>('ALL');
   const [sortBy, setSortBy] = useState<'createdAt' | 'updatedAt' | 'username' | 'email' | 'role'>('updatedAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -2815,9 +2863,9 @@ export default function CollaboratorsPage() {
           <label>
             <span>Estado</span>
             <select value={activeFilter} onChange={(event) => { setPage(1); setActiveFilter(event.target.value as 'ALL' | 'ACTIVE' | 'INACTIVE'); }}>
-              <option value="ALL">Todos</option>
               <option value="ACTIVE">Ativo</option>
               <option value="INACTIVE">Inativo</option>
+              <option value="ALL">Todos</option>
             </select>
           </label>
 
@@ -2862,22 +2910,32 @@ export default function CollaboratorsPage() {
         <div className="collaborators-table">
           <DataTable
             columns={[
-            { key: 'name', header: 'Colaborador', render: (item: CollaboratorRow) => getDisplayName(item) },
+            { key: 'name', header: 'Colaborador', render: (item: CollaboratorRow) => <span className="collaborator-cell-text" title={getDisplayName(item)}>{getDisplayName(item)}</span> },
             { key: 'email', header: 'Email', render: (item: CollaboratorRow) => <span className="table-nowrap">{item.email}</span> },
-            { key: 'role', header: 'Role', render: (item: CollaboratorRow) => <Badge tone="info">{formatRoleLabel(item.role)}</Badge> },
             {
               key: 'team',
               header: 'Equipa',
               render: (item: CollaboratorRow) => {
-                const teamInfo = getCollaboratorTeamInfo(item);
-                if (teamInfo.name === '-') {
-                  return '-';
+                const teams = getCollaboratorTeams(item);
+                if (teams.length === 0) {
+                  return <span className="collaborator-cell-text">-</span>;
                 }
 
+                const mainTeam = teams[0];
+                const extraTeams = teams.slice(1);
+                const fullTeamList = teams
+                  .map((team) => `${team.isLeader ? 'Chefe · ' : ''}${team.name}`)
+                  .join(' • ');
+
                 return (
-                  <span className={`collaborator-team-chip${teamInfo.isLeader ? ' is-leader' : ''}`}>
-                    {teamInfo.isLeader ? 'Chefe · ' : ''}{teamInfo.name}
-                  </span>
+                  <div className="collaborator-team-cell" title={fullTeamList}>
+                    <span className={`collaborator-team-chip${mainTeam.isLeader ? ' is-leader' : ''}`}>
+                      {mainTeam.isLeader ? 'Chefe · ' : ''}{mainTeam.name}
+                    </span>
+                    {extraTeams.length > 0 && (
+                      <span className="collaborator-team-more">+{extraTeams.length}</span>
+                    )}
+                  </div>
                 );
               },
             },

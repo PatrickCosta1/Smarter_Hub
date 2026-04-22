@@ -9,6 +9,7 @@ const { prismaMock, permissionEngineMock } = vi.hoisted(() => ({
     team: { findMany: vi.fn(), findUnique: vi.fn() },
     teamMembership: { findMany: vi.fn() },
     profile: { findUnique: vi.fn() },
+    vacation: { findFirst: vi.fn() },
   },
   permissionEngineMock: {
     buildUserWhereFromScope: vi.fn(),
@@ -56,10 +57,18 @@ describe('vacations routes integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prismaMock.user.findFirst.mockResolvedValue(null);
+    prismaMock.user.findUnique.mockResolvedValue(null);
     prismaMock.user.findMany.mockResolvedValue([]);
     prismaMock.userPermission.findMany.mockResolvedValue([]);
     prismaMock.team.findMany.mockResolvedValue([]);
     prismaMock.team.findUnique.mockResolvedValue(null);
+    prismaMock.teamMembership.findMany.mockResolvedValue([]);
+    prismaMock.profile.findUnique.mockResolvedValue({
+      workCountry: 'PT',
+      nomeCompleto: 'Teste User',
+      nomeAbreviado: 'Teste User',
+    });
+    prismaMock.vacation.findFirst.mockResolvedValue(null);
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -116,6 +125,88 @@ describe('vacations routes integration', () => {
         dataFim: '2026-04-15',
         observacoes: 'Pedido teste',
         requestType: 'VACATION',
+        attachmentLink: '',
+        partialDay: 'FULL',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('Não existem aprovadores');
+  });
+
+  it('POST /api/vacations blocks vacation starting on weekend', async () => {
+    const app = buildApp();
+
+    const response = await request(app)
+      .post('/api/vacations')
+      .send({
+        dataInicio: '2026-04-18',
+        dataFim: '2026-04-21',
+        observacoes: 'Férias fim de semana',
+        requestType: 'VACATION',
+        attachmentLink: '',
+        partialDay: 'FULL',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('não pode começar ao fim de semana');
+  });
+
+  it('POST /api/vacations allows absence starting on weekend', async () => {
+    const app = buildApp();
+
+    const response = await request(app)
+      .post('/api/vacations')
+      .send({
+        dataInicio: '2026-04-18',
+        dataFim: '2026-04-20',
+        observacoes: 'Ausência fim de semana',
+        requestType: 'ABSENCE_MEDICAL',
+        attachmentLink: '',
+        partialDay: 'FULL',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('Não existem aprovadores');
+  });
+
+  it('PUT /api/vacations/:id blocks vacation ending on weekend', async () => {
+    const app = buildApp();
+
+    const response = await request(app)
+      .put('/api/vacations/v-1')
+      .send({
+        dataInicio: '2026-04-16',
+        dataFim: '2026-04-19',
+        observacoes: 'Edição férias fim de semana',
+        requestType: 'VACATION',
+        attachmentLink: '',
+        partialDay: 'FULL',
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('não pode terminar ao fim de semana');
+  });
+
+  it('PUT /api/vacations/:id allows absence ending on weekend', async () => {
+    prismaMock.vacation.findFirst.mockResolvedValue({
+      id: 'v-1',
+      userId: 'auth-user',
+      status: 'PENDING',
+      contextTeamId: null,
+      versionOfId: null,
+      versionNumber: 1,
+      contextTeam: null,
+    });
+
+    const app = buildApp();
+
+    const response = await request(app)
+      .put('/api/vacations/v-1')
+      .send({
+        dataInicio: '2026-04-17',
+        dataFim: '2026-04-19',
+        observacoes: 'Edição ausência fim de semana',
+        requestType: 'ABSENCE_TRAINING',
         attachmentLink: '',
         partialDay: 'FULL',
       });

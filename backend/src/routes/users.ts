@@ -231,6 +231,31 @@ function isValidNiss(value: string) {
   return /^\d{11}$/.test(onlyDigits(value));
 }
 
+function getTeamPeopleCount(input: {
+  memberships: Array<{ userId: string }>;
+  managerId?: string | null;
+  coordinatorId?: string | null;
+}) {
+  const peopleIds = new Set<string>();
+
+  for (const membership of input.memberships) {
+    peopleIds.add(membership.userId);
+  }
+
+  if (input.managerId) {
+    peopleIds.add(input.managerId);
+  }
+
+  if (input.coordinatorId) {
+    peopleIds.add(input.coordinatorId);
+  }
+
+  return {
+    members: peopleIds.size,
+    memberships: input.memberships.length,
+  };
+}
+
 function normalizeIban(value: string) {
   return value.replace(/\s+/g, '').toUpperCase();
 }
@@ -1292,7 +1317,10 @@ router.get('/teams', requireAuth, async (req, res) => {
       coordinatorId: true,
       manager: { select: { id: true, username: true } },
       coordinator: { select: { id: true, username: true } },
-      _count: { select: { members: true, memberships: true } },
+      memberships: {
+        where: { isActive: true },
+        select: { userId: true },
+      },
     },
     orderBy: { name: 'asc' },
   });
@@ -1301,8 +1329,7 @@ router.get('/teams', requireAuth, async (req, res) => {
     teams.map((team) => ({
       ...team,
       _count: {
-        members: Math.max(team._count.members, team._count.memberships),
-        memberships: team._count.memberships,
+        ...getTeamPeopleCount(team),
       },
     })),
   );
@@ -1332,6 +1359,8 @@ router.get('/teams/me', requireAuth, async (req, res) => {
         name: true,
         costCenter: true,
         color: true,
+        managerId: true,
+        coordinatorId: true,
         parentTeamId: true,
         manager: {
           select: {
@@ -1348,7 +1377,10 @@ router.get('/teams/me', requireAuth, async (req, res) => {
           },
         },
         parentTeam: { select: { id: true, name: true } },
-        _count: { select: { memberships: true } },
+        memberships: {
+          where: { isActive: true },
+          select: { userId: true },
+        },
       },
       orderBy: { name: 'asc' },
     });
@@ -1357,8 +1389,7 @@ router.get('/teams/me', requireAuth, async (req, res) => {
       ...team,
       costCenter: actorHasAccessTotal && !team.parentTeamId ? team.costCenter : null,
       _count: {
-        members: team._count.memberships,
-        memberships: team._count.memberships,
+        ...getTeamPeopleCount(team),
       },
     })));
   }
@@ -1437,7 +1468,6 @@ router.get('/teams/me', requireAuth, async (req, res) => {
           },
         },
       },
-      _count: { select: { memberships: true } },
     },
     orderBy: { name: 'asc' },
   });
@@ -1458,8 +1488,7 @@ router.get('/teams/me', requireAuth, async (req, res) => {
       vacations: membership.user.vacations,
     })),
     _count: {
-      members: team._count.memberships,
-      memberships: team._count.memberships,
+      ...getTeamPeopleCount(team),
     },
   })));
 });
@@ -1552,7 +1581,6 @@ router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
           },
         },
       },
-      _count: { select: { memberships: true } },
     },
   });
 
@@ -1576,8 +1604,7 @@ router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
       vacations: membership.user.vacations,
     })),
     _count: {
-      members: team._count.memberships,
-      memberships: team._count.memberships,
+      ...getTeamPeopleCount(team),
     },
   });
 });
@@ -1802,6 +1829,7 @@ router.get('/admin/teams', requireAuth, async (req, res) => {
       costCenter: true,
       color: true,
       managerId: true,
+      coordinatorId: true,
       parentTeamId: true,
       manager: {
         select: {
@@ -1811,7 +1839,11 @@ router.get('/admin/teams', requireAuth, async (req, res) => {
         },
       },
       parentTeam: { select: { id: true, name: true } },
-      _count: { select: { members: true, memberships: true, subTeams: true } },
+      memberships: {
+        where: { isActive: true },
+        select: { userId: true },
+      },
+      _count: { select: { subTeams: true } },
     },
     orderBy: [{ name: 'asc' }],
   });
@@ -1822,8 +1854,7 @@ router.get('/admin/teams', requireAuth, async (req, res) => {
     leaderId: team.managerId ?? null,
     leader: team.manager ?? null,
     _count: {
-      members: Math.max(team._count.members, team._count.memberships),
-      memberships: team._count.memberships,
+      ...getTeamPeopleCount(team),
       subTeams: team._count.subTeams,
     },
   })));

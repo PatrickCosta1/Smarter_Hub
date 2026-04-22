@@ -3447,7 +3447,6 @@
 
 .profile-hero .completion-card__button {
   width: auto;
-  min-width: 170px;
   justify-content: space-between;
   align-items: center;
   border-radius: 999px;
@@ -5255,16 +5254,17 @@
 }
 
 .collaborators-actions {
-  display: inline-flex;
-  gap: 6px;
-  flex-wrap: nowrap;
-  white-space: nowrap;
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  white-space: normal;
+  justify-content: flex-end;
 }
 
 .collaborators-actions .ui-button {
-  min-height: 30px;
-  padding: 0 10px;
-  font-size: 0.76rem;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 0.74rem;
   white-space: nowrap;
 }
 
@@ -5847,17 +5847,30 @@
   }
 }
 
+.collaborator-team-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .collaborator-team-chip {
   display: inline-flex;
   align-items: center;
-  min-height: 26px;
-  padding: 0 10px;
+  min-height: 24px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 9px;
   border-radius: 999px;
   border: 1px solid #d8e3f4;
   background: #f8fbff;
   color: #23456f;
-  font-size: 0.78rem;
+  font-size: 0.77rem;
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .collaborator-team-chip.is-leader {
@@ -5867,19 +5880,84 @@
   box-shadow: 0 5px 12px rgba(18, 60, 114, 0.12);
 }
 
+.collaborator-team-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 24px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px dashed #bcd1ef;
+  background: #f3f8ff;
+  color: #254a80;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.collaborator-cell-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .collaborators-table .ui-table-wrap {
   overflow-x: auto;
 }
 
 .collaborators-table .ui-table {
-  min-width: 980px;
-  table-layout: auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.collaborators-table .ui-table th,
+.collaborators-table .ui-table td {
+  white-space: nowrap;
+}
+
+.collaborators-table .ui-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.collaborators-table .ui-table .ui-badge {
+  white-space: nowrap;
+}
+
+.collaborators-table .ui-table th:nth-child(1),
+.collaborators-table .ui-table td:nth-child(1) { width: 18%; }
+
+.collaborators-table .ui-table th:nth-child(2),
+.collaborators-table .ui-table td:nth-child(2) { width: 24%; }
+
+.collaborators-table .ui-table th:nth-child(3),
+.collaborators-table .ui-table td:nth-child(3) { width: 24%; }
+
+.collaborators-table .ui-table th:nth-child(4),
+.collaborators-table .ui-table td:nth-child(4) { width: 7%; }
+
+.collaborators-table .ui-table th:nth-child(5),
+.collaborators-table .ui-table td:nth-child(5) { width: 8%; }
+
+.collaborators-table .ui-table th:nth-child(6),
+.collaborators-table .ui-table td:nth-child(6) { width: 19%; }
+
+.collaborators-table .ui-table th:last-child,
+.collaborators-table .ui-table td:last-child {
+  width: 19%;
+  white-space: normal;
 }
 
 .ui-table th:last-child,
 .ui-table td:last-child {
   width: 1%;
   white-space: nowrap;
+}
+
+.collaborators-table .ui-table td:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .collaborator-modal-shell {

@@ -307,6 +307,71 @@
   white-space: pre-line;
 }
 
+.ui-feedback-card__details {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.ui-feedback-card__detail {
+  border: 1px solid #d8e5f8;
+  border-radius: 10px;
+  background: rgba(242, 247, 255, 0.95);
+  padding: 8px 10px;
+  color: #1f436f;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.ui-feedback-card__highlight {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  border: 1px solid #f0d38a;
+  background: #fff6dd;
+}
+
+.ui-feedback-card__highlight span {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8b5a00;
+}
+
+.ui-feedback-card__highlight p {
+  color: #674300;
+  font-size: 0.9rem;
+}
+
+.ui-feedback-card__highlight--info {
+  border-color: #bfd8ff;
+  background: #eef5ff;
+}
+
+.ui-feedback-card__highlight--info span {
+  color: #295bb2;
+}
+
+.ui-feedback-card__highlight--info p {
+  color: #23467f;
+}
+
+.ui-feedback-card__highlight--error {
+  border-color: #efc3c3;
+  background: #fff1f1;
+}
+
+.ui-feedback-card__highlight--error span {
+  color: #b42318;
+}
+
+.ui-feedback-card__highlight--error p {
+  color: #7e1f17;
+}
+
 .ui-feedback-card__close {
   border: 1px solid #c7d8f4;
   border-radius: 10px;

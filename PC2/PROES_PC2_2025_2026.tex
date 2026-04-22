@@ -1,0 +1,865 @@
+\documentclass[11pt,a4paper,twoside]{article}
+
+% ── Encoding ──────────────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[portuguese]{babel}
+
+% ── Typography ────────────────────────────────────────────────────────────────
+% Palatino for body (elegant, academic, readable)
+\usepackage{mathpazo}
+% Helvetica for headings (clean contrast with Palatino)
+\usepackage[scaled=0.90]{helvet}
+\usepackage[activate={true,nocompatibility},final,tracking=true,kerning=true,expansion=false]{microtype}
+
+% ── Layout ────────────────────────────────────────────────────────────────────
+\usepackage[
+  a4paper,
+  top=3.0cm, bottom=3.2cm,
+  inner=2.8cm, outer=2.4cm,
+  headsep=1.0cm,
+  footskip=1.2cm
+]{geometry}
+
+% ── Colors ────────────────────────────────────────────────────────────────────
+\usepackage[table,dvipsnames]{xcolor}
+\definecolor{INK}{HTML}{1A1A2E}          % quase preto — texto principal
+\definecolor{RULE}{HTML}{1856B8}         % azul ISEP — réguas e títulos
+\definecolor{ACCENT}{HTML}{0C2A59}       % azul escuro — subtítulos
+\definecolor{MUTED}{HTML}{5C6475}        % cinza azulado — texto secundário
+\definecolor{ROWSHADE}{HTML}{F4F6FA}     % fundo alternado de tabela
+\definecolor{TAGHI}{HTML}{1856B8}        % badge Alta
+\definecolor{TAGMED}{HTML}{E07B00}       % badge Média
+\definecolor{TAGLO}{HTML}{2E7D32}        % badge Baixa/OK
+\definecolor{TAGNEUTRAL}{HTML}{4A5568}   % badge neutro
+\definecolor{BOXBG}{HTML}{EEF2FA}        % fundo de caixa de destaque
+\definecolor{BOXLINE}{HTML}{1856B8}      % linha lateral de caixa
+
+% ── Graphics ──────────────────────────────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{positioning, arrows.meta, calc, shapes.geometric, backgrounds, fit}
+
+% ── Tables ────────────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{makecell}
+\renewcommand{\arraystretch}{1.38}
+\setlength{\tabcolsep}{3.5pt}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+\newcolumntype{R}{>{\raggedleft\arraybackslash}X}
+
+% ── Lists ─────────────────────────────────────────────────────────────────────
+\usepackage{enumitem}
+\setlist{
+  leftmargin=1.5em,
+  itemsep=2pt,
+  topsep=4pt,
+  parsep=0pt
+}
+\setlist[itemize,1]{label=\textcolor{RULE}{\rule[0.35ex]{4pt}{4pt}}}
+\setlist[itemize,2]{label=\textcolor{MUTED}{\textendash}}
+\setlist[enumerate,1]{label=\textcolor{RULE}{\arabic*.}}
+
+% ── Section Titles ────────────────────────────────────────────────────────────
+\usepackage{titlesec}
+
+% Section: numbered, Helvetica bold, com régua completa em baixo
+\titleformat{\section}
+  {\sffamily\bfseries\large\color{RULE}}
+  {\thesection}
+  {0.8em}
+  {}
+  [\vspace{1pt}{\color{RULE}\titlerule[0.8pt]}\vspace{4pt}]
+
+% Subsection: Helvetica semibold, pequena régua lateral
+\titleformat{\subsection}
+  {\sffamily\bfseries\normalsize\color{ACCENT}}
+  {\thesubsection}
+  {0.7em}
+  {}
+
+% Subsubsection: Palatino italic colored
+\titleformat{\subsubsection}
+  {\itshape\normalsize\color{ACCENT}}
+  {}
+  {0em}
+  {}
+
+\titlespacing*{\section}      {0pt}{20pt}{8pt}
+\titlespacing*{\subsection}   {0pt}{14pt}{4pt}
+\titlespacing*{\subsubsection}{0pt}{10pt}{2pt}
+
+% ── Headers / Footers ─────────────────────────────────────────────────────────
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\small\sffamily\color{MUTED}Ponto de Controlo 2 — SMARTER HUB}
+\fancyhead[RE,LO]{\small\sffamily\color{MUTED}PROES 2025/2026}
+\fancyfoot[C]{\small\sffamily\color{MUTED}\thepage\,/\,\pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\color{RULE!40}\hrule height 0.4pt \vspace{0pt}}
+\renewcommand{\footrulewidth}{0pt}
+
+% ── Boxes / Callouts ──────────────────────────────────────────────────────────
+\usepackage[most]{tcolorbox}
+\tcbuselibrary{skins, breakable}
+
+% Callout box com linha lateral
+\newtcolorbox{callout}[1][]{
+  enhanced, breakable,
+  colback=BOXBG, colframe=BOXLINE,
+  boxrule=0pt, leftrule=3pt,
+  arc=0pt, outer arc=0pt,
+  left=10pt, right=10pt, top=7pt, bottom=7pt,
+  fontupper=\small,
+  #1
+}
+
+% Caixa neutra cinza (nota)
+\newtcolorbox{note}[1][]{
+  enhanced, breakable,
+  colback=ROWSHADE, colframe=MUTED!40,
+  boxrule=0pt, leftrule=2pt,
+  arc=0pt,
+  left=10pt, right=8pt, top=5pt, bottom=5pt,
+  fontupper=\small\color{MUTED},
+  #1
+}
+
+% Caixa de fluxo / diagrama textual
+\newtcolorbox{diagram}[1][]{
+  enhanced, breakable,
+  colback=white, colframe=RULE!25,
+  boxrule=0.5pt,
+  arc=0pt,
+  left=12pt, right=12pt, top=10pt, bottom=10pt,
+  #1
+}
+
+% ── Badges inline ─────────────────────────────────────────────────────────────
+\newcommand{\taghi}  {{\setlength{\fboxsep}{1.5pt}\colorbox{TAGHI}  {\scriptsize\sffamily\bfseries\color{white}~Alta~}}}
+\newcommand{\tagmed} {{\setlength{\fboxsep}{1.5pt}\colorbox{TAGMED} {\scriptsize\sffamily\bfseries\color{white}~Média~}}}
+\newcommand{\taglo}  {{\setlength{\fboxsep}{1.5pt}\colorbox{TAGLO}  {\scriptsize\sffamily\bfseries\color{white}~Baixa~}}}
+\newcommand{\tagok}  {{\setlength{\fboxsep}{1.5pt}\colorbox{TAGNEUTRAL}{\scriptsize\sffamily\bfseries\color{white}~---~}}}
+\newcommand{\tagn}[1]{{\setlength{\fboxsep}{1.5pt}\colorbox{TAGNEUTRAL}{\scriptsize\sffamily\bfseries\color{white}~#1~}}}
+
+% ── Table helpers ─────────────────────────────────────────────────────────────
+% Cabeçalho de tabela
+\newcommand{\tH}[1]{\textbf{\sffamily\small\color{white}#1}}
+\newcommand{\theadrow}{\rowcolor{ACCENT}}
+
+% ── Misc ──────────────────────────────────────────────────────────────────────
+\usepackage{setspace}
+\usepackage{parskip}
+\setlength{\parskip}{5pt}
+\setlength{\parindent}{0pt}
+
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=RULE,
+  urlcolor=RULE,
+  citecolor=RULE,
+  pdftitle={SMARTER HUB — Ponto de Controlo 2},
+  pdfauthor={Equipa SMARTER HUB — PROES 2025/2026}
+}
+
+\usepackage{pifont}
+\usepackage{eso-pic}
+\hfuzz=3pt  % suppress sub-3pt overfull warnings (colortbl phantom cell)
+
+% ── Utility: thin rule ────────────────────────────────────────────────────────
+\newcommand{\hrulethick}{\vspace{2pt}{\color{RULE}\rule{\linewidth}{0.8pt}}\vspace{6pt}}
+\newcommand{\hrulethin} {\vspace{2pt}{\color{RULE!20}\rule{\linewidth}{0.4pt}}\vspace{4pt}}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{document}
+\setstretch{1.18}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+%  CAPA — substituir o bloco tikz pela imagem quando disponível
+% ═══════════════════════════════════════════════════════════════════════════════
+\begin{titlepage}
+\thispagestyle{empty}
+
+% ── DESCOMENTE E AJUSTE O CAMINHO PARA USAR A SUA IMAGEM DE CAPA ─────────────
+ \AddToShipoutPictureBG*{%
+   \includegraphics[width=\paperwidth,height=\paperheight]{capa_pc2.png}%
+ }
+ \vspace*{\fill}
+
+
+\end{titlepage}
+\nopagecolor
+
+% ── Índice ────────────────────────────────────────────────────────────────────
+\tableofcontents
+\newpage
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Introdução e Contexto}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Descrição da empresa}
+
+A \textbf{Tlantic Portugal – Sistemas de Informação, S.A.} é uma empresa portuguesa de desenvolvimento de software especializada em soluções que otimizam a eficiência operacional, a gestão de pessoas e as vendas no retalho físico. Fundada em 2004 no Brasil no seio do Grupo Sonae, expandiu-se para Portugal em 2007, onde estabeleceu a sua sede no Porto. Com mais de vinte anos de experiência, tornou-se independente em 2018 e consolidou presença em Portugal, Espanha e Brasil, contando atualmente com uma equipa de 51 a 200 colaboradores.
+
+A Tlantic posiciona-se como parceira estratégica de empresas dos sectores do retalho, indústria e saúde, ajudando-as a aumentar a produtividade, reduzir custos e melhorar a experiência tanto de colaboradores como de clientes. Os seus clientes incluem grupos como Continente, Lidl, Worten e CUF.
+
+\subsection{Contextualização da área de negócio}
+
+A empresa opera no mercado de \textbf{software de gestão operacional} para ambientes físicos intensivos em mão-de-obra. As suas plataformas resolvem desafios como a previsão e planeamento de horários de equipas, o cumprimento da legislação laboral, a gestão de tarefas em loja ou armazém e a otimização do processo de vendas.
+
+A Tlantic diferencia-se pela profunda experiência prática no retalho, pela integração entre gestão de pessoas, operações e vendas, e por uma abordagem centrada nas pessoas — oferecendo uma alternativa ágil e especializada face a soluções genéricas ou internacionais. O segmento em que atua encontra-se em forte crescimento, impulsionado pela transformação digital do retalho físico, pela pressão sobre custos laborais e pela exigência crescente de compliance.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Necessidade e Problema a Resolver}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Situação atual}
+
+\begin{callout}
+\textbf{Problema central:} ausência de uma plataforma única de governança operacional para processos de pessoas — incluindo gestão das informações pessoais dos colaboradores, uniformização e atualização contínua de processos, pedidos de férias, aprovações multi-nível, gestão de permissões e evidências de auditoria — conduzindo a ineficiências, erro humano, duplicação documental e incapacidade de decisão baseada em dados.
+\end{callout}
+
+Na maioria das organizações com operações distribuídas, o problema manifesta-se de forma recorrente através de:
+
+\begin{itemize}
+  \item informação pessoal de colaboradores dispersa por múltiplas fontes, com baixa consistência e difícil atualização;
+  \item coexistência de documentos redundantes/duplicados sem controlo de versão funcional;
+  \item processos fragmentados entre email, folhas de cálculo e aprovações informais;
+  \item baixa padronização e atualização de processos entre equipas, subequipas e geografias;
+  \item dificuldade em aplicar políticas legais distintas por país de forma consistente;
+  \item falta de visibilidade operacional sobre capacidade e sobreposição de ausências;
+  \item rastreabilidade insuficiente para auditoria, compliance e melhoria contínua.
+\end{itemize}
+
+\subsection{Análise de causas}
+
+O diagrama seguinte sintetiza a cadeia causal do problema, partindo do sintoma visível até às causas raiz identificadas.
+
+\begin{diagram}
+\begin{center}
+\begin{tikzpicture}[
+  node distance=0.55cm,
+  root/.style={
+    rectangle, rounded corners=2pt,
+    draw=RULE, fill=BOXBG, text width=12cm,
+    align=center, font=\small\sffamily\bfseries\color{RULE},
+    inner sep=7pt
+  },
+  cause/.style={
+    rectangle, rounded corners=2pt,
+    draw=RULE!25, fill=white, text width=12cm,
+    align=left, font=\small,
+    inner sep=7pt
+  },
+  arr/.style={-Stealth, color=RULE!50, thick}
+]
+\node[root] (P)  {Gestão de pessoas fragmentada: dados pessoais, processos e decisões sem uniformização ponta a ponta};
+\node[cause, below=of P]  (C1) {\textcolor{MUTED}{\textbf{Causa 1 — }Dados:} informação pessoal dispersa e sem modelo único de atualização};
+\node[cause, below=of C1] (C2) {\textcolor{MUTED}{\textbf{Causa 2 — }Documentos:} redundância e duplicação documental, sem governação consistente};
+\node[cause, below=of C2] (C3) {\textcolor{MUTED}{\textbf{Causa 3 — }Processo:} fluxos de pedido e aprovação não uniformizados entre equipa, subequipa e país};
+\node[cause, below=of C3] (C4) {\textcolor{MUTED}{\textbf{Causa 4 — }Controlo:} baixa rastreabilidade consolidada para auditoria, compliance e decisão operacional};
+\draw[arr] (P.south)  -- (C1.north);
+\draw[arr] (C1.south) -- (C2.north);
+\draw[arr] (C2.south) -- (C3.north);
+\draw[arr] (C3.south) -- (C4.north);
+\end{tikzpicture}
+\end{center}
+\end{diagram}
+
+\subsection{Perspetiva do utilizador — Empathy Map}
+
+O perfil primário de utilização é o \textbf{gestor de equipa}, cuja experiência atual concentra os principais pontos de atrito:
+
+\begin{center}
+\begin{tikzpicture}[every node/.style={font=\small}]
+\def\bw{6.8cm}\def\bh{2.2cm}
+\node[rectangle, draw=RULE!20, fill=BOXBG,
+      minimum width=\bw, minimum height=\bh,
+      align=left, inner sep=10pt, text width=\bw-22pt] (A) at (0,0)
+  {\textbf{\color{RULE}Diz}\\\medskip
+   \textit{``Preciso de aprovar rápido sem perder o controlo da equipa.''}};
+
+\node[rectangle, draw=RULE!20, fill=white,
+      minimum width=\bw, minimum height=\bh,
+      align=left, inner sep=10pt, text width=\bw-22pt] (B) at (7.4,0)
+  {\textbf{\color{RULE}Pensa}\\\medskip
+   \textit{``Não posso aprovar algo que comprometa a capacidade operacional.''}};
+
+\node[rectangle, draw=RULE!20, fill=white,
+      minimum width=\bw, minimum height=\bh,
+      align=left, inner sep=10pt, text width=\bw-22pt] (C) at (0,-3.0)
+  {\textbf{\color{RULE}Faz}\\\medskip
+   Valida pedidos manualmente,\\consulta mapa anual, gere exceções.};
+
+\node[rectangle, draw=RULE!20, fill=ROWSHADE,
+      minimum width=\bw, minimum height=\bh,
+      align=left, inner sep=10pt, text width=\bw-22pt] (D) at (7.4,-3.0)
+  {\textbf{\color{RULE}Sente}\\\medskip
+   Pressão por resposta imediata\\e receio de erro operacional.};
+
+\node[rectangle, rounded corners=2pt,
+      draw=RULE, fill=RULE,
+      minimum width=2.2cm, minimum height=0.7cm,
+      align=center, font=\sffamily\small\bfseries\color{white}]
+  at (3.7,-1.5) {GESTOR};
+\end{tikzpicture}
+\end{center}
+
+\subsection{Métricas atuais e metas futuras}
+
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small}p{4.3cm} >{\small\centering\arraybackslash}p{2.9cm} >{\small\centering\arraybackslash}p{2.9cm} >{\small}p{3.7cm}}
+\theadrow
+\tH{Métrica} & \tH{Baseline atual} & \tH{Meta futura} & \tH{Método de medição} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{Métrica} & \tH{Baseline atual} & \tH{Meta futura} & \tH{Método de medição} \\
+\midrule
+\endhead
+Tempo médio de aprovação & 3–5 dias úteis & $\leq 24\,\text{h}$ & Timestamps criação/decisão \\
+Pedidos com retrabalho & 10–20\% & $\leq 5\%$ & Histórico de re-submissão \\
+Produção do mapa de férias & 20–40 min & $<2\,\text{min}$ & Exportação + amostragem \\
+Registos pessoais desatualizados & Frequente (reativo) & Residual (proativo) & Histórico de alteração + pedidos de perfil \\
+Documentos duplicados por colaborador & Recorrente & Residual ($\leq 2\%$) & Auditoria de anexos/documentos \\
+Conflitos de capacidade & Frequente (reativo) & Residual (proativo) & Alertas de sobreposição \\
+Satisfação interna (1–5) & 3.0–3.5 / 5 & $\geq 4.2$ / 5 & Inquérito trimestral \\
+\bottomrule
+\end{longtable}
+
+\begin{note}
+Os valores de baseline são referências operacionais típicas para organizações com processos parcialmente manuais, e devem ser calibrados com dados reais em fase de operação.
+\end{note}
+
+\subsection{Estado futuro esperado (TO-BE)}
+
+Independentemente da solução tecnológica adotada, o estado futuro desejado assenta em quatro vetores:
+
+\begin{itemize}
+  \item gestão unificada e atualizável da informação pessoal de colaboradores;
+  \item redução de redundância documental através de fluxos únicos e auditáveis;
+  \item processo de pedido e aprovação totalmente rastreável de ponta a ponta;
+  \item redução consistente do tempo de resposta e do retrabalho administrativo;
+  \item governação de acessos mais robusta, com menor risco de escalada indevida;
+  \item maior previsibilidade de capacidade de equipas e melhor suporte à decisão operacional.
+\end{itemize}
+
+A materialização concreta destes resultados é apresentada na Secção~\ref{sec:solucao}.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Estado da Arte}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Abordagens atuais ao problema}
+
+No estado da prática, o problema é habitualmente endereçado por combinações ad-hoc:
+
+\begin{itemize}
+  \item folhas de cálculo para planeamento de férias e capacidade;
+  \item trocas de email e mensagens para circuitos de aprovação;
+  \item sistemas de RH generalistas com baixo nível de adaptação ao fluxo real;
+  \item plataformas enterprise com motor de workflow, mas custo elevado de parametrização.
+\end{itemize}
+
+\subsection{Eixos de referência bibliográfica}
+
+Foram considerados quatro eixos de fundamentação:
+
+\begin{itemize}
+  \item \textbf{Workflows de aprovação:} sistemas enterprise tendem para motores de estado com transições explícitas (\texttt{PENDING}, \texttt{APPROVED}, \texttt{REJECTED}, \texttt{CANCELLED}) e trilho de decisão por ator.
+  \item \textbf{Controlo de acesso:} a combinação de RBAC com restrições contextuais (equipa, país, nível hierárquico) aproxima-se de modelos ABAC de baixa complexidade, adequados a organizações em crescimento.
+  \item \textbf{Sistemas de RH digitais:} boas práticas exigem histórico imutável, operações auditáveis e consistência entre a visão do colaborador, da chefia e do administrador.
+  \item \textbf{UX operacional:} interfaces de baixo atrito para tarefas repetitivas — aprovar, exportar, consultar — melhoram a adoção e reduzem o erro humano.
+\end{itemize}
+
+\subsection{Limitações das abordagens existentes}
+
+\begin{itemize}
+  \item pouca rastreabilidade de decisão em fluxos informais;
+  \item dificuldade em aplicar políticas distintas por país;
+  \item fraca integração entre gestão de permissões, hierarquia e operação diária;
+  \item baixa qualidade de reporting para decisão executiva.
+\end{itemize}
+
+\subsection{Comparação de abordagens tecnológicas}
+
+A tabela seguinte resume a análise comparativa de stack, conduzida com base em produtividade, tipagem, manutenção, maturidade de ecossistema e custo de operação.
+
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\bfseries}p{3.2cm} >{\small}p{4.4cm} >{\small}p{4.2cm} >{\small\centering\arraybackslash}p{2.2cm}}
+\theadrow
+\tH{Tecnologia} & \tH{Vantagens} & \tH{Limitações} & \tH{Decisão} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{Tecnologia} & \tH{Vantagens} & \tH{Limitações} & \tH{Decisão} \\
+\midrule
+\endhead
+React + TypeScript (Vite) & UI reativa, tipagem forte, produtividade elevada em equipa pequena & Requer disciplina de estado e performance em vistas densas & \tagn{Adotada} \\
+Node.js + Express & Desenvolvimento rápido de API, ecossistema amplo & Necessidade de hardening adicional para produção & \tagn{Adotada} \\
+Prisma + PostgreSQL & Modelagem clara, migrações controladas, queries tipadas & Atenção ao ciclo generate/migrate em Windows & \tagn{Adotada} \\
+Firebase & Integração rápida de componentes cloud & Acrescenta heterogeneidade de stack & \tagn{Complementar} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Síntese e implicações para a solução}
+
+O Estado da Arte precede a secção de conceção por razão metodológica: a proposta tecnológica adotada não é arbitrária, mas consequência da análise funcional e tecnológica aqui realizada. Assim, as decisões de arquitetura e stack são justificadas pelo contexto e não apenas descritas.
+
+\subsection{Referências base consideradas}
+
+\begin{itemize}
+  \item NIST SP 800-162 — \textit{Guide to Attribute Based Access Control (ABAC) Definition and Considerations} (base conceptual para controlo contextual de acesso).
+  \item NIST SP 800-53 Rev. 5 — controlos de \textit{Audit and Accountability} e \textit{Access Control} (rastreabilidade e governação de privilégios).
+  \item BPM CBOK (ABPMP) — boas práticas de modelação e uniformização de processos de negócio.
+  \item ISO 9001:2015 — princípios de padronização, melhoria contínua e controlo documental em processos organizacionais.
+  \item ISO/IEC 27001:2022 — requisitos de gestão de segurança da informação aplicáveis a controlo de acesso e registo de eventos.
+\end{itemize}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Stakeholders}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Matriz de stakeholders}
+
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\bfseries}p{4.0cm} >{\small\centering\arraybackslash}p{2.2cm} >{\small\centering\arraybackslash}p{2.2cm} >{\small}p{5.4cm}}
+\theadrow
+\tH{Stakeholder} & \tH{Influência} & \tH{Interesse} & \tH{Estratégia de gestão} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{Stakeholder} & \tH{Influência} & \tH{Interesse} & \tH{Estratégia de gestão} \\
+\midrule
+\endhead
+Direção RH & \taghi & \taghi & Envolvimento direto na priorização de regras de férias, permissões e compliance \\
+Aprovadores / gestores & \taghi & \taghi & Validação contínua de fluxos de aprovação por etapa e capacidade de equipa \\
+Direção executiva & \taghi & \tagmed & Reporting periódico de indicadores de produtividade e risco \\
+Gestores de permissões & \tagmed & \taghi & Definição da governança de capacidades, escopo e exceções operacionais \\
+Colaboradores & \taglo & \taghi & UX clara, feedback rápido e visibilidade do estado dos pedidos \\
+Equipa TI / Dev & \tagmed & \taghi & Hardening técnico, testes automatizados e monitorização \\
+\bottomrule
+\end{longtable}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Conceção da Solução}
+\label{sec:solucao}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Descrição da solução}
+
+O \textbf{SMARTER HUB} é uma plataforma web integrada para gestão operacional de processos de pessoas, com foco em consistência de regras, governação por permissões e rastreabilidade de decisão. O sistema implementa um modelo de autorização centrado em \emph{permissões efetivas} — não em papéis fixos de interface. Na prática, cada ação é validada pela combinação de:
+
+\begin{itemize}
+  \item permissão atribuída ao utilizador (e.g., \texttt{approve\_vacation}, \texttt{manage\_permissions});
+  \item restrições de escopo por equipa, país e nível hierárquico quando aplicável;
+  \item sinalizadores de privilégio elevado (\texttt{hasAccessTotal} e \texttt{isRootAccess});
+  \item trilho auditável de concessão/revogação de acesso (\texttt{PermissionGrant}).
+\end{itemize}
+
+\subsection{Princípios da solução}
+
+\begin{itemize}
+  \item \textbf{Autorização verificável:} cada endpoint sensível valida a permissão e o escopo efetivo do ator antes de executar.
+  \item \textbf{Conformidade por política:} as regras PT/BR são avaliadas antes de aceitar ou fechar pedidos de férias.
+  \item \textbf{Rastreabilidade de decisão:} aprovações, recusas e alterações de permissões ficam registadas com ator, timestamp e motivo.
+  \item \textbf{Operação contextual:} equipa, memberships e país de trabalho influenciam a elegibilidade e a visibilidade de cada utilizador.
+  \item \textbf{Evolução controlada:} as regras de negócio concentram-se no backend; a interface foca-se na operação diária.
+\end{itemize}
+
+\subsection{Estrutura funcional}
+
+\subsubsection{Módulos da plataforma}
+
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\bfseries}p{3.2cm} >{\small}p{5.0cm} >{\small}p{6.0cm}}
+\theadrow
+\tH{Módulo} & \tH{Objetivo} & \tH{Capacidades principais} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{Módulo} & \tH{Objetivo} & \tH{Capacidades principais} \\
+\midrule
+\endhead
+Férias e ausências & Gerir ciclo completo de pedido & Criar pedido, validar políticas, aprovar/rejeitar por etapa, histórico e versionamento \\
+Permissões e acesso total & Governar capacidades por utilizador & Atribuir/revogar permissão, restringir escopo, gerir acesso total, auditar GRANT/REVOKE \\
+Dias extra da empresa & Parametrizar calendário por país & Configurar dias PT/BR para suporte às regras operacionais \\
+Crédito de saldo & Tratar exceções de saldo anual & Creditar dias com motivo obrigatório para colaboradores elegíveis \\
+Notificações & Fechar o ciclo de ação & Notificar eventos relevantes com marcação de leitura \\
+Perfil e estrutura & Contextualizar decisão & Perfil, equipa, memberships e visibilidade operacional \\
+Reporting operacional & Suportar decisão de gestão & Exportação anual XLSX com filtros de ano e equipa \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Modelo de autorização}
+
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\centering\arraybackslash}p{1.6cm} >{\small\bfseries}p{3.0cm} >{\small}p{8.6cm}}
+\theadrow
+\tH{Nível} & \tH{Designação} & \tH{Descrição} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{Nível} & \tH{Designação} & \tH{Descrição} \\
+\midrule
+\endhead
+1 & Catálogo & Capacidades explícitas: \texttt{request\_vacation}, \texttt{approve\_vacation}, \texttt{manage\_permissions}, entre outras \\
+2 & Escopo & Restrições por equipa, país e nível em permissões marcadas como restritivas \\
+3 & Acesso total & Cobertura funcional alargada com controlo explícito (\texttt{hasAccessTotal}) \\
+4 & Root & Privilégio máximo de governação e administração técnica (\texttt{isRootAccess}) \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Nota de veracidade funcional}
+
+\begin{note}
+O sistema \textbf{não} implementa atribuição direta de um pedido de férias já aprovado no momento de criação. O mecanismo existente é o \textbf{crédito de saldo de férias} (\texttt{assign-balance-days}), que ajusta o saldo anual de colaboradores elegíveis. Decisões excecionais em cenários PT por utilizadores com privilégio elevado mantêm sempre rastreabilidade completa.
+\end{note}
+
+\subsection{Épicos da solução}
+
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\centering\arraybackslash\bfseries}p{1.2cm} >{\small\bfseries}p{3.8cm} >{\small}p{7.0cm} >{\small\centering\arraybackslash}p{1.8cm}}
+\theadrow
+\tH{ID} & \tH{Épico} & \tH{Propósito no SMARTER HUB} & \tH{Prioridade} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{ID} & \tH{Épico} & \tH{Propósito no SMARTER HUB} & \tH{Prioridade} \\
+\midrule
+\endhead
+E1 & Ciclo de pedidos & Garantir criação, validação e decisão de pedidos com estados explícitos e histórico & \taghi \\
+E2 & Governança de acesso & Controlar capacidades por permissão, escopo e acesso total com auditoria & \taghi \\
+E3 & Conformidade PT/BR & Aplicar regras legais/operacionais por país antes da decisão final & \taghi \\
+E4 & Exceções operacionais & Permitir crédito de saldo e decisões excecionais com controlo e rastreio & \tagmed \\
+E5 & Operação assistida & Reduzir fricção com notificações, histórico e feedback operacional & \tagmed \\
+E6 & Visão executiva & Suportar planeamento com exportação anual e indicadores operacionais & \tagmed \\
+\bottomrule
+\end{longtable}
+
+\subsection{Elementos de análise}
+
+\subsubsection{Catálogo de Use Cases}
+
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\centering\arraybackslash\bfseries}p{0.8cm} >{\small}p{2.4cm} >{\small}p{3.7cm} >{\small}p{6.9cm}}
+\theadrow
+\tH{ID} & \tH{Ator} & \tH{Objetivo} & \tH{Fluxo principal} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{ID} & \tH{Ator} & \tH{Objetivo} & \tH{Fluxo principal} \\
+\midrule
+\endhead
+UC01 & Colaborador & Submeter férias & Define período e contexto; submete pedido para validação \\
+UC02 & Colaborador & Submeter ausência & Seleciona tipo/motivo e submete fluxo \\
+UC03 & Sistema & Validar pedido & Aplica políticas PT/BR, sobreposição e capacidade \\
+UC04 & Aprovador & Decidir pedido & Consulta pendências e aprova/recusa com motivo \\
+UC05 & Gestor de permissões & Governar acesso & Concede/revoga permissões e define restrições de escopo \\
+UC06 & Acesso total & Creditar saldo & Credita dias a colaborador elegível com motivo obrigatório \\
+UC07 & Admin operacional & Configurar dias extra & Define dias por país para o calendário corporativo \\
+UC08 & RH / Gestão & Exportar mapa anual & Filtra por ano/equipa e gera ficheiro XLSX \\
+UC09 & Colaborador & Consultar histórico & Visualiza estados, versões e decisões dos pedidos \\
+UC10 & Utilizador & Gerir notificações & Consulta notificações e marca como lidas \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{User Stories}
+
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\centering\arraybackslash\bfseries}p{1.0cm} >{\small}p{4.4cm} >{\small}p{6.8cm} >{\small\centering\arraybackslash}p{1.4cm}}
+\theadrow
+\tH{ID} & \tH{Como} & \tH{Quero} & \tH{Prior.} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{ID} & \tH{Como} & \tH{Quero} & \tH{Prior.} \\
+\midrule
+\endhead
+US01 & Colaborador & submeter pedido de férias com período e contexto de equipa & \taghi \\
+US02 & Colaborador & pedir ausência médica até 3 dias com validação automática de regra & \taghi \\
+US03 & Colaborador & pedir ausência por formação com justificativo e rastreio de estado & \tagmed \\
+US04 & Aprovador habilitado & decidir pedidos do meu nível com motivo e registo auditável & \taghi \\
+US05 & Gestor de permissões & atribuir/revogar capacidades por utilizador com restrições de escopo & \taghi \\
+US06 & Acesso total & creditar saldo de férias em cenários excecionais com motivo obrigatório & \taghi \\
+US07 & Admin operacional & configurar dias extra da empresa por país sem alterar código & \tagmed \\
+US08 & RH / Gestão & exportar mapa anual de férias em XLSX com filtros por equipa e ano & \taghi \\
+US09 & Gestor de permissões & consultar trilho de auditoria de grants/revokes para compliance & \taghi \\
+US10 & Colaborador & consultar histórico de pedidos e estados/versões & \tagmed \\
+US11 & Utilizador autenticado & receber notificações de eventos e marcá-las como lidas & \tagmed \\
+US12 & RH / Gestão & consultar dados agregados para planeamento e compliance & \tagmed \\
+US13 & Auditor interno & obter trilho de decisão por pedido para evidência de conformidade & \taghi \\
+US14 & Admin operacional & parametrizar regras sensíveis sem alterar código aplicacional & \tagmed \\
+US15 & Gestor de estrutura & manter memberships coerentes com a organização real & \taghi \\
+US16 & Colaborador & editar pedido pendente sem perder histórico de alterações & \tagmed \\
+US17 & Aprovador habilitado & visualizar conflitos de capacidade antes de validar aprovação & \taghi \\
+US18 & Direção & obter indicadores periódicos para suporte à decisão estratégica & \tagmed \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Critérios de aceitação por épico}
+
+\begin{itemize}
+  \item \textbf{E1 — Ciclo de pedidos:} todo pedido possui estado explícito (\texttt{PENDING}, \texttt{APPROVED}, \texttt{REJECTED} ou \texttt{CANCELLED}), timestamps e decisão rastreável com ator e motivo.
+  \item \textbf{E2 — Governança de acesso:} operações sensíveis exigem permissão válida e escopo compatível; todos os grants/revokes e alterações de acesso total ficam auditados.
+  \item \textbf{E3 — Conformidade PT/BR:} as regras por país são avaliadas antes da aprovação final e devolvem motivo claro em caso de bloqueio.
+  \item \textbf{E4 — Exceções operacionais:} o crédito de saldo só pode ser efetuado por utilizador elegível e gera notificação ao colaborador.
+  \item \textbf{E5 — Operação assistida:} notificações e histórico reduzem a ambiguidade e o tempo de acompanhamento de pedidos.
+  \item \textbf{E6 — Visão executiva:} a exportação anual devolve dados suficientes para análise de capacidade por equipa.
+\end{itemize}
+
+\subsection{Descrição técnica}
+
+\subsubsection{Arquitetura lógica}
+
+A solução organiza-se em três camadas com separação clara de responsabilidades:
+
+\begin{itemize}
+  \item \textbf{Frontend} (React + TypeScript + Vite): páginas por domínio funcional, componentes reutilizáveis e deduplicação de pedidos em desenvolvimento.
+  \item \textbf{Backend} (Express + TypeScript): rotas por contexto (\texttt{vacations}, \texttt{permissions}, \texttt{profile}, \texttt{notifications}, \texttt{users}), validação por Zod e motor de autorização por permissões/escopo.
+  \item \textbf{Dados} (PostgreSQL + Prisma): modelo relacional com entidades de pedido, aprovação, governação de acesso, perfil e estrutura organizacional.
+\end{itemize}
+
+\begin{diagram}
+\begin{center}
+\begin{tikzpicture}[
+  box/.style={
+    rectangle, rounded corners=2pt,
+    minimum width=3.2cm, minimum height=1.1cm,
+    align=center, font=\small\sffamily\bfseries,
+    inner sep=8pt
+  },
+  sub/.style={
+    rectangle, rounded corners=2pt,
+    minimum width=3.6cm, minimum height=0.7cm,
+    align=center, font=\scriptsize,
+    draw=MUTED!40, fill=white, inner sep=5pt
+  },
+  arr/.style={-Stealth, thick, color=RULE!60}
+]
+\node[box, draw=RULE, fill=BOXBG, text=RULE] (fe) at (0,0)     {Frontend\\React + TypeScript};
+\node[box, draw=ACCENT, fill=ACCENT!8, text=ACCENT] (be) at (5,0)    {Backend\\Express + TypeScript};
+\node[box, draw=TAGLO!80, fill=TAGLO!8, text=TAGLO!80!black] (db) at (10,0)   {Base de Dados\\PostgreSQL + Prisma};
+\node[sub] (aux) at (5,-2.2) {Firebase~·~Uploads~·~ExcelJS};
+
+\draw[arr] (fe) -- node[above, font=\scriptsize\color{MUTED}] {REST /api/*} (be);
+\draw[arr] (be) -- node[above, font=\scriptsize\color{MUTED}] {Prisma ORM} (db);
+\draw[arr, dashed, color=MUTED!60] (be) -- node[right, font=\scriptsize\color{MUTED}] {integrações} (aux);
+\end{tikzpicture}
+\end{center}
+\end{diagram}
+
+\subsubsection{Fluxos críticos}
+
+\textbf{Fluxo 1 — Pedido e aprovação de férias}
+\begin{enumerate}
+  \item O utilizador cria um pedido com período, tipo, contexto de equipa e indicador de dia parcial.
+  \item O backend valida formato, política por país (PT/BR), sobreposições e capacidade disponível.
+  \item O sistema cria a entidade \texttt{Vacation} e as etapas \texttt{VacationApproval} por aprovadores configurados.
+  \item Cada decisor aprova ou rejeita a sua etapa com motivo; o pedido transita para estado final.
+  \item O colaborador é notificado do resultado.
+\end{enumerate}
+
+\textbf{Fluxo 2 — Crédito de saldo de férias}
+\begin{enumerate}
+  \item O utilizador com acesso total inicia um crédito para um colaborador alvo.
+  \item O backend valida payload, elegibilidade do alvo e escopo do ator.
+  \item O sistema cria o registo \texttt{VacationBalanceCredit} com motivo e autoria.
+  \item O colaborador recebe notificação do crédito efetuado.
+\end{enumerate}
+
+\textbf{Fluxo 3 — Exportação do mapa de férias}
+\begin{enumerate}
+  \item O utilizador com acesso total/root seleciona ano e equipa.
+  \item O endpoint gera um workbook XLSX via ExcelJS com os dados relevantes para gestão.
+  \item O ficheiro é descarregado para análise e partilha operacional.
+\end{enumerate}
+
+\textbf{Fluxo 4 — Governança de permissões}
+\begin{enumerate}
+  \item O gestor de permissões seleciona o utilizador alvo e a capacidade a alterar.
+  \item Define escopo (equipa, país, nível), estado da permissão e motivo da alteração.
+  \item O sistema valida a autorização do ator, aplica a mudança e limpa a cache de autorização.
+  \item Regista o evento de auditoria (GRANT/REVOKE) com ator, alvo e timestamp.
+  \item O perfil alvo passa a operar com o novo conjunto de capacidades.
+\end{enumerate}
+
+\subsubsection{Modelo de dados}
+
+\textbf{Entidades principais implementadas no schema:}
+
+\begin{itemize}
+  \item \texttt{User} — identidade, flags de acesso total e root, relação com perfil e memberships
+  \item \texttt{Team} e \texttt{TeamMembership} — estrutura organizacional e papéis por equipa
+  \item \texttt{Vacation} e \texttt{VacationApproval} — pedido e trilho de aprovação multi-nível
+  \item \texttt{Permission}, \texttt{UserPermission} e \texttt{PermissionGrant} — governança de acesso
+  \item \texttt{VacationCompanyExtraDay} — dias automáticos da empresa por país
+  \item \texttt{Notification}, \texttt{Training}, \texttt{ProfileChangeRequest} — módulos de suporte
+\end{itemize}
+
+\textbf{Relacionamentos principais:}
+
+\begin{itemize}
+  \item \texttt{Team} 1..N \texttt{TeamMembership}~; \texttt{User} 1..N \texttt{TeamMembership}
+  \item \texttt{User} 1..N \texttt{Vacation}~; \texttt{Vacation} 1..N \texttt{VacationApproval}
+  \item \texttt{User} 1..N \texttt{UserPermission}~; \texttt{Permission} 1..N \texttt{UserPermission}
+  \item \texttt{User} 1..1 \texttt{Profile}
+  \item \texttt{Team} (pai) 1..N \texttt{Team} (subequipa)
+\end{itemize}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Objetivos}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Objetivo geral}
+
+Conceber e operacionalizar uma plataforma única para gestão de processos de pessoas — férias, ausências, perfil, formações, notificações e permissões —, garantindo governança por permissões e escopo, rastreabilidade de decisões e melhoria mensurável de eficiência operacional.
+
+\subsection{Objetivos específicos}
+
+\begin{enumerate}
+  \item Implementar cadeia de aprovação de férias por hierarquia real (equipa e subequipa), incluindo validação multi-nível.
+  \item Aplicar políticas de férias por país (PT/BR), com regras legais e operacionais distintas.
+  \item Centralizar controlo de permissões granulares com restrições de escopo por equipa, país e nível.
+  \item Garantir exportação executiva do mapa de férias em XLSX, com filtro por ano e equipa.
+  \item Permitir crédito de saldo de férias por perfis com acesso total em cenários excecionais e auditáveis.
+  \item Reforçar a auditabilidade de ações sensíveis: grants/revokes, aprovações e exceções operacionais.
+\end{enumerate}
+
+\subsection{Racional dos objetivos}
+
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\bfseries}p{3.8cm} >{\small}p{10.4cm}}
+\theadrow
+\tH{Dimensão} & \tH{Como os objetivos endereçam o problema} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{Dimensão} & \tH{Como os objetivos endereçam o problema} \\
+\midrule
+\endhead
+Tempo e previsibilidade & Fluxo de aprovação automatizado por etapas habilitadas, com estados explícitos e notificações imediatas \\
+Conformidade & Regras PT/BR e controlo de escopo eliminam decisões fora de norma e reduzem risco legal \\
+Governança & Permissões granulares, restrições de escopo e acesso total equilibram autonomia operacional e controlo \\
+Decisão baseada em dados & Mapa anual exportável e visibilidade agregada por equipa suportam planeamento de capacidade \\
+\bottomrule
+\end{longtable}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Gestão de Riscos}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Riscos identificados}
+
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\centering\arraybackslash\bfseries}p{0.8cm} >{\small}p{5.4cm} >{\small\centering\arraybackslash}p{1.9cm} >{\small\centering\arraybackslash}p{1.9cm} >{\small}p{3.8cm}}
+\theadrow
+\tH{ID} & \tH{Risco} & \tH{Prob.} & \tH{Impacto} & \tH{Mitigação} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{ID} & \tH{Risco} & \tH{Prob.} & \tH{Impacto} & \tH{Mitigação} \\
+\midrule
+\endhead
+R1 & Alteração de regras sem atualização de documentação & \tagmed & \taghi & Governance: mudança de código implica atualizar documento de regras \\
+R2 & Regressão por StrictMode/double fetch no frontend & \tagmed & \tagmed & Cache com deduplicação in-flight e testes de regressão \\
+R3 & Falha do ciclo Prisma após mudança de schema & \tagmed & \tagmed & Pipeline obrigatório: \texttt{prisma generate} antes de build \\
+R4 & Erro de timezone no calendário (desvio de um dia) & \taglo & \taghi & Uso consistente de \texttt{YYYY-MM-DD} sem \texttt{toISOString} \\
+R5 & Escalada indevida de privilégios & \taglo & \taghi & Auditoria de grants/revokes e validação de ator autorizado \\
+R6 & Dependência de API externa de feriados (Nager.Date) & \tagmed & \tagmed & Cache local com TTL e fallback para operação degradada \\
+R7 & Dificuldade de adoção por perfis não técnicos & \tagmed & \tagmed & UX orientada a tarefa, labels claras e feedback imediato \\
+R8 & Divergência entre hierarquia real e memberships & \tagmed & \taghi & Rotinas de validação e revisão periódica por admin \\
+\bottomrule
+\end{longtable}
+
+\subsection{Matriz probabilidade $\times$ impacto}
+
+\begin{center}
+\begin{tikzpicture}[every node/.style={font=\small\sffamily}]
+\def\cw{3.4cm}\def\ch{1.6cm}
+
+% Células
+\fill[ROWSHADE]   (0,0)          rectangle (\cw,\ch);
+\fill[ROWSHADE]   (0,\ch)        rectangle (\cw,2*\ch);
+\fill[ROWSHADE]   (0,2*\ch)      rectangle (\cw,3*\ch);
+\fill[ROWSHADE]   (\cw,0)        rectangle (2*\cw,\ch);
+\fill[yellow!10]  (\cw,\ch)      rectangle (2*\cw,2*\ch);
+\fill[yellow!10]  (\cw,2*\ch)    rectangle (2*\cw,3*\ch);
+\fill[red!8]      (2*\cw,\ch)    rectangle (3*\cw,2*\ch);
+\fill[red!8]      (2*\cw,2*\ch)  rectangle (3*\cw,3*\ch);
+\fill[ROWSHADE]   (2*\cw,0)      rectangle (3*\cw,\ch);
+
+% Grid
+\draw[MUTED!30, line width=0.4pt] (0,0) grid[xstep=\cw,ystep=\ch] (3*\cw,3*\ch);
+\draw[ACCENT!40, line width=0.8pt] (0,0) rectangle (3*\cw,3*\ch);
+
+% Cabeçalhos coluna
+\foreach \x/\l in {0/Baixo,1/Médio,2/Alto}
+  \node[text=ACCENT, font=\small\sffamily\bfseries] at ({(\x+0.5)*\cw}, -0.5cm) {\l};
+
+% Cabeçalhos linha
+\foreach \y/\l in {0/Baixa,1/Média,2/Alta}
+  \node[text=ACCENT, font=\small\sffamily\bfseries, rotate=90] at (-0.55cm, {(\y+0.5)*\ch}) {\l};
+
+% Eixos
+\node[text=MUTED, font=\footnotesize\sffamily] at (1.5*\cw, -1.1cm) {Impacto};
+\node[text=MUTED, font=\footnotesize\sffamily, rotate=90] at (-1.2cm, 1.5*\ch) {Probabilidade};
+
+% Riscos
+\node[text=TAGHI,  font=\small\sffamily\bfseries] at (2.5*\cw, 0.5*\ch) {R4, R5};
+\node[text=TAGMED, font=\small\sffamily\bfseries] at (1.5*\cw, 1.5*\ch) {R2, R3, R6, R7};
+\node[text=TAGHI,  font=\small\sffamily\bfseries] at (2.5*\cw, 1.5*\ch) {R1, R8};
+\end{tikzpicture}
+\end{center}
+
+\vspace{4pt}
+
+\subsection{Plano de resposta}
+
+\begin{itemize}
+  \item \textbf{Prevenir:} checklist de release com foco em permissões, fluxos de férias e auditoria.
+  \item \textbf{Detetar:} testes unitários/integração (Vitest + Supertest) e E2E (Playwright) por rota crítica.
+  \item \textbf{Responder:} rollback funcional por flag ou ajuste de permissão e correção incremental.
+  \item \textbf{Aprender:} registo estruturado de incidentes no repositório para prevenir reincidências.
+\end{itemize}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Conclusão}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+O problema analisado exige uma resposta estrutural: substituir processos dispersos por um modelo integrado, governado e mensurável. A proposta consolidada no SMARTER HUB assenta em quatro pilares:
+
+\begin{itemize}
+  \item \textbf{Regras de negócio explícitas} — reduzindo ambiguidade operacional e retrabalho administrativo;
+  \item \textbf{Cadeia de decisão auditável} — garantindo compliance e rastreabilidade ponta a ponta;
+  \item \textbf{Gestão de permissões por escopo} — equilibrando autonomia operacional e controlo hierárquico;
+  \item \textbf{Visão executiva por indicadores} — suportando decisão estratégica baseada em dados.
+\end{itemize}
+
+No estado futuro esperado, a organização passa a operar com maior previsibilidade, menor retrabalho e melhor capacidade de decisão, mantendo conformidade legal e escalabilidade funcional para responder ao crescimento organizacional.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section*{Anexos}
+\addcontentsline{toc}{section}{Anexos}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{note}
+Conteúdo sugerido para inclusão no fecho do PC2:
+\begin{itemize}
+  \item lista integral de endpoints da API por domínio funcional;
+  \item capturas de ecrã dos fluxos principais (pedido, aprovação, exportação, crédito de saldo);
+  \item evidências de testes (unitários, integração e E2E);
+  \item backlog priorizado por sprint e respetivo estado de implementação.
+\end{itemize}
+\end{note}
+
+\end{document}

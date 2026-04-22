@@ -146,6 +146,19 @@ type SubmissionNotice = {
   message: string;
 } | null;
 
+type VacationToastState = {
+  tone: 'success' | 'error' | 'info' | 'warning';
+  title?: string;
+  message: string;
+  details?: string[];
+  highlight?: {
+    tone?: 'success' | 'error' | 'info' | 'warning';
+    label: string;
+    message: string;
+  };
+  visible: boolean;
+};
+
 const EMPTY_DRAFT: VacationDraft = {
   requestKind: 'VACATION',
   absenceReason: 'MEDICAL',
@@ -189,9 +202,28 @@ function calculateDays(record: Pick<VacationRecord, 'dataInicio' | 'dataFim'>) {
   return Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
 }
 
+function isWeekendIso(iso: string) {
+  const day = toLocalDate(iso).getDay();
+  return day === 0 || day === 6;
+}
+
+function calculateBusinessDays(startIso: string, endIso: string) {
+  const days = enumerateDates(startIso, endIso);
+  return days.filter((iso) => !isWeekendIso(iso)).length;
+}
+
+function hasWeekendInRange(startIso: string, endIso: string) {
+  const days = enumerateDates(startIso, endIso);
+  return days.some((iso) => isWeekendIso(iso));
+}
+
 function calculateDuration(record: Pick<VacationRecord, 'dataInicio' | 'dataFim' | 'requestType' | 'partialDay'>) {
   if (record.requestType === 'VACATION' && record.partialDay && record.partialDay !== 'FULL') {
     return 0.5;
+  }
+
+  if (record.requestType === 'VACATION') {
+    return calculateBusinessDays(record.dataInicio, record.dataFim);
   }
 
   return calculateDays(record);
@@ -210,6 +242,16 @@ function buildValidationErrors(draft: VacationDraft): DraftErrors {
 
   if (draft.dataInicio && draft.dataFim && draft.dataInicio > draft.dataFim) {
     errors.dataFim = 'A data de fim deve ser igual ou posterior à data de início.';
+  }
+
+  if (draft.requestKind === 'VACATION') {
+    if (draft.dataInicio && isWeekendIso(draft.dataInicio)) {
+      errors.dataInicio = 'Pedido de férias não pode começar ao fim de semana.';
+    }
+
+    if (draft.dataFim && isWeekendIso(draft.dataFim)) {
+      errors.dataFim = 'Pedido de férias não pode terminar ao fim de semana.';
+    }
   }
 
   if (draft.requestKind === 'ABSENCE' && draft.absenceReason === 'MEDICAL') {
@@ -330,7 +372,7 @@ export default function VacationsPage() {
   const [calendarError, setCalendarError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionNotice, setSubmissionNotice] = useState<SubmissionNotice>(null);
-  const [toast, setToast] = useState<{ tone: 'success' | 'error' | 'info' | 'warning'; message: string; visible: boolean }>({
+  const [toast, setToast] = useState<VacationToastState>({
     tone: 'info',
     message: '',
     visible: false,
@@ -641,7 +683,17 @@ export default function VacationsPage() {
   function showToast(
     tone: 'success' | 'error' | 'info' | 'warning',
     message: string,
-    options?: { persist?: boolean; autoHideMs?: number },
+    options?: {
+      persist?: boolean;
+      autoHideMs?: number;
+      title?: string;
+      details?: string[];
+      highlight?: {
+        tone?: 'success' | 'error' | 'info' | 'warning';
+        label: string;
+        message: string;
+      };
+    },
   ) {
     const now = Date.now();
     if (
@@ -660,7 +712,14 @@ export default function VacationsPage() {
       toastTimeoutRef.current = null;
     }
 
-    setToast({ tone, message, visible: true });
+    setToast({
+      tone,
+      title: options?.title,
+      message,
+      details: options?.details,
+      highlight: options?.highlight,
+      visible: true,
+    });
 
     const shouldPersist = options?.persist === true;
     if (!shouldPersist) {
@@ -1072,37 +1131,53 @@ export default function VacationsPage() {
         : requestType === 'ABSENCE_MEDICAL'
           ? 'Ausência médica'
           : 'Ausência por formação';
-      const periodLabel = `Período: ${formatShortDate(payload.dataInicio)} - ${formatShortDate(payload.dataFim)}.`;
-      const teamLabel = `Equipa: ${teamContexts.find((item) => item.teamId === payload.contextTeamId)?.teamName || 'Contexto principal automático'}.`;
-      const nextStepLabel = 'Próximo passo: o pedido segue para aprovação conforme a cadeia da equipa.';
+      const periodLabel = `${formatShortDate(payload.dataInicio)} - ${formatShortDate(payload.dataFim)}`;
+      const teamLabel = teamContexts.find((item) => item.teamId === payload.contextTeamId)?.teamName || 'Contexto principal automático';
+      const detailLines = [
+        `Tipo do pedido: ${typeLabel}`,
+        `Período selecionado: ${periodLabel}`,
+        `Equipa de contexto: ${teamLabel}`,
+        editingId
+          ? 'Estado do fluxo: a nova versão foi reenviada para aprovação.'
+          : 'Estado do fluxo: o pedido foi enviado para aprovação.',
+      ];
       const warnings = Array.isArray(result?.warnings) ? result.warnings.filter(Boolean) : [];
       if (warnings.length > 0) {
-        const warningMessage = [
-          actionLabel,
-          `Tipo: ${typeLabel}.`,
-          periodLabel,
-          teamLabel,
-          nextStepLabel,
-          '',
-          `Aviso de conformidade PT: ${warnings[0]}`,
-        ].join('\n');
-        setSubmissionNotice({ tone: 'warning', message: warningMessage });
-        showToast('warning', warningMessage, { persist: true });
+        setSubmissionNotice({ tone: 'warning', message: warnings[0] });
+        showToast('warning', actionLabel, {
+          title: 'Pedido registado com aviso',
+          details: detailLines,
+          highlight: {
+            tone: 'warning',
+            label: 'Aviso de conformidade PT',
+            message: warnings[0],
+          },
+          persist: true,
+        });
       } else {
-        const successPopup = [
-          actionLabel,
-          `Tipo: ${typeLabel}.`,
-          periodLabel,
-          teamLabel,
-          nextStepLabel,
-        ].join('\n');
-        setSubmissionNotice({ tone: 'success', message: successPopup });
-        showToast('success', successPopup, { persist: true });
+        setSubmissionNotice({ tone: 'success', message: actionLabel });
+        showToast('success', actionLabel, {
+          title: editingId ? 'Versão reenviada para aprovação' : 'Pedido enviado para aprovação',
+          details: detailLines,
+          highlight: {
+            tone: 'info',
+            label: 'Próximo passo',
+            message: 'Os aprovadores da cadeia da equipa vão receber o pedido nas aprovações e nas notificações.',
+          },
+          persist: true,
+        });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao submeter pedido.';
       setSubmissionNotice({ tone: 'error', message });
-      showToast('error', message, { persist: true });
+      showToast('error', message, {
+        title: 'Não foi possível submeter o pedido',
+        details: [
+          `Tipo em edição: ${requestType === 'VACATION' ? 'Férias' : 'Ausência'}`,
+          `Período tentado: ${formatShortDate(payload.dataInicio)} - ${formatShortDate(payload.dataFim)}`,
+        ],
+        persist: true,
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -1159,6 +1234,11 @@ export default function VacationsPage() {
   }
 
   function handleDayClick(iso: string) {
+    if (draft.requestKind === 'VACATION' && isWeekendIso(iso)) {
+      showToast('info', 'Em férias, início e fim devem ser dias úteis (segunda a sexta).');
+      return;
+    }
+
     if (selectionAnchor === null) {
       // First click — set anchor and pre-fill single day
       setSelectionAnchor(iso);
@@ -1307,15 +1387,21 @@ export default function VacationsPage() {
 
     const rangeClass = !isTPeople ? getDayRangeClass(iso) : '';
     const isAnchorDay = iso === selectionAnchor;
+    const isVacationWeekendBlocked = !isTPeople && draft.requestKind === 'VACATION' && isWeekendIso(iso);
+    const canClickDay = !isTPeople && !isVacationWeekendBlocked;
+    const dayTitle = isVacationWeekendBlocked
+      ? 'Férias: início e fim não podem ser ao fim de semana.'
+      : getDayLabel(iso);
 
     return (
       <button
         type="button"
         key={key}
         className={`vacations-day vacations-day--${getDayKind(iso)}${rangeClass}${isAnchorDay ? ' cal-day-anchor' : ''}`}
-        title={getDayLabel(iso)}
-        onClick={() => !isTPeople && handleDayClick(iso)}
+        title={dayTitle}
+        onClick={() => canClickDay && handleDayClick(iso)}
         onMouseEnter={() => !isTPeople && handleDayMouseEnter(iso)}
+        disabled={isVacationWeekendBlocked}
       >
         {day}
       </button>
@@ -1447,6 +1533,9 @@ export default function VacationsPage() {
                   : draft.dataInicio && draft.dataFim && !selectionAnchor
                     ? `Selecionado: ${formatShortDate(draft.dataInicio)}${draft.dataInicio !== draft.dataFim ? ' → ' + formatShortDate(draft.dataFim) : ''}`
                     : 'Clica num dia para iniciar seleção'}
+                {draft.requestKind === 'VACATION'
+                  ? ' · Férias: início/fim apenas em dias úteis.'
+                  : ' · Ausências: pode começar/terminar ao fim de semana.'}
               </span>
             )}
           </div>
@@ -1517,6 +1606,18 @@ export default function VacationsPage() {
                 </div>
               ) : (
                 <form className="cal-booking-bar__form" onSubmit={handleSubmit} noValidate>
+                  {(() => {
+                    const selectedDays = draft.requestKind === 'VACATION'
+                      ? calculateDuration({
+                          dataInicio: draft.dataInicio,
+                          dataFim: draft.dataFim,
+                          requestType: 'VACATION',
+                          partialDay: draft.partialDay,
+                        })
+                      : calculateDays({ dataInicio: draft.dataInicio, dataFim: draft.dataFim });
+                    const includesWeekend = hasWeekendInRange(draft.dataInicio, draft.dataFim);
+
+                    return (
                   <div className="cal-booking-bar__range">
                     <span className="cal-booking-bar__range-icon">📅</span>
                     <div className="cal-booking-bar__range-dates">
@@ -1526,9 +1627,13 @@ export default function VacationsPage() {
                           : `${formatShortDate(draft.dataInicio)} → ${formatShortDate(draft.dataFim)}`}
                       </strong>
                       <small>
-                        {calculateDays({ dataInicio: draft.dataInicio, dataFim: draft.dataFim })} {calculateDays({ dataInicio: draft.dataInicio, dataFim: draft.dataFim }) === 1 ? 'dia' : 'dias'}
+                        {selectedDays} {selectedDays === 1 ? 'dia' : 'dias'}
+                        {draft.requestKind === 'VACATION' ? ' úteis' : ''}
                         {editingId ? ' · Editando pedido' : ''}
                       </small>
+                      {draft.requestKind === 'ABSENCE' && includesWeekend && (
+                        <small>Inclui fim de semana: permitido para ausências.</small>
+                      )}
                     </div>
                     <button type="button" className="cal-booking-bar__reselect" title="Alterar intervalo" onClick={() => {
                       setSelectionAnchor(draft.dataInicio);
@@ -1537,6 +1642,8 @@ export default function VacationsPage() {
                       ✎
                     </button>
                   </div>
+                    );
+                  })()}
 
                   <div className="cal-booking-bar__fields">
                     <label className="cal-booking-bar__field">
@@ -1913,7 +2020,10 @@ export default function VacationsPage() {
         <Toast
           show={toast.visible}
           tone={toast.tone}
+          title={toast.title}
           message={toast.message}
+          details={toast.details}
+          highlight={toast.highlight}
           onClose={() => {
             if (toastTimeoutRef.current !== null) {
               window.clearTimeout(toastTimeoutRef.current);

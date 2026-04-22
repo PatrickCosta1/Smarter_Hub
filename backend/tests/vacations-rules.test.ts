@@ -63,7 +63,59 @@ describe('vacations rules', () => {
     ).toBe(2);
   });
 
-  it('enforceVacationBusinessDays accepts weekend vacation request', async () => {
+  it('vacationSchema rejects vacation starting on weekend', () => {
+    const result = __vacationTestables.vacationSchema.safeParse({
+      dataInicio: '2026-04-18',
+      dataFim: '2026-04-22',
+      requestType: 'VACATION',
+      partialDay: 'FULL',
+      observacoes: '',
+      attachmentLink: '',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('vacationSchema rejects vacation ending on weekend', () => {
+    const result = __vacationTestables.vacationSchema.safeParse({
+      dataInicio: '2026-04-17',
+      dataFim: '2026-04-19',
+      requestType: 'VACATION',
+      partialDay: 'FULL',
+      observacoes: '',
+      attachmentLink: '',
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('vacationSchema allows absence starting on weekend', () => {
+    const result = __vacationTestables.vacationSchema.safeParse({
+      dataInicio: '2026-04-18',
+      dataFim: '2026-04-20',
+      requestType: 'ABSENCE_MEDICAL',
+      partialDay: 'FULL',
+      observacoes: '',
+      attachmentLink: '',
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('vacationSchema allows absence ending on weekend', () => {
+    const result = __vacationTestables.vacationSchema.safeParse({
+      dataInicio: '2026-04-17',
+      dataFim: '2026-04-19',
+      requestType: 'ABSENCE_TRAINING',
+      partialDay: 'FULL',
+      observacoes: '',
+      attachmentLink: '',
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('enforceVacationBusinessDays rejects weekend start for vacation request', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -75,6 +127,15 @@ describe('vacations rules', () => {
     await expect(
       __vacationTestables.enforceVacationBusinessDays({
         requestType: 'VACATION',
+        dataInicio: '2026-04-11',
+        dataFim: '2026-04-15',
+        country: 'PT',
+      }),
+    ).rejects.toThrow('não pode começar ao fim de semana');
+
+    await expect(
+      __vacationTestables.enforceVacationBusinessDays({
+        requestType: 'ABSENCE_MEDICAL',
         dataInicio: '2026-04-11',
         dataFim: '2026-04-11',
         country: 'PT',

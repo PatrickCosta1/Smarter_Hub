@@ -47,6 +47,29 @@ const vacationSchema = z
       });
     }
 
+    if (data.requestType === 'VACATION') {
+      const startDay = start.getDay();
+      const endDay = end.getDay();
+      const startIsWeekend = startDay === 0 || startDay === 6;
+      const endIsWeekend = endDay === 0 || endDay === 6;
+
+      if (startIsWeekend) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['dataInicio'],
+          message: 'Pedido de férias não pode começar ao fim de semana.',
+        });
+      }
+
+      if (endIsWeekend) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['dataFim'],
+          message: 'Pedido de férias não pode terminar ao fim de semana.',
+        });
+      }
+    }
+
     if (data.partialDay !== 'FULL') {
       if (data.requestType !== 'VACATION') {
         ctx.addIssue({
@@ -169,7 +192,20 @@ async function enforceVacationBusinessDays(params: {
     return;
   }
 
-  void params;
+  const start = toLocalDate(params.dataInicio);
+  const end = toLocalDate(params.dataFim);
+  const startIsWeekend = start.getDay() === 0 || start.getDay() === 6;
+  const endIsWeekend = end.getDay() === 0 || end.getDay() === 6;
+
+  if (startIsWeekend) {
+    throw new Error('Pedido de férias não pode começar ao fim de semana.');
+  }
+
+  if (endIsWeekend) {
+    throw new Error('Pedido de férias não pode terminar ao fim de semana.');
+  }
+
+  void params.country;
 }
 
 async function validateVacationCountryPolicy(params: {
@@ -779,7 +815,7 @@ async function enforceOneThirdCapacity(
     where: {
       contextTeamId,
       requestType: 'VACATION',
-      status: 'APPROVED',
+      status: { in: ['APPROVED', 'PENDING'] },
       ...(excludeVacationId ? { id: { not: excludeVacationId } } : {}),
     },
     select: {
