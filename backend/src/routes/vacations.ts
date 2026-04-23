@@ -6,6 +6,7 @@ import { prisma } from '../lib/prisma.js';
 import {
   buildUserWhereFromScope,
   canAccessUserByPermission,
+  canReviewAccessTotalHierarchy,
   getPermissionScope,
   hasPermission,
   isAccessTotal,
@@ -325,112 +326,6 @@ function vacationDailyWeight(record: { dataInicio: string; partialDay?: 'FULL' |
   return record.dataInicio === iso ? 0.5 : 1;
 }
 
-function clampVacationRangeToYear(dataInicio: string, dataFim: string, year: number) {
-  const yearStart = `${year}-01-01`;
-  const yearEnd = `${year}-12-31`;
-  const start = dataInicio > yearStart ? dataInicio : yearStart;
-  const end = dataFim < yearEnd ? dataFim : yearEnd;
-
-  if (start > end) {
-    return null;
-  }
-
-  return { dataInicio: start, dataFim: end };
-}
-
-function vacationDaysForYear(
-  record: { requestType: string; dataInicio: string; dataFim: string; partialDay?: 'FULL' | 'AM' | 'PM' },
-  year: number,
-  holidayDates: Set<string> = new Set(),
-) {
-  const clamped = clampVacationRangeToYear(record.dataInicio, record.dataFim, year);
-  if (!clamped) {
-    return 0;
-  }
-
-  if (record.requestType !== 'VACATION') {
-    return enumerateDates(clamped.dataInicio, clamped.dataFim).length;
-  }
-
-  if (record.partialDay && record.partialDay !== 'FULL') {
-    return record.dataInicio >= `${year}-01-01` && record.dataInicio <= `${year}-12-31` ? 0.5 : 0;
-  }
-
-  return enumerateDates(clamped.dataInicio, clamped.dataFim).filter((iso) => isBusinessDayIso(iso, holidayDates)).length;
-}
-
-async function resolvePtCarryOverDays(userId: string, year: number) {
-  const previousYear = year - 1;
-  if (previousYear < 2000) {
-    return 0;
-  }
-
-  const [approvedVacations, credits] = await Promise.all([
-    prisma.vacation.findMany({
-      where: {
-        userId,
-        status: 'APPROVED',
-        requestType: 'VACATION',
-        dataInicio: { lte: `${previousYear}-12-31` },
-      },
-      select: {
-        dataInicio: true,
-        dataFim: true,
-        partialDay: true,
-        requestType: true,
-      },
-    }),
-    prisma.vacationBalanceCredit.findMany({
-      where: {
-        userId,
-        year: { lt: year },
-      },
-      select: {
-        year: true,
-        days: true,
-      },
-    }),
-  ]);
-
-  const yearsFromVacations = approvedVacations.flatMap((item) => {
-    const startYear = extractYearFromIsoDate(item.dataInicio);
-    const endYear = Math.min(extractYearFromIsoDate(item.dataFim), previousYear);
-    const years: number[] = [];
-    for (let current = startYear; current <= endYear; current += 1) {
-      years.push(current);
-    }
-    return years;
-  });
-
-  const yearsFromCredits = credits.map((item) => item.year);
-  const baseStartYear = Math.max(2000, Math.min(previousYear, ...yearsFromVacations, ...yearsFromCredits));
-
-  const creditsByYear = new Map<number, number>();
-  for (const credit of credits) {
-    creditsByYear.set(credit.year, (creditsByYear.get(credit.year) ?? 0) + credit.days);
-  }
-
-  const holidayDatesByYear = new Map<number, Set<string>>();
-  let carryOver = 0;
-
-  for (let currentYear = baseStartYear; currentYear <= previousYear; currentYear += 1) {
-    if (!holidayDatesByYear.has(currentYear)) {
-      holidayDatesByYear.set(currentYear, await collectHolidayDates('PT', [currentYear]));
-    }
-
-    const holidayDates = holidayDatesByYear.get(currentYear) ?? new Set<string>();
-    const approvedDays = approvedVacations.reduce(
-      (sum, item) => sum + vacationDaysForYear(item, currentYear, holidayDates),
-      0,
-    );
-
-    const entitledDays = 22 + (creditsByYear.get(currentYear) ?? 0) + carryOver;
-    carryOver = Math.max(entitledDays - approvedDays, 0);
-  }
-
-  return carryOver;
-}
-
 function easterDate(year: number) {
   const a = year % 19;
   const b = Math.floor(year / 100);
@@ -707,14 +602,16 @@ function formatVacationNotificationMessage(params: {
   contextTeamName?: string | null;
   observacoes?: string;
 }) {
-  const header = `${params.requesterName} submeteu um pedido de ${describeVacationRequestType(params.requestType)}.`;
+  const header = `Novo pedido de ${describeVacationRequestType(params.requestType)} recebido.`;
+  const requester = `Solicitado por: ${params.requesterName}.`;
+  const type = `Tipo: ${describeVacationRequestType(params.requestType)}.`;
   const period = `Período: ${formatIsoDatePt(params.dataInicio)} até ${formatIsoDatePt(params.dataFim)}.`;
   const team = params.contextTeamName ? `Equipa: ${params.contextTeamName}.` : 'Equipa: sem contexto associado.';
   const notes = params.observacoes?.trim()
     ? `Observações: ${params.observacoes.trim().slice(0, 240)}.`
     : 'Observações: sem detalhes adicionais.';
 
-  return [header, period, team, notes, 'Ação: abre a área de aprovações para decidir.'].join('\n');
+  return [header, requester, type, period, team, notes, 'Ação: abre a área de aprovações para decidir.'].join('\n');
 }
 
 async function resolveApprovalGroups(userId: string, contextTeamId: string | null) {
@@ -731,6 +628,8 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
   if (!requester) {
     return [] as Array<{ level: number; approverIds: string[] }>;
   }
+
+  const requesterHasAccessTotal = Boolean(requester.hasAccessTotal);
 
   const activeMemberships = await prisma.teamMembership.findMany({
     where: { userId, isActive: true },
@@ -761,11 +660,20 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
       },
       select: {
         id: true,
+        isRootAccess: true,
+        hasAccessTotal: true,
       },
       orderBy: { createdAt: 'asc' },
     });
 
     for (const user of users) {
+      if (requesterHasAccessTotal && user.hasAccessTotal && !user.isRootAccess) {
+        const canReview = await canReviewAccessTotalHierarchy(user.id, userId);
+        if (!canReview) {
+          continue;
+        }
+      }
+
       addApprover(user.id);
     }
   }
@@ -860,6 +768,8 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
       user: {
         select: {
           isActive: true,
+          hasAccessTotal: true,
+          isRootAccess: true,
         },
       },
     },
@@ -868,6 +778,13 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
   for (const assignment of customApproverAssignments) {
     if (!assignment.user.isActive || assignment.userId === userId) {
       continue;
+    }
+
+    if (requesterHasAccessTotal && assignment.user.hasAccessTotal && !assignment.user.isRootAccess) {
+      const canReview = await canReviewAccessTotalHierarchy(assignment.userId, userId);
+      if (!canReview) {
+        continue;
+      }
     }
 
     const custom = parseApprovalCustomRestrictions(assignment.customRestrictions);
@@ -1375,8 +1292,6 @@ router.put('/vacations/company-extra-days', requireAuth, async (req: Request, re
 router.get('/vacations/overview', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
-    const yearRaw = Number(typeof req.query.year === 'string' ? req.query.year : new Date().getFullYear());
-    const year = Number.isFinite(yearRaw) ? Math.min(2100, Math.max(2000, yearRaw)) : new Date().getFullYear();
 
     const [profile, vacations] = await Promise.all([
       prisma.profile.findUnique({ where: { userId } }),
@@ -1384,7 +1299,7 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
     ]);
 
     const country = profile?.workCountry ?? 'PT';
-    const currentYear = year;
+    const currentYear = new Date().getFullYear();
     const extraBalanceDays = (await prisma.vacationBalanceCredit.aggregate({
       where: { userId, year: currentYear },
       _sum: { days: true },
@@ -1397,10 +1312,18 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
     });
 
     if (country === 'PT') {
-      const carryOverDays = await resolvePtCarryOverDays(userId, currentYear);
       const approvedVacationDays = vacations
         .filter((item) => item.status === 'APPROVED' && item.requestType === 'VACATION')
-        .reduce((sum, item) => sum + vacationDaysForYear(item, currentYear, holidayDates), 0);
+        .reduce((sum, item) => sum + vacationDaysForMetrics(item, holidayDates), 0);
+      const pendingVacationDays = vacations
+        .filter((item) => item.status === 'PENDING' && item.requestType === 'VACATION')
+        .reduce((sum, item) => sum + vacationDaysForMetrics(item, holidayDates), 0);
+      const approvedAbsenceDays = vacations
+        .filter((item) => item.status === 'APPROVED' && item.requestType !== 'VACATION')
+        .reduce((sum, item) => sum + vacationDaysForMetrics(item, holidayDates), 0);
+      const pendingAbsenceDays = vacations
+        .filter((item) => item.status === 'PENDING' && item.requestType !== 'VACATION')
+        .reduce((sum, item) => sum + vacationDaysForMetrics(item, holidayDates), 0);
 
       return res.json({
         country: 'PT',
@@ -1413,11 +1336,13 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
           maxTeamShare: '1/3',
         },
         approvedVacationDays,
+        pendingVacationDays,
+        approvedAbsenceDays,
+        pendingAbsenceDays,
         calculation: {
-          entitledDays: 22 + extraBalanceDays + carryOverDays,
+          entitledDays: 22 + extraBalanceDays,
           baseEntitledDays: 22,
           extraBalanceDays,
-          carryOverDays,
         },
       });
     }
@@ -1429,6 +1354,18 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
     const unjustifiedAbsences = profile?.unjustifiedAbsences ?? 0;
     const baseEntitledDays = brVacationDaysByAbsences(unjustifiedAbsences);
     const entitledDays = baseEntitledDays + extraBalanceDays;
+    const approvedVacationDays = vacations
+      .filter((item) => item.status === 'APPROVED' && item.requestType === 'VACATION')
+      .reduce((sum, item) => sum + vacationDaysForMetrics(item, holidayDates), 0);
+    const pendingVacationDays = vacations
+      .filter((item) => item.status === 'PENDING' && item.requestType === 'VACATION')
+      .reduce((sum, item) => sum + vacationDaysForMetrics(item, holidayDates), 0);
+    const approvedAbsenceDays = vacations
+      .filter((item) => item.status === 'APPROVED' && item.requestType !== 'VACATION')
+      .reduce((sum, item) => sum + vacationDaysForMetrics(item, holidayDates), 0);
+    const pendingAbsenceDays = vacations
+      .filter((item) => item.status === 'PENDING' && item.requestType !== 'VACATION')
+      .reduce((sum, item) => sum + vacationDaysForMetrics(item, holidayDates), 0);
 
     return res.json({
       country: 'BR',
@@ -1444,6 +1381,10 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
         noticeDays: 30,
         maxTeamShare: '1/3',
       },
+      approvedVacationDays,
+      pendingVacationDays,
+      approvedAbsenceDays,
+      pendingAbsenceDays,
       calculation: {
         monthsWorked,
         acquisitionComplete,
@@ -1764,6 +1705,7 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
           username: true,
           email: true,
           role: true,
+          hasAccessTotal: true,
           team: { select: { id: true, name: true } },
           profile: { select: { workCountry: true, nomeAbreviado: true, nomeCompleto: true } },
         },
@@ -1780,9 +1722,22 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
     orderBy: [{ createdAt: 'desc' }],
   });
   timer.mark('load-pending-vacations');
-  timer.done({ count: pendingByStep.length });
 
-  return res.json(pendingByStep);
+  const filteredPendingByStep: typeof pendingByStep = [];
+  for (const request of pendingByStep) {
+    if (request.user.hasAccessTotal && !req.authUser!.isRootAccess) {
+      const canReview = await canReviewAccessTotalHierarchy(userId, request.userId);
+      if (!canReview) {
+        continue;
+      }
+    }
+
+    filteredPendingByStep.push(request);
+  }
+
+  timer.done({ count: filteredPendingByStep.length });
+
+  return res.json(filteredPendingByStep);
 });
 
 router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Response) => {
@@ -1812,6 +1767,7 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
       user: {
         select: {
           id: true,
+          hasAccessTotal: true,
           profile: { select: { workCountry: true } },
         },
       },
@@ -1825,6 +1781,13 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
 
   if (vacation.userId === userId) {
     return res.status(403).json({ message: 'Não podes aprovar os teus próprios pedidos.' });
+  }
+
+  if (vacation.user.hasAccessTotal && !req.authUser!.isRootAccess) {
+    const canReview = await canReviewAccessTotalHierarchy(userId, vacation.userId);
+    if (!canReview) {
+      return res.status(403).json({ message: 'Não podes aprovar pedidos de utilizadores com acesso total no mesmo nível hierárquico.' });
+    }
   }
 
   const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
@@ -1910,14 +1873,16 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
         : (refreshedVacation.requestType === 'VACATION' ? 'Pedido de férias em aprovação' : 'Pedido de ausência em aprovação'),
       message: refreshedVacation.status === 'APPROVED'
         ? [
-            `${describeVacationRequestType(refreshedVacation.requestType)} aprovado com sucesso.`,
+            `Resultado: ${describeVacationRequestType(refreshedVacation.requestType)} aprovado.`,
             `Período: ${formatIsoDatePt(refreshedVacation.dataInicio)} até ${formatIsoDatePt(refreshedVacation.dataFim)}.`,
-            `Decisão final por: ${actorLabel}.`,
+            `Decisor final: ${actorLabel}.`,
+            'Ação: consulta o teu mapa de férias para confirmar o impacto no saldo.',
           ].join('\n')
         : [
-            `${actorLabel} aprovou a sua etapa do pedido de ${describeVacationRequestType(refreshedVacation.requestType)}.`,
+            `${actorLabel} aprovou a etapa atual do pedido de ${describeVacationRequestType(refreshedVacation.requestType)}.`,
             `Progresso: ${approvedApprovals}/${Math.max(totalApprovals, 1)} aprovações concluídas.`,
             `Período: ${formatIsoDatePt(refreshedVacation.dataInicio)} até ${formatIsoDatePt(refreshedVacation.dataFim)}.`,
+            'Ação: acompanha o estado na área de férias.',
           ].join('\n'),
     },
   });
@@ -1959,6 +1924,7 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
       user: {
         select: {
           id: true,
+          hasAccessTotal: true,
           profile: { select: { workCountry: true } },
         },
       },
@@ -1972,6 +1938,13 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
 
   if (vacation.userId === userId) {
     return res.status(403).json({ message: 'Não podes recusar os teus próprios pedidos.' });
+  }
+
+  if (vacation.user.hasAccessTotal && !req.authUser!.isRootAccess) {
+    const canReview = await canReviewAccessTotalHierarchy(userId, vacation.userId);
+    if (!canReview) {
+      return res.status(403).json({ message: 'Não podes recusar pedidos de utilizadores com acesso total no mesmo nível hierárquico.' });
+    }
   }
 
   const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
@@ -2047,9 +2020,11 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
       userId: vacation.userId,
       title: vacation.requestType === 'VACATION' ? 'Pedido de férias recusado' : 'Pedido de ausência recusado',
       message: [
-        `O pedido de ${describeVacationRequestType(vacation.requestType as 'VACATION' | 'ABSENCE_MEDICAL' | 'ABSENCE_TRAINING')} foi recusado.`,
+        `Resultado: pedido de ${describeVacationRequestType(vacation.requestType as 'VACATION' | 'ABSENCE_MEDICAL' | 'ABSENCE_TRAINING')} recusado.`,
+        `Período: ${formatIsoDatePt(vacation.dataInicio)} até ${formatIsoDatePt(vacation.dataFim)}.`,
         `Motivo: ${reason}`,
         `Decisor: ${req.authUser?.username || 'Aprovador'}.`,
+        'Ação: ajusta o pedido e submete uma nova versão se necessário.',
       ].join('\n'),
     },
   });
@@ -2378,7 +2353,7 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
         : brVacationDaysByAbsences(user.profile?.unjustifiedAbsences ?? 0);
 
       const approvedDays = vacations.reduce(
-        (sum, v) => sum + vacationDaysForYear(v, year, holidayDates),
+        (sum, v) => sum + vacationDaysForMetrics(v, holidayDates),
         0,
       );
 

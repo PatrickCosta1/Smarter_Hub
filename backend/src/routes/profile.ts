@@ -12,7 +12,7 @@ import {
   isAccessTotal,
 } from "../lib/permission-engine.js";
 import { requireAuth } from "../middleware/auth.js";
-import { notifyUsersByPermission } from "../lib/notifications.js";
+import { notifyUsers } from "../lib/notifications.js";
 import {
   markCitizenCardExpiryNotificationsAsRead,
   shouldAutoResolveCitizenCardExpiryNotification,
@@ -391,6 +391,62 @@ const friendlyProfileFieldLabels: Partial<Record<(typeof profileFields)[number],
   workCountry: 'País de trabalho',
 };
 
+async function resolveProfileRequestApproverIds(requesterUserId: string) {
+  const requester = await prisma.user.findUnique({
+    where: { id: requesterUserId },
+    select: { id: true, hasAccessTotal: true },
+  });
+
+  if (!requester) {
+    return [] as string[];
+  }
+
+  const candidates = await prisma.user.findMany({
+    where: {
+      id: { not: requesterUserId },
+      isActive: true,
+      OR: [
+        { isRootAccess: true },
+        {
+          permissionAssignments: {
+            some: {
+              isEnabled: true,
+              permission: { code: 'approve_profile_change' },
+            },
+          },
+        },
+      ],
+    },
+    select: {
+      id: true,
+      isRootAccess: true,
+      hasAccessTotal: true,
+    },
+  });
+
+  const approverIds: string[] = [];
+  for (const candidate of candidates) {
+    if (candidate.isRootAccess) {
+      approverIds.push(candidate.id);
+      continue;
+    }
+
+    if (requester.hasAccessTotal && candidate.hasAccessTotal) {
+      const canReview = await canReviewAccessTotalHierarchy(candidate.id, requesterUserId);
+      if (!canReview) {
+        continue;
+      }
+    }
+
+    const canReviewByPermission = await canAccessUserByPermission(candidate.id, 'approve_profile_change', requesterUserId);
+    if (canReviewByPermission) {
+      approverIds.push(candidate.id);
+    }
+  }
+
+  return Array.from(new Set(approverIds));
+}
+
 function formatChangedKeys(keys: string[]) {
   return keys.map((key) => friendlyProfileFieldLabels[key as (typeof profileFields)[number]] ?? key).join(', ');
 }
@@ -593,7 +649,10 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
         });
       }
 
-      await notifyUsersByPermission(prisma, ['approve_profile_change'], 'Pedido de alteração de ficha', notificationMessage);
+      const approverIds = await resolveProfileRequestApproverIds(userId);
+      if (approverIds.length > 0) {
+        await notifyUsers(prisma, approverIds, 'Pedido de alteração de ficha', notificationMessage);
+      }
 
       await prisma.notification.create({
         data: {
@@ -660,6 +719,7 @@ router.get('/profile/requests', requireAuth, async (req, res) => {
           username: true,
           email: true,
           role: true,
+          hasAccessTotal: true,
           profile: {
             select: {
               nomeAbreviado: true,
@@ -695,10 +755,22 @@ router.get('/profile/requests', requireAuth, async (req, res) => {
       changeDetails: buildProfileChangeDetails(currentProfile as Record<string, unknown> | null, requestedData, changedKeys),
     };
   });
-  timer.mark('enrich-response');
-  timer.done({ count: enriched.length });
 
-  return res.json(enriched);
+  const filteredEnriched = [] as typeof enriched;
+  for (const request of enriched) {
+    if (request.user.hasAccessTotal && !req.authUser!.isRootAccess) {
+      const canReview = await canReviewAccessTotalHierarchy(req.authUser!.id, request.userId);
+      if (!canReview) {
+        continue;
+      }
+    }
+
+    filteredEnriched.push(request);
+  }
+  timer.mark('enrich-response');
+  timer.done({ count: filteredEnriched.length });
+
+  return res.json(filteredEnriched);
 });
 
 router.get('/profile/requests/history', requireAuth, async (req, res) => {
@@ -838,7 +910,12 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
       data: {
         userId: request.userId,
         title: 'Pedido de alteração aprovado',
-        message: 'A ficha foi atualizada com sucesso.',
+        message: [
+          'Resultado: pedido de alteração de ficha aprovado.',
+          'A ficha foi atualizada com sucesso.',
+          `Decisor: ${req.authUser?.username || 'Aprovador'}.`,
+          'Ação: consulta a tua ficha para validar os novos dados.',
+        ].join('\n'),
       },
     });
   }
@@ -889,7 +966,12 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
       data: {
         userId: request.userId,
         title: 'Pedido de alteração parcialmente rejeitado',
-        message: notificationMessage,
+        message: [
+          'Resultado: pedido parcialmente rejeitado.',
+          notificationMessage,
+          `Decisor: ${req.authUser?.username || 'Aprovador'}.`,
+          'Ação: corrige os campos rejeitados e submete nova versão.',
+        ].join('\n'),
       },
     });
   }
@@ -940,7 +1022,12 @@ router.post('/profile/requests/:id/reject', requireAuth, async (req, res) => {
     data: {
       userId: request.userId,
       title: 'Pedido de alteração de ficha recusado',
-      message: `O teu pedido de alteração de ficha foi recusado. ${reason}`,
+      message: [
+        'Resultado: pedido de alteração de ficha recusado.',
+        `Motivo: ${reason}`,
+        `Decisor: ${req.authUser?.username || 'Aprovador'}.`,
+        'Ação: ajusta os dados e volta a submeter quando necessário.',
+      ].join('\n'),
     },
   });
 
