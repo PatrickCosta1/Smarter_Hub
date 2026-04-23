@@ -147,6 +147,20 @@ function formatIsoDatePt(iso: string) {
   return `${day}/${month}/${year}`;
 }
 
+function isIsoDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function clipRange(startA: string, endA: string, startB: string, endB: string) {
+  const start = startA > startB ? startA : startB;
+  const end = endA < endB ? endA : endB;
+  if (start > end) {
+    return null;
+  }
+
+  return { start, end };
+}
+
 function enumerateDates(startText: string, endText: string) {
   const start = toLocalDate(startText);
   const end = toLocalDate(endText);
@@ -993,7 +1007,6 @@ async function applyAbsenceOverrideVacations(
             },
           });
         } else {
-          // PENDING — re-create with a fresh approval chain
           const cacheKey = vacation.contextTeamId ?? '';
           const approvalGroups = approvalGroupsCache.get(cacheKey) ?? [];
           if (approvalGroups.length === 0) continue;
@@ -1032,7 +1045,6 @@ async function applyAbsenceOverrideVacations(
     }
   });
 
-  // Notify the user about each affected vacation (outside tx — best-effort)
   for (const vacation of overlapping) {
     const segments = computeVacationSplitSegments(
       vacation.dataInicio,
@@ -1056,8 +1068,6 @@ async function applyAbsenceOverrideVacations(
     });
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 async function finalizeVacationApproval(
   tx: Prisma.TransactionClient,
@@ -1217,7 +1227,6 @@ router.get('/vacations/company-extra-days', requireAuth, async (req: Request, re
       ? req.query.country
       : (userProfile?.workCountry ?? 'PT');
 
-    // Return raw MM-DD dates from DB (year-agnostic)
     const dbDays = await prisma.vacationCompanyExtraDay.findMany({
       where: { country },
       orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
@@ -2241,7 +2250,11 @@ router.delete('/vacations/:id', requireAuth, async (req: Request, res: Response)
 // ---------------------------------------------------------------------------
 // GET /vacations/export  — Mapa de Férias (XLSX)
 // Accessible to users with isAccessTotal or isRootAccess
-// Query params: year (required), teamId (optional), userIds (optional, comma-separated)
+// Query params:
+// - year (optional)
+// - startDate/endDate (optional pair, YYYY-MM-DD)
+// - teamId (optional)
+// - userIds (optional, comma-separated)
 // ---------------------------------------------------------------------------
 router.get('/vacations/export', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -2254,9 +2267,46 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
       return res.status(403).json({ message: 'Sem permissões para exportar o mapa de férias.' });
     }
 
-    const year = Number(typeof req.query.year === 'string' ? req.query.year : new Date().getFullYear());
-    if (!Number.isFinite(year) || year < 2000 || year > 2100) {
-      return res.status(400).json({ message: 'Ano inválido.' });
+    const yearQuery = typeof req.query.year === 'string' ? req.query.year : '';
+    const startDateQuery = typeof req.query.startDate === 'string' ? req.query.startDate.trim() : '';
+    const endDateQuery = typeof req.query.endDate === 'string' ? req.query.endDate.trim() : '';
+
+    const usingCustomPeriod = startDateQuery.length > 0 || endDateQuery.length > 0;
+
+    let periodStart: string;
+    let periodEnd: string;
+    let periodLabel: string;
+
+    if (usingCustomPeriod) {
+      if (!startDateQuery || !endDateQuery) {
+        return res.status(400).json({ message: 'Para período personalizado, indica data inicial e final.' });
+      }
+
+      if (!isIsoDate(startDateQuery) || !isIsoDate(endDateQuery)) {
+        return res.status(400).json({ message: 'Formato de data inválido. Usa YYYY-MM-DD.' });
+      }
+
+      if (startDateQuery > endDateQuery) {
+        return res.status(400).json({ message: 'A data final deve ser igual ou posterior à data inicial.' });
+      }
+
+      periodStart = startDateQuery;
+      periodEnd = endDateQuery;
+      periodLabel = `${formatIsoDatePt(periodStart)} - ${formatIsoDatePt(periodEnd)}`;
+    } else {
+      const year = Number(yearQuery || new Date().getFullYear());
+      if (!Number.isFinite(year) || year < 2000 || year > 2100) {
+        return res.status(400).json({ message: 'Ano inválido.' });
+      }
+
+      periodStart = `${year}-01-01`;
+      periodEnd = `${year}-12-31`;
+      periodLabel = String(year);
+    }
+
+    const yearsInPeriod: number[] = [];
+    for (let year = extractYearFromIsoDate(periodStart); year <= extractYearFromIsoDate(periodEnd); year += 1) {
+      yearsInPeriod.push(year);
     }
 
     const teamIdFilter = typeof req.query.teamId === 'string' && req.query.teamId ? req.query.teamId : null;
@@ -2301,22 +2351,21 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
     const countriesNeeded = new Set(users.map((u) => u.profile?.workCountry ?? 'PT'));
     const holidaysByCountry = new Map<string, Set<string>>();
     for (const c of countriesNeeded) {
-      const holidays = await collectHolidayDates(c as 'PT' | 'BR', [year]);
+      const holidays = await collectHolidayDates(c as 'PT' | 'BR', yearsInPeriod);
       holidaysByCountry.set(c, holidays);
     }
 
-    // Fetch all vacations for the year in one query
-    const yearStart = `${year}-01-01`;
-    const yearEnd = `${year}-12-31`;
+    // Fetch approved vacations that overlap the requested period
     const allVacations = await prisma.vacation.findMany({
       where: {
         userId: { in: users.map((u) => u.id) },
         status: 'APPROVED',
         requestType: 'VACATION',
-        dataInicio: { lte: yearEnd },
-        dataFim: { gte: yearStart },
+        dataInicio: { lte: periodEnd },
+        dataFim: { gte: periodStart },
       },
       select: {
+        id: true,
         userId: true,
         dataInicio: true,
         dataFim: true,
@@ -2331,21 +2380,44 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
       vacationsByUser.get(v.userId)!.push(v);
     }
 
-    const creditByUser = await sumVacationBalanceCreditsByUser({
-      userIds: users.map((u) => u.id),
-      year,
-    });
+    const creditByUser = new Map<string, number>();
+    for (const year of yearsInPeriod) {
+      const creditsForYear = await sumVacationBalanceCreditsByUser({
+        userIds: users.map((u) => u.id),
+        year,
+      });
+
+      for (const [targetUserId, days] of creditsForYear.entries()) {
+        creditByUser.set(targetUserId, (creditByUser.get(targetUserId) ?? 0) + days);
+      }
+    }
 
     const rows: Array<{
       username: string;
       nome: string;
       equipa: string;
       pais: 'PT' | 'BR';
+      periodoInicio: string;
+      periodoFim: string;
       diasBase: number;
       diasExtra: number;
       diasAprovados: number;
       saldo: number;
+      pedidosAprovados: number;
       periodos: string;
+    }> = [];
+
+    const detailRows: Array<{
+      username: string;
+      nome: string;
+      equipa: string;
+      pais: 'PT' | 'BR';
+      pedidoInicio: string;
+      pedidoFim: string;
+      recorteInicio: string;
+      recorteFim: string;
+      diasNoPeriodo: number;
+      parcial: 'FULL' | 'AM' | 'PM';
     }> = [];
 
     for (const user of users) {
@@ -2353,55 +2425,272 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
       const holidayDates = holidaysByCountry.get(country) ?? new Set<string>();
       const vacations = vacationsByUser.get(user.id) ?? [];
 
-      const baseDays = country === 'PT'
+      const vacationsInPeriod = vacations
+        .map((vacation) => {
+          const clipped = clipRange(vacation.dataInicio, vacation.dataFim, periodStart, periodEnd);
+          if (!clipped) {
+            return null;
+          }
+
+          const clippedVacation = {
+            ...vacation,
+            dataInicio: clipped.start,
+            dataFim: clipped.end,
+            partialDay: vacation.partialDay,
+            requestType: vacation.requestType,
+          };
+
+          const daysInPeriod = vacationDaysForMetrics(clippedVacation, holidayDates);
+          if (daysInPeriod <= 0) {
+            return null;
+          }
+
+          return {
+            ...vacation,
+            clippedStart: clipped.start,
+            clippedEnd: clipped.end,
+            daysInPeriod,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+      const baseDaysPerYear = country === 'PT'
         ? 22
         : brVacationDaysByAbsences(user.profile?.unjustifiedAbsences ?? 0);
+      const baseDays = baseDaysPerYear * yearsInPeriod.length;
 
-      const approvedDays = vacations.reduce(
-        (sum, v) => sum + vacationDaysForMetrics(v, holidayDates),
+      const approvedDays = vacationsInPeriod.reduce(
+        (sum, v) => sum + v.daysInPeriod,
         0,
       );
 
       const extraDays = creditByUser.get(user.id) ?? 0;
       const saldoEstimado = Math.max(baseDays + extraDays - approvedDays, 0);
 
-      const periods = vacations
-        .sort((a, b) => a.dataInicio.localeCompare(b.dataInicio))
-        .map((v) => `${v.dataInicio} → ${v.dataFim}`)
+      const sortedVacationsInPeriod = vacationsInPeriod
+        .slice()
+        .sort((a, b) => a.clippedStart.localeCompare(b.clippedStart));
+
+      const periods = sortedVacationsInPeriod
+        .map((v) => `${formatIsoDatePt(v.clippedStart)} - ${formatIsoDatePt(v.clippedEnd)} (${v.daysInPeriod})`)
         .join('; ');
+
+      for (const vacation of sortedVacationsInPeriod) {
+        detailRows.push({
+          username: user.username,
+          nome: user.profile?.nomeCompleto || user.profile?.nomeAbreviado || '',
+          equipa: user.team?.name || '',
+          pais: country,
+          pedidoInicio: vacation.dataInicio,
+          pedidoFim: vacation.dataFim,
+          recorteInicio: vacation.clippedStart,
+          recorteFim: vacation.clippedEnd,
+          diasNoPeriodo: vacation.daysInPeriod,
+          parcial: vacation.partialDay,
+        });
+      }
 
       rows.push({
         username: user.username,
         nome: user.profile?.nomeCompleto || user.profile?.nomeAbreviado || '',
         equipa: user.team?.name || '',
         pais: country,
+        periodoInicio: periodStart,
+        periodoFim: periodEnd,
         diasBase: baseDays,
         diasExtra: extraDays,
         diasAprovados: approvedDays,
         saldo: saldoEstimado,
+        pedidosAprovados: sortedVacationsInPeriod.length,
         periodos: periods,
       });
     }
 
+    rows.sort((a, b) => {
+      const teamCmp = a.equipa.localeCompare(b.equipa);
+      if (teamCmp !== 0) {
+        return teamCmp;
+      }
+
+      return a.username.localeCompare(b.username);
+    });
+
+    detailRows.sort((a, b) => {
+      const userCmp = a.username.localeCompare(b.username);
+      if (userCmp !== 0) {
+        return userCmp;
+      }
+
+      return a.recorteInicio.localeCompare(b.recorteInicio);
+    });
+
+    const totalBaseDays = rows.reduce((sum, row) => sum + row.diasBase, 0);
+    const totalExtraDays = rows.reduce((sum, row) => sum + row.diasExtra, 0);
+    const totalApprovedDays = rows.reduce((sum, row) => sum + row.diasAprovados, 0);
+    const totalSaldo = rows.reduce((sum, row) => sum + row.saldo, 0);
+    const totalCapacity = totalBaseDays + totalExtraDays;
+    const utilizationRate = totalCapacity > 0 ? (totalApprovedDays / totalCapacity) * 100 : 0;
+
+    const teamAggMap = new Map<string, { team: string; collaborators: number; approved: number; saldo: number }>();
+    for (const row of rows) {
+      const key = row.equipa || 'Sem equipa';
+      const current = teamAggMap.get(key);
+      if (current) {
+        current.collaborators += 1;
+        current.approved += row.diasAprovados;
+        current.saldo += row.saldo;
+      } else {
+        teamAggMap.set(key, {
+          team: key,
+          collaborators: 1,
+          approved: row.diasAprovados,
+          saldo: row.saldo,
+        });
+      }
+    }
+
+    const topTeams = Array.from(teamAggMap.values())
+      .sort((a, b) => b.approved - a.approved)
+      .slice(0, 8);
+
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Smarter Hub';
     workbook.created = new Date();
+    workbook.modified = new Date();
+
+    const executiveSheet = workbook.addWorksheet('Visão Executiva', {
+      properties: { defaultColWidth: 22 },
+    });
+
+    executiveSheet.mergeCells('A1:F1');
+    const execTitle = executiveSheet.getCell('A1');
+    execTitle.value = 'Mapa de Férias - Visão Executiva';
+    execTitle.font = { name: 'Calibri', size: 17, bold: true, color: { argb: 'FFFFFFFF' } };
+    execTitle.alignment = { vertical: 'middle', horizontal: 'left' };
+    execTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B4F8A' } };
+
+    executiveSheet.mergeCells('A2:F2');
+    const execMeta = executiveSheet.getCell('A2');
+    execMeta.value = `Período ${periodLabel} | Gerado em ${new Date().toLocaleString('pt-PT')}`;
+    execMeta.font = { name: 'Calibri', size: 10, color: { argb: 'FF31537C' } };
+    execMeta.alignment = { vertical: 'middle', horizontal: 'left' };
+    execMeta.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF2FB' } };
+
+    executiveSheet.getRow(4).values = ['Indicador', 'Valor', 'Leitura', 'Indicador', 'Valor', 'Leitura'];
+    executiveSheet.getRow(4).font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } };
+    executiveSheet.getRow(4).alignment = { vertical: 'middle', horizontal: 'center' };
+    executiveSheet.getRow(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } };
+
+    executiveSheet.getRow(5).values = [
+      'Colaboradores',
+      rows.length,
+      rows.length > 0 ? 'Base preenchida' : 'Sem dados',
+      'Capacidade (dias)',
+      totalCapacity,
+      'Base + extra no período',
+    ];
+    executiveSheet.getRow(6).values = [
+      'Dias aprovados',
+      totalApprovedDays,
+      totalApprovedDays > 0 ? 'Consumo real no período' : 'Sem consumo',
+      'Saldo estimado',
+      totalSaldo,
+      totalSaldo > 0 ? 'Folga disponível' : 'Sem folga',
+    ];
+    executiveSheet.getRow(7).values = [
+      'Taxa de utilização',
+      `${utilizationRate.toFixed(1)}%`,
+      utilizationRate >= 85 ? 'Alto consumo' : utilizationRate >= 60 ? 'Equilibrado' : 'Baixo consumo',
+      'Pedidos aprovados',
+      detailRows.length,
+      'Eventos no intervalo',
+    ];
+
+    for (let rowIndex = 5; rowIndex <= 7; rowIndex += 1) {
+      const row = executiveSheet.getRow(rowIndex);
+      const isEven = rowIndex % 2 === 0;
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          left: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          bottom: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          right: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+        };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: isEven ? 'FFF9FCFF' : 'FFFFFFFF' },
+        };
+      });
+    }
+
+    executiveSheet.getRow(9).values = ['Top equipas por dias aprovados', '', '', '', '', ''];
+    executiveSheet.mergeCells('A9:F9');
+    executiveSheet.getCell('A9').font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FF1B4F8A' } };
+    executiveSheet.getCell('A9').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF2FB' } };
+
+    executiveSheet.getRow(10).values = ['Equipa', 'Colaboradores', 'Dias aprovados', 'Saldo estimado', 'Consumo médio/colaborador', 'Observação'];
+    executiveSheet.getRow(10).font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } };
+    executiveSheet.getRow(10).alignment = { vertical: 'middle', horizontal: 'center' };
+    executiveSheet.getRow(10).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } };
+
+    for (const team of topTeams) {
+      const avgPerCollaborator = team.collaborators > 0 ? team.approved / team.collaborators : 0;
+      const observation = avgPerCollaborator >= 12 ? 'Carga alta' : avgPerCollaborator >= 6 ? 'Carga moderada' : 'Carga baixa';
+      executiveSheet.addRow([
+        team.team,
+        team.collaborators,
+        team.approved,
+        team.saldo,
+        Number(avgPerCollaborator.toFixed(1)),
+        observation,
+      ]);
+    }
+
+    const teamsStart = 11;
+    const teamsEnd = teamsStart + topTeams.length - 1;
+    for (let rowIndex = teamsStart; rowIndex <= teamsEnd; rowIndex += 1) {
+      const row = executiveSheet.getRow(rowIndex);
+      const isEven = rowIndex % 2 === 0;
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          left: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          bottom: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          right: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+        };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: isEven ? 'FFF9FCFF' : 'FFFFFFFF' },
+        };
+      });
+    }
+
+    executiveSheet.columns = [
+      { width: 30 },
+      { width: 14 },
+      { width: 17 },
+      { width: 16 },
+      { width: 24 },
+      { width: 18 },
+    ];
 
     const sheet = workbook.addWorksheet('Mapa de Férias', {
       views: [{ state: 'frozen', ySplit: 3 }],
       properties: { defaultColWidth: 18 },
     });
 
-    sheet.mergeCells('A1:I1');
+    sheet.mergeCells('A1:K1');
     const titleCell = sheet.getCell('A1');
-    titleCell.value = `Mapa de Férias ${year}`;
+    titleCell.value = `Mapa de Férias | Período ${periodLabel}`;
     titleCell.font = { name: 'Calibri', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
     titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
     titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
 
-    sheet.mergeCells('A2:I2');
+    sheet.mergeCells('A2:K2');
     const metaCell = sheet.getCell('A2');
-    metaCell.value = `Gerado em ${new Date().toLocaleString('pt-PT')} | Total de colaboradores: ${rows.length}`;
+    metaCell.value = `Gerado em ${new Date().toLocaleString('pt-PT')} | Colaboradores: ${rows.length} | Pedidos aprovados no período: ${detailRows.length}`;
     metaCell.font = { name: 'Calibri', size: 10, color: { argb: 'FF38516B' } };
     metaCell.alignment = { vertical: 'middle', horizontal: 'left' };
     metaCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF2FB' } };
@@ -2412,10 +2701,13 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
       'Nome',
       'Equipa',
       'País',
-      'Dias Atribuídos',
+      'Início Período',
+      'Fim Período',
+      'Dias Base (Período)',
       'Dias Extra',
-      'Dias Gastos',
-      'Saldo',
+      'Dias Aprovados',
+      'Saldo Estimado',
+      'Nº Pedidos',
       'Períodos de Férias',
     ];
     headerRow.font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } };
@@ -2429,28 +2721,34 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
         row.nome,
         row.equipa,
         row.pais,
+        row.periodoInicio,
+        row.periodoFim,
         row.diasBase,
         row.diasExtra,
         row.diasAprovados,
         row.saldo,
+        row.pedidosAprovados,
         row.periodos,
       ]);
     }
 
     sheet.columns = [
       { width: 18 },
-      { width: 30 },
+      { width: 28 },
       { width: 22 },
       { width: 10 },
+      { width: 13 },
+      { width: 13 },
       { width: 14 },
       { width: 11 },
       { width: 12 },
-      { width: 10 },
-      { width: 52 },
+      { width: 13 },
+      { width: 11 },
+      { width: 46 },
     ];
 
     const dataStart = 4;
-    const dataEnd = Math.max(4, rows.length + 3);
+    const dataEnd = rows.length + 3;
     for (let i = dataStart; i <= dataEnd; i += 1) {
       const row = sheet.getRow(i);
       const isEven = i % 2 === 0;
@@ -2466,23 +2764,43 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
           pattern: 'solid',
           fgColor: { argb: isEven ? 'FFF9FCFF' : 'FFFFFFFF' },
         };
-        if (colNumber >= 5 && colNumber <= 8) {
+        if (colNumber >= 7 && colNumber <= 10) {
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
         } else {
-          cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: colNumber === 9 };
+          cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: colNumber === 12 };
+        }
+
+        if (colNumber === 10) {
+          const sourceRow = rows[i - dataStart];
+          const totalDays = (sourceRow?.diasBase ?? 0) + (sourceRow?.diasExtra ?? 0);
+          const saldoRatio = totalDays > 0 ? (sourceRow?.saldo ?? 0) / totalDays : 0;
+
+          if (saldoRatio < 0.15) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFECEA' } };
+          } else if (saldoRatio < 0.35) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF4E5' } };
+          } else {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF9F0' } };
+          }
         }
       });
     }
+
+    const totalsStart = rows.length > 0 ? dataStart : 0;
+    const totalsEnd = rows.length > 0 ? dataEnd : 0;
 
     const totalsRow = sheet.addRow([
       '',
       'Totais',
       '',
       '',
-      { formula: `SUM(E4:E${dataEnd})` },
-      { formula: `SUM(F4:F${dataEnd})` },
-      { formula: `SUM(G4:G${dataEnd})` },
-      { formula: `SUM(H4:H${dataEnd})` },
+      '',
+      '',
+      rows.length > 0 ? { formula: `SUM(G${totalsStart}:G${totalsEnd})` } : 0,
+      rows.length > 0 ? { formula: `SUM(H${totalsStart}:H${totalsEnd})` } : 0,
+      rows.length > 0 ? { formula: `SUM(I${totalsStart}:I${totalsEnd})` } : 0,
+      rows.length > 0 ? { formula: `SUM(J${totalsStart}:J${totalsEnd})` } : 0,
+      rows.length > 0 ? { formula: `SUM(K${totalsStart}:K${totalsEnd})` } : 0,
       '',
     ]);
     totalsRow.font = { name: 'Calibri', bold: true, color: { argb: 'FF1D3B58' } };
@@ -2496,8 +2814,132 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
       };
     });
 
+    sheet.autoFilter = {
+      from: { row: 3, column: 1 },
+      to: { row: 3, column: 11 },
+    };
+
+    const detailSheet = workbook.addWorksheet('Detalhe Pedidos', {
+      views: [{ state: 'frozen', ySplit: 2 }],
+      properties: { defaultColWidth: 18 },
+    });
+
+    detailSheet.mergeCells('A1:J1');
+    const detailTitle = detailSheet.getCell('A1');
+    detailTitle.value = `Pedidos aprovados no período ${periodLabel}`;
+    detailTitle.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+    detailTitle.alignment = { vertical: 'middle', horizontal: 'left' };
+    detailTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
+
+    const detailHeader = detailSheet.getRow(2);
+    detailHeader.values = [
+      'Username',
+      'Nome',
+      'Equipa',
+      'País',
+      'Início Pedido',
+      'Fim Pedido',
+      'Início no Período',
+      'Fim no Período',
+      'Dias no Período',
+      'Parcial',
+    ];
+    detailHeader.font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } };
+    detailHeader.alignment = { vertical: 'middle', horizontal: 'center' };
+    detailHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } };
+    detailHeader.height = 22;
+
+    for (const row of detailRows) {
+      detailSheet.addRow([
+        row.username,
+        row.nome,
+        row.equipa,
+        row.pais,
+        row.pedidoInicio,
+        row.pedidoFim,
+        row.recorteInicio,
+        row.recorteFim,
+        row.diasNoPeriodo,
+        row.parcial,
+      ]);
+    }
+
+    detailSheet.columns = [
+      { width: 18 },
+      { width: 28 },
+      { width: 22 },
+      { width: 10 },
+      { width: 13 },
+      { width: 13 },
+      { width: 15 },
+      { width: 15 },
+      { width: 14 },
+      { width: 10 },
+    ];
+
+    for (let i = 3; i <= detailRows.length + 2; i += 1) {
+      const row = detailSheet.getRow(i);
+      const isEven = i % 2 === 0;
+      row.eachCell((cell, colNumber) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          left: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          bottom: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          right: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+        };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: isEven ? 'FFF9FCFF' : 'FFFFFFFF' },
+        };
+        cell.alignment = {
+          horizontal: colNumber === 9 ? 'center' : 'left',
+          vertical: 'middle',
+        };
+      });
+    }
+
+    detailSheet.autoFilter = {
+      from: { row: 2, column: 1 },
+      to: { row: 2, column: 10 },
+    };
+
+    const paramsSheet = workbook.addWorksheet('Parâmetros', {
+      properties: { defaultColWidth: 32 },
+    });
+
+    paramsSheet.getRow(1).values = ['Parâmetro', 'Valor'];
+    paramsSheet.getRow(1).font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } };
+    paramsSheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } };
+
+    const usersLabel = teamIdFilter ? users.filter((u) => u.team?.name).map((u) => u.team?.name || '').filter(Boolean).join(', ') : 'Todas';
+    paramsSheet.addRows([
+      ['Período inicial', formatIsoDatePt(periodStart)],
+      ['Período final', formatIsoDatePt(periodEnd)],
+      ['Anos abrangidos', yearsInPeriod.join(', ')],
+      ['Equipa filtrada', teamIdFilter || 'Todas'],
+      ['Total de colaboradores', rows.length],
+      ['Total de pedidos aprovados no período', detailRows.length],
+      ['Gerado em', new Date().toLocaleString('pt-PT')],
+      ['Filtros de equipa no dataset', usersLabel || 'Todas'],
+    ]);
+
+    paramsSheet.columns = [{ width: 34 }, { width: 60 }];
+    for (let i = 2; i <= 8; i += 1) {
+      const row = paramsSheet.getRow(i);
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          left: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          bottom: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          right: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+        };
+      });
+    }
+
+    const periodTag = `${periodStart}_${periodEnd}`;
+    const filename = `mapa-ferias-${periodTag}.xlsx`;
     const xlsxBuffer = await workbook.xlsx.writeBuffer();
-    const filename = `mapa-ferias-${year}.xlsx`;
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
