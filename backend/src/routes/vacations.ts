@@ -325,6 +325,112 @@ function vacationDailyWeight(record: { dataInicio: string; partialDay?: 'FULL' |
   return record.dataInicio === iso ? 0.5 : 1;
 }
 
+function clampVacationRangeToYear(dataInicio: string, dataFim: string, year: number) {
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+  const start = dataInicio > yearStart ? dataInicio : yearStart;
+  const end = dataFim < yearEnd ? dataFim : yearEnd;
+
+  if (start > end) {
+    return null;
+  }
+
+  return { dataInicio: start, dataFim: end };
+}
+
+function vacationDaysForYear(
+  record: { requestType: string; dataInicio: string; dataFim: string; partialDay?: 'FULL' | 'AM' | 'PM' },
+  year: number,
+  holidayDates: Set<string> = new Set(),
+) {
+  const clamped = clampVacationRangeToYear(record.dataInicio, record.dataFim, year);
+  if (!clamped) {
+    return 0;
+  }
+
+  if (record.requestType !== 'VACATION') {
+    return enumerateDates(clamped.dataInicio, clamped.dataFim).length;
+  }
+
+  if (record.partialDay && record.partialDay !== 'FULL') {
+    return record.dataInicio >= `${year}-01-01` && record.dataInicio <= `${year}-12-31` ? 0.5 : 0;
+  }
+
+  return enumerateDates(clamped.dataInicio, clamped.dataFim).filter((iso) => isBusinessDayIso(iso, holidayDates)).length;
+}
+
+async function resolvePtCarryOverDays(userId: string, year: number) {
+  const previousYear = year - 1;
+  if (previousYear < 2000) {
+    return 0;
+  }
+
+  const [approvedVacations, credits] = await Promise.all([
+    prisma.vacation.findMany({
+      where: {
+        userId,
+        status: 'APPROVED',
+        requestType: 'VACATION',
+        dataInicio: { lte: `${previousYear}-12-31` },
+      },
+      select: {
+        dataInicio: true,
+        dataFim: true,
+        partialDay: true,
+        requestType: true,
+      },
+    }),
+    prisma.vacationBalanceCredit.findMany({
+      where: {
+        userId,
+        year: { lt: year },
+      },
+      select: {
+        year: true,
+        days: true,
+      },
+    }),
+  ]);
+
+  const yearsFromVacations = approvedVacations.flatMap((item) => {
+    const startYear = extractYearFromIsoDate(item.dataInicio);
+    const endYear = Math.min(extractYearFromIsoDate(item.dataFim), previousYear);
+    const years: number[] = [];
+    for (let current = startYear; current <= endYear; current += 1) {
+      years.push(current);
+    }
+    return years;
+  });
+
+  const yearsFromCredits = credits.map((item) => item.year);
+  const baseStartYear = Math.max(2000, Math.min(previousYear, ...yearsFromVacations, ...yearsFromCredits));
+
+  const creditsByYear = new Map<number, number>();
+  for (const credit of credits) {
+    creditsByYear.set(credit.year, (creditsByYear.get(credit.year) ?? 0) + credit.days);
+  }
+
+  const holidayDatesByYear = new Map<number, Set<string>>();
+  let carryOver = 0;
+
+  for (let currentYear = baseStartYear; currentYear <= previousYear; currentYear += 1) {
+    if (!holidayDatesByYear.has(currentYear)) {
+      holidayDatesByYear.set(currentYear, await collectHolidayDates('PT', [currentYear]));
+    }
+
+    const holidayDates = holidayDatesByYear.get(currentYear) ?? new Set<string>();
+    const approvedDays = approvedVacations.reduce(
+      (sum, item) => sum + vacationDaysForYear(item, currentYear, holidayDates),
+      0,
+    );
+
+    const entitledDays = 22 + (creditsByYear.get(currentYear) ?? 0) + carryOver;
+    carryOver = Math.max(entitledDays - approvedDays, 0);
+  }
+
+  return carryOver;
+}
+
 function easterDate(year: number) {
   const a = year % 19;
   const b = Math.floor(year / 100);
@@ -852,6 +958,190 @@ async function acquireTeamCapacityLock(tx: Prisma.TransactionClient, teamId: str
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`vacation-capacity:${teamId}`}))`;
 }
 
+// ─── Absence override helpers ─────────────────────────────────────────────────
+
+function addDaysToIso(dateStr: string, days: number): string {
+  const parts = dateStr.split('-');
+  const dt = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+function dateRangesOverlap(s1: string, e1: string, s2: string, e2: string): boolean {
+  return s1 <= e2 && e1 >= s2;
+}
+
+function computeVacationSplitSegments(
+  vStart: string,
+  vEnd: string,
+  aStart: string,
+  aEnd: string,
+): Array<{ dataInicio: string; dataFim: string }> {
+  const segments: Array<{ dataInicio: string; dataFim: string }> = [];
+  if (vStart < aStart) {
+    segments.push({ dataInicio: vStart, dataFim: addDaysToIso(aStart, -1) });
+  }
+  if (vEnd > aEnd) {
+    segments.push({ dataInicio: addDaysToIso(aEnd, 1), dataFim: vEnd });
+  }
+  return segments;
+}
+
+async function applyAbsenceOverrideVacations(
+  db: typeof prisma,
+  absence: {
+    id: string;
+    userId: string;
+    dataInicio: string;
+    dataFim: string;
+    contextTeamId?: string | null;
+  },
+) {
+  const allVacations = await db.vacation.findMany({
+    where: {
+      userId: absence.userId,
+      requestType: 'VACATION',
+      status: { in: ['APPROVED', 'PENDING'] },
+    },
+    select: {
+      id: true,
+      userId: true,
+      contextTeamId: true,
+      dataInicio: true,
+      dataFim: true,
+      partialDay: true,
+      observacoes: true,
+      attachmentLink: true,
+      status: true,
+      reviewedById: true,
+      reviewedAt: true,
+      approvedByRole: true,
+      versionNumber: true,
+    },
+  });
+
+  const overlapping = allVacations.filter((v) =>
+    dateRangesOverlap(v.dataInicio, v.dataFim, absence.dataInicio, absence.dataFim),
+  );
+
+  if (overlapping.length === 0) return;
+
+  // Pre-fetch approval groups for PENDING vacations (outside tx — uses global prisma)
+  const approvalGroupsCache = new Map<string, Array<{ level: number; approverIds: string[] }>>();
+  for (const vacation of overlapping) {
+    if (vacation.status !== 'PENDING') continue;
+    const cacheKey = vacation.contextTeamId ?? '';
+    if (!approvalGroupsCache.has(cacheKey)) {
+      const groups = await resolveApprovalGroups(vacation.userId, vacation.contextTeamId);
+      approvalGroupsCache.set(cacheKey, groups);
+    }
+  }
+
+  await db.$transaction(async (tx) => {
+    for (const vacation of overlapping) {
+      const segments = computeVacationSplitSegments(
+        vacation.dataInicio,
+        vacation.dataFim,
+        absence.dataInicio,
+        absence.dataFim,
+      );
+
+      await tx.vacation.update({
+        where: { id: vacation.id },
+        data: {
+          status: 'CANCELLED',
+          reviewReason: `Anulado por ausência aprovada (${absence.dataInicio} a ${absence.dataFim}).`,
+        },
+      });
+
+      for (const segment of segments) {
+        if (vacation.status === 'APPROVED') {
+          await tx.vacation.create({
+            data: {
+              userId: vacation.userId,
+              contextTeamId: vacation.contextTeamId,
+              dataInicio: segment.dataInicio,
+              dataFim: segment.dataFim,
+              partialDay: 'FULL',
+              observacoes: vacation.observacoes,
+              requestType: 'VACATION',
+              attachmentLink: vacation.attachmentLink,
+              status: 'APPROVED',
+              reviewedById: vacation.reviewedById,
+              reviewedAt: vacation.reviewedAt,
+              reviewReason: `Reajustado automaticamente após ausência aprovada (${absence.dataInicio} a ${absence.dataFim}).`,
+              approvedByRole: vacation.approvedByRole,
+              versionOfId: vacation.id,
+              versionNumber: (vacation.versionNumber ?? 1) + 1,
+            },
+          });
+        } else {
+          // PENDING — re-create with a fresh approval chain
+          const cacheKey = vacation.contextTeamId ?? '';
+          const approvalGroups = approvalGroupsCache.get(cacheKey) ?? [];
+          if (approvalGroups.length === 0) continue;
+
+          const newVacation = await tx.vacation.create({
+            data: {
+              userId: vacation.userId,
+              contextTeamId: vacation.contextTeamId,
+              dataInicio: segment.dataInicio,
+              dataFim: segment.dataFim,
+              partialDay: 'FULL',
+              observacoes: vacation.observacoes,
+              requestType: 'VACATION',
+              attachmentLink: vacation.attachmentLink,
+              status: 'PENDING',
+              reviewReason: `Resubmetido automaticamente após ausência aprovada (${absence.dataInicio} a ${absence.dataFim}).`,
+              versionOfId: vacation.id,
+              versionNumber: (vacation.versionNumber ?? 1) + 1,
+            },
+          });
+
+          for (const group of approvalGroups) {
+            for (const approverId of group.approverIds) {
+              await tx.vacationApproval.create({
+                data: {
+                  vacationId: newVacation.id,
+                  approverId,
+                  approvalLevel: group.level,
+                  status: group.level === approvalGroups[0]!.level ? APPROVAL_PENDING : APPROVAL_WAITING,
+                },
+              });
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // Notify the user about each affected vacation (outside tx — best-effort)
+  for (const vacation of overlapping) {
+    const segments = computeVacationSplitSegments(
+      vacation.dataInicio,
+      vacation.dataFim,
+      absence.dataInicio,
+      absence.dataFim,
+    );
+    const verb = vacation.status === 'PENDING' ? 'resubmetidos' : 'reagendados';
+    await db.notification.create({
+      data: {
+        userId: vacation.userId,
+        title: 'Férias ajustadas por ausência aprovada',
+        message:
+          segments.length > 0
+            ? [
+                `As tuas férias de ${formatIsoDatePt(vacation.dataInicio)} a ${formatIsoDatePt(vacation.dataFim)} foram ajustadas devido a uma ausência aprovada.`,
+                `Os dias não cobertos pela ausência foram ${verb} automaticamente.`,
+              ].join('\n')
+            : `As tuas férias de ${formatIsoDatePt(vacation.dataInicio)} a ${formatIsoDatePt(vacation.dataFim)} foram anuladas na totalidade pois a ausência cobre o mesmo período.`,
+      },
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function finalizeVacationApproval(
   tx: Prisma.TransactionClient,
   vacationId: string,
@@ -1085,6 +1375,8 @@ router.put('/vacations/company-extra-days', requireAuth, async (req: Request, re
 router.get('/vacations/overview', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
+    const yearRaw = Number(typeof req.query.year === 'string' ? req.query.year : new Date().getFullYear());
+    const year = Number.isFinite(yearRaw) ? Math.min(2100, Math.max(2000, yearRaw)) : new Date().getFullYear();
 
     const [profile, vacations] = await Promise.all([
       prisma.profile.findUnique({ where: { userId } }),
@@ -1092,7 +1384,7 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
     ]);
 
     const country = profile?.workCountry ?? 'PT';
-    const currentYear = new Date().getFullYear();
+    const currentYear = year;
     const extraBalanceDays = (await prisma.vacationBalanceCredit.aggregate({
       where: { userId, year: currentYear },
       _sum: { days: true },
@@ -1105,9 +1397,10 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
     });
 
     if (country === 'PT') {
+      const carryOverDays = await resolvePtCarryOverDays(userId, currentYear);
       const approvedVacationDays = vacations
         .filter((item) => item.status === 'APPROVED' && item.requestType === 'VACATION')
-        .reduce((sum, item) => sum + vacationDaysForMetrics(item, holidayDates), 0);
+        .reduce((sum, item) => sum + vacationDaysForYear(item, currentYear, holidayDates), 0);
 
       return res.json({
         country: 'PT',
@@ -1121,9 +1414,10 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
         },
         approvedVacationDays,
         calculation: {
-          entitledDays: 22 + extraBalanceDays,
+          entitledDays: 22 + extraBalanceDays + carryOverDays,
           baseEntitledDays: 22,
           extraBalanceDays,
+          carryOverDays,
         },
       });
     }
@@ -1628,6 +1922,13 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
     },
   });
 
+  if (
+    refreshedVacation.status === 'APPROVED' &&
+    refreshedVacation.requestType !== 'VACATION'
+  ) {
+    await applyAbsenceOverrideVacations(prisma, refreshedVacation);
+  }
+
   return res.json({ success: true });
 });
 
@@ -2077,7 +2378,7 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
         : brVacationDaysByAbsences(user.profile?.unjustifiedAbsences ?? 0);
 
       const approvedDays = vacations.reduce(
-        (sum, v) => sum + vacationDaysForMetrics(v, holidayDates),
+        (sum, v) => sum + vacationDaysForYear(v, year, holidayDates),
         0,
       );
 

@@ -78,6 +78,18 @@ const defaultFuncaoOptions = [
   { label: 'UX UI Designer', groupLabel: 'Produto' },
 ];
 
+function isPendingProfileRequestConflict(error: unknown) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message.includes('ProfileChangeRequest_userId_pending_unique');
+}
+
 const defaultOptionsByType: Record<ProfileOptionType, Array<{ label: string; groupLabel?: string }>> = {
   CARGO: defaultCargoOptions.map((label) => ({ label })),
   FUNCAO: defaultFuncaoOptions,
@@ -547,11 +559,28 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
         changedKeys,
       );
 
-      const existingRequest = await prisma.profileChangeRequest.findFirst({
-        where: { userId, status: 'PENDING' },
-      });
+      try {
+        await prisma.profileChangeRequest.create({
+          data: {
+            userId,
+            requestedData: data as unknown as object,
+            changesSummary: summary,
+          },
+        });
+      } catch (error) {
+        if (!isPendingProfileRequestConflict(error)) {
+          throw error;
+        }
 
-      if (existingRequest) {
+        const existingRequest = await prisma.profileChangeRequest.findFirst({
+          where: { userId, status: 'PENDING' },
+          select: { id: true },
+        });
+
+        if (!existingRequest) {
+          throw error;
+        }
+
         await prisma.profileChangeRequest.update({
           where: { id: existingRequest.id },
           data: {
@@ -560,14 +589,6 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
             reviewedBy: { disconnect: true },
             reviewedAt: null,
             reviewReason: '',
-          },
-        });
-      } else {
-        await prisma.profileChangeRequest.create({
-          data: {
-            userId,
-            requestedData: data as unknown as object,
-            changesSummary: summary,
           },
         });
       }

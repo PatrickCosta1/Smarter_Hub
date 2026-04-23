@@ -3,21 +3,65 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { requireAuth } from "../middleware/auth.js";
 import {
+  CITIZEN_CARD_EXPIRY_NOTIFICATION_TITLE,
   canReadCitizenCardExpiryNotification,
   isCitizenCardExpiryNotification,
 } from "../lib/citizen-card-expiry-notifications.js";
 
 const router = Router();
 
+function hasNonEmptyString(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function payloadHasCitizenCardRenewal(payload: Record<string, unknown>) {
+  return hasNonEmptyString(payload.validadeCartaoCidadao) && hasNonEmptyString(payload.comprovativoCartaoCidadao);
+}
+
+function parsePagination(query: Record<string, unknown>) {
+  const hasPagination = typeof query.page === 'string' || typeof query.pageSize === 'string';
+  if (!hasPagination) {
+    return null;
+  }
+
+  const pageRaw = Number(typeof query.page === 'string' ? query.page : '1');
+  const pageSizeRaw = Number(typeof query.pageSize === 'string' ? query.pageSize : '20');
+  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1;
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(100, Math.max(1, pageSizeRaw)) : 20;
+
+  return {
+    page,
+    pageSize,
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  };
+}
+
 router.get("/notifications/me", requireAuth, async (req, res) => {
   const userId = req.authUser!.id;
+  const pagination = parsePagination(req.query as Record<string, unknown>);
+  const where = { userId };
 
-  const notifications = await prisma.notification.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" }
-  });
+  if (!pagination) {
+    const notifications = await prisma.notification.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+    });
 
-  return res.json(notifications);
+    return res.json(notifications);
+  }
+
+  const [total, rows] = await Promise.all([
+    prisma.notification.count({ where }),
+    prisma.notification.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: pagination.skip,
+      take: pagination.take,
+    }),
+  ]);
+
+  return res.json({ total, page: pagination.page, pageSize: pagination.pageSize, rows });
 });
 
 router.patch("/notifications/:id/read", requireAuth, async (req, res) => {
@@ -55,37 +99,101 @@ router.patch("/notifications/:id/read", requireAuth, async (req, res) => {
 router.patch("/notifications/read-all", requireAuth, async (req, res) => {
   const userId = req.authUser!.id;
 
-  const unreadNotifications = await prisma.notification.findMany({
-    where: { userId, isRead: false },
-    select: { id: true, userId: true, title: true, createdAt: true },
-  });
+  const batchSizeRaw = Number(typeof req.query.batchSize === 'string' ? req.query.batchSize : '200');
+  const batchSize = Number.isFinite(batchSizeRaw) ? Math.min(500, Math.max(50, batchSizeRaw)) : 200;
 
-  if (unreadNotifications.length === 0) {
-    return res.json({ updated: 0, skipped: 0 });
-  }
-
-  const idsToUpdate: string[] = [];
+  let cursorId: string | undefined;
+  let updated = 0;
   let skipped = 0;
 
-  for (const notification of unreadNotifications) {
-    const canRead = await canReadCitizenCardExpiryNotification(prisma, notification);
-    if (!canRead && isCitizenCardExpiryNotification(notification)) {
-      skipped += 1;
-      continue;
-    }
-    idsToUpdate.push(notification.id);
-  }
-
-  if (idsToUpdate.length === 0) {
-    return res.json({ updated: 0, skipped });
-  }
-
-  const result = await prisma.notification.updateMany({
-    where: { userId, isRead: false, id: { in: idsToUpdate } },
-    data: { isRead: true },
+  const profile = await prisma.profile.findUnique({
+    where: { userId },
+    select: {
+      updatedAt: true,
+      validadeCartaoCidadao: true,
+      comprovativoCartaoCidadao: true,
+    },
   });
 
-  return res.json({ updated: result.count, skipped });
+  while (true) {
+    const unreadBatch = await prisma.notification.findMany({
+      where: { userId, isRead: false },
+      select: { id: true, userId: true, title: true, createdAt: true },
+      orderBy: { id: 'asc' },
+      ...(cursorId
+        ? {
+            cursor: { id: cursorId },
+            skip: 1,
+          }
+        : {}),
+      take: batchSize,
+    });
+
+    if (unreadBatch.length === 0) {
+      break;
+    }
+
+    const idsToUpdate: string[] = [];
+
+    const citizenCardNotifications = unreadBatch.filter((notification) => notification.title === CITIZEN_CARD_EXPIRY_NOTIFICATION_TITLE);
+
+    let renewalRequestDates: Date[] = [];
+    if (citizenCardNotifications.length > 0) {
+      const oldestNotificationDate = citizenCardNotifications.reduce((oldest, item) => (item.createdAt < oldest ? item.createdAt : oldest), citizenCardNotifications[0]!.createdAt);
+
+      const renewalRequests = await prisma.profileChangeRequest.findMany({
+        where: {
+          userId,
+          createdAt: { gt: oldestNotificationDate },
+        },
+        select: {
+          createdAt: true,
+          requestedData: true,
+        },
+      });
+
+      renewalRequestDates = renewalRequests
+        .filter((request) => payloadHasCitizenCardRenewal((request.requestedData ?? {}) as Record<string, unknown>))
+        .map((request) => request.createdAt);
+    }
+
+    for (const notification of unreadBatch) {
+      if (isCitizenCardExpiryNotification(notification)) {
+        const profileAllowsRead = Boolean(
+          profile
+          && profile.updatedAt > notification.createdAt
+          && hasNonEmptyString(profile.validadeCartaoCidadao)
+          && hasNonEmptyString(profile.comprovativoCartaoCidadao),
+        );
+
+        if (!profileAllowsRead) {
+          const hasRenewalRequestAfterNotification = renewalRequestDates.some((requestDate) => requestDate > notification.createdAt);
+          if (!hasRenewalRequestAfterNotification) {
+            skipped += 1;
+            continue;
+          }
+        }
+      }
+
+      idsToUpdate.push(notification.id);
+    }
+
+    if (idsToUpdate.length > 0) {
+      const result = await prisma.notification.updateMany({
+        where: { userId, isRead: false, id: { in: idsToUpdate } },
+        data: { isRead: true },
+      });
+      updated += result.count;
+    }
+
+    if (unreadBatch.length < batchSize) {
+      break;
+    }
+
+    cursorId = unreadBatch[unreadBatch.length - 1]!.id;
+  }
+
+  return res.json({ updated, skipped });
 });
 
 router.delete('/notifications/:id', requireAuth, async (req, res) => {
@@ -107,6 +215,27 @@ router.delete('/notifications', requireAuth, async (req, res) => {
   });
 
   return res.json({ deleted: result.count });
+});
+
+router.delete('/notifications/cleanup', requireAuth, async (req, res) => {
+  if (req.authUser!.role !== 'ADMIN' && !req.authUser!.isRootAccess) {
+    return res.status(403).json({ message: 'Sem permissões para executar limpeza de notificações.' });
+  }
+
+  const olderThanDaysRaw = Number(typeof req.query.olderThanDays === 'string' ? req.query.olderThanDays : '90');
+  const olderThanDays = Number.isFinite(olderThanDaysRaw) ? Math.min(730, Math.max(7, olderThanDaysRaw)) : 90;
+
+  const threshold = new Date();
+  threshold.setDate(threshold.getDate() - olderThanDays);
+
+  const result = await prisma.notification.deleteMany({
+    where: {
+      isRead: true,
+      createdAt: { lt: threshold },
+    },
+  });
+
+  return res.json({ deleted: result.count, olderThanDays, threshold: threshold.toISOString() });
 });
 
 export { router as notificationsRouter };

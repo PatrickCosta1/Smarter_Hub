@@ -25,68 +25,36 @@ const assignTrainingSchema = z.object({
   entidade: z.string().default(''),
 });
 
+function parsePagination(query: Request['query']) {
+  const hasPagination = typeof query.page === 'string' || typeof query.pageSize === 'string';
+  if (!hasPagination) {
+    return null;
+  }
+
+  const pageRaw = Number(typeof query.page === 'string' ? query.page : '1');
+  const pageSizeRaw = Number(typeof query.pageSize === 'string' ? query.pageSize : '20');
+  const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1;
+  const pageSize = Number.isFinite(pageSizeRaw) ? Math.min(100, Math.max(1, pageSizeRaw)) : 20;
+
+  return {
+    page,
+    pageSize,
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  };
+}
+
 router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
+    const pagination = parsePagination(req.query);
 
     if (!await hasPermission(userId, 'view_trainings')) {
       return res.status(403).json({ error: 'Sem permissões para consultar formações.' });
     }
 
-    const trainings = await prisma.training.findMany({
-      where: { userId },
-      include: {
-        assignedBy: {
-          select: {
-            id: true,
-            username: true,
-            email: true,
-            role: true,
-            profile: {
-              select: {
-                nomeAbreviado: true,
-                nomeCompleto: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    res.json(trainings);
-  } catch (error) {
-    console.error('[GET /trainings/me]', error);
-    res.status(500).json({ error: 'Falha ao buscar formações' });
-  }
-});
-
-router.get('/trainings/assigned', requireAuth, async (req: Request, res: Response) => {
-  if (!await hasPermission(req.authUser!.id, 'view_all_trainings')) {
-    return res.status(403).json({ message: 'Sem permissões para consultar formações atribuídas.' });
-  }
-
-  const scope = await getPermissionScope(req.authUser!.id, 'view_all_trainings');
-  if (!scope) {
-    return res.status(403).json({ message: 'Sem permissões para consultar formações atribuídas.' });
-  }
-
-  const userScopeWhere = buildUserWhereFromScope(scope);
-
-  const trainings = await prisma.training.findMany({
-    where: {
-      assignedByUserId: { not: null },
-      ...(userScopeWhere ? { user: userScopeWhere } : {}),
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          username: true,
-          email: true,
-          role: true,
-        },
-      },
+    const where = { userId };
+    const include = {
       assignedBy: {
         select: {
           id: true,
@@ -101,11 +69,102 @@ router.get('/trainings/assigned', requireAuth, async (req: Request, res: Respons
           },
         },
       },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+    };
 
-  return res.json(trainings);
+    if (!pagination) {
+      const trainings = await prisma.training.findMany({
+        where,
+        include,
+        orderBy: { createdAt: 'desc' },
+      });
+
+      return res.json(trainings);
+    }
+
+    const [total, rows] = await Promise.all([
+      prisma.training.count({ where }),
+      prisma.training.findMany({
+        where,
+        include,
+        orderBy: { createdAt: 'desc' },
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
+
+    return res.json({ total, page: pagination.page, pageSize: pagination.pageSize, rows });
+  } catch (error) {
+    console.error('[GET /trainings/me]', error);
+    res.status(500).json({ error: 'Falha ao buscar formações' });
+  }
+});
+
+router.get('/trainings/assigned', requireAuth, async (req: Request, res: Response) => {
+  const pagination = parsePagination(req.query);
+
+  if (!await hasPermission(req.authUser!.id, 'view_all_trainings')) {
+    return res.status(403).json({ message: 'Sem permissões para consultar formações atribuídas.' });
+  }
+
+  const scope = await getPermissionScope(req.authUser!.id, 'view_all_trainings');
+  if (!scope) {
+    return res.status(403).json({ message: 'Sem permissões para consultar formações atribuídas.' });
+  }
+
+  const userScopeWhere = buildUserWhereFromScope(scope);
+
+  const where = {
+    assignedByUserId: { not: null as null | string },
+    ...(userScopeWhere ? { user: userScopeWhere } : {}),
+  };
+
+  const include = {
+    user: {
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+      },
+    },
+    assignedBy: {
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        profile: {
+          select: {
+            nomeAbreviado: true,
+            nomeCompleto: true,
+          },
+        },
+      },
+    },
+  };
+
+  if (!pagination) {
+    const trainings = await prisma.training.findMany({
+      where,
+      include,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return res.json(trainings);
+  }
+
+  const [total, rows] = await Promise.all([
+    prisma.training.count({ where }),
+    prisma.training.findMany({
+      where,
+      include,
+      orderBy: { createdAt: 'desc' },
+      skip: pagination.skip,
+      take: pagination.take,
+    }),
+  ]);
+
+  return res.json({ total, page: pagination.page, pageSize: pagination.pageSize, rows });
 });
 
 router.post('/trainings', requireAuth, async (req: Request, res: Response) => {

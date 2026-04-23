@@ -258,6 +258,10 @@ model Training {
   updatedAt     DateTime @updatedAt
   user          User     @relation("TrainingUser", fields: [userId], references: [id], onDelete: Cascade)
   assignedBy    User?    @relation("TrainingAssigner", fields: [assignedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([assignedByUserId, createdAt])
+  @@index([status, createdAt])
 }
 
 model Vacation {
