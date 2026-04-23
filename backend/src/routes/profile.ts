@@ -706,6 +706,7 @@ router.get('/profile/requests', requireAuth, async (req, res) => {
   timer.mark('resolve-scope');
 
   const userScopeWhere = buildUserWhereFromScope(scope);
+  const actorHasAccessTotal = Boolean(req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id));
 
   const requests = await prisma.profileChangeRequest.findMany({
     where: {
@@ -758,7 +759,7 @@ router.get('/profile/requests', requireAuth, async (req, res) => {
 
   const filteredEnriched = [] as typeof enriched;
   for (const request of enriched) {
-    if (request.user.hasAccessTotal && !req.authUser!.isRootAccess) {
+    if (actorHasAccessTotal && request.user.hasAccessTotal && !req.authUser!.isRootAccess) {
       const canReview = await canReviewAccessTotalHierarchy(req.authUser!.id, request.userId);
       if (!canReview) {
         continue;
@@ -870,7 +871,9 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
     select: { hasAccessTotal: true },
   });
 
-  const canReviewTarget = targetUser?.hasAccessTotal
+  const actorHasAccessTotal = Boolean(req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id));
+
+  const canReviewTarget = (actorHasAccessTotal && targetUser?.hasAccessTotal)
     ? await canReviewAccessTotalHierarchy(req.authUser!.id, request.userId)
     : await canAccessUserByPermission(req.authUser!.id, 'approve_profile_change', request.userId);
   if (!canReviewTarget && !req.authUser!.isRootAccess) {
@@ -999,7 +1002,9 @@ router.post('/profile/requests/:id/reject', requireAuth, async (req, res) => {
     select: { hasAccessTotal: true },
   });
 
-  const canReviewTarget = targetUser?.hasAccessTotal
+  const actorHasAccessTotal = Boolean(req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id));
+
+  const canReviewTarget = (actorHasAccessTotal && targetUser?.hasAccessTotal)
     ? await canReviewAccessTotalHierarchy(req.authUser!.id, request.userId)
     : await canAccessUserByPermission(req.authUser!.id, 'approve_profile_change', request.userId);
   if (!canReviewTarget && !req.authUser!.isRootAccess) {

@@ -6,6 +6,7 @@ import { prisma } from '../lib/prisma.js';
 import { PERMISSION_CATALOG } from '../lib/permissions.js';
 import {
   canManagePermissions,
+  canReviewAccessTotalHierarchy,
   canRevokeAccessTotal,
   canRevokePermission,
   clearPermissionEngineCacheForUser,
@@ -111,6 +112,37 @@ async function resolvePermission(input: { permissionId?: string; permissionCode?
   return null;
 }
 
+async function assertCanManagePermissionTarget(actorUserId: string, actorIsRoot: boolean, targetUserId: string) {
+  if (actorIsRoot || actorUserId === targetUserId) {
+    return { ok: true as const };
+  }
+
+  const [actorHasAccessTotal, target] = await Promise.all([
+    isAccessTotal(actorUserId),
+    prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, hasAccessTotal: true, isRootAccess: true },
+    }),
+  ]);
+
+  if (!target) {
+    return { ok: false as const, status: 404, message: 'Utilizador não encontrado.' };
+  }
+
+  if (target.isRootAccess) {
+    return { ok: false as const, status: 403, message: 'Sem permissões para gerir este utilizador.' };
+  }
+
+  if (actorHasAccessTotal && target.hasAccessTotal) {
+    const canManageByHierarchy = await canReviewAccessTotalHierarchy(actorUserId, targetUserId);
+    if (!canManageByHierarchy) {
+      return { ok: false as const, status: 403, message: 'Não podes gerir permissões de utilizadores com acesso total no mesmo nível hierárquico.' };
+    }
+  }
+
+  return { ok: true as const };
+}
+
 router.get('/permissions', requireAuth, async (_req, res) => {
   const permissions = await prisma.permission.findMany({
     orderBy: [{ category: 'asc' }, { label: 'asc' }],
@@ -122,6 +154,11 @@ router.get('/permissions', requireAuth, async (_req, res) => {
 router.get('/users/:id/permissions', requireAuth, async (req, res) => {
   const timer = createRequestTimer('GET /users/:id/permissions');
   const targetUserId = String(req.params.id || '');
+
+  const hierarchyCheck = await assertCanManagePermissionTarget(req.authUser!.id, req.authUser!.isRootAccess, targetUserId);
+  if (!hierarchyCheck.ok) {
+    return res.status(hierarchyCheck.status).json({ message: hierarchyCheck.message });
+  }
 
   const canManage = await canManagePermissions(req.authUser!);
   if (!canManage && req.authUser!.id !== targetUserId) {
@@ -220,6 +257,11 @@ router.post('/users/:id/permissions', requireAuth, async (req, res) => {
   }
 
   const targetUserId = String(req.params.id || '');
+  const hierarchyCheck = await assertCanManagePermissionTarget(req.authUser!.id, req.authUser!.isRootAccess, targetUserId);
+  if (!hierarchyCheck.ok) {
+    return res.status(hierarchyCheck.status).json({ message: hierarchyCheck.message });
+  }
+
   const payload = permissionAssignmentSchema.safeParse(req.body);
   if (!payload.success) {
     return res.status(400).json({ message: payload.error.issues[0].message });
@@ -300,6 +342,11 @@ router.patch('/users/:id/permissions/:permissionId', requireAuth, async (req, re
   }
 
   const targetUserId = String(req.params.id || '');
+  const hierarchyCheck = await assertCanManagePermissionTarget(req.authUser!.id, req.authUser!.isRootAccess, targetUserId);
+  if (!hierarchyCheck.ok) {
+    return res.status(hierarchyCheck.status).json({ message: hierarchyCheck.message });
+  }
+
   const permissionId = String(req.params.permissionId || '');
 
   const payload = permissionAssignmentSchema.partial().safeParse(req.body);
@@ -366,6 +413,11 @@ router.patch('/users/:id/permissions/:permissionId', requireAuth, async (req, re
 
 router.delete('/users/:id/permissions/:permissionId', requireAuth, async (req, res) => {
   const targetUserId = String(req.params.id || '');
+  const hierarchyCheck = await assertCanManagePermissionTarget(req.authUser!.id, req.authUser!.isRootAccess, targetUserId);
+  if (!hierarchyCheck.ok) {
+    return res.status(hierarchyCheck.status).json({ message: hierarchyCheck.message });
+  }
+
   const permissionId = String(req.params.permissionId || '');
 
   const allowed = await canRevokePermission(req.authUser!, targetUserId, permissionId);
@@ -422,6 +474,11 @@ router.patch('/users/:id/access-total', requireAuth, async (req, res) => {
   }
 
   const targetUserId = String(req.params.id || '');
+  const hierarchyCheck = await assertCanManagePermissionTarget(req.authUser!.id, req.authUser!.isRootAccess, targetUserId);
+  if (!hierarchyCheck.ok) {
+    return res.status(hierarchyCheck.status).json({ message: hierarchyCheck.message });
+  }
+
   const payload = accessTotalSchema.safeParse(req.body);
   if (!payload.success) {
     return res.status(400).json({ message: payload.error.issues[0].message });

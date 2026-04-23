@@ -1673,6 +1673,7 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
   }
 
   const canViewAllGlobally = Boolean(canViewAllVacations && viewAllScope?.isGlobal);
+  const actorHasAccessTotal = Boolean(req.authUser!.isRootAccess || isFullAccess);
   const where: Prisma.VacationWhereInput = req.authUser!.isRootAccess || isFullAccess || canViewAllGlobally
     ? { status: 'PENDING', userId: { not: userId } }
     : {
@@ -1725,7 +1726,9 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
 
   const filteredPendingByStep: typeof pendingByStep = [];
   for (const request of pendingByStep) {
-    if (request.user.hasAccessTotal && !req.authUser!.isRootAccess) {
+    const hasMyPendingStep = request.approvals.some((item) => item.approverId === userId && item.status === APPROVAL_PENDING);
+
+    if (actorHasAccessTotal && request.user.hasAccessTotal && !req.authUser!.isRootAccess && !hasMyPendingStep) {
       const canReview = await canReviewAccessTotalHierarchy(userId, request.userId);
       if (!canReview) {
         continue;
@@ -1783,21 +1786,22 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
     return res.status(403).json({ message: 'Não podes aprovar os teus próprios pedidos.' });
   }
 
-  if (vacation.user.hasAccessTotal && !req.authUser!.isRootAccess) {
+  const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
+  const canApproveByStep = vacation.approvals.some((item) => item.approverId === req.authUser!.id && item.status === APPROVAL_PENDING);
+  const canApproveByException = isPt && (req.authUser!.isRootAccess || isFullAccess);
+
+  if (isFullAccess && vacation.user.hasAccessTotal && !req.authUser!.isRootAccess && !canApproveByStep && !canApproveByException) {
     const canReview = await canReviewAccessTotalHierarchy(userId, vacation.userId);
     if (!canReview) {
       return res.status(403).json({ message: 'Não podes aprovar pedidos de utilizadores com acesso total no mesmo nível hierárquico.' });
     }
   }
 
-  const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
-  const canApproveByStep = vacation.approvals.some((item) => item.approverId === req.authUser!.id && item.status === APPROVAL_PENDING);
-  const canApproveByException = isPt && (req.authUser!.isRootAccess || isFullAccess);
   const canApproveWithinRestrictions = req.authUser!.isRootAccess
     || isFullAccess
     || await canAccessUserByPermission(userId, 'approve_vacation', vacation.userId);
 
-  if (!canApproveWithinRestrictions && !canApproveByException) {
+  if (!canApproveWithinRestrictions && !canApproveByException && !canApproveByStep) {
     return res.status(403).json({ message: 'Sem permissões para aprovar este pedido com as restrições atuais.' });
   }
 
@@ -1940,21 +1944,22 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
     return res.status(403).json({ message: 'Não podes recusar os teus próprios pedidos.' });
   }
 
-  if (vacation.user.hasAccessTotal && !req.authUser!.isRootAccess) {
+  const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
+  const canRejectByStep = vacation.approvals.some((item) => item.approverId === req.authUser!.id && item.status === APPROVAL_PENDING);
+  const canRejectByException = isPt && (req.authUser!.isRootAccess || isFullAccess);
+
+  if (isFullAccess && vacation.user.hasAccessTotal && !req.authUser!.isRootAccess && !canRejectByStep && !canRejectByException) {
     const canReview = await canReviewAccessTotalHierarchy(userId, vacation.userId);
     if (!canReview) {
       return res.status(403).json({ message: 'Não podes recusar pedidos de utilizadores com acesso total no mesmo nível hierárquico.' });
     }
   }
 
-  const isPt = (vacation.user.profile?.workCountry ?? 'PT') === 'PT';
-  const canRejectByStep = vacation.approvals.some((item) => item.approverId === req.authUser!.id && item.status === APPROVAL_PENDING);
-  const canRejectByException = isPt && (req.authUser!.isRootAccess || isFullAccess);
   const canRejectWithinRestrictions = req.authUser!.isRootAccess
     || isFullAccess
     || await canAccessUserByPermission(userId, 'reject_vacation', vacation.userId);
 
-  if (!canRejectWithinRestrictions && !canRejectByException) {
+  if (!canRejectWithinRestrictions && !canRejectByException && !canRejectByStep) {
     return res.status(403).json({ message: 'Sem permissões para recusar este pedido com as restrições atuais.' });
   }
 

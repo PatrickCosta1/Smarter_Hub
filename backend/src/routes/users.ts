@@ -964,6 +964,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
   };
 
   const requestScopeWhere = scopeWhere ? { user: scopeWhere } : {};
+  const actorHasAccessTotal = Boolean(req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id));
 
   const [usersResult, profileRequestsResult, vacationsResult, trainingsResult, historyResult] = await Promise.allSettled([
     prisma.user.findMany({
@@ -985,16 +986,32 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
         },
       },
     }),
-    prisma.profileChangeRequest.count({
+    prisma.profileChangeRequest.findMany({
       where: {
         status: 'PENDING',
         ...requestScopeWhere,
       },
+      select: {
+        userId: true,
+        user: {
+          select: {
+            hasAccessTotal: true,
+          },
+        },
+      },
     }),
-    prisma.vacation.count({
+    prisma.vacation.findMany({
       where: {
         status: 'PENDING',
         ...requestScopeWhere,
+      },
+      select: {
+        userId: true,
+        user: {
+          select: {
+            hasAccessTotal: true,
+          },
+        },
       },
     }),
     Promise.all([
@@ -1045,8 +1062,44 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       .map((item) => item.team?.name?.trim())
       .filter((value): value is string => Boolean(value)),
   ).size;
-  const pendingProfileRequests = profileRequestsResult.status === 'fulfilled' ? profileRequestsResult.value : 0;
-  const pendingVacationRequests = vacationsResult.status === 'fulfilled' ? vacationsResult.value : 0;
+  const pendingProfileRows = profileRequestsResult.status === 'fulfilled' ? profileRequestsResult.value : [];
+  const pendingVacationRows = vacationsResult.status === 'fulfilled' ? vacationsResult.value : [];
+
+  let pendingProfileRequests = 0;
+  for (const row of pendingProfileRows) {
+    if (row.userId === req.authUser!.id) {
+      pendingProfileRequests += 1;
+      continue;
+    }
+
+    if (!actorHasAccessTotal || !row.user.hasAccessTotal || req.authUser!.isRootAccess) {
+      pendingProfileRequests += 1;
+      continue;
+    }
+
+    const canReview = await canReviewAccessTotalHierarchy(req.authUser!.id, row.userId);
+    if (canReview) {
+      pendingProfileRequests += 1;
+    }
+  }
+
+  let pendingVacationRequests = 0;
+  for (const row of pendingVacationRows) {
+    if (row.userId === req.authUser!.id) {
+      pendingVacationRequests += 1;
+      continue;
+    }
+
+    if (!actorHasAccessTotal || !row.user.hasAccessTotal || req.authUser!.isRootAccess) {
+      pendingVacationRequests += 1;
+      continue;
+    }
+
+    const canReview = await canReviewAccessTotalHierarchy(req.authUser!.id, row.userId);
+    if (canReview) {
+      pendingVacationRequests += 1;
+    }
+  }
   const assignedTrainings = trainingsResult.status === 'fulfilled' ? trainingsResult.value[0] : 0;
   const completedTrainings = trainingsResult.status === 'fulfilled' ? trainingsResult.value[1] : 0;
   const trainingHoursAvg = trainingsResult.status === 'fulfilled'
