@@ -180,7 +180,8 @@ describe('Comprehensive validation test suite - ALTO #4.6', () => {
       };
 
       const requiredFields = ['nomeCompleto', 'nomeAbreviado', 'email', 'nif', 'iban'];
-      const allFilled = requiredFields.every((field) => profile[field] && profile[field].length > 0);
+      const p = profile as Record<string, string | null>;
+      const allFilled = requiredFields.every((field) => p[field] && p[field]!.length > 0);
 
       expect(allFilled).toBe(true);
     });
@@ -195,7 +196,8 @@ describe('Comprehensive validation test suite - ALTO #4.6', () => {
       };
 
       const requiredFields = ['nomeAbreviado'];
-      const allFilled = requiredFields.every((field) => profile[field] && profile[field].length > 0);
+      const p2 = profile as Record<string, string | null>;
+      const allFilled = requiredFields.every((field) => p2[field] && p2[field]!.length > 0);
 
       expect(allFilled).toBe(false);
     });
@@ -397,9 +399,10 @@ describe('Comprehensive validation test suite - ALTO #4.6', () => {
     });
 
     it('EDGE: Null/undefined handling', () => {
-      const value = null;
+      const value = null as string | null;
+      const isValid = value !== null && value.length >= 5;
 
-      expect(!value || (typeof value === 'string' && value.length >= 5)).toBe(false);
+      expect(isValid).toBe(false);
     });
   });
 

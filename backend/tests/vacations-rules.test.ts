@@ -115,6 +115,40 @@ describe('vacations rules', () => {
     expect(result.success).toBe(true);
   });
 
+  it('buildApprovalGroups creates manager then RH levels for BR', () => {
+    expect(
+      __vacationTestables.buildApprovalGroups({
+        country: 'BR',
+        primaryApproverIds: ['manager-1', 'manager-2'],
+        rhApproverIds: ['rh-1'],
+      }),
+    ).toEqual([
+      { level: 1, approverIds: ['manager-1', 'manager-2'] },
+      { level: 2, approverIds: ['rh-1'] },
+    ]);
+  });
+
+  it('buildApprovalGroups keeps single-level approval for PT', () => {
+    expect(
+      __vacationTestables.buildApprovalGroups({
+        country: 'PT',
+        primaryApproverIds: ['manager-1'],
+        rhApproverIds: ['rh-1'],
+      }),
+    ).toEqual([
+      { level: 1, approverIds: ['manager-1', 'rh-1'] },
+    ]);
+  });
+
+  it('getPreviousApproverIdsForRejection returns prior approved level when RH rejects', () => {
+    expect(
+      __vacationTestables.getPreviousApproverIdsForRejection([
+        { approverId: 'manager-1', approvalLevel: 1, status: 'APPROVED' },
+        { approverId: 'rh-1', approvalLevel: 2, status: 'PENDING' },
+      ], 'rh-1'),
+    ).toEqual(['manager-1']);
+  });
+
   it('enforceVacationBusinessDays rejects weekend start for vacation request', async () => {
     vi.stubGlobal(
       'fetch',

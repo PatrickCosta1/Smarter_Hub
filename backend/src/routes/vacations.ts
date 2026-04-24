@@ -612,6 +612,8 @@ export const __vacationTestables = {
   validateVacationCountryPolicy,
   enumerateDates,
   isWeekendIso,
+  buildApprovalGroups,
+  getPreviousApproverIdsForRejection,
 };
 
 function brVacationDaysByAbsences(absences: number) {
@@ -735,6 +737,60 @@ function formatVacationNotificationMessage(params: {
   return [header, requester, type, period, team, notes, 'Ação: abre a área de aprovações para decidir.'].join('\n');
 }
 
+function buildApprovalGroups(params: {
+  country: 'PT' | 'BR';
+  primaryApproverIds: string[];
+  rhApproverIds: string[];
+}) {
+  const primaryApproverIds = Array.from(new Set(params.primaryApproverIds));
+  const rhApproverIds = Array.from(new Set(params.rhApproverIds)).filter((id) => !primaryApproverIds.includes(id));
+
+  if (params.country === 'BR') {
+    if (primaryApproverIds.length === 0 && rhApproverIds.length === 0) {
+      return [] as Array<{ level: number; approverIds: string[] }>;
+    }
+
+    if (primaryApproverIds.length === 0) {
+      return [{ level: 1, approverIds: rhApproverIds }];
+    }
+
+    if (rhApproverIds.length === 0) {
+      return [{ level: 1, approverIds: primaryApproverIds }];
+    }
+
+    return [
+      { level: 1, approverIds: primaryApproverIds },
+      { level: 2, approverIds: rhApproverIds },
+    ];
+  }
+
+  const approverIds = Array.from(new Set([...primaryApproverIds, ...rhApproverIds]));
+  if (approverIds.length === 0) {
+    return [] as Array<{ level: number; approverIds: string[] }>;
+  }
+
+  return [{ level: 1, approverIds }];
+}
+
+function getPreviousApproverIdsForRejection(
+  approvals: Array<{ approverId: string; approvalLevel: number; status: string }>,
+  reviewerId: string,
+) {
+  const rejectingStep = approvals.find((item) => item.approverId === reviewerId && item.status === APPROVAL_PENDING);
+  if (!rejectingStep) {
+    return [] as string[];
+  }
+
+  return Array.from(
+    new Set(
+      approvals
+        .filter((item) => item.approvalLevel < rejectingStep.approvalLevel && item.status === APPROVAL_APPROVED)
+        .map((item) => item.approverId)
+        .filter((id) => id !== reviewerId),
+    ),
+  );
+}
+
 async function resolveApprovalGroups(userId: string, contextTeamId: string | null) {
   const requester = await prisma.user.findUnique({
     where: { id: userId },
@@ -765,17 +821,18 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
     ...(requester.teamId ? [requester.teamId] : []),
   ]));
 
-  const candidateApproverIds = new Set<string>();
+  const primaryApproverIds = new Set<string>();
+  const rhApproverIds = new Set<string>();
 
-  function addApprover(id: string | null | undefined) {
+  function addApprover(target: Set<string>, id: string | null | undefined) {
     if (!id || id === userId) {
       return;
     }
 
-    candidateApproverIds.add(id);
+    target.add(id);
   }
 
-  async function addAccessTotalApprovers() {
+  async function addAccessTotalApprovers(target: Set<string>) {
     const users = await prisma.user.findMany({
       where: {
         id: { not: userId },
@@ -801,11 +858,11 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
         }
       }
 
-      addApprover(user.id);
+      addApprover(target, user.id);
     }
   }
 
-  async function addTPeopleFallback() {
+  async function addTPeopleFallback(target: Set<string>) {
     const fallback = await prisma.user.findFirst({
       where: {
         id: { not: userId },
@@ -823,11 +880,11 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
     });
 
     if (fallback?.id) {
-      addApprover(fallback.id);
+      addApprover(target, fallback.id);
       return;
     }
 
-    await addAccessTotalApprovers();
+    await addAccessTotalApprovers(target);
   }
 
   if (teamIds.length > 0) {
@@ -859,7 +916,7 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
         }
 
         if (node.managerId && node.managerId !== userId) {
-          addApprover(node.managerId);
+          addApprover(primaryApproverIds, node.managerId);
           managerFound = true;
           break;
         }
@@ -873,16 +930,24 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
     }
 
     if (unresolvedTeams.length > 0) {
-      await addAccessTotalApprovers();
+      await addAccessTotalApprovers(requesterCountry === 'BR' ? rhApproverIds : primaryApproverIds);
+    }
+
+    if (requesterCountry === 'BR') {
+      await addAccessTotalApprovers(rhApproverIds);
+
+      if (rhApproverIds.size === 0) {
+        await addTPeopleFallback(rhApproverIds);
+      }
     }
   } else if (requester.hasAccessTotal) {
-    addApprover(requester.accessTotalGrantedById);
+    addApprover(requesterCountry === 'BR' ? rhApproverIds : primaryApproverIds, requester.accessTotalGrantedById);
 
-    if (candidateApproverIds.size === 0) {
-      await addTPeopleFallback();
+    if (primaryApproverIds.size === 0 && rhApproverIds.size === 0) {
+      await addTPeopleFallback(requesterCountry === 'BR' ? rhApproverIds : primaryApproverIds);
     }
   } else {
-    await addTPeopleFallback();
+    await addTPeopleFallback(requesterCountry === 'BR' ? rhApproverIds : primaryApproverIds);
   }
 
   const customApproverAssignments = await prisma.userPermission.findMany({
@@ -924,29 +989,36 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
 
     const custom = parseApprovalCustomRestrictions(assignment.customRestrictions);
     if (custom.allowedUserIds.includes(userId)) {
-      addApprover(assignment.userId);
+      const targetApproverIds = requesterCountry === 'BR' && (assignment.user.hasAccessTotal || assignment.user.isRootAccess)
+        ? rhApproverIds
+        : primaryApproverIds;
+      addApprover(targetApproverIds, assignment.userId);
     }
   }
 
   const activeApprovers = await prisma.user.findMany({
     where: {
-      id: { in: Array.from(candidateApproverIds) },
+      id: { in: Array.from(new Set([...primaryApproverIds, ...rhApproverIds])) },
       isActive: true,
     },
     select: { id: true },
     orderBy: { createdAt: 'asc' },
   });
 
-  const approverIds = activeApprovers
+  const orderedPrimaryApproverIds = activeApprovers
     .map((user) => user.id)
-    .filter((id) => id !== userId);
+    .filter((id) => id !== userId && primaryApproverIds.has(id));
 
-  if (approverIds.length === 0) {
-    return [] as Array<{ level: number; approverIds: string[] }>;
-  }
+  const orderedRhApproverIds = activeApprovers
+    .map((user) => user.id)
+    .filter((id) => id !== userId && rhApproverIds.has(id) && !primaryApproverIds.has(id));
 
   void contextTeamId;
-  return [{ level: 1, approverIds }];
+  return buildApprovalGroups({
+    country: requesterCountry,
+    primaryApproverIds: orderedPrimaryApproverIds,
+    rhApproverIds: orderedRhApproverIds,
+  });
 }
 
 async function enforceOneThirdCapacity(
@@ -1490,6 +1562,7 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
       : brVacationDaysByAbsences(unjustifiedAbsences);
     const entitledDays = baseEntitledDays + extraBalanceDays;
     const soldVacationDays = (profile as { soldVacationDays?: number } | null)?.soldVacationDays ?? 0;
+    const availableEntitledDays = Math.max(entitledDays - soldVacationDays, 0);
     const approvedVacationDays = vacations
       .filter((item) => item.status === 'APPROVED' && item.requestType === 'VACATION')
       .reduce((sum, item) => sum + vacationDaysForMetrics(item, holidayDates), 0);
@@ -1529,6 +1602,7 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
         extraBalanceDays,
         entitledDays,
         soldVacationDays,
+        availableEntitledDays,
         maxSellableDays: Math.min(10, Math.floor(entitledDays / 3)),
       },
     });
@@ -2176,6 +2250,21 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
     },
   });
 
+  const previousApproverIds = getPreviousApproverIdsForRejection(vacation.approvals, req.authUser!.id);
+  if (previousApproverIds.length > 0) {
+    await notifyUsers(
+      prisma,
+      previousApproverIds,
+      vacation.requestType === 'VACATION' ? 'Pedido de férias recusado após revisão RH' : 'Pedido de ausência recusado após revisão RH',
+      [
+        `O pedido de ${describeVacationRequestType(vacation.requestType as 'VACATION' | 'ABSENCE_MEDICAL' | 'ABSENCE_TRAINING')} de ${formatIsoDatePt(vacation.dataInicio)} até ${formatIsoDatePt(vacation.dataFim)} foi recusado numa etapa posterior.`,
+        `Motivo: ${reason}`,
+        `Decisor: ${req.authUser?.username || 'Aprovador'}.`,
+        'Ação: acompanha o colaborador caso seja necessária nova submissão.',
+      ].join('\n'),
+    );
+  }
+
   return res.json({ success: true });
 });
 
@@ -2359,6 +2448,7 @@ router.post('/vacations/sell-days', requireAuth, async (req: Request, res: Respo
       : brVacationDaysByAbsences(unjustifiedAbsences);
     const entitledDays = baseEntitledDays + extraBalanceDays;
     const maxSellable = Math.min(10, Math.floor(entitledDays / 3));
+    const availableEntitledDays = Math.max(entitledDays - days, 0);
 
     if (days > maxSellable) {
       return res.status(400).json({
@@ -2371,7 +2461,7 @@ router.post('/vacations/sell-days', requireAuth, async (req: Request, res: Respo
       data: { ...( { soldVacationDays: days } as Record<string, unknown> ) },
     });
 
-    return res.json({ soldVacationDays: days, maxSellable, entitledDays });
+    return res.json({ soldVacationDays: days, maxSellable, entitledDays, availableEntitledDays });
   } catch (error) {
     console.error('[POST /vacations/sell-days]', error);
     return res.status(500).json({ error: 'Falha ao processar venda de dias de férias.' });

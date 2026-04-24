@@ -258,7 +258,7 @@ describe('Backend validation logic consolidation - MÉDIO #4.5', () => {
       const customRules = {
         nifValidator: {
           name: 'nif',
-          rule: (value) => /^\d{9}$/.test(value),
+          rule: (value: string) => /^\d{9}$/.test(value),
           message: 'NIF deve ter 9 dígitos',
         },
       };
@@ -270,7 +270,7 @@ describe('Backend validation logic consolidation - MÉDIO #4.5', () => {
       const customRules = {
         ibanValidator: {
           name: 'iban',
-          rule: (value) => /^PT\d{2}\d{21}$/.test(value) || /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(value),
+          rule: (value: string) => /^PT\d{2}\d{21}$/.test(value) || /^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(value),
           message: 'IBAN inválido',
         },
       };
