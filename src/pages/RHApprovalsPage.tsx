@@ -54,6 +54,10 @@ type VacationRequest = {
   observacoes: string;
   status: string;
   createdAt: string;
+  processadoAt?: string | null;
+  processadoById?: string | null;
+  realizadoAt?: string | null;
+  realizadoByIds?: string[] | null;
   user: {
     id: string;
     username: string;
@@ -339,6 +343,41 @@ export default function RHApprovalsPage() {
     });
   }
 
+  async function markVacationProcessado(request: VacationRequest) {
+    await runAction(`mark-processado-vacation-${request.id}`, 'Férias marcadas como processado', 'Erro ao marcar processado', async () => {
+      await apiRequest(`/vacations/${request.id}/mark-processado`, { method: 'POST', headers: getAuthHeaders() });
+      clearApiCache('/vacations');
+      // Reload the vacation request with updated processadoAt field
+      setVacationRequests((current) =>
+        current.map((item) =>
+          item.id === request.id
+            ? { ...item, processadoAt: new Date().toISOString() }
+            : item
+        )
+      );
+      void refreshNotifications();
+    });
+  }
+
+  async function markVacationRealizado(request: VacationRequest) {
+    await runAction(`mark-realizado-vacation-${request.id}`, 'Realização de férias confirmada', 'Erro ao confirmar realização', async () => {
+      const response = await apiRequest(`/vacations/${request.id}/mark-realizado`, { method: 'POST', headers: getAuthHeaders() }) as any;
+      clearApiCache('/vacations');
+      setVacationRequests((current) =>
+        current.map((item) =>
+          item.id === request.id
+            ? {
+                ...item,
+                realizadoByIds: response.data?.realizadoByIds || [],
+                realizadoAt: response.data?.fully_confirmed ? new Date().toISOString() : item.realizadoAt,
+              }
+            : item
+        )
+      );
+      void refreshNotifications();
+    });
+  }
+
   function openProfileRequestDetails(request: ProfileRequest) {
     setSelectedProfileRequest(request);
   }
@@ -454,40 +493,79 @@ export default function RHApprovalsPage() {
             ) : vacationRequests.length === 0 ? (
               <article className="trainings-mobile-card">Sem pedidos pendentes.</article>
             ) : (
-              vacationRequests.map((request) => (
-                <article key={request.id} className="trainings-mobile-card">
-                  <header>
-                    <h4>{getDisplayName(request.user)}</h4>
-                    <Badge tone={getVacationStatusTone(request.status) === 'approved' ? 'success' : getVacationStatusTone(request.status) === 'pending' ? 'warning' : getVacationStatusTone(request.status) === 'rejected' ? 'danger' : 'neutral'}>
-                      {formatVacationStatusLabel(request.status)}
-                    </Badge>
-                  </header>
-                  <p>{request.dataInicio} - {request.dataFim}</p>
-                  <p>{request.observacoes || 'Sem observações.'}</p>
-                  <div className="trainings-row-actions">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="primary"
-                      isLoading={pendingActionKey === `approve-vacation-${request.id}`}
-                      disabled={Boolean(pendingActionKey)}
-                      onClick={() => void approveVacationRequest(request)}
-                    >
-                      Aprovar
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      isLoading={pendingActionKey === `reject-vacation-${request.id}`}
-                      disabled={Boolean(pendingActionKey)}
-                      onClick={() => void rejectVacationRequest(request)}
-                    >
-                      Rejeitar
-                    </Button>
-                  </div>
-                </article>
-              ))
+              vacationRequests.map((request) => {
+                const isApproved = request.status === 'APPROVED';
+                const isProcessado = isApproved && request.processadoAt;
+                const isRealizedPendingRHConfirm = isProcessado && request.realizadoByIds && request.realizadoByIds.length > 0;
+
+                return (
+                  <article key={request.id} className="trainings-mobile-card">
+                    <header>
+                      <h4>{getDisplayName(request.user)}</h4>
+                      <Badge tone={getVacationStatusTone(request.status) === 'approved' ? 'success' : getVacationStatusTone(request.status) === 'pending' ? 'warning' : getVacationStatusTone(request.status) === 'rejected' ? 'danger' : 'neutral'}>
+                        {formatVacationStatusLabel(request.status)}
+                      </Badge>
+                    </header>
+                    <p>{request.dataInicio} - {request.dataFim}</p>
+                    <p>{request.observacoes || 'Sem observações.'}</p>
+                    {isProcessado && (
+                      <p style={{ fontSize: '0.85rem', color: 'var(--hub-text-3)' }}>
+                        ✓ Processado em {request.processadoAt ? new Date(request.processadoAt).toLocaleDateString('pt-PT') : '-'}
+                      </p>
+                    )}
+                    <div className="trainings-row-actions">
+                      {!isApproved && (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="primary"
+                            isLoading={pendingActionKey === `approve-vacation-${request.id}`}
+                            disabled={Boolean(pendingActionKey)}
+                            onClick={() => void approveVacationRequest(request)}
+                          >
+                            Aprovar
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            isLoading={pendingActionKey === `reject-vacation-${request.id}`}
+                            disabled={Boolean(pendingActionKey)}
+                            onClick={() => void rejectVacationRequest(request)}
+                          >
+                            Rejeitar
+                          </Button>
+                        </>
+                      )}
+                      {isApproved && !isProcessado && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="primary"
+                          isLoading={pendingActionKey === `mark-processado-vacation-${request.id}`}
+                          disabled={Boolean(pendingActionKey)}
+                          onClick={() => void markVacationProcessado(request)}
+                        >
+                          Marcar Processado
+                        </Button>
+                      )}
+                      {isRealizedPendingRHConfirm && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="primary"
+                          isLoading={pendingActionKey === `mark-realizado-vacation-${request.id}`}
+                          disabled={Boolean(pendingActionKey)}
+                          onClick={() => void markVacationRealizado(request)}
+                        >
+                          Validar Realizado
+                        </Button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })
             )}
           </div>
         </section>

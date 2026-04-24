@@ -398,6 +398,8 @@ export default function VacationsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionNotice, setSubmissionNotice] = useState<SubmissionNotice>(null);
   const [isPendingVacationDetailOpen, setIsPendingVacationDetailOpen] = useState(false);
+  const [isApprovedVacationDetailOpen, setIsApprovedVacationDetailOpen] = useState(false);
+  const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
   const [toast, setToast] = useState<VacationToastState>({
     tone: 'info',
     message: '',
@@ -467,6 +469,21 @@ export default function VacationsPage() {
     () => pendingVacationRequests.reduce((sum, record) => sum + calculateDuration(record), 0),
     [pendingVacationRequests],
   );
+
+  const approvedVacationRequests = useMemo(
+    () => sortedRecords.filter((record) => record.status === 'APPROVED'),
+    [sortedRecords],
+  );
+
+  const approvedVacationsReadyForRealization = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return approvedVacationRequests.filter((record) => {
+      const dataFimDate = new Date(record.dataFim);
+      dataFimDate.setHours(0, 0, 0, 0);
+      return dataFimDate < today; // Only show completed vacations
+    });
+  }, [approvedVacationRequests]);
 
   const calendarRequestDays = useMemo(() => {
     if (!calendarData) {
@@ -1353,6 +1370,29 @@ export default function VacationsPage() {
     showToast('info', 'Modo edição ativo. Ao submeter, será criada uma nova versão do pedido.');
   }
 
+  async function confirmVacationRealizado(id: string) {
+    try {
+      setPendingActionKey(`confirm-realizado-${id}`);
+      await apiRequest(`/vacations/${id}/mark-realizado`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+
+      clearApiCache('/vacations');
+      clearApiCache('/vacations/me');
+      void loadMine();
+      if (activeTab === 'overview') {
+        void loadOverview();
+      }
+      void refreshNotifications();
+      showToast('success', 'Férias confirmadas como realizadas. Aguardando validação da RH.');
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Falha ao confirmar realização.');
+    } finally {
+      setPendingActionKey(null);
+    }
+  }
+
   async function handleCancelPending(id: string) {
     try {
       await apiRequest(`/vacations/${id}`, {
@@ -1578,6 +1618,27 @@ export default function VacationsPage() {
         </section>
       )}
 
+      {!isTPeople && approvedVacationsReadyForRealization.length > 0 && (
+        <section className="profile-request-banner profile-request-banner--vacations" role="status" aria-live="polite">
+          <div className="profile-request-banner__inner">
+            <div className="profile-request-banner__content">
+              <span className="profile-request-banner__chip">Realização</span>
+              <strong>Férias realizadas — confirmar realização</strong>
+              <span>
+                {approvedVacationsReadyForRealization.length} período(s) de férias já findos à espera de confirmação
+              </span>
+            </div>
+            <button
+              type="button"
+              className="profile-request-banner__btn"
+              onClick={() => setIsApprovedVacationDetailOpen(true)}
+            >
+              Confirmar
+            </button>
+          </div>
+        </section>
+      )}
+
       {isPendingVacationDetailOpen && !isTPeople && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pending-vacation-modal-title" onClick={(e) => { if (e.target === e.currentTarget) setIsPendingVacationDetailOpen(false); }}>
           <div className="pending-modal pending-modal--vacations">
@@ -1625,6 +1686,66 @@ export default function VacationsPage() {
             )}
             <div className="pending-modal__footer">
               <button type="button" className="pending-modal__dismiss" onClick={() => setIsPendingVacationDetailOpen(false)}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isApprovedVacationDetailOpen && !isTPeople && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="approved-vacation-modal-title" onClick={(e) => { if (e.target === e.currentTarget) setIsApprovedVacationDetailOpen(false); }}>
+          <div className="pending-modal pending-modal--vacations">
+            <div className="pending-modal__header">
+              <div>
+                <p className="pending-modal__kicker">Férias e ausências</p>
+                <h2 id="approved-vacation-modal-title">Confirmar realização</h2>
+              </div>
+              <button type="button" className="pending-modal__close" onClick={() => setIsApprovedVacationDetailOpen(false)} aria-label="Fechar">×</button>
+            </div>
+            <p className="pending-modal__sub">Confirma a realização das férias já findas. A RH necessita de validação posterior.</p>
+            <div className="pending-modal__summary" aria-live="polite">
+              <span className="pending-modal__summary-item">{approvedVacationsReadyForRealization.length} período(s)</span>
+            </div>
+            {approvedVacationsReadyForRealization.length > 0 ? (
+              <div className="pending-modal__table-wrap">
+                <table className="pending-modal__table">
+                  <thead>
+                    <tr>
+                      <th>Pedido</th>
+                      <th>Período</th>
+                      <th>Duração</th>
+                      <th>Equipa</th>
+                      <th>Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {approvedVacationsReadyForRealization.map((record) => (
+                      <tr key={record.id}>
+                        <td className="pending-modal__field">{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</td>
+                        <td>{formatShortDate(record.dataInicio)} - {formatShortDate(record.dataFim)}</td>
+                        <td>{calculateDuration(record)}</td>
+                        <td>{record.contextTeam?.name || 'Contexto principal'}</td>
+                        <td>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="primary"
+                            isLoading={pendingActionKey === `confirm-realizado-${record.id}`}
+                            disabled={Boolean(pendingActionKey)}
+                            onClick={() => void confirmVacationRealizado(record.id)}
+                          >
+                            Confirmar
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="pending-modal__empty">Sem férias prontas para realização de momento.</p>
+            )}
+            <div className="pending-modal__footer">
+              <button type="button" className="pending-modal__dismiss" onClick={() => setIsApprovedVacationDetailOpen(false)}>Fechar</button>
             </div>
           </div>
         </div>
