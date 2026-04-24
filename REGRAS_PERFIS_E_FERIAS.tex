@@ -73,11 +73,15 @@
   \item Um pedido aprovado pode ser alterado por versionamento, não por edição direta do registo final.
   \item Deve existir histórico de decisões, versões e motivos.
   \item Em PT, quando ainda não existe período de 10 dias úteis consecutivos no ano, pedidos mais curtos geram aviso de conformidade, mas não bloqueiam a submissão.
-  \item \textbf{PT — cap do 1.º ano}: colaboradores contratados após 1 de janeiro do ano corrente têm direito a no máximo 20 dias úteis de férias nesse ano. O sistema bloqueia a submissão se o total acumulado (PENDING + APPROVED + novo pedido) ultrapassar esse limite.
+  \item \textbf{PT — cap proporcional do 1.º ano}: colaboradores contratados após 1 de janeiro do ano corrente têm direito a 2 dias úteis por cada mês trabalhado (máximo 20 dias úteis no ano). O sistema bloqueia a submissão se o total acumulado (PENDING + APPROVED + novo pedido) ultrapassar esse limite proporcional.
   \item \textbf{PT — lembrete de transitados}: o sistema notifica automaticamente colaboradores com férias transitadas do ano anterior que expiram a 30 de abril, com antecedência configurável (default: 30 dias antes). Acionado por job diário via \texttt{POST /vacations/jobs/carryover-reminder}.
   \item \textbf{BR — bloqueio de quarta-feira}: pedidos de férias BR não podem ter início à quarta-feira.
+  \item \textbf{BR — bloqueio de sexta-feira}: pedidos de férias BR não podem ter início à sexta-feira.
   \item \textbf{BR — bloqueio pós-feriado}: o período de férias BR não pode iniciar no dia útil imediatamente a seguir a um feriado nacional.
-  \item \textbf{BR — recesso de estagiários}: colaboradores com \texttt{isIntern = true} usufruem de recesso automático nas semanas de encerramento (24 de dezembro a 1 de janeiro). Os dias de recesso não são deduzidos do saldo de férias. O sistema exclui esses dias ao calcular os dias efetivos de um pedido.
+  \item \textbf{BR — período concessivo}: o sistema valida o fim do período concessivo (até ao dia anterior ao aniversário de contrato) e bloqueia pedidos submetidos com menos de 30 dias de antecedência em relação ao seu término.
+  \item \textbf{BR — alterações com antecedência mínima}: alterações/versionamento de pedidos de férias só são permitidas com pelo menos 10 dias de antecedência face ao início do pedido já existente.
+  \item \textbf{BR — estagiários}: pedidos de férias de estagiários são bloqueados antes de completar 12 meses de estágio; após esse marco, o direito é calculado por proporcionalidade de 30 dias por 12 meses (2,5 dias/mês, máximo 30).
+  \item \textbf{BR — venda de férias (abono)}: colaborador pode vender dias de férias até ao limite legal de 1/3 do direito anual, com teto absoluto de 10 dias. O valor vendido fica registado no perfil.
   \item Deve evitar-se ter cerca de um terço da equipa em férias em simultâneo.
   \item Pedidos que atravessam o fim/início de ano devem aparecer nas vistas do(s) ano(s) respetivo(s).
   \item Ausências podem usar horas e podem ter anexos pendentes sem prazo fixo.

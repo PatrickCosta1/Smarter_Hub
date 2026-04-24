@@ -296,17 +296,23 @@ async function validateVacationCountryPolicy(params: {
       warnings.push(`Política PT: este pedido tem apenas ${requestedDays} dias úteis. No regime PT deve existir pelo menos um período de férias com 10 dias úteis consecutivos no ano.`);
     }
 
-    // Phase 2B: 1st-year cap — contratados após Jan 1 do ano corrente têm max 20 dias úteis
+    // Phase 2B: 1st-year proportional cap — contratados após Jan 1 do ano corrente têm
+    // direito a 2 dias úteis por mês trabalhado, máximo 20 dias úteis
     if (params.dataInicioContrato) {
       const requestYear = toLocalDate(params.dataInicio).getFullYear();
       const contractStart = toLocalDate(params.dataInicioContrato);
       const isFirstContractYear = contractStart.getFullYear() === requestYear && contractStart > toLocalDate(`${requestYear}-01-01`);
 
       if (isFirstContractYear) {
+        const today = new Date();
+        const completedMonths = (today.getFullYear() - contractStart.getFullYear()) * 12 + (today.getMonth() - contractStart.getMonth());
+        const maxAllowed = Math.min(20, completedMonths * 2);
         const allPeriodsIncludingNew = [...currentYearPeriods, requestedPeriod];
         const totalUsedDays = allPeriodsIncludingNew.reduce((sum, p) => sum + vacationDaysForMetrics(p, holidayDates), 0);
-        if (totalUsedDays > 20) {
-          throw new Error(`Política PT: colaboradores no 1.º ano de contrato têm direito a no máximo 20 dias úteis de férias. Total acumulado seria ${totalUsedDays} dias.`);
+        if (totalUsedDays > maxAllowed) {
+          throw new Error(
+            `Política PT: colaboradores no 1.º ano de contrato têm direito a ${maxAllowed} dias úteis de férias (2 dias por mês trabalhado, máx. 20). Total acumulado seria ${totalUsedDays} dias.`,
+          );
         }
       }
     }
@@ -318,10 +324,25 @@ async function validateVacationCountryPolicy(params: {
     throw new Error('Política BR: pedidos de férias fracionados em meio-dia não são permitidos.');
   }
 
+  // BR Estagiário — só pode tirar férias após 12 meses completos de estágio
+  if (params.isIntern && params.dataInicioContrato) {
+    const contractStart = toLocalDate(params.dataInicioContrato);
+    const today = new Date();
+    const internMonths = (today.getFullYear() - contractStart.getFullYear()) * 12 + (today.getMonth() - contractStart.getMonth());
+    if (internMonths < 12) {
+      throw new Error(`Política BR: estagiários só têm direito a férias após 12 meses completos de estágio (${internMonths} meses trabalhados).`);
+    }
+  }
+
   // Phase 2C: BR Wednesday blocker — férias não podem começar quarta-feira
-  const startDayOfWeek = toLocalDate(params.dataInicio).getDay(); // 0=Sun, 3=Wed
+  const startDayOfWeek = toLocalDate(params.dataInicio).getDay(); // 0=Sun, 3=Wed, 5=Fri
   if (startDayOfWeek === 3) {
     throw new Error('Política BR: o período de férias não pode ter início à quarta-feira.');
+  }
+
+  // BR Friday blocker — férias não podem começar sexta-feira
+  if (startDayOfWeek === 5) {
+    throw new Error('Política BR: o período de férias não pode ter início à sexta-feira.');
   }
 
   // Phase 2C: BR Post-holiday blocker — não pode começar no dia útil imediatamente após feriado
@@ -359,12 +380,8 @@ async function validateVacationCountryPolicy(params: {
   ]);
   const holidayDates = await collectHolidayDates(params.country, years);
 
-  // Phase 2C: BR Estagiário recesso — effective days exclude company recesso (Dec 24 – Jan 1)
-  // For interns, compute effective days (excluding recesso) instead of raw calendar days
   const effectivePeriodDays = (period: { dataInicio: string; dataFim: string; requestType?: string; partialDay?: 'FULL' | 'AM' | 'PM' }) =>
-    params.isIntern
-      ? calcBrInternEffectiveDays(period.dataInicio, period.dataFim)
-      : vacationDaysForMetrics({ requestType: 'VACATION', partialDay: 'FULL', ...period }, holidayDates);
+    vacationDaysForMetrics({ requestType: 'VACATION', partialDay: 'FULL', ...period }, holidayDates);
 
   const periodLengths = allPeriods.map((period) => effectivePeriodDays(period));
   if (periodLengths.some((days) => days < 5)) {
@@ -373,6 +390,27 @@ async function validateVacationCountryPolicy(params: {
 
   if (allPeriods.length >= 3 && !periodLengths.some((days) => days >= 14)) {
     throw new Error('Política BR: quando as férias são divididas em 3 períodos, pelo menos um deve ter 14 dias ou mais.');
+  }
+
+  // BR Concessivo rule — deve marcar férias com pelo menos 30 dias de antecedência
+  if (params.dataInicioContrato) {
+    const contractStart = toLocalDate(params.dataInicioContrato);
+    const todayConc = new Date();
+    todayConc.setHours(0, 0, 0, 0);
+    // Find the next anniversary of the hire date (boundary of the current concessivo period)
+    let anniversaryYear = todayConc.getFullYear();
+    const anniversaryThisYear = new Date(anniversaryYear, contractStart.getMonth(), contractStart.getDate());
+    if (anniversaryThisYear <= todayConc) {
+      anniversaryYear++;
+    }
+    const concessivoEnd = new Date(anniversaryYear, contractStart.getMonth(), contractStart.getDate());
+    concessivoEnd.setDate(concessivoEnd.getDate() - 1); // day before next anniversary
+    const daysUntilConcessivoEnd = Math.floor((concessivoEnd.getTime() - todayConc.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysUntilConcessivoEnd >= 0 && daysUntilConcessivoEnd < 30) {
+      throw new Error(
+        `Política BR: faltam ${daysUntilConcessivoEnd} dia(s) para o fim do período concessivo (${dateToISO(concessivoEnd)}). O pedido deve ser registado com pelo menos 30 dias de antecedência.`,
+      );
+    }
   }
 
   return [] as string[];
@@ -565,40 +603,6 @@ async function collectHolidayDates(countryCode: 'PT' | 'BR', years: Iterable<num
   return holidayDates;
 }
 
-/**
- * Returns the BR intern recesso (company closure) date ranges for a given year.
- * Standard: Dec 24 to Jan 1 (inclusive). Intern estagiários do not consume férias during recesso.
- * Returns an array of { start, end } ISO strings.
- */
-function getBrRecessoPeriods(year: number): Array<{ start: string; end: string }> {
-  return [
-    // Dec 24 of prev year to Jan 1 of current year (New Year)
-    { start: `${year - 1}-12-24`, end: `${year}-01-01` },
-    // Dec 24 of current year to Jan 1 of next year (Christmas/NYE)
-    { start: `${year}-12-24`, end: `${year + 1}-01-01` },
-  ];
-}
-
-/**
- * Returns the number of vacation days for a BR intern request, excluding any days that
- * fall within the company recesso (which do not count against their vacation balance).
- */
-function calcBrInternEffectiveDays(dataInicio: string, dataFim: string): number {
-  const year = toLocalDate(dataInicio).getFullYear();
-  const recessoPeriods = getBrRecessoPeriods(year);
-  const allDays = enumerateDates(dataInicio, dataFim);
-
-  const effectiveDays = allDays.filter((iso) => {
-    // Weekend: doesn't count anyway
-    if (isWeekendIso(iso)) return false;
-    // If day falls in recesso: doesn't count against vacation balance
-    const inRecesso = recessoPeriods.some((r) => iso >= r.start && iso <= r.end);
-    return !inRecesso;
-  });
-
-  return effectiveDays.length;
-}
-
 export const __vacationTestables = {
   vacationSchema,
   hasDateOverlap,
@@ -608,8 +612,6 @@ export const __vacationTestables = {
   validateVacationCountryPolicy,
   enumerateDates,
   isWeekendIso,
-  getBrRecessoPeriods,
-  calcBrInternEffectiveDays,
 };
 
 function brVacationDaysByAbsences(absences: number) {
@@ -1480,8 +1482,14 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
     const monthsWorked = (now.getFullYear() - hireDate.getFullYear()) * 12 + (now.getMonth() - hireDate.getMonth());
     const acquisitionComplete = monthsWorked >= 12;
     const unjustifiedAbsences = profile?.unjustifiedAbsences ?? 0;
-    const baseEntitledDays = brVacationDaysByAbsences(unjustifiedAbsences);
+    const isInternUser = profile?.isIntern ?? false;
+    // Interns: 30 days per 12 months (2.5/month), unlocked after completing 12 months
+    const internProportionalDays = Math.min(30, Math.floor(monthsWorked * 2.5));
+    const baseEntitledDays = isInternUser
+      ? (monthsWorked < 12 ? 0 : internProportionalDays)
+      : brVacationDaysByAbsences(unjustifiedAbsences);
     const entitledDays = baseEntitledDays + extraBalanceDays;
+    const soldVacationDays = (profile as { soldVacationDays?: number } | null)?.soldVacationDays ?? 0;
     const approvedVacationDays = vacations
       .filter((item) => item.status === 'APPROVED' && item.requestType === 'VACATION')
       .reduce((sum, item) => sum + vacationDaysForMetrics(item, holidayDates), 0);
@@ -1520,6 +1528,8 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
         baseEntitledDays,
         extraBalanceDays,
         entitledDays,
+        soldVacationDays,
+        maxSellableDays: Math.min(10, Math.floor(entitledDays / 3)),
       },
     });
   } catch (error) {
@@ -2313,6 +2323,61 @@ router.post('/vacations/:id/mark-realizado', requireAuth, async (req: Request, r
   return res.json({ success: true, data: updated, fully_confirmed: isFullyConfirmed });
 });
 
+// ─── BR: Venda de férias (abono de férias) ─────────────────────────────────
+router.post('/vacations/sell-days', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.authUser!.id;
+    const { days } = req.body as { days: unknown };
+
+    if (typeof days !== 'number' || !Number.isInteger(days) || days < 0) {
+      return res.status(400).json({ error: 'Campo "days" deve ser um número inteiro não negativo.' });
+    }
+
+    const profile = await prisma.profile.findUnique({
+      where: { userId },
+      select: { workCountry: true, unjustifiedAbsences: true, isIntern: true, dataInicioContrato: true },
+    });
+
+    if (profile?.workCountry !== 'BR') {
+      return res.status(400).json({ error: 'Venda de férias (abono) é uma funcionalidade exclusiva para colaboradores no regime BR.' });
+    }
+
+    const currentYear = new Date().getFullYear();
+    const extraBalanceDays = (await prisma.vacationBalanceCredit.aggregate({
+      where: { userId, year: currentYear },
+      _sum: { days: true },
+    }))._sum.days ?? 0;
+
+    const unjustifiedAbsences = profile.unjustifiedAbsences ?? 0;
+    const isInternUser = profile.isIntern ?? false;
+    const hireDate = profile.dataInicioContrato ? new Date(`${profile.dataInicioContrato}T00:00:00`) : new Date(`${currentYear}-01-01T00:00:00`);
+    const now = new Date();
+    const monthsWorked = (now.getFullYear() - hireDate.getFullYear()) * 12 + (now.getMonth() - hireDate.getMonth());
+    const internProportionalDays = Math.min(30, Math.floor(monthsWorked * 2.5));
+    const baseEntitledDays = isInternUser
+      ? (monthsWorked < 12 ? 0 : internProportionalDays)
+      : brVacationDaysByAbsences(unjustifiedAbsences);
+    const entitledDays = baseEntitledDays + extraBalanceDays;
+    const maxSellable = Math.min(10, Math.floor(entitledDays / 3));
+
+    if (days > maxSellable) {
+      return res.status(400).json({
+        error: `Política BR: pode vender no máximo ${maxSellable} dias de férias (1/3 do total, máx. 10 dias). Tentou vender ${days} dias.`,
+      });
+    }
+
+    await prisma.profile.update({
+      where: { userId },
+      data: { ...( { soldVacationDays: days } as Record<string, unknown> ) },
+    });
+
+    return res.json({ soldVacationDays: days, maxSellable, entitledDays });
+  } catch (error) {
+    console.error('[POST /vacations/sell-days]', error);
+    return res.status(500).json({ error: 'Falha ao processar venda de dias de férias.' });
+  }
+});
+
 router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
@@ -2343,9 +2408,20 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
 
     const profile = await prisma.profile.findUnique({
       where: { userId },
-      select: { workCountry: true },
+      select: { workCountry: true, dataInicioContrato: true, isIntern: true },
     });
     const country = profile?.workCountry ?? 'PT';
+
+    // BR: alterações de férias devem ser feitas com pelo menos 10 dias de antecedência
+    if (country === 'BR' && data.requestType === 'VACATION') {
+      const existingStart = toLocalDate(existing.dataInicio);
+      const todayForNotice = new Date();
+      todayForNotice.setHours(0, 0, 0, 0);
+      const daysUntilStart = Math.floor((existingStart.getTime() - todayForNotice.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysUntilStart < 10) {
+        return res.status(400).json({ error: 'Política BR: alterações de férias devem ser feitas com pelo menos 10 dias de antecedência em relação ao início das férias existentes.' });
+      }
+    }
 
     await enforceVacationBusinessDays({
       requestType: data.requestType,
@@ -2379,6 +2455,8 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
         dataFim: data.dataFim,
         partialDay: data.partialDay,
         excludeVacationId: id,
+        dataInicioContrato: profile?.dataInicioContrato || null,
+        isIntern: profile?.isIntern ?? false,
       });
 
       if (data.requestType === 'VACATION' && contextTeamId) {

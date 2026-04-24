@@ -235,56 +235,58 @@ describe('vacations rules', () => {
     ).rejects.toThrow('14 dias');
   });
 
-  // ─── Phase 2B: PT 1st-year cap ────────────────────────────────────────────
+  // ─── Phase 2B: PT 1st-year proportional cap ───────────────────────────────
 
-  it('Phase 2B: PT 1st-year cap — blocks if total would exceed 20 days', async () => {
+  it('Phase 2B: PT 1st-year proportional cap — blocks if total exceeds earned days', async () => {
     process.env.VACATION_PT_DEADLINE_BYPASS = 'true';
-    const contractYear = 2026;
+    const now = new Date();
+    const contractDate = new Date(now.getFullYear(), now.getMonth() - 2, 1); // ~2 completed months
+    const contractIso = `${contractDate.getFullYear()}-${String(contractDate.getMonth() + 1).padStart(2, '0')}-${String(contractDate.getDate()).padStart(2, '0')}`;
     const db = {
       vacation: {
-        // Already has ~18 business days (4 full weeks Mon-Fri)
-        findMany: vi.fn().mockResolvedValue([
-          { dataInicio: '2026-06-01', dataFim: '2026-06-26', partialDay: 'FULL', requestType: 'VACATION' },
-        ]),
+        // Existing 1 business day already consumed in the same year
+        findMany: vi.fn().mockResolvedValue([{ dataInicio: '2026-03-02', dataFim: '2026-03-02', partialDay: 'FULL', requestType: 'VACATION' }]),
       },
     };
 
-    // Adding 5 more days would exceed 20 total
+    // ~2 months worked => 4 earned days; existing + requested long period should fail reliably
     await expect(
       __vacationTestables.validateVacationCountryPolicy({
         db: db as never,
         userId: 'u-1',
         country: 'PT',
         requestType: 'VACATION',
-        dataInicio: '2026-07-01',
-        dataFim: '2026-07-07',
+        dataInicio: '2026-06-01',
+        dataFim: '2026-06-12',
         partialDay: 'FULL',
-        dataInicioContrato: `${contractYear}-03-01`, // hired after Jan 1 same year → first year
+        dataInicioContrato: contractIso,
       }),
-    ).rejects.toThrow('1.º ano de contrato');
+    ).rejects.toThrow('2 dias por mês trabalhado');
 
     delete process.env.VACATION_PT_DEADLINE_BYPASS;
   });
 
-  it('Phase 2B: PT 1st-year cap — allows if total stays within 20 days', async () => {
+  it('Phase 2B: PT 1st-year proportional cap — allows within earned days', async () => {
     process.env.VACATION_PT_DEADLINE_BYPASS = 'true';
-    const contractYear = 2026;
+    const now = new Date();
+    const contractDate = new Date(now.getFullYear(), now.getMonth() - 3, 1); // ~3 completed months => 6 earned days
+    const contractIso = `${contractDate.getFullYear()}-${String(contractDate.getMonth() + 1).padStart(2, '0')}-${String(contractDate.getDate()).padStart(2, '0')}`;
     const db = {
       vacation: {
         findMany: vi.fn().mockResolvedValue([]),
       },
     };
 
-    // 10 business days (Mon-Fri 2 weeks) is within limit
+    // 5 business days is within earned entitlement (~6 days)
     const result = await __vacationTestables.validateVacationCountryPolicy({
       db: db as never,
       userId: 'u-1',
       country: 'PT',
       requestType: 'VACATION',
       dataInicio: '2026-06-01',
-      dataFim: '2026-06-12',
+      dataFim: '2026-06-05',
       partialDay: 'FULL',
-      dataInicioContrato: `${contractYear}-03-01`,
+      dataInicioContrato: contractIso,
     });
 
     expect(Array.isArray(result)).toBe(true);
@@ -327,24 +329,64 @@ describe('vacations rules', () => {
     expect(Array.isArray(result)).toBe(true);
   });
 
-  // ─── Phase 2C: BR Estagiário Recesso helpers ──────────────────────────────
+  it('Phase 2C: BR rejects vacation starting on Friday', async () => {
+    const db = { vacation: { findMany: vi.fn().mockResolvedValue([]) } };
 
-  it('Phase 2C: getBrRecessoPeriods returns two periods per year', () => {
-    const periods = __vacationTestables.getBrRecessoPeriods(2026);
-    expect(periods).toHaveLength(2);
-    expect(periods[0]).toEqual({ start: '2025-12-24', end: '2026-01-01' });
-    expect(periods[1]).toEqual({ start: '2026-12-24', end: '2027-01-01' });
+    // 2026-06-05 is a Friday
+    await expect(
+      __vacationTestables.validateVacationCountryPolicy({
+        db: db as never,
+        userId: 'u-1',
+        country: 'BR',
+        requestType: 'VACATION',
+        dataInicio: '2026-06-05',
+        dataFim: '2026-06-19',
+        partialDay: 'FULL',
+      }),
+    ).rejects.toThrow('sexta-feira');
+
+    expect(db.vacation.findMany).toHaveBeenCalledTimes(1);
   });
 
-  it('Phase 2C: calcBrInternEffectiveDays excludes recesso days', () => {
-    // Dec 24–31 are recesso, Jan 1 too; should be 0 effective days
-    const effectiveDays = __vacationTestables.calcBrInternEffectiveDays('2026-12-24', '2026-12-31');
-    expect(effectiveDays).toBe(0);
+  it('Phase 2C: BR intern blocks vacation before completing 12 months', async () => {
+    const db = { vacation: { findMany: vi.fn().mockResolvedValue([]) } };
+    const now = new Date();
+    const contractDate = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+    const contractIso = `${contractDate.getFullYear()}-${String(contractDate.getMonth() + 1).padStart(2, '0')}-${String(contractDate.getDate()).padStart(2, '0')}`;
+
+    await expect(
+      __vacationTestables.validateVacationCountryPolicy({
+        db: db as never,
+        userId: 'u-1',
+        country: 'BR',
+        requestType: 'VACATION',
+        dataInicio: '2026-06-01',
+        dataFim: '2026-06-19',
+        partialDay: 'FULL',
+        isIntern: true,
+        dataInicioContrato: contractIso,
+      }),
+    ).rejects.toThrow('12 meses completos de estágio');
   });
 
-  it('Phase 2C: calcBrInternEffectiveDays counts normal business days outside recesso', () => {
-    // 2026-06-01 to 2026-06-05: Mon–Fri = 5 business days, no recesso
-    const effectiveDays = __vacationTestables.calcBrInternEffectiveDays('2026-06-01', '2026-06-05');
-    expect(effectiveDays).toBe(5);
+  it('Phase 2C: BR concessivo blocks request with less than 30 days remaining', async () => {
+    const db = { vacation: { findMany: vi.fn().mockResolvedValue([]) } };
+    const now = new Date();
+    const nearAnniversary = new Date(now);
+    nearAnniversary.setDate(now.getDate() + 15);
+    const contractIso = `2020-${String(nearAnniversary.getMonth() + 1).padStart(2, '0')}-${String(nearAnniversary.getDate()).padStart(2, '0')}`;
+
+    await expect(
+      __vacationTestables.validateVacationCountryPolicy({
+        db: db as never,
+        userId: 'u-1',
+        country: 'BR',
+        requestType: 'VACATION',
+        dataInicio: '2026-06-01',
+        dataFim: '2026-06-19',
+        partialDay: 'FULL',
+        dataInicioContrato: contractIso,
+      }),
+    ).rejects.toThrow('30 dias de antecedência');
   });
 });

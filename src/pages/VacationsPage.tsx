@@ -76,6 +76,8 @@ type VacationOverview = {
     unjustifiedAbsences?: number;
     baseEntitledDays?: number;
     extraBalanceDays?: number;
+    soldVacationDays?: number;
+    maxSellableDays?: number;
     entitledDays: number;
   };
 };
@@ -400,6 +402,8 @@ export default function VacationsPage() {
   const [isPendingVacationDetailOpen, setIsPendingVacationDetailOpen] = useState(false);
   const [isApprovedVacationDetailOpen, setIsApprovedVacationDetailOpen] = useState(false);
   const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
+  const [sellVacationDaysInput, setSellVacationDaysInput] = useState('0');
+  const [isSellingVacationDays, setIsSellingVacationDays] = useState(false);
   const [toast, setToast] = useState<VacationToastState>({
     tone: 'info',
     message: '',
@@ -765,6 +769,13 @@ export default function VacationsPage() {
       controller.abort();
     };
   }, [activeTab]);
+
+  useEffect(() => {
+    if (overview?.country !== 'BR') {
+      return;
+    }
+    setSellVacationDaysInput(String(overview.calculation?.soldVacationDays ?? 0));
+  }, [overview]);
 
   function showToast(
     tone: 'success' | 'error' | 'info' | 'warning',
@@ -1133,6 +1144,37 @@ export default function VacationsPage() {
       showToast('error', error instanceof Error ? error.message : 'Falha ao guardar dias automáticos da empresa.');
     } finally {
       setIsSavingCompanyExtraDays(false);
+    }
+  }
+
+  async function submitSellVacationDays() {
+    if (overview?.country !== 'BR') {
+      showToast('error', 'A venda de férias está disponível apenas para colaboradores BR.');
+      return;
+    }
+
+    const days = Number(sellVacationDaysInput);
+    if (!Number.isFinite(days) || !Number.isInteger(days) || days < 0) {
+      showToast('error', 'Indica um número inteiro válido de dias para vender.');
+      return;
+    }
+
+    try {
+      setIsSellingVacationDays(true);
+      await apiRequest('/vacations/sell-days', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ days }),
+      });
+
+      clearApiCache('/vacations/overview');
+      const refreshed = await loadOverview();
+      setSellVacationDaysInput(String(refreshed?.calculation?.soldVacationDays ?? days));
+      showToast('success', 'Venda de dias de férias atualizada com sucesso.');
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Falha ao atualizar venda de férias.');
+    } finally {
+      setIsSellingVacationDays(false);
     }
   }
 
@@ -1827,6 +1869,31 @@ export default function VacationsPage() {
                   <small>Configuração automática anual da empresa.</small>
                 </article>
               </div>
+
+              {overview.country === 'BR' && (
+                <div className="vacations-actions-card" style={{ marginTop: '1rem' }}>
+                  <div>
+                    <h4>Venda de férias (abono)</h4>
+                    <p>
+                      Pode vender até {overview.calculation?.maxSellableDays ?? 0} dia(s). Já vendido:{' '}
+                      <strong>{overview.calculation?.soldVacationDays ?? 0}</strong>.
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input
+                      type="number"
+                      min={0}
+                      max={overview.calculation?.maxSellableDays ?? 0}
+                      value={sellVacationDaysInput}
+                      onChange={(event) => setSellVacationDaysInput(event.target.value)}
+                      style={{ width: '120px' }}
+                    />
+                    <button type="button" className="btn-primary" onClick={() => void submitSellVacationDays()} disabled={isSellingVacationDays}>
+                      {isSellingVacationDays ? 'A guardar...' : 'Guardar venda'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
             </>
           )}
