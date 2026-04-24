@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePortal } from '../portal/context';
+import { clearApiCache } from '../portal/api';
 import { MICROCOPY, resolveErrorMessage } from '../portal/microcopy';
 import { useFeedbackToast } from '../portal/useFeedbackToast';
 import Button from '../components/ui/Button';
@@ -19,6 +20,7 @@ type NotificationAction = {
 type NotificationDetails = {
   title: string;
   message: string;
+  highlights?: string[];
   tag: string;
   icon: string;
   color: 'blue' | 'green' | 'yellow' | 'red' | 'purple' | 'orange';
@@ -180,6 +182,37 @@ function buildNotificationDetails(title: string, message: string): NotificationD
   const structured = parseStructuredNotificationMessage(message);
   const profileChange = parseProfileChangeNotification(message);
 
+  if (normalized.includes('parcialmente rejeitado')) {
+    const lines = message.split('\n').map((l) => l.trim()).filter(Boolean);
+    const approvedLines: string[] = [];
+    const rejectedLines: string[] = [];
+    let section: 'none' | 'approved' | 'rejected' = 'none';
+    for (const line of lines) {
+      if (/campos aprovados/i.test(line)) { section = 'approved'; continue; }
+      if (/campos recusados/i.test(line)) { section = 'rejected'; continue; }
+      if (/^decisor:/i.test(line) || /^ação:/i.test(line)) { section = 'none'; continue; }
+      if (section === 'approved' && line.startsWith('✓')) approvedLines.push(line.replace(/^✓\s*/, ''));
+      if (section === 'rejected' && line.startsWith('✗')) rejectedLines.push(line.replace(/^✗\s*/, ''));
+    }
+    const summaryMsg = approvedLines.length > 0 && rejectedLines.length > 0
+      ? `${approvedLines.length} campo(s) aceite(s), ${rejectedLines.length} campo(s) recusado(s).`
+      : rejectedLines.length > 0
+        ? `${rejectedLines.length} campo(s) recusado(s).`
+        : 'Alguns campos foram aceites, outros recusados.';
+    const highlights: string[] = [];
+    if (approvedLines.length > 0) highlights.push(`Aceites: ${approvedLines.join(', ')}`);
+    rejectedLines.forEach((r) => highlights.push(`Recusado — ${r}`));
+    return {
+      title: 'Pedido parcialmente rejeitado',
+      message: summaryMsg,
+      highlights,
+      tag: 'Ficha',
+      icon: '⚠️',
+      color: 'orange',
+      action: { label: 'Abrir a minha ficha', path: '/profile' },
+    };
+  }
+
   if (normalized.includes('pedido de alteração de ficha') && (normalized.includes('submeteu') || normalized.includes('efetuou') || normalized.includes('pedido pendente'))) {
     return {
       title: 'Pedido de alteração',
@@ -187,7 +220,7 @@ function buildNotificationDetails(title: string, message: string): NotificationD
       tag: 'Ficha',
       icon: '📋',
       color: 'blue',
-      action: { label: 'Abrir aprovação', path: '/aprovacoes' },
+      action: { label: 'Abrir aprovação', path: '/aprovacoes?tab=profiles' },
       minimalApprovalLayout: true,
       profileChange,
     };
@@ -197,6 +230,7 @@ function buildNotificationDetails(title: string, message: string): NotificationD
     return {
       title: 'Pedido submetido',
       message: 'O pedido foi enviado para aprovação.',
+      highlights: ['Estado: em validação', 'Próximo passo: aguardar decisão dos aprovadores'],
       tag: 'Ficha',
       icon: '✅',
       color: 'green',
@@ -208,6 +242,7 @@ function buildNotificationDetails(title: string, message: string): NotificationD
     return {
       title: 'Ficha aprovada',
       message: 'A ficha já foi atualizada.',
+      highlights: [structured.actionLine || 'Estado: concluído'],
       tag: 'Ficha',
       icon: '✨',
       color: 'green',
@@ -219,6 +254,7 @@ function buildNotificationDetails(title: string, message: string): NotificationD
     return {
       title: 'Ficha recusada',
       message: 'O pedido foi recusado. Revise as observações.',
+      highlights: [structured.reasonLine || 'Motivo disponível no detalhe do pedido'],
       tag: 'Ficha',
       icon: '⚠️',
       color: 'red',
@@ -229,15 +265,16 @@ function buildNotificationDetails(title: string, message: string): NotificationD
   if (normalized.includes('novo pedido de férias') || normalized.includes('novo pedido de ausência')) {
     return {
       title: normalized.includes('férias') ? 'Pedido de férias' : 'Pedido de ausência',
-      message: [
-        structured.firstLine || 'Novo pedido recebido para decisão.',
+      message: structured.firstLine || 'Novo pedido recebido para decisão.',
+      highlights: [
         structured.periodLine,
         structured.teamLine,
-      ].filter(Boolean).join(' · '),
+        structured.actionLine || 'Ação: abrir aprovações para decidir',
+      ].filter(Boolean),
       tag: 'Férias',
       icon: '🏖️',
       color: 'yellow',
-      action: { label: 'Abrir aprovação', path: '/aprovacoes' },
+      action: { label: 'Abrir aprovação', path: '/aprovacoes?tab=vacations' },
       minimalApprovalLayout: true,
     };
   }
@@ -245,10 +282,8 @@ function buildNotificationDetails(title: string, message: string): NotificationD
   if (normalized.includes('férias') && normalized.includes('aprov')) {
     return {
       title: 'Pedido de férias aprovado',
-      message: [
-        structured.firstLine || 'O pedido de férias foi aprovado.',
-        structured.periodLine,
-      ].filter(Boolean).join(' · '),
+      message: structured.firstLine || 'O pedido de férias foi aprovado.',
+      highlights: [structured.periodLine, structured.actionLine || 'Saldo atualizado automaticamente.'].filter(Boolean),
       tag: 'Férias',
       icon: '🎉',
       color: 'green',
@@ -259,10 +294,8 @@ function buildNotificationDetails(title: string, message: string): NotificationD
   if (normalized.includes('férias') && normalized.includes('recus')) {
     return {
       title: 'Pedido de férias recusado',
-      message: [
-        structured.firstLine || 'O pedido de férias foi recusado.',
-        structured.reasonLine,
-      ].filter(Boolean).join(' · '),
+      message: structured.firstLine || 'O pedido de férias foi recusado.',
+      highlights: [structured.periodLine, structured.reasonLine].filter(Boolean),
       tag: 'Férias',
       icon: '❌',
       color: 'red',
@@ -273,10 +306,8 @@ function buildNotificationDetails(title: string, message: string): NotificationD
   if ((normalized.includes('pedido de ausência') || normalized.includes('ausência')) && normalized.includes('aprov')) {
     return {
       title: 'Pedido de ausência aprovado',
-      message: [
-        structured.firstLine || 'A ausência foi aprovada.',
-        structured.periodLine,
-      ].filter(Boolean).join(' · '),
+      message: structured.firstLine || 'A ausência foi aprovada.',
+      highlights: [structured.periodLine, structured.actionLine].filter(Boolean),
       tag: 'Ausências',
       icon: '✅',
       color: 'green',
@@ -287,10 +318,8 @@ function buildNotificationDetails(title: string, message: string): NotificationD
   if ((normalized.includes('pedido de ausência') || normalized.includes('ausência')) && normalized.includes('recus')) {
     return {
       title: 'Pedido de ausência recusado',
-      message: [
-        structured.firstLine || 'A ausência foi recusada.',
-        structured.reasonLine,
-      ].filter(Boolean).join(' · '),
+      message: structured.firstLine || 'A ausência foi recusada.',
+      highlights: [structured.periodLine, structured.reasonLine].filter(Boolean),
       tag: 'Ausências',
       icon: '⚠️',
       color: 'red',
@@ -301,11 +330,8 @@ function buildNotificationDetails(title: string, message: string): NotificationD
   if (normalized.includes('em aprovação') && (normalized.includes('férias') || normalized.includes('ausência'))) {
     return {
       title: 'Pedido em aprovação',
-      message: [
-        structured.firstLine || 'O pedido avançou no fluxo de aprovação.',
-        structured.progressLine,
-        structured.periodLine,
-      ].filter(Boolean).join(' · '),
+      message: structured.firstLine || 'O pedido avançou no fluxo de aprovação.',
+      highlights: [structured.progressLine, structured.periodLine, structured.teamLine].filter(Boolean),
       tag: 'Aprovação',
       icon: '⏳',
       color: 'blue',
@@ -430,6 +456,7 @@ export default function NotificationsPage() {
   );
 
   useEffect(() => {
+    clearApiCache('/notifications/me');
     void refreshNotifications();
   }, [refreshNotifications]);
 
@@ -543,79 +570,84 @@ export default function NotificationsPage() {
                 {details.icon}
               </div>
 
-              <div className="notification-card__main">
-                <div className="notification-card__header">
-                  <h3>{details.title}</h3>
-                  <Badge tone={notification.isRead ? 'neutral' : 'info'}>{notification.isRead ? 'Lida' : 'Nova'}</Badge>
-                </div>
-                <p className="notification-card__message">{details.message}</p>
-                <div className="notification-card__meta">
-                  <span className="notification-card__tag">{details.tag}</span>
+              <div className="notification-card__body">
+                <div className="notification-card__top">
+                  <h3 className="notification-card__title">{details.title}</h3>
                   <span className="notification-card__time">{formatRelativeDate(notification.createdAt)}</span>
                 </div>
-              </div>
 
-              <div className="notification-card__actions">
-                {isMinimalApproval ? (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      type="button"
-                      isLoading={pendingActionKey === `mark-notification-${notification.id}`}
-                      disabled={Boolean(pendingActionKey)}
-                      onClick={() => {
-                        if (notification.isRead) {
-                          navigate(details.action!.path);
-                          return;
-                        }
+                <p className="notification-card__message">{details.message}</p>
 
-                        navigate(details.action!.path);
-                        void markNotificationRead(notification.id);
-                      }}
-                    >
-                      {details.action!.label}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      type="button"
-                      isLoading={pendingActionKey === `delete-notification-${notification.id}`}
-                      disabled={Boolean(pendingActionKey)}
-                      onClick={() => openDeleteNotification(notification.id)}
-                    >
-                      Apagar
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button size="sm" variant="secondary" type="button" onClick={() => openNotification(notification.id)}>Abrir</Button>
-                    {!notification.isRead && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        type="button"
-                        isLoading={pendingActionKey === `mark-notification-${notification.id}`}
-                        disabled={Boolean(pendingActionKey)}
-                        onClick={() => void runNotificationAction(`mark-notification-${notification.id}`, MICROCOPY.notifications.markReadSuccess, MICROCOPY.notifications.markReadError, async () => {
-                          await markNotificationRead(notification.id);
-                        })}
-                      >
-                        Marcar como lida
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      type="button"
-                      isLoading={pendingActionKey === `delete-notification-${notification.id}`}
-                      disabled={Boolean(pendingActionKey)}
-                      onClick={() => openDeleteNotification(notification.id)}
-                    >
-                      Apagar
-                    </Button>
-                  </>
+                {details.highlights && details.highlights.length > 0 && (
+                  <ul className="notification-card__facts" aria-label="Informação relevante da notificação">
+                    {details.highlights.map((line) => (
+                      <li key={`${notification.id}-${line}`}>{line}</li>
+                    ))}
+                  </ul>
                 )}
+
+                <div className="notification-card__footer">
+                  <span className="notification-card__tag">{details.tag}</span>
+                  {!notification.isRead && <span className="notification-card__dot" aria-label="Por ler" />}
+
+                  <div className="notification-card__actions">
+                    {isMinimalApproval ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          type="button"
+                          isLoading={pendingActionKey === `mark-notification-${notification.id}`}
+                          disabled={Boolean(pendingActionKey)}
+                          onClick={() => {
+                            navigate(details.action!.path);
+                            if (!notification.isRead) void markNotificationRead(notification.id);
+                          }}
+                        >
+                          {details.action!.label}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          type="button"
+                          isLoading={pendingActionKey === `delete-notification-${notification.id}`}
+                          disabled={Boolean(pendingActionKey)}
+                          onClick={() => openDeleteNotification(notification.id)}
+                        >
+                          Apagar
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button size="sm" variant="secondary" type="button" onClick={() => openNotification(notification.id)}>Abrir</Button>
+                        {!notification.isRead && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            type="button"
+                            isLoading={pendingActionKey === `mark-notification-${notification.id}`}
+                            disabled={Boolean(pendingActionKey)}
+                            onClick={() => void runNotificationAction(`mark-notification-${notification.id}`, MICROCOPY.notifications.markReadSuccess, MICROCOPY.notifications.markReadError, async () => {
+                              await markNotificationRead(notification.id);
+                            })}
+                          >
+                            Marcar como lida
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          type="button"
+                          isLoading={pendingActionKey === `delete-notification-${notification.id}`}
+                          disabled={Boolean(pendingActionKey)}
+                          onClick={() => openDeleteNotification(notification.id)}
+                        >
+                          Apagar
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </article>
           );
@@ -711,6 +743,17 @@ export default function NotificationsPage() {
             ) : (
               <>
                 <p className="notification-detail__summary">{selectedDetails.message}</p>
+
+                {selectedDetails.highlights && selectedDetails.highlights.length > 0 && (
+                  <div className="notification-detail__panel notification-detail__panel--facts">
+                    <strong>Informação relevante</strong>
+                    <ul className="notification-detail__facts">
+                      {selectedDetails.highlights.map((line) => (
+                        <li key={`detail-${line}`}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {selectedDetails.action && (
                   <div className="notification-detail__panel notification-detail__panel--action">

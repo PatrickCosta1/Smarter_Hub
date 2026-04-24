@@ -106,6 +106,7 @@ model User {
   assignedTrainings Training[]   @relation("TrainingAssigner")
   vacations     Vacation[]       @relation("VacationUser")
   reviewedVacations Vacation[]    @relation("VacationReviewer")
+  processadoVacations Vacation[]  @relation("VacationProcessado")
   vacationApprovalSteps VacationApproval[]
   profileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestUser")
   reviewedProfileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestReviewer")
@@ -197,6 +198,7 @@ model Profile {
   contactoEmergenciaNumero       String   @default("")
   cargo                          String   @default("")
   categoriaProfissional          String   @default("")
+  numeroMecanografico            String   @default("")
   funcao                         String   @default("")
   dataInicioContrato             String   @default("")
   dataFimContrato                String   @default("")
@@ -281,10 +283,15 @@ model Vacation {
   reviewedAt   DateTime?
   reviewReason String   @default("")
   approvedByRole String @default("")
+  processadoAt DateTime?
+  processadoById String?
+  realizadoAt  DateTime?
+  realizadoByIds Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   user         User     @relation("VacationUser", fields: [userId], references: [id], onDelete: Cascade)
   reviewedBy   User?    @relation("VacationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  processadoBy User?    @relation("VacationProcessado", fields: [processadoById], references: [id], onDelete: SetNull)
   contextTeam  Team?    @relation("VacationContextTeam", fields: [contextTeamId], references: [id], onDelete: SetNull)
   versionOf    Vacation? @relation("VacationVersions", fields: [versionOfId], references: [id], onDelete: SetNull)
   versions     Vacation[] @relation("VacationVersions")

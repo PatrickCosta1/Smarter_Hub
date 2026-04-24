@@ -23,7 +23,7 @@ export default function PortalLayout() {
       { id: 'home', label: 'Home', path: '/' },
       ...(isRootAccess || isAccessTotal ? [{ id: 'dashboard', label: 'Dashboard', path: '/dashboard' }] : []),
       ...(!isTPeople ? [{ id: 'profile', label: 'A Minha Ficha', path: '/profile' }] : []),
-      ...(can('view_teams') || can('manage_team_members') ? [{ id: 'equipas', label: 'Equipas', path: '/equipas' }] : []),
+      ...((currentUser?.role ?? '') !== 'CONVIDADO' ? [{ id: 'equipas', label: 'Equipas', path: '/equipas' }] : []),
       ...(can('view_user_list') ? [{ id: 'colaboradores', label: 'Colaboradores', path: '/colaboradores' }] : []),
       ...(can('approve_profile_change') || can('approve_vacation') || can('reject_vacation') || can('view_all_vacations')
         ? [{ id: 'aprovacoes', label: 'Aprovações', path: '/aprovacoes' }]
@@ -38,7 +38,7 @@ export default function PortalLayout() {
     ];
 
     return menu;
-  }, [hasPermission, isAccessTotal, isRootAccess, isTPeople]);
+  }, [currentUser?.role, hasPermission, isAccessTotal, isRootAccess, isTPeople]);
 
   const currentMenu = useMemo(
     () => roleMenus.find((item) => item.path === location.pathname),
@@ -72,13 +72,6 @@ export default function PortalLayout() {
     return `${todayLabel}`;
   }, [todayLabel]);
 
-  const notificationsLabel = useMemo(() => {
-    if (unreadNotifications === 1) {
-      return '1 por ler';
-    }
-    return `${unreadNotifications} por ler`;
-  }, [unreadNotifications]);
-
   function handleLogout() {
     logout();
     navigate('/login');
@@ -92,9 +85,6 @@ export default function PortalLayout() {
     prefetchedRoutesRef.current.add(path);
 
     switch (path) {
-      case '/dashboard':
-        void import('../pages/DashboardPage');
-        break;
       case '/equipas':
         void import('../pages/ManagerTeamsPage');
         break;
@@ -207,30 +197,27 @@ export default function PortalLayout() {
         <section className="portal-content">
           <header className="portal-header">
             <div className="portal-header__meta">
-              <p className="portal-breadcrumb">Portal / {roleLabels[userRole]} / {currentMenu?.label || 'Início'}</p>
+              <p className="portal-breadcrumb">Portal do Colaborador</p>
               <h2>{currentMenu?.label || 'Início'}</h2>
             </div>
 
             <div className="portal-header__actions">
               <span className="portal-header__chip">{globalInfoLabel}</span>
-              <span className={`portal-header__chip portal-header__chip--notifications${unreadNotifications > 0 ? ' has-unread' : ''}`}>
-                {notificationsLabel}
-              </span>
               <button
                 className={`icon-button icon-button--header${unreadNotifications > 0 ? ' has-unread' : ''}${location.pathname === '/notifications' ? ' is-active' : ''}`}
                 type="button"
                 onClick={() => navigate('/notifications')}
                 aria-label="Notificações"
-                title="Notificações"
+                title={unreadNotifications > 0 ? `${unreadNotifications} notificação${unreadNotifications === 1 ? '' : 's'} por ler` : 'Notificações'}
               >
                 <span className="icon-button__ping" aria-hidden="true" />
                 <span aria-hidden="true">🔔</span>
                 {unreadNotifications > 0 && <span className="icon-badge">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>}
               </button>
               <button
-                className={`icon-button icon-button--header${location.pathname === '/perfil' ? ' is-active' : ''}`}
+                className={`icon-button icon-button--header${location.pathname === '/profile' ? ' is-active' : ''}`}
                 type="button"
-                onClick={() => navigate(isTPeople ? '/colaboradores' : '/perfil')}
+                onClick={() => navigate(isTPeople ? '/colaboradores' : '/profile')}
                 aria-label="Perfil"
                 title="Perfil"
               >

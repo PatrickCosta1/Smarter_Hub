@@ -67,6 +67,9 @@ type VacationOverview = {
   year: number;
   rules: Record<string, unknown>;
   approvedVacationDays?: number;
+  pendingVacationDays?: number;
+  approvedAbsenceDays?: number;
+  pendingAbsenceDays?: number;
   calculation?: {
     monthsWorked?: number;
     acquisitionComplete?: boolean;
@@ -229,6 +232,13 @@ function calculateDuration(record: Pick<VacationRecord, 'dataInicio' | 'dataFim'
   return calculateDays(record);
 }
 
+function toIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function buildValidationErrors(draft: VacationDraft): DraftErrors {
   const errors: DraftErrors = {};
 
@@ -332,6 +342,21 @@ function formatShortDate(value: string) {
   return new Intl.DateTimeFormat('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(toLocalDate(value));
 }
 
+function formatDateTime(value: string) {
+  const parsedDate = new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return '-';
+  }
+
+  return new Intl.DateTimeFormat('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsedDate);
+}
+
 function buildMonthGrid(year: number, monthIndex: number) {
   const first = new Date(year, monthIndex, 1);
   const last = new Date(year, monthIndex + 1, 0);
@@ -372,6 +397,7 @@ export default function VacationsPage() {
   const [calendarError, setCalendarError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionNotice, setSubmissionNotice] = useState<SubmissionNotice>(null);
+  const [isPendingVacationDetailOpen, setIsPendingVacationDetailOpen] = useState(false);
   const [toast, setToast] = useState<VacationToastState>({
     tone: 'info',
     message: '',
@@ -389,7 +415,16 @@ export default function VacationsPage() {
   const [companyExtraDaysSource, setCompanyExtraDaysSource] = useState<'configured' | 'legacy'>('legacy');
   const [companyExtraDaysError, setCompanyExtraDaysError] = useState('');
   const [exportYear, setExportYear] = useState(new Date().getFullYear());
+  const [exportRangeMode, setExportRangeMode] = useState<'year' | 'custom'>('year');
+  const [exportStartDate, setExportStartDate] = useState(`${new Date().getFullYear()}-01-01`);
+  const [exportEndDate, setExportEndDate] = useState(`${new Date().getFullYear()}-12-31`);
   const [exportTeamId, setExportTeamId] = useState('');
+  const [exportCollaboratorSearch, setExportCollaboratorSearch] = useState('');
+  const [exportCandidates, setExportCandidates] = useState<ExportCollaborator[]>([]);
+  const [exportSelectedCollaborators, setExportSelectedCollaborators] = useState<ExportCollaborator[]>([]);
+  const [isLoadingExportCandidates, setIsLoadingExportCandidates] = useState(false);
+  const [isExportAdvancedOpen, setIsExportAdvancedOpen] = useState(false);
+  const [isExportCollaboratorsOpen, setIsExportCollaboratorsOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportTeams, setExportTeams] = useState<ExportTeam[]>([]);
   const [exportTeamsLoaded, setExportTeamsLoaded] = useState(false);
@@ -421,6 +456,16 @@ export default function VacationsPage() {
   const sortedRecords = useMemo(
     () => [...records].sort((a, b) => new Date(b.dataInicio).getTime() - new Date(a.dataInicio).getTime()),
     [records],
+  );
+
+  const pendingVacationRequests = useMemo(
+    () => sortedRecords.filter((record) => record.status === 'PENDING'),
+    [sortedRecords],
+  );
+
+  const pendingVacationDaysTotal = useMemo(
+    () => pendingVacationRequests.reduce((sum, record) => sum + calculateDuration(record), 0),
+    [pendingVacationRequests],
   );
 
   const calendarRequestDays = useMemo(() => {
@@ -499,21 +544,26 @@ export default function VacationsPage() {
   }, [activeTab, allowedTabs]);
 
   const overviewStats = useMemo(() => {
-    const approvedVacationDays = sortedRecords
+    const approvedVacationDaysFromRecords = sortedRecords
       .filter((item) => item.status === 'APPROVED' && item.requestType === 'VACATION')
       .reduce((sum, item) => sum + calculateDuration(item), 0);
 
-    const pendingVacationDays = sortedRecords
+    const pendingVacationDaysFromRecords = sortedRecords
       .filter((item) => item.status === 'PENDING' && item.requestType === 'VACATION')
       .reduce((sum, item) => sum + calculateDuration(item), 0);
 
-    const approvedAbsenceDays = sortedRecords
+    const approvedAbsenceDaysFromRecords = sortedRecords
       .filter((item) => item.status === 'APPROVED' && item.requestType !== 'VACATION')
       .reduce((sum, item) => sum + calculateDays(item), 0);
 
-    const pendingAbsenceDays = sortedRecords
+    const pendingAbsenceDaysFromRecords = sortedRecords
       .filter((item) => item.status === 'PENDING' && item.requestType !== 'VACATION')
       .reduce((sum, item) => sum + calculateDays(item), 0);
+
+    const approvedVacationDays = overview?.approvedVacationDays ?? approvedVacationDaysFromRecords;
+    const pendingVacationDays = overview?.pendingVacationDays ?? pendingVacationDaysFromRecords;
+    const approvedAbsenceDays = overview?.approvedAbsenceDays ?? approvedAbsenceDaysFromRecords;
+    const pendingAbsenceDays = overview?.pendingAbsenceDays ?? pendingAbsenceDaysFromRecords;
 
     return {
       approvedVacationDays,
@@ -530,6 +580,9 @@ export default function VacationsPage() {
     () => assignCandidates.find((item) => item.id === assignSelectedUserId) ?? null,
     [assignCandidates, assignSelectedUserId],
   );
+  const exportResolvedStart = exportRangeMode === 'custom' ? exportStartDate : `${exportYear}-01-01`;
+  const exportResolvedEnd = exportRangeMode === 'custom' ? exportEndDate : `${exportYear}-12-31`;
+  const exportPeriodSummary = exportResolvedStart && exportResolvedEnd ? `${exportResolvedStart} -> ${exportResolvedEnd}` : 'Período por definir';
   const yearMonths = useMemo(() => {
     const year = calendarData?.year ?? new Date().getFullYear();
     return MONTHS.map((month, monthIndex) => ({
@@ -571,8 +624,10 @@ export default function VacationsPage() {
 
     void (async () => {
       if (!isTPeople && !cacheRef.current.recordsLoaded) {
-        cacheRef.current.recordsLoaded = true;
         await loadMine(controller.signal);
+        if (!controller.signal.aborted) {
+          cacheRef.current.recordsLoaded = true;
+        }
       }
 
       if (!isTPeople) {
@@ -645,6 +700,20 @@ export default function VacationsPage() {
       window.clearTimeout(timeout);
     };
   }, [activeTab, canExport, assignFilterTeamId, assignSearch]);
+
+  useEffect(() => {
+    if (activeTab !== 'export' || !canExport) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void loadExportCandidates();
+    }, 200);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [activeTab, canExport, exportTeamId, exportCollaboratorSearch]);
 
   useEffect(() => {
     if (activeTab !== 'calendar' || cacheRef.current.calendarLoaded) {
@@ -876,11 +945,75 @@ export default function VacationsPage() {
     }
   }
 
+  async function loadExportCandidates() {
+    try {
+      setIsLoadingExportCandidates(true);
+      const params = new URLSearchParams({
+        page: '1',
+        pageSize: '80',
+        sortBy: 'username',
+        sortDirection: 'asc',
+        active: 'true',
+      });
+
+      if (exportTeamId) {
+        params.set('teamId', exportTeamId);
+      }
+      if (exportCollaboratorSearch.trim()) {
+        params.set('q', exportCollaboratorSearch.trim());
+      }
+
+      const data = await apiRequest<ExportCollaboratorsResponse>(`/users/collaborators?${params.toString()}`, {
+        headers: getAuthHeaders(),
+      });
+
+      const filtered = (data.rows ?? []).filter((item) => item.username !== 't.people');
+      setExportCandidates(filtered);
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Falha ao carregar lista de colaboradores para exportação.');
+    } finally {
+      setIsLoadingExportCandidates(false);
+    }
+  }
+
+  function toggleExportCollaborator(collaborator: ExportCollaborator) {
+    setExportSelectedCollaborators((prev) => {
+      const exists = prev.some((item) => item.id === collaborator.id);
+      if (exists) {
+        return prev.filter((item) => item.id !== collaborator.id);
+      }
+
+      return [...prev, collaborator];
+    });
+  }
+
+  function removeExportCollaborator(collaboratorId: string) {
+    setExportSelectedCollaborators((prev) => prev.filter((item) => item.id !== collaboratorId));
+  }
+
   async function triggerExportWorkbook() {
+    const resolvedStart = exportResolvedStart;
+    const resolvedEnd = exportResolvedEnd;
+
+    if (!resolvedStart || !resolvedEnd) {
+      showToast('error', 'Define o período inicial e final da exportação.');
+      return;
+    }
+
+    if (resolvedStart > resolvedEnd) {
+      showToast('error', 'A data final deve ser igual ou posterior à data inicial.');
+      return;
+    }
+
     try {
       setIsExporting(true);
       const params = new URLSearchParams({ year: String(exportYear) });
+      params.set('startDate', resolvedStart);
+      params.set('endDate', resolvedEnd);
       if (exportTeamId) params.set('teamId', exportTeamId);
+      if (exportSelectedCollaborators.length > 0) {
+        params.set('userIds', exportSelectedCollaborators.map((item) => item.id).join(','));
+      }
       const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
       const response = await fetch(`${getApiBase()}/vacations/export?${params.toString()}`, {
         headers: authHeaders(token),
@@ -893,7 +1026,9 @@ export default function VacationsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `mapa-ferias-${exportYear}.xlsx`;
+      const contentDisposition = response.headers.get('Content-Disposition') || response.headers.get('content-disposition') || '';
+      const match = contentDisposition.match(/filename="?([^";]+)"?/i);
+      a.download = match?.[1] || `mapa-ferias-${resolvedStart}-a-${resolvedEnd}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (error) {
@@ -1031,6 +1166,11 @@ export default function VacationsPage() {
   }
 
   function handleRequestKindChange(value: RequestKind) {
+    if (value === 'VACATION' && hasWeekendInRange(draft.dataInicio, draft.dataFim)) {
+      showToast('info', 'Intervalos com fim de semana só podem ser submetidos como ausência.');
+      return;
+    }
+
     setDraft((current) => ({
       ...current,
       requestKind: value,
@@ -1116,6 +1256,8 @@ export default function VacationsPage() {
       });
 
       clearApiCache('/vacations');
+      clearApiCache('/vacations/me');
+      clearApiCache('/users/dashboard-summary');
       void loadMine();
       if (activeTab === 'overview') {
         void loadOverview();
@@ -1219,6 +1361,8 @@ export default function VacationsPage() {
       });
 
       clearApiCache('/vacations');
+      clearApiCache('/vacations/me');
+      clearApiCache('/users/dashboard-summary');
       void loadMine();
       if (activeTab === 'overview') {
         void loadOverview();
@@ -1235,8 +1379,12 @@ export default function VacationsPage() {
 
   function handleDayClick(iso: string) {
     if (draft.requestKind === 'VACATION' && isWeekendIso(iso)) {
-      showToast('info', 'Em férias, início e fim devem ser dias úteis (segunda a sexta).');
-      return;
+      setDraft((current) => ({
+        ...current,
+        requestKind: 'ABSENCE',
+        partialDay: 'FULL',
+      }));
+      showToast('info', 'Dia de fim de semana: o pedido foi ajustado para ausência.');
     }
 
     if (selectionAnchor === null) {
@@ -1387,10 +1535,10 @@ export default function VacationsPage() {
 
     const rangeClass = !isTPeople ? getDayRangeClass(iso) : '';
     const isAnchorDay = iso === selectionAnchor;
-    const isVacationWeekendBlocked = !isTPeople && draft.requestKind === 'VACATION' && isWeekendIso(iso);
-    const canClickDay = !isTPeople && !isVacationWeekendBlocked;
-    const dayTitle = isVacationWeekendBlocked
-      ? 'Férias: início e fim não podem ser ao fim de semana.'
+    const isVacationWeekend = !isTPeople && draft.requestKind === 'VACATION' && isWeekendIso(iso);
+    const canClickDay = !isTPeople;
+    const dayTitle = isVacationWeekend
+      ? 'Fim de semana: ao clicar, o pedido muda para ausência.'
       : getDayLabel(iso);
 
     return (
@@ -1401,7 +1549,6 @@ export default function VacationsPage() {
         title={dayTitle}
         onClick={() => canClickDay && handleDayClick(iso)}
         onMouseEnter={() => !isTPeople && handleDayMouseEnter(iso)}
-        disabled={isVacationWeekendBlocked}
       >
         {day}
       </button>
@@ -1410,16 +1557,78 @@ export default function VacationsPage() {
 
   return (
     <section className="trainings-shell vacations-shell">
-      <header className="trainings-hero">
-        <div>
-          <p className="hero-kicker">Férias</p>
-          <h2>Gestão anual de férias e ausências</h2>
+      {!isTPeople && pendingVacationRequests.length > 0 && (
+        <section className="profile-request-banner profile-request-banner--vacations" role="status" aria-live="polite">
+          <div className="profile-request-banner__inner">
+            <div className="profile-request-banner__content">
+              <span className="profile-request-banner__chip">Em análise</span>
+              <strong>Pedido de férias/ausência em análise</strong>
+              <span>
+                {pendingVacationRequests.length} pedido(s) pendente(s) · {pendingVacationDaysTotal} {pendingVacationDaysTotal === 1 ? 'dia' : 'dias'} em validação
+              </span>
+            </div>
+            <button
+              type="button"
+              className="profile-request-banner__btn"
+              onClick={() => setIsPendingVacationDetailOpen(true)}
+            >
+              Ver pedido
+            </button>
+          </div>
+        </section>
+      )}
+
+      {isPendingVacationDetailOpen && !isTPeople && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pending-vacation-modal-title" onClick={(e) => { if (e.target === e.currentTarget) setIsPendingVacationDetailOpen(false); }}>
+          <div className="pending-modal pending-modal--vacations">
+            <div className="pending-modal__header">
+              <div>
+                <p className="pending-modal__kicker">Férias e ausências</p>
+                <h2 id="pending-vacation-modal-title">Pedidos em análise</h2>
+              </div>
+              <button type="button" className="pending-modal__close" onClick={() => setIsPendingVacationDetailOpen(false)} aria-label="Fechar">×</button>
+            </div>
+            <p className="pending-modal__sub">Estes pedidos já foram submetidos e aguardam validação da cadeia de aprovação.</p>
+            <div className="pending-modal__summary" aria-live="polite">
+              <span className="pending-modal__summary-item">{pendingVacationRequests.length} pedido(s)</span>
+              <span className="pending-modal__summary-item">{pendingVacationDaysTotal} {pendingVacationDaysTotal === 1 ? 'dia' : 'dias'} pendente(s)</span>
+            </div>
+            {pendingVacationRequests.length > 0 ? (
+              <div className="pending-modal__table-wrap">
+                <table className="pending-modal__table">
+                  <thead>
+                    <tr>
+                      <th>Pedido</th>
+                      <th>Período</th>
+                      <th>Duração</th>
+                      <th>Equipa</th>
+                      <th>Submetido em</th>
+                      <th>Observações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingVacationRequests.map((record) => (
+                      <tr key={record.id}>
+                        <td className="pending-modal__field">{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</td>
+                        <td>{formatShortDate(record.dataInicio)} - {formatShortDate(record.dataFim)}</td>
+                        <td>{calculateDuration(record)}</td>
+                        <td>{record.contextTeam?.name || 'Contexto principal'}</td>
+                        <td>{formatDateTime(record.createdAt)}</td>
+                        <td>{record.observacoes?.trim() || 'Sem observações'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="pending-modal__empty">Sem pedidos pendentes de momento.</p>
+            )}
+            <div className="pending-modal__footer">
+              <button type="button" className="pending-modal__dismiss" onClick={() => setIsPendingVacationDetailOpen(false)}>Fechar</button>
+            </div>
+          </div>
         </div>
-
-        
-
-    
-      </header>
+      )}
 
       <nav className="rh-tabs">
         {allowedTabs.includes('overview') && (
@@ -1477,11 +1686,6 @@ export default function VacationsPage() {
                   <small>Base disponível para o ano em curso.</small>
                 </article>
                 <article>
-                  <span>Dias extra creditados</span>
-                  <strong>{overviewStats.creditedDays.toLocaleString('pt-PT')} dias</strong>
-                  <small>Créditos adicionais aplicados ao saldo anual.</small>
-                </article>
-                <article>
                   <span>Já gastaste</span>
                   <strong>{overviewStats.approvedVacationDays.toLocaleString('pt-PT')} dias</strong>
                   <small>Pedidos de férias já aprovados.</small>
@@ -1493,13 +1697,8 @@ export default function VacationsPage() {
                 </article>
                 <article>
                   <span>Pedidos pendentes</span>
-                  <strong>{overviewStats.pendingVacationDays.toLocaleString('pt-PT')} dias</strong>
+                  <strong>{pendingVacationRequests.length} {pendingVacationRequests.length === 1 ? 'pedido' : 'pedidos'}</strong>
                   <small>Férias à espera de aprovação.</small>
-                </article>
-                <article>
-                  <span>Ausências aprovadas</span>
-                  <strong>{overviewStats.approvedAbsenceDays.toLocaleString('pt-PT')} dias</strong>
-                  <small>Ausências já aprovadas.</small>
                 </article>
                 <article>
                   <span>Dias dados pela empresa</span>
@@ -1649,7 +1848,7 @@ export default function VacationsPage() {
                     <label className="cal-booking-bar__field">
                       <span>Tipo</span>
                       <select value={draft.requestKind} onChange={(e) => handleRequestKindChange(e.target.value as RequestKind)}>
-                        <option value="VACATION">Férias</option>
+                        <option value="VACATION" disabled={hasWeekendInRange(draft.dataInicio, draft.dataFim)}>Férias</option>
                         <option value="ABSENCE">Ausência</option>
                       </select>
                     </label>
@@ -1878,18 +2077,74 @@ export default function VacationsPage() {
             <div className="trainings-list-head">
               <div>
                 <h3>Mapa de Férias</h3>
-                <p className="vacations-company-days-subtitle">Exporta um Excel formatado com resumo anual por colaborador, períodos e totais.</p>
+                <p className="vacations-company-days-subtitle">Exportação executiva com filtros rápidos, configuração avançada e seleção por colaborador.</p>
               </div>
             </div>
 
-            <div className="vacations-export-form">
+            <div className="vacations-export-compact-bar">
+              <div className="vacations-export-compact-bar__summary">
+                <Badge tone="info">Período: {exportPeriodSummary}</Badge>
+                <Badge tone={exportSelectedCollaborators.length > 0 ? 'success' : 'neutral'}>
+                  {exportSelectedCollaborators.length > 0 ? `${exportSelectedCollaborators.length} colaborador(es)` : 'Todos os colaboradores'}
+                </Badge>
+                <Badge tone={exportTeamId ? 'warning' : 'neutral'}>
+                  {exportTeamId ? 'Equipa filtrada' : 'Sem filtro de equipa'}
+                </Badge>
+              </div>
+              <div className="vacations-export-compact-bar__actions">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setIsExportAdvancedOpen((value) => !value)}>
+                  {isExportAdvancedOpen ? 'Ocultar filtros' : 'Filtros avançados'}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setIsExportCollaboratorsOpen((value) => !value)}>
+                  {isExportCollaboratorsOpen ? 'Ocultar colaboradores' : 'Selecionar colaboradores'}
+                </Button>
+                <Button type="button" variant="primary" isLoading={isExporting} onClick={() => void triggerExportWorkbook()}>
+                  Exportar Excel
+                </Button>
+              </div>
+            </div>
+
+            {isExportAdvancedOpen && (
+              <div className="vacations-export-form">
+              <label className="vacations-export-form__field">
+                <span>Tipo de período</span>
+                <select value={exportRangeMode} onChange={(e) => setExportRangeMode(e.target.value as 'year' | 'custom')}>
+                  <option value="year">Ano completo</option>
+                  <option value="custom">Período personalizado</option>
+                </select>
+              </label>
+
               <label className="vacations-export-form__field">
                 <span>Ano</span>
-                <select value={exportYear} onChange={(e) => setExportYear(Number(e.target.value))}>
+                <select value={exportYear} onChange={(e) => setExportYear(Number(e.target.value))} disabled={exportRangeMode === 'custom'}>
                   {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
                     <option key={y} value={y}>{y}</option>
                   ))}
                 </select>
+              </label>
+
+              <label className="vacations-export-form__field">
+                <span>Data início</span>
+                <input
+                  type="date"
+                  value={exportStartDate}
+                  onChange={(e) => {
+                    setExportRangeMode('custom');
+                    setExportStartDate(e.target.value);
+                  }}
+                />
+              </label>
+
+              <label className="vacations-export-form__field">
+                <span>Data fim</span>
+                <input
+                  type="date"
+                  value={exportEndDate}
+                  onChange={(e) => {
+                    setExportRangeMode('custom');
+                    setExportEndDate(e.target.value);
+                  }}
+                />
               </label>
 
               <label className="vacations-export-form__field">
@@ -1902,17 +2157,139 @@ export default function VacationsPage() {
                 </select>
               </label>
 
+              <div className="vacations-export-form__presets" role="group" aria-label="Presets de período">
+                <button
+                  type="button"
+                  className="vacations-export-preset-btn"
+                  onClick={() => {
+                    const currentYear = new Date().getFullYear();
+                    setExportRangeMode('custom');
+                    setExportStartDate(`${currentYear}-01-01`);
+                    setExportEndDate(`${currentYear}-12-31`);
+                  }}
+                >
+                  Ano atual
+                </button>
+                <button
+                  type="button"
+                  className="vacations-export-preset-btn"
+                  onClick={() => {
+                    const today = new Date();
+                    const quarter = Math.floor(today.getMonth() / 3);
+                    const quarterStart = new Date(today.getFullYear(), quarter * 3, 1);
+                    const quarterEnd = new Date(today.getFullYear(), quarter * 3 + 3, 0);
+                    setExportRangeMode('custom');
+                    setExportStartDate(toIsoDate(quarterStart));
+                    setExportEndDate(toIsoDate(quarterEnd));
+                  }}
+                >
+                  Trimestre atual
+                </button>
+                <button
+                  type="button"
+                  className="vacations-export-preset-btn"
+                  onClick={() => {
+                    const today = new Date();
+                    const start = new Date(today);
+                    start.setDate(today.getDate() - 89);
+                    setExportRangeMode('custom');
+                    setExportStartDate(toIsoDate(start));
+                    setExportEndDate(toIsoDate(today));
+                  }}
+                >
+                  Últimos 90 dias
+                </button>
+              </div>
+
               <div className="vacations-export-form__action">
                 <span>&#8203;</span>
                 <Button type="button" variant="primary" isLoading={isExporting} onClick={() => void triggerExportWorkbook()}>
                   ↓ Exportar Excel (.xlsx)
                 </Button>
               </div>
-            </div>
+              </div>
+            )}
+
+            {isExportCollaboratorsOpen && (
+              <div className="vacations-export-collaborators">
+              <div className="vacations-export-collaborators__head">
+                <div>
+                  <h4>Exportar por colaborador</h4>
+                  <p>Seleciona um ou vários colaboradores. Se não selecionares ninguém, o ficheiro inclui todos dentro do filtro atual.</p>
+                </div>
+                <Badge tone={exportSelectedCollaborators.length > 0 ? 'info' : 'neutral'}>
+                  {exportSelectedCollaborators.length > 0 ? `${exportSelectedCollaborators.length} selecionado(s)` : 'Todos os colaboradores'}
+                </Badge>
+              </div>
+
+              <div className="vacations-export-collaborators__controls">
+                <label className="vacations-export-form__field vacations-export-collaborators__search">
+                  <span>Pesquisar colaborador</span>
+                  <input
+                    type="text"
+                    value={exportCollaboratorSearch}
+                    onChange={(e) => setExportCollaboratorSearch(e.target.value)}
+                    placeholder="Nome, username ou email..."
+                  />
+                </label>
+                <div className="vacations-export-collaborators__actions">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setExportSelectedCollaborators([])}>
+                    Limpar seleção
+                  </Button>
+                </div>
+              </div>
+
+              {exportSelectedCollaborators.length > 0 && (
+                <div className="vacations-export-selected-chips">
+                  {exportSelectedCollaborators.map((item) => {
+                    const label = item.profile?.nomeAbreviado || item.profile?.nomeCompleto || item.username;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className="vacations-export-selected-chip"
+                        onClick={() => removeExportCollaborator(item.id)}
+                        title="Remover da exportação"
+                      >
+                        <span>{label}</span>
+                        <small>{item.username}</small>
+                        <strong>×</strong>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="vacations-export-collaborators__results rh-collaborator-results">
+                {isLoadingExportCandidates ? (
+                  <p>A carregar colaboradores...</p>
+                ) : exportCandidates.length === 0 ? (
+                  <p>Sem colaboradores para os filtros atuais.</p>
+                ) : (
+                  exportCandidates.map((item) => {
+                    const isSelected = exportSelectedCollaborators.some((selected) => selected.id === item.id);
+                    const label = item.profile?.nomeAbreviado || item.profile?.nomeCompleto || item.username;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        className={`rh-collaborator-result ${isSelected ? 'vacations-export-collaborator-result--selected' : ''}`}
+                        onClick={() => toggleExportCollaborator(item)}
+                      >
+                        <strong>{label}</strong>
+                        <span>{item.username}</span>
+                        <small>{item.team?.name || 'Sem equipa'}</small>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+              </div>
+            )}
 
             <div className="vacations-export-info">
-              <p>Incluído no ficheiro: nome, equipa, país, dias atribuídos, dias extra creditados, dias gastos, saldo e períodos aprovados.</p>
-              <p>Podes filtrar por equipa antes de exportar para arquivar histórico por contexto.</p>
+              <p>Configura o período livremente por data inicial/final, equipa e seleção de colaboradores para gerar uma visão totalmente contextual.</p>
+              <p>O ficheiro inclui aba de visão executiva, resumo detalhado, detalhe de pedidos e parâmetros para rastreabilidade.</p>
             </div>
           </section>
 

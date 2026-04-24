@@ -1,4 +1,5 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase, getBackendBase, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { estadoCivilOptions, generoOptions, habilitacoesOptions, irsJovemOptions, parentescoOptions, regimeHorarioOptions, situacaoIrsOptions, tipoContratoOptions } from '../portal/data';
@@ -1161,54 +1162,17 @@ function sanitizeFileName(value: string) {
     .toLowerCase() || 'colaborador';
 }
 
-function buildExportRows(item: CollaboratorRow) {
-  const profile = item.profile || {};
-  const teamInfo = getCollaboratorTeamInfo(item);
+function formatDateForTemplate(value?: string | null) {
+  if (!value) {
+    return '';
+  }
 
-  return [
-    { section: 'Conta', field: 'Nome', value: getDisplayName(item), note: '' },
-    { section: 'Conta', field: 'Username', value: item.username, note: '' },
-    { section: 'Conta', field: 'Email login', value: item.email, note: '' },
-    { section: 'Conta', field: 'País de trabalho', value: profile.workCountry || 'PT', note: '' },
-    { section: 'Conta', field: 'Equipa principal', value: teamInfo.name === '-' ? 'Sem equipa' : teamInfo.name, note: teamInfo.isLeader ? 'Colaborador com papel de chefia na equipa.' : '' },
-    { section: 'Identificação', field: 'Nome completo', value: profile.nomeCompleto || '-', note: '' },
-    { section: 'Identificação', field: 'Nome abreviado', value: profile.nomeAbreviado || '-', note: '' },
-    { section: 'Identificação', field: 'Data de nascimento', value: formatDateForExport(profile.dataNascimento), note: '' },
-    { section: 'Identificação', field: 'Género', value: profile.genero || '-', note: '' },
-    { section: 'Identificação', field: 'Estado civil', value: profile.estadoCivil || '-', note: '' },
-    { section: 'Identificação', field: 'Habilitações literárias', value: profile.habilitacoesLiterarias || '-', note: '' },
-    { section: 'Identificação', field: 'Curso', value: profile.curso || '-', note: '' },
-    { section: 'Identificação', field: 'Faculdade', value: profile.faculdade || '-', note: '' },
-    { section: 'Identificação', field: 'Nacionalidade', value: profile.nacionalidade || '-', note: '' },
-    { section: 'Contactos', field: 'Email pessoal', value: profile.emailPessoal || '-', note: '' },
-    { section: 'Contactos', field: 'Telemóvel', value: profile.telemovel || '-', note: '' },
-    { section: 'Contactos', field: 'GitHub', value: profile.githubUser || '-', note: '' },
-    { section: 'Contactos', field: 'Morada fiscal', value: profile.moradaFiscal || '-', note: '' },
-    { section: 'Contactos', field: 'Morada habitual', value: profile.endereco || '-', note: '' },
-    { section: 'Contactos', field: 'Localidade', value: profile.localidade || '-', note: '' },
-    { section: 'Contactos', field: 'Código postal', value: profile.codigoPostal || '-', note: '' },
-    { section: 'Fiscal e documentos', field: 'Matrícula', value: profile.matriculaCarro || '-', note: '' },
-    { section: 'Fiscal e documentos', field: 'Cartão de cidadão', value: profile.cartaoCidadao || '-', note: '' },
-    { section: 'Fiscal e documentos', field: 'Validade cartão cidadão', value: formatDateForExport(profile.validadeCartaoCidadao), note: '' },
-    { section: 'Fiscal e documentos', field: 'NIF', value: profile.nif || '-', note: '' },
-    { section: 'Fiscal e documentos', field: 'NISS', value: profile.niss || '-', note: '' },
-    { section: 'Fiscal e documentos', field: 'IBAN', value: profile.iban || '-', note: '' },
-    { section: 'Fiscal e documentos', field: 'Situação IRS', value: profile.situacaoIrs || '-', note: '' },
-    { section: 'Fiscal e documentos', field: 'Dependentes', value: profile.numeroDependentes || '-', note: '' },
-    { section: 'Fiscal e documentos', field: 'IRS jovem', value: profile.irsJovem || '-', note: '' },
-    { section: 'Fiscal e documentos', field: 'Ano primeiro desconto', value: profile.anoPrimeiroDesconto || '-', note: '' },
-    { section: 'Fiscal e documentos', field: 'Cartão Continente', value: profile.numeroCartaoContinente || '-', note: '' },
-    { section: 'Fiscal e documentos', field: 'Voucher NOS data', value: profile.voucherNosData || '-', note: '' },
-    { section: 'Emergência', field: 'Nome contacto', value: profile.contactoEmergenciaNome || '-', note: '' },
-    { section: 'Emergência', field: 'Parentesco', value: profile.contactoEmergenciaParentesco || '-', note: '' },
-    { section: 'Emergência', field: 'Número', value: profile.contactoEmergenciaNumero || '-', note: '' },
-    { section: 'Contrato', field: 'Cargo', value: profile.cargo || '-', note: '' },
-    { section: 'Contrato', field: 'Função', value: profile.funcao || '-', note: '' },
-    { section: 'Contrato', field: 'Início contrato', value: formatDateForExport(profile.dataInicioContrato), note: '' },
-    { section: 'Contrato', field: 'Fim contrato', value: formatDateForExport(profile.dataFimContrato), note: '' },
-    { section: 'Contrato', field: 'Tipo contrato', value: profile.tipoContrato || '-', note: '' },
-    { section: 'Contrato', field: 'Regime horário', value: profile.regimeHorario || '-', note: '' },
-  ];
+  const formatted = formatDateForExport(value);
+  return formatted === '-' ? '' : formatted;
+}
+
+function formatTemplateValue(value?: string | null) {
+  return value?.trim() || '';
 }
 
 export default function CollaboratorsPage() {
@@ -1237,6 +1201,7 @@ export default function CollaboratorsPage() {
   const [exportSearch, setExportSearch] = useState('');
   const [selectedExportUserId, setSelectedExportUserId] = useState('');
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [actionsMenuState, setActionsMenuState] = useState<{ id: string; top: number; right: number; item: CollaboratorRow } | null>(null);
   const [activeConfirmTarget, setActiveConfirmTarget] = useState<CollaboratorRow | null>(null);
   const [selectedRow, setSelectedRow] = useState<CollaboratorRow | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -1456,6 +1421,36 @@ export default function CollaboratorsPage() {
   }, []);
 
   useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest('.collaborators-actions-menu') ||
+        target?.closest('.collaborators-actions-menu__panel')
+      ) {
+        return;
+      }
+      setActionsMenuState(null);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setActionsMenuState(null);
+    };
+
+    const handleScroll = () => setActionsMenuState(null);
+
+    document.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleEscape);
+    window.addEventListener('scroll', handleScroll, true);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, []);
+
+  useEffect(() => {
     const parts = newUserDraft.fullName.trim().split(/\s+/).filter((p) => p.length > 0);
     const firstName = parts[0] || '';
     const lastName = parts[parts.length - 1] || '';
@@ -1589,167 +1584,174 @@ export default function CollaboratorsPage() {
       const ExcelJS = await import('exceljs');
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Ficha colaborador', {
-        views: [{ state: 'frozen', ySplit: 9 }],
+        views: [{ state: 'frozen', ySplit: 7 }],
       });
 
       workbook.creator = 'Smarter Hub';
       workbook.created = new Date();
 
       worksheet.columns = [
-        { header: 'Secção', key: 'section', width: 28 },
-        { header: 'Campo', key: 'field', width: 34 },
-        { header: 'Valor', key: 'value', width: 48 },
-        { header: 'Observações', key: 'note', width: 46 },
+        { key: 'labelA', width: 29 },
+        { key: 'valueA', width: 37 },
+        { key: 'labelB', width: 29 },
+        { key: 'valueB', width: 37 },
       ];
 
       const collaboratorName = getDisplayName(selectedExportCandidate);
-
       const profile = selectedExportCandidate.profile || {};
       const teamInfo = getCollaboratorTeamInfo(selectedExportCandidate);
 
-      worksheet.mergeCells('A1:B4');
-      worksheet.mergeCells('C1:D2');
-      worksheet.mergeCells('C3:D3');
-      worksheet.mergeCells('A5:D5');
+      const nowFormatted = new Intl.DateTimeFormat('pt-PT', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date());
 
-      const titleCell = worksheet.getCell('C1');
-      titleCell.value = `Ficha de Colaborador · ${collaboratorName}`;
-      titleCell.font = { name: 'Calibri', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
-      titleCell.alignment = { horizontal: 'left', vertical: 'middle' };
-      titleCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF0F3B78' },
-      };
+      worksheet.mergeCells('A1:D1');
+      worksheet.mergeCells('A2:D2');
+      worksheet.mergeCells('A3:D3');
 
-      const subtitleCell = worksheet.getCell('C3');
-      subtitleCell.value = 'Documento de consulta corporativa';
-      subtitleCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF0F3B78' } };
-      subtitleCell.alignment = { horizontal: 'left', vertical: 'middle' };
-      subtitleCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFEAF2FF' },
-      };
+      worksheet.getCell('A1').value = 'TLANTIC';
+      worksheet.getCell('A1').font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FF0F3B78' } };
+      worksheet.getCell('A1').alignment = { horizontal: 'left', vertical: 'middle' };
 
-      const generatedAtCell = worksheet.getCell('A5');
-      generatedAtCell.value = `Exportado em: ${new Intl.DateTimeFormat('pt-PT', { dateStyle: 'full', timeStyle: 'medium' }).format(new Date())}`;
-      generatedAtCell.font = { name: 'Calibri', size: 10, color: { argb: 'FF0F3B78' } };
-      generatedAtCell.alignment = { horizontal: 'left', vertical: 'middle' };
-      generatedAtCell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFEAF2FF' },
-      };
+      worksheet.getCell('A2').value = 'Ficha de colaborador';
+      worksheet.getCell('A2').font = { name: 'Calibri', size: 18, bold: true, color: { argb: 'FF0B2548' } };
+      worksheet.getCell('A2').alignment = { horizontal: 'left', vertical: 'middle' };
 
-      const summaryHeaders = worksheet.addRow(['Nome', 'Email', 'Cargo', 'Função']);
-      summaryHeaders.height = 20;
-      summaryHeaders.eachCell((cell) => {
-        cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1B4F9A' } };
-        cell.alignment = { horizontal: 'left', vertical: 'middle' };
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFF4F8FF' },
-        };
-      });
-
-      const summaryValues = worksheet.addRow([
-        collaboratorName,
-        selectedExportCandidate.email,
-        profile.cargo || '-',
-        profile.funcao || '-',
-      ]);
-      summaryValues.height = 20;
-      summaryValues.eachCell((cell) => {
-        cell.font = { name: 'Calibri', size: 10, color: { argb: 'FF0F172A' } };
-        cell.alignment = { horizontal: 'left', vertical: 'middle' };
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFFFFFFF' },
-        };
-      });
-
-      const summaryExtraHeaders = worksheet.addRow(['Equipa', 'País', 'Início contrato', 'Nacionalidade']);
-      summaryExtraHeaders.height = 20;
-      summaryExtraHeaders.eachCell((cell) => {
-        cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1B4F9A' } };
-        cell.alignment = { horizontal: 'left', vertical: 'middle' };
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFF4F8FF' },
-        };
-      });
-
-      const summaryExtraValues = worksheet.addRow([
-        teamInfo.name === '-' ? 'Sem equipa' : teamInfo.name,
-        profile.workCountry || 'PT',
-        formatDateForExport(profile.dataInicioContrato),
-        profile.nacionalidade || '-',
-      ]);
-      summaryExtraValues.height = 20;
-      summaryExtraValues.eachCell((cell) => {
-        cell.font = { name: 'Calibri', size: 10, color: { argb: 'FF0F172A' } };
-        cell.alignment = { horizontal: 'left', vertical: 'middle' };
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFFFFFFF' },
-        };
-      });
+      worksheet.getCell('A3').value = `Gerado em ${nowFormatted}`;
+      worksheet.getCell('A3').font = { name: 'Calibri', size: 10, color: { argb: 'FF395169' } };
+      worksheet.getCell('A3').alignment = { horizontal: 'left', vertical: 'middle' };
 
       worksheet.addRow([]);
 
-      const headersRow = worksheet.addRow(['Secção', 'Campo', 'Valor', 'Observações']);
-      headersRow.height = 22;
-      headersRow.eachCell((cell) => {
-        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        cell.fill = {
+      const tableBorderColor = 'FFD7E2EE';
+      const tableHeaderFill = 'FFE8F0FA';
+      const sectionFill = 'FF0F3B78';
+
+      const applyRowGrid = (rowNumber: number) => {
+        for (let col = 1; col <= 4; col += 1) {
+          const cell = worksheet.getCell(rowNumber, col);
+          cell.border = {
+            top: { style: 'thin', color: { argb: tableBorderColor } },
+            left: { style: 'thin', color: { argb: tableBorderColor } },
+            right: { style: 'thin', color: { argb: tableBorderColor } },
+            bottom: { style: 'thin', color: { argb: tableBorderColor } },
+          };
+        }
+      };
+
+      const addSectionTitle = (title: string) => {
+        const sectionRow = worksheet.addRow([title, '', '', '']);
+        sectionRow.height = 22;
+        worksheet.mergeCells(`A${sectionRow.number}:D${sectionRow.number}`);
+
+        const sectionCell = worksheet.getCell(sectionRow.number, 1);
+        sectionCell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        sectionCell.alignment = { horizontal: 'left', vertical: 'middle' };
+        sectionCell.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FF1B4F9A' },
+          fgColor: { argb: sectionFill },
         };
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FF0E2E5A' } },
-          left: { style: 'thin', color: { argb: 'FF0E2E5A' } },
-          bottom: { style: 'thin', color: { argb: 'FF0E2E5A' } },
-          right: { style: 'thin', color: { argb: 'FF0E2E5A' } },
-        };
-      });
+        applyRowGrid(sectionRow.number);
+      };
 
-      const exportRows = buildExportRows(selectedExportCandidate);
-      exportRows.forEach((entry, index) => {
-        const row = worksheet.addRow([entry.section, entry.field, entry.value, entry.note]);
-        row.height = 21;
+      const addSectionHeaders = () => {
+        const headerRow = worksheet.addRow(['Campo', 'Valor', 'Campo', 'Valor']);
+        headerRow.height = 20;
+        headerRow.eachCell((cell) => {
+          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF0F3B78' } };
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: tableHeaderFill },
+          };
+        });
+        applyRowGrid(headerRow.number);
+      };
+
+      const addDataRow = (labelA: string, valueA: string, labelB: string, valueB: string) => {
+        const row = worksheet.addRow([labelA, valueA, labelB, valueB]);
+        row.height = 22;
 
         row.eachCell((cell, colNumber) => {
-          cell.font = { name: 'Calibri', size: 10, color: { argb: 'FF0F172A' } };
-          cell.alignment = {
-            vertical: 'middle',
-            horizontal: colNumber === 3 ? 'left' : 'left',
-            wrapText: true,
+          const isLabel = colNumber === 1 || colNumber === 3;
+          cell.font = {
+            name: 'Calibri',
+            size: 10,
+            bold: isLabel,
+            color: { argb: isLabel ? 'FF1F3347' : 'FF101F33' },
           };
-          cell.border = {
-            top: { style: 'thin', color: { argb: 'FFD6E2F1' } },
-            left: { style: 'thin', color: { argb: 'FFD6E2F1' } },
-            bottom: { style: 'thin', color: { argb: 'FFD6E2F1' } },
-            right: { style: 'thin', color: { argb: 'FFD6E2F1' } },
+          cell.alignment = {
+            horizontal: 'left',
+            vertical: 'middle',
+            wrapText: true,
           };
           cell.fill = {
             type: 'pattern',
             pattern: 'solid',
-            fgColor: { argb: index % 2 === 0 ? 'FFF8FBFF' : 'FFFFFFFF' },
+            fgColor: { argb: isLabel ? 'FFF6F9FE' : 'FFFFFFFF' },
           };
         });
-      });
 
-      worksheet.autoFilter = {
-        from: { row: headersRow.number, column: 1 },
-        to: { row: headersRow.number, column: 4 },
+        applyRowGrid(row.number);
       };
+
+      addSectionTitle('Identificação do colaborador');
+      addSectionHeaders();
+      addDataRow('Nome completo', formatTemplateValue(profile.nomeCompleto) || collaboratorName, 'Nome abreviado', formatTemplateValue(profile.nomeAbreviado));
+      addDataRow('Username', formatTemplateValue(selectedExportCandidate.username), 'Email de login', formatTemplateValue(selectedExportCandidate.email));
+      addDataRow('Data de nascimento', formatDateForTemplate(profile.dataNascimento), 'Género', formatTemplateValue(profile.genero));
+      addDataRow('Estado civil', formatTemplateValue(profile.estadoCivil), 'Nacionalidade', formatTemplateValue(profile.nacionalidade));
+      addDataRow('Equipa principal', teamInfo.name === '-' ? '' : teamInfo.name, 'País de trabalho', formatTemplateValue(profile.workCountry || 'PT'));
+
+      worksheet.addRow([]);
+
+      addSectionTitle('Habilitações literárias');
+      addSectionHeaders();
+      addDataRow('Nível de escolaridade', formatTemplateValue(profile.habilitacoesLiterarias), 'Curso', formatTemplateValue(profile.curso));
+      addDataRow('Instituição de ensino', formatTemplateValue(profile.faculdade), 'GitHub', formatTemplateValue(profile.githubUser));
+
+      worksheet.addRow([]);
+
+      addSectionTitle('Contacto de emergência');
+      addSectionHeaders();
+      addDataRow('Nome', formatTemplateValue(profile.contactoEmergenciaNome), 'Parentesco', formatTemplateValue(profile.contactoEmergenciaParentesco));
+      addDataRow('Contacto telefónico', formatTemplateValue(profile.contactoEmergenciaNumero), 'Observações', '');
+
+      worksheet.addRow([]);
+
+      addSectionTitle('Dados de contrato e remuneração');
+      addSectionHeaders();
+      addDataRow('Cargo', formatTemplateValue(profile.cargo), 'Função', formatTemplateValue(profile.funcao));
+      addDataRow('Tipo de contrato', formatTemplateValue(profile.tipoContrato), 'Regime horário', formatTemplateValue(profile.regimeHorario));
+      addDataRow('Data de início', formatDateForTemplate(profile.dataInicioContrato), 'Data de fim', formatDateForTemplate(profile.dataFimContrato));
+      addDataRow('NIF', formatTemplateValue(profile.nif), 'NISS', formatTemplateValue(profile.niss));
+      addDataRow('IBAN', formatTemplateValue(profile.iban), 'Situação IRS', formatTemplateValue(profile.situacaoIrs));
+      addDataRow('N.º dependentes', formatTemplateValue(profile.numeroDependentes), 'IRS Jovem', formatTemplateValue(profile.irsJovem));
+
+      worksheet.addRow([]);
+
+      addSectionTitle('Outras informações');
+      addSectionHeaders();
+      addDataRow('Email pessoal', formatTemplateValue(profile.emailPessoal), 'Telemóvel', formatTemplateValue(profile.telemovel));
+      addDataRow('Morada fiscal', formatTemplateValue(profile.moradaFiscal), 'Morada habitual', formatTemplateValue(profile.endereco));
+      addDataRow('Localidade', formatTemplateValue(profile.localidade), 'Código postal', formatTemplateValue(profile.codigoPostal));
+      addDataRow('Cartão de cidadão', formatTemplateValue(profile.cartaoCidadao), 'Validade CC', formatDateForTemplate(profile.validadeCartaoCidadao));
+      addDataRow('Matrícula viatura', formatTemplateValue(profile.matriculaCarro), 'Ano 1.º desconto', formatTemplateValue(profile.anoPrimeiroDesconto));
+      addDataRow('Cartão Continente', formatTemplateValue(profile.numeroCartaoContinente), 'Data voucher NOS', formatTemplateValue(profile.voucherNosData));
+
+      worksheet.eachRow((row) => {
+        row.eachCell((cell) => {
+          if (!cell.alignment) {
+            cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+          }
+        });
+      });
 
       try {
         const logoResponse = await fetch('/logo.png');
@@ -2819,10 +2821,6 @@ export default function CollaboratorsPage() {
 
       <section className="trainings-list-card">
         <div className="people-page-header">
-          <div>
-            <h3>Colaboradores</h3>
-            <p>Gestão de pessoas, permissões e credenciais de acesso.</p>
-          </div>
           <div className="people-page-header__actions">
             {canCreateUser && (
               <Button type="button" variant="primary" onClick={openCreateModal}>+ Novo utilizador</Button>
@@ -2952,18 +2950,48 @@ export default function CollaboratorsPage() {
               header: 'Ações',
               render: (item: CollaboratorRow) => (
                 <div className="collaborators-actions">
-                  <Button type="button" size="sm" variant="primary" onClick={() => void openDetails(item)}>Editar</Button>
-                  <Button type="button" size="sm" variant="secondary" onClick={() => void openDetails(item, 'permissoes')} disabled={!canManagePermissions}>Permissões</Button>
                   <Button
                     type="button"
                     size="sm"
-                    variant={item.isActive ? 'danger' : 'secondary'}
-                    isLoading={busyUserId === item.id}
-                    onClick={() => openActiveConfirm(item)}
-                    disabled={!canManageActive}
+                    variant="primary"
+                    onClick={() => {
+                      setActionsMenuState(null);
+                      void openDetails(item);
+                    }}
                   >
-                    {item.isActive ? 'Desativar' : 'Reativar'}
+                    Editar
                   </Button>
+
+                  <div className="collaborators-actions-menu">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="collaborators-actions-menu__trigger"
+                      aria-haspopup="menu"
+                      aria-expanded={actionsMenuState?.id === item.id}
+                      aria-label={`Mais ações para ${getDisplayName(item)}`}
+                      onClick={(e) => {
+                        if (actionsMenuState?.id === item.id) {
+                          setActionsMenuState(null);
+                          return;
+                        }
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setActionsMenuState({
+                          id: item.id,
+                          top: rect.bottom + 4,
+                          right: window.innerWidth - rect.right,
+                          item,
+                        });
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <circle cx="5" cy="12" r="2" />
+                        <circle cx="12" cy="12" r="2" />
+                        <circle cx="19" cy="12" r="2" />
+                      </svg>
+                    </Button>
+                  </div>
                 </div>
               ),
               align: 'right',
@@ -3709,6 +3737,42 @@ export default function CollaboratorsPage() {
       )}
 
       <Toast show={Boolean(status)} tone={resolveStatusTone(status)} message={status} />
+
+      {actionsMenuState && createPortal(
+        <div
+          className="collaborators-actions-menu__panel"
+          role="menu"
+          aria-label={`Ações rápidas de ${getDisplayName(actionsMenuState.item)}`}
+          style={{ position: 'fixed', top: actionsMenuState.top, right: actionsMenuState.right }}
+        >
+          <button
+            type="button"
+            className="collaborators-actions-menu__item"
+            role="menuitem"
+            disabled={!canManagePermissions}
+            onClick={() => {
+              setActionsMenuState(null);
+              void openDetails(actionsMenuState.item, 'permissoes');
+            }}
+          >
+            Permissões
+          </button>
+          <button
+            type="button"
+            className={`collaborators-actions-menu__item${actionsMenuState.item.isActive ? ' is-danger' : ''}`}
+            role="menuitem"
+            disabled={!canManageActive || busyUserId === actionsMenuState.item.id}
+            onClick={() => {
+              const target = actionsMenuState.item;
+              setActionsMenuState(null);
+              openActiveConfirm(target);
+            }}
+          >
+            {busyUserId === actionsMenuState.item.id ? 'A processar...' : actionsMenuState.item.isActive ? 'Desativar' : 'Reativar'}
+          </button>
+        </div>,
+        document.body,
+      )}
     </section>
   );
 }

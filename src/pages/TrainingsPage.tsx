@@ -55,7 +55,6 @@ type Collaborator = {
 };
 
 type AssignDraft = {
-  userId: string;
   nome: string;
   link: string;
   horas: string;
@@ -71,7 +70,6 @@ type RecentAssignedItem = {
 };
 
 const EMPTY_ASSIGN_DRAFT: AssignDraft = {
-  userId: '',
   nome: '',
   link: '',
   horas: '',
@@ -138,14 +136,32 @@ export default function TrainingsPage() {
 
   const [assignDraft, setAssignDraft] = useState<AssignDraft>(EMPTY_ASSIGN_DRAFT);
   const [assignStatus, setAssignStatus] = useState('');
+  const [assignBusy, setAssignBusy] = useState(false);
   const [collaboratorQuery, setCollaboratorQuery] = useState('');
-  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
-  const [isSearchingCollaborators, setIsSearchingCollaborators] = useState(false);
+  const [allCollaborators, setAllCollaborators] = useState<Collaborator[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [isLoadingCollaborators, setIsLoadingCollaborators] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isRecordsLoading, setIsRecordsLoading] = useState(false);
   const [recordsLoaded, setRecordsLoaded] = useState(false);
   const [completeConfirmRecordId, setCompleteConfirmRecordId] = useState<string | null>(null);
   const [recentAssigned, setRecentAssigned] = useState<RecentAssignedItem[]>([]);
+
+  const filteredCollaborators = useMemo(() => {
+    const q = collaboratorQuery.trim().toLowerCase();
+    if (!q) return allCollaborators;
+    return allCollaborators.filter((c) =>
+      [c.username, c.email, c.profile?.nomeCompleto ?? '', c.profile?.cargo ?? '', c.profile?.funcao ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [allCollaborators, collaboratorQuery]);
+
+  const selectedCollaborators = useMemo(
+    () => allCollaborators.filter((c) => selectedUserIds.includes(c.id)),
+    [allCollaborators, selectedUserIds],
+  );
 
   const sortedRecords = useMemo(
     () => [...records].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
@@ -172,11 +188,6 @@ export default function TrainingsPage() {
   const completedCount = useMemo(() => records.filter((record) => record.status === 'COMPLETED').length, [records]);
   const criticalCount = useMemo(() => (canManage ? assignedCount : assignedCount), [canManage, assignedCount]);
 
-  const selectedCollaborator = useMemo(
-    () => collaborators.find((item) => item.id === assignDraft.userId) ?? null,
-    [collaborators, assignDraft.userId],
-  );
-
   useEffect(() => {
     const controller = new AbortController();
 
@@ -185,21 +196,7 @@ export default function TrainingsPage() {
     return () => controller.abort();
   }, [canManage]);
 
-  useEffect(() => {
-    if (!canManage) {
-      return;
-    }
 
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      void loadCollaborators(collaboratorQuery, controller.signal);
-    }, 260);
-
-    return () => {
-      controller.abort();
-      window.clearTimeout(timer);
-    };
-  }, [canManage, collaboratorQuery]);
 
   async function loadTrainings(signal?: AbortSignal) {
     setIsRecordsLoading(records.length === 0);
@@ -224,35 +221,19 @@ export default function TrainingsPage() {
     }
   }
 
-  async function loadCollaborators(searchValue: string, signal?: AbortSignal) {
-    const trimmed = searchValue.trim();
-
-    if (!trimmed) {
-      setCollaborators([]);
-      setIsSearchingCollaborators(false);
-      return;
-    }
-
-    setIsSearchingCollaborators(true);
-
+  async function loadAllCollaborators(signal?: AbortSignal) {
+    setIsLoadingCollaborators(true);
     try {
-      const q = encodeURIComponent(trimmed);
-      const path = `/users?q=${q}&limit=40`;
-      const data = await apiRequestCached<Collaborator[]>(path, {
+      const data = await apiRequestCached<Collaborator[]>('/users?limit=100', {
         headers: getAuthHeaders(),
         signal,
-      }, 30000);
-      setCollaborators(data);
+      }, 60000);
+      setAllCollaborators(data);
     } catch (error) {
-      if (isAbortError(error) || signal?.aborted) {
-        return;
-      }
-
-      setAssignStatus(error instanceof Error ? error.message : 'Falha ao pesquisar colaboradores.');
+      if (isAbortError(error) || signal?.aborted) return;
+      setAssignStatus(error instanceof Error ? error.message : 'Falha ao carregar colaboradores.');
     } finally {
-      if (!signal?.aborted) {
-        setIsSearchingCollaborators(false);
-      }
+      if (!signal?.aborted) setIsLoadingCollaborators(false);
     }
   }
 
@@ -260,50 +241,86 @@ export default function TrainingsPage() {
     setAssignDraft((current) => ({ ...current, [field]: value }));
   }
 
+  function toggleCollaborator(id: string) {
+    setSelectedUserIds((current) =>
+      current.includes(id) ? current.filter((uid) => uid !== id) : [...current, id],
+    );
+  }
+
+  function selectAllVisible() {
+    setSelectedUserIds((current) => {
+      const toAdd = filteredCollaborators.map((c) => c.id).filter((id) => !current.includes(id));
+      return [...current, ...toAdd];
+    });
+  }
+
+  function clearSelection() {
+    setSelectedUserIds([]);
+  }
+
+  function openAssignModal() {
+    setIsAssignModalOpen(true);
+    setAssignStatus('');
+    setCollaboratorQuery('');
+    setSelectedUserIds([]);
+    setAssignDraft(EMPTY_ASSIGN_DRAFT);
+    if (allCollaborators.length === 0) {
+      void loadAllCollaborators();
+    }
+  }
+
   async function handleAssignTraining(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const parsedHours = parseHours(assignDraft.horas);
 
-    if (!assignDraft.userId || !assignDraft.nome.trim() || !Number.isFinite(parsedHours) || parsedHours < 0) {
-      setAssignStatus('Seleciona o colaborador e preenche os campos obrigatórios.');
+    if (selectedUserIds.length === 0 || !assignDraft.nome.trim() || !Number.isFinite(parsedHours) || parsedHours < 0) {
+      setAssignStatus('Seleciona pelo menos um colaborador e preenche os campos obrigatórios.');
       return;
     }
 
     try {
-      const selectedName = selectedCollaborator
-        ? (selectedCollaborator?.profile?.nomeCompleto ?? selectedCollaborator.username)
-        : assignDraft.userId;
+      setAssignBusy(true);
 
-      const created = await apiRequest<TrainingRecord>('/trainings/assign', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          userId: assignDraft.userId,
-          nome: assignDraft.nome.trim(),
-          link: assignDraft.link.trim(),
-          horas: parsedHours,
-          dataInicio: assignDraft.dataInicio,
-          entidade: assignDraft.entidade.trim(),
-        }),
-      });
+      const selectedNames = selectedCollaborators.map((collaborator) => collaborator.profile?.nomeCompleto ?? collaborator.username);
+      const createdRecords = await Promise.all(
+        selectedUserIds.map((userId) => apiRequest<TrainingRecord>('/trainings/assign', {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            userId,
+            nome: assignDraft.nome.trim(),
+            link: assignDraft.link.trim(),
+            horas: parsedHours,
+            dataInicio: assignDraft.dataInicio,
+            entidade: assignDraft.entidade.trim(),
+          }),
+        })),
+      );
 
       clearApiCache('/trainings');
-      setAssignStatus('Formação atribuída com sucesso.');
+      setAssignStatus(
+        selectedUserIds.length > 1
+          ? `Formação atribuída com sucesso a ${selectedUserIds.length} colaboradores.`
+          : 'Formação atribuída com sucesso.',
+      );
       void refreshNotifications();
       setRecentAssigned((current) => ([
-        {
+        ...createdRecords.map((created, index) => ({
           id: created.id,
           nome: created.nome,
-          collaborator: selectedName,
+          collaborator: selectedNames[index] || created.user?.username || 'Colaborador',
           createdAt: created.createdAt || new Date().toISOString(),
-        },
+        })),
         ...current,
       ].slice(0, 8)));
       setAssignDraft(EMPTY_ASSIGN_DRAFT);
+      setSelectedUserIds([]);
       await loadTrainings();
     } catch (error) {
       setAssignStatus(error instanceof Error ? error.message : 'Falha ao atribuir formação.');
+    } finally {
+      setAssignBusy(false);
     }
   }
 
@@ -338,34 +355,16 @@ export default function TrainingsPage() {
 
   return (
     <section className="trainings-shell">
-      <header className="trainings-hero">
-        <div>
-          <p className="hero-kicker">Formações</p>
-          <h2>{canManage ? 'Resumo de formações' : 'Resumo das minhas formações'}</h2>
-          <p>{canManage ? 'Carga horária e progresso da equipa.' : 'Horas e progresso de conclusão.'}</p>
-        </div>
-
-        <div className="trainings-hours-summary">
-          <article>
-            <span>{canManage ? 'Por concluir' : 'Por concluir'}</span>
-            <strong>{(isRecordsLoading && !recordsLoaded) ? <span className="trainings-summary-loading">A carregar</span> : criticalCount}</strong>
-          </article>
-          <article>
-            <span>Concluídas</span>
-            <strong>{(isRecordsLoading && !recordsLoaded) ? <span className="trainings-summary-loading">A carregar</span> : completedCount}</strong>
-          </article>
-        </div>
-      </header>
+      
 
       <section className="trainings-list-card">
         <div className="trainings-list-head">
-          <h3>{canManage ? 'Lista de formações' : 'Formações atribuídas a mim'}</h3>
           <label>
             <span>Pesquisar</span>
             <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome, entidade, colaborador..." />
           </label>
           {canManage && (
-            <Button type="button" variant="primary" onClick={() => setIsAssignModalOpen(true)}>Nova formação</Button>
+            <Button type="button" variant="primary" onClick={openAssignModal}>Nova formação</Button>
           )}
         </div>
 
@@ -487,47 +486,107 @@ export default function TrainingsPage() {
             </div>
 
             <form className="trainings-form" onSubmit={handleAssignTraining} noValidate>
+              {/* ── Collaborator multi-picker ── */}
               <div className="field-span-2 rh-collaborator-picker">
-                <span>Colaborador *</span>
-                <input
-                  type="search"
-                  value={collaboratorQuery}
-                  onChange={(event) => setCollaboratorQuery(event.target.value)}
-                  placeholder="Pesquisar por nome, username, email, cargo ou função..."
-                />
+                <div className="rh-picker-header">
+                  <span>Colaboradores *</span>
+                  {selectedUserIds.length > 0 && (
+                    <span className="rh-picker-badge">{selectedUserIds.length} selecionado{selectedUserIds.length !== 1 ? 's' : ''}</span>
+                  )}
+                </div>
 
-                {selectedCollaborator ? (
-                  <div className="rh-selected-collaborator">
-                    <strong>{selectedCollaborator?.profile?.nomeCompleto ?? selectedCollaborator.username}</strong>
-                    <span>{selectedCollaborator.email}</span>
-                    <button type="button" onClick={() => updateAssignDraft('userId', '')}>Trocar colaborador</button>
-                  </div>
-                ) : (
-                  <div className="rh-collaborator-results" role="listbox" aria-label="Resultados de colaboradores">
-                    {!isSearchingCollaborators && !collaboratorQuery.trim() && <p>Escreve para pesquisar colaboradores.</p>}
-                    {isSearchingCollaborators && <p>A pesquisar colaboradores...</p>}
-                    {!isSearchingCollaborators && collaboratorQuery.trim() && collaborators.length === 0 && <p>Sem resultados para a pesquisa.</p>}
-                    {!isSearchingCollaborators &&
-                      collaborators.map((collaborator) => {
-                        const displayName = collaborator?.profile?.nomeCompleto ?? collaborator.username;
-
-                        return (
-                          <button
-                            key={collaborator.id}
-                            type="button"
-                            className="rh-collaborator-result"
-                            onClick={() => updateAssignDraft('userId', collaborator.id)}
-                          >
-                            <strong>{displayName}</strong>
-                            <span>{collaborator.email}</span>
-                            <small>{collaborator.profile?.cargo || formatRoleLabel(collaborator.role)}</small>
-                          </button>
-                        );
-                      })}
+                {/* Selected chips */}
+                {selectedCollaborators.length > 0 && (
+                  <div className="rh-selected-chips">
+                    {selectedCollaborators.map((collab) => {
+                      const name = collab.profile?.nomeCompleto ?? collab.username;
+                      return (
+                        <span key={collab.id} className="rh-selected-chip">
+                          {name}
+                          <button type="button" aria-label={`Remover ${name}`} onClick={() => toggleCollaborator(collab.id)}>×</button>
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
+
+                {/* Search input */}
+                <div className="rh-picker-search-row">
+                  <input
+                    type="search"
+                    value={collaboratorQuery}
+                    onChange={(event) => setCollaboratorQuery(event.target.value)}
+                    placeholder="Filtrar por nome, email, cargo ou função..."
+                  />
+                </div>
+
+                {/* Bulk action bar */}
+                {!isLoadingCollaborators && allCollaborators.length > 0 && (
+                  <div className="rh-picker-bulk-bar">
+                    <button
+                      type="button"
+                      className="rh-picker-bulk-btn"
+                      onClick={selectAllVisible}
+                      disabled={filteredCollaborators.every((c) => selectedUserIds.includes(c.id))}
+                    >
+                      Selecionar {collaboratorQuery.trim() ? `visíveis (${filteredCollaborators.length})` : `todos (${allCollaborators.length})`}
+                    </button>
+                    {selectedUserIds.length > 0 && (
+                      <button type="button" className="rh-picker-bulk-btn rh-picker-bulk-btn--clear" onClick={clearSelection}>
+                        Limpar seleção
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Results list */}
+                <div className="rh-collaborator-results rh-collaborator-results--multi" role="listbox" aria-label="Lista de colaboradores">
+                  {isLoadingCollaborators && (
+                    <p className="rh-picker-loading">A carregar colaboradores...</p>
+                  )}
+                  {!isLoadingCollaborators && allCollaborators.length === 0 && (
+                    <p className="rh-picker-empty">Nenhum colaborador disponível.</p>
+                  )}
+                  {!isLoadingCollaborators && allCollaborators.length > 0 && filteredCollaborators.length === 0 && (
+                    <p className="rh-picker-empty">Sem resultados para "{collaboratorQuery}".</p>
+                  )}
+                  {!isLoadingCollaborators &&
+                    filteredCollaborators.map((collab) => {
+                      const isSelected = selectedUserIds.includes(collab.id);
+                      const displayName = collab.profile?.nomeCompleto ?? collab.username;
+                      return (
+                        <button
+                          key={collab.id}
+                          type="button"
+                          role="option"
+                          aria-selected={isSelected}
+                          className={`rh-collaborator-result${isSelected ? ' rh-collaborator-result--selected' : ''}`}
+                          onClick={() => toggleCollaborator(collab.id)}
+                        >
+                          <span className="rh-collab-check" aria-hidden="true">
+                            {isSelected ? (
+                              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                <rect width="14" height="14" rx="3" fill="#1d6fcf" />
+                                <path d="M3 7l3 3 5-5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            ) : (
+                              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                <rect x="0.5" y="0.5" width="13" height="13" rx="2.5" stroke="#c3d5ef" />
+                              </svg>
+                            )}
+                          </span>
+                          <span className="rh-collab-info">
+                            <strong>{displayName}</strong>
+                            <span>{collab.email}</span>
+                            <small>{collab.profile?.cargo || formatRoleLabel(collab.role)}</small>
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
               </div>
 
+              {/* ── Training details ── */}
               <label>
                 <span>Nome da formação *</span>
                 <input type="text" value={assignDraft.nome} onChange={(event) => updateAssignDraft('nome', event.target.value)} />
@@ -554,7 +613,13 @@ export default function TrainingsPage() {
               </label>
 
               <div className="trainings-form-actions field-span-2">
-                <Button type="submit" variant="primary">Criar formação</Button>
+                <Button type="submit" variant="primary" disabled={assignBusy}>
+                  {assignBusy
+                    ? `A atribuir... (${selectedUserIds.length})`
+                    : selectedUserIds.length > 1
+                    ? `Atribuir a ${selectedUserIds.length} colaboradores`
+                    : 'Atribuir formação'}
+                </Button>
               </div>
             </form>
 

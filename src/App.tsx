@@ -27,7 +27,7 @@ function AppRoutes() {
   const prefetchFingerprintRef = useRef('');
 
   const canViewUserList = isRootAccess || hasPermission('view_user_list');
-  const canViewTeams = isRootAccess || hasPermission('view_teams') || hasPermission('manage_team_members');
+  const canViewTeams = !isTPeople && (currentUser?.role ?? '') !== 'CONVIDADO';
   const canEditUser = isRootAccess || hasPermission('edit_user');
   const canManagePermissions = isRootAccess || hasPermission('manage_permissions');
   const canViewVacations = isRootAccess || hasPermission('request_vacation') || hasPermission('view_own_vacations') || hasPermission('view_all_vacations');

@@ -42,6 +42,7 @@ type ApiPerfSnapshot = {
 
 const apiGetCache = new Map<string, ApiCacheEntry>();
 const apiGetInFlight = new Map<string, Promise<unknown>>();
+const apiCacheGeneration = new Map<string, number>();
 const MAX_GET_CACHE_ENTRIES = 500;
 const apiPerfByEndpoint = new Map<string, ApiPerfEntry>();
 const apiPerfLastBudgetWarningAt = new Map<string, number>();
@@ -274,16 +275,19 @@ export async function apiRequestCached<T>(
           const requestOptions: RequestInit | undefined = options
             ? { ...options, signal: undefined }
             : undefined;
+          const genAtStart = apiCacheGeneration.get(key) ?? 0;
 
           const backgroundRequest = (async () => {
             const fresh = await apiRequest<T>(path, requestOptions);
-            apiGetCache.set(key, {
-              expiresAt: Date.now() + ttlMs,
-              staleExpiresAt: Date.now() + ttlMs + Math.max(staleTtlMs, ttlMs),
-              lastAccessAt: Date.now(),
-              value: fresh,
-            });
-            pruneGetCache();
+            if ((apiCacheGeneration.get(key) ?? 0) === genAtStart) {
+              apiGetCache.set(key, {
+                expiresAt: Date.now() + ttlMs,
+                staleExpiresAt: Date.now() + ttlMs + Math.max(staleTtlMs, ttlMs),
+                lastAccessAt: Date.now(),
+                value: fresh,
+              });
+              pruneGetCache();
+            }
             return fresh;
           })();
 
@@ -310,16 +314,19 @@ export async function apiRequestCached<T>(
   const requestOptions: RequestInit | undefined = options
     ? { ...options, signal: undefined }
     : undefined;
+  const genAtStart = apiCacheGeneration.get(key) ?? 0;
 
   const requestPromise = (async () => {
     const fresh = await apiRequest<T>(path, requestOptions);
-    apiGetCache.set(key, {
-      expiresAt: Date.now() + ttlMs,
-      staleExpiresAt: Date.now() + ttlMs + Math.max(staleTtlMs, ttlMs),
-      lastAccessAt: Date.now(),
-      value: fresh,
-    });
-    pruneGetCache();
+    if ((apiCacheGeneration.get(key) ?? 0) === genAtStart) {
+      apiGetCache.set(key, {
+        expiresAt: Date.now() + ttlMs,
+        staleExpiresAt: Date.now() + ttlMs + Math.max(staleTtlMs, ttlMs),
+        lastAccessAt: Date.now(),
+        value: fresh,
+      });
+      pruneGetCache();
+    }
     return fresh;
   })();
 
@@ -341,12 +348,22 @@ export function isAbortError(error: unknown) {
 export function clearApiCache(prefix?: string) {
   if (!prefix) {
     apiGetCache.clear();
+    apiGetInFlight.clear();
+    apiCacheGeneration.clear();
     return;
   }
 
   for (const key of apiGetCache.keys()) {
     if (key.includes(`|${prefix}`)) {
       apiGetCache.delete(key);
+      apiCacheGeneration.set(key, (apiCacheGeneration.get(key) ?? 0) + 1);
+    }
+  }
+
+  for (const key of apiGetInFlight.keys()) {
+    if (key.includes(`|${prefix}`)) {
+      apiGetInFlight.delete(key);
+      apiCacheGeneration.set(key, (apiCacheGeneration.get(key) ?? 0) + 1);
     }
   }
 }

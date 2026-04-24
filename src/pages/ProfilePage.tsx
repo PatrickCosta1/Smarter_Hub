@@ -92,6 +92,7 @@ const profileFieldLabels: Partial<Record<keyof ProfileData, string>> = {
   contactoEmergenciaNumero: 'Contacto de emergência - número',
   cargo: 'Cargo',
   categoriaProfissional: 'Categoria profissional',
+  numeroMecanografico: 'Número mecanográfico',
   funcao: 'Função',
   dataInicioContrato: 'Data de início do contrato',
   dataFimContrato: 'Data de fim do contrato',
@@ -533,8 +534,10 @@ export default function ProfilePage() {
   type PendingChangeDetail = { fieldKey: string; field: string; oldValue: string; newValue: string };
   const [hasPendingRequest, setHasPendingRequest] = useState(false);
   const [pendingRequestLabel, setPendingRequestLabel] = useState('');
+  const [pendingRequestCreatedAt, setPendingRequestCreatedAt] = useState('');
   const [pendingChanges, setPendingChanges] = useState<string[]>([]);
   const [pendingChangeDetails, setPendingChangeDetails] = useState<PendingChangeDetail[]>([]);
+  const [isPendingRequestSyncing, setIsPendingRequestSyncing] = useState(false);
   const [isPendingDetailOpen, setIsPendingDetailOpen] = useState(false);
   const [isRequestFeedbackOpen, setIsRequestFeedbackOpen] = useState(false);
   const [showSeparateAddresses, setShowSeparateAddresses] = useState(false);
@@ -590,10 +593,92 @@ export default function ProfilePage() {
 
   const collaboratorName = useMemo(() => `${draftProfile.nomeCompleto} ${draftProfile.nomeAbreviado}`.trim(), [draftProfile.nomeAbreviado, draftProfile.nomeCompleto]);
   const hasUnsavedChanges = useMemo(() => JSON.stringify(draftProfile) !== JSON.stringify(profile), [draftProfile, profile]);
+  const pendingRequestCreatedLabel = useMemo(() => {
+    if (!pendingRequestCreatedAt) {
+      return '';
+    }
+
+    const parsedDate = new Date(pendingRequestCreatedAt);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return '';
+    }
+
+    return new Intl.DateTimeFormat('pt-PT', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(parsedDate);
+  }, [pendingRequestCreatedAt]);
   const sortedOwnTrainings = useMemo(
     () => [...ownTrainings].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
     [ownTrainings],
   );
+
+  function buildPendingChangeDetailsFromProfileDiff(currentProfile: ProfileData, nextProfile: ProfileData): PendingChangeDetail[] {
+    const keys = Object.keys(nextProfile) as Array<keyof ProfileData>;
+
+    return keys
+      .filter((key) => String(currentProfile[key] || '').trim() !== String(nextProfile[key] || '').trim())
+      .map((key) => ({
+        fieldKey: key,
+        field: profileFieldLabels[key] ?? key,
+        oldValue: String(currentProfile[key] || '').trim() || '(vazio)',
+        newValue: String(nextProfile[key] || '').trim() || '(vazio)',
+      }));
+  }
+
+  function applyPendingRequestPayload(payload: {
+    pending?: boolean;
+    request?: {
+      changesSummary?: string;
+      createdAt?: string;
+      changeDetails?: Array<{ fieldKey: string; field: string; oldValue: string; newValue: string }>;
+    } | null;
+  }) {
+    const pending = Boolean(payload.pending);
+    setHasPendingRequest(pending);
+    setPendingRequestLabel(pending ? payload.request?.changesSummary || 'Pedido de alteração em análise pela equipa RH.' : '');
+    setPendingRequestCreatedAt(pending ? payload.request?.createdAt || '' : '');
+    const details = payload.request?.changeDetails ?? [];
+    setPendingChangeDetails(details);
+    setPendingChanges(details.map((item) => item.field));
+  }
+
+  async function syncPendingRequestState(options?: { signal?: AbortSignal; forceRefresh?: boolean }) {
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    if (!token) {
+      return;
+    }
+
+    setIsPendingRequestSyncing(true);
+    try {
+      const payload = await apiRequestCached<{
+        pending?: boolean;
+        request?: {
+          changesSummary?: string;
+          createdAt?: string;
+          changeDetails?: Array<{ fieldKey: string; field: string; oldValue: string; newValue: string }>;
+        } | null;
+      }>('/profile/requests/me', {
+        headers: authHeaders(token),
+        signal: options?.signal,
+      }, 15000, options?.forceRefresh === true);
+
+      applyPendingRequestPayload(payload);
+    } catch (error) {
+      if (isAbortError(error) || options?.signal?.aborted) {
+        return;
+      }
+
+      // Silencioso para não bloquear a edição da ficha se este fetch falhar.
+    } finally {
+      if (!options?.signal?.aborted) {
+        setIsPendingRequestSyncing(false);
+      }
+    }
+  }
 
   useEffect(() => {
     setDraftProfile(profile);
@@ -607,45 +692,23 @@ export default function ProfilePage() {
   }, [profile.endereco, profile.moradaFiscal]);
 
   useEffect(() => {
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
-    if (!token) {
-      return;
-    }
-
     const controller = new AbortController();
-
-    (async () => {
-      try {
-        const payload = await apiRequestCached<{
-          pending?: boolean;
-          request?: {
-            changesSummary?: string;
-            createdAt?: string;
-            changeDetails?: Array<{ fieldKey: string; field: string; oldValue: string; newValue: string }>;
-          } | null;
-        }>('/profile/requests/me', {
-          headers: authHeaders(token),
-          signal: controller.signal,
-        }, 15000);
-
-        const pending = Boolean(payload.pending);
-        setHasPendingRequest(pending);
-        const summary = pending ? payload.request?.changesSummary || 'Pedido de alteração em análise pela equipa RH.' : '';
-        setPendingRequestLabel(summary);
-        const details = payload.request?.changeDetails ?? [];
-        setPendingChangeDetails(details);
-        setPendingChanges(details.map((d) => d.field));
-      } catch (error) {
-        if (isAbortError(error) || controller.signal.aborted) {
-          return;
-        }
-
-        // Silencioso para não bloquear a edição da ficha se este fetch falhar.
-      }
-    })();
+    void syncPendingRequestState({ signal: controller.signal });
 
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    if (!isPendingDetailOpen) {
+      return;
+    }
+
+    if (pendingChangeDetails.length > 0) {
+      return;
+    }
+
+    void syncPendingRequestState({ forceRefresh: true });
+  }, [isPendingDetailOpen, pendingChangeDetails.length]);
 
   useEffect(() => {
     const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
@@ -966,11 +1029,16 @@ export default function ProfilePage() {
     }
 
     if (requestMode) {
+      const immediateDetails = buildPendingChangeDetailsFromProfileDiff(profile, draftProfile);
       setHasPendingRequest(true);
       setPendingRequestLabel(result.message || 'Pedido enviado para aprovação.');
+      setPendingRequestCreatedAt(new Date().toISOString());
+      setPendingChangeDetails(immediateDetails);
+      setPendingChanges(immediateDetails.map((item) => item.field));
       setDraftProfile(profile);
       closeAllEditingSections();
       setIsRequestFeedbackOpen(true);
+      void syncPendingRequestState({ forceRefresh: true });
       return;
     }
 
@@ -1040,6 +1108,11 @@ export default function ProfilePage() {
               <button type="button" className="pending-modal__close" onClick={() => setIsPendingDetailOpen(false)} aria-label="Fechar">×</button>
             </div>
             <p className="pending-modal__sub">Alterações submetidas e pendentes de aprovação pela equipa RH.</p>
+            <div className="pending-modal__summary" aria-live="polite">
+              <span className="pending-modal__summary-item">{pendingChangeDetails.length} alteração(ões)</span>
+              {pendingRequestCreatedLabel && <span className="pending-modal__summary-item">Submetido em {pendingRequestCreatedLabel}</span>}
+              {isPendingRequestSyncing && <span className="pending-modal__summary-item pending-modal__summary-item--sync">A sincronizar detalhes...</span>}
+            </div>
             {pendingChangeDetails.length > 0 ? (
               <div className="pending-modal__table-wrap">
                 <table className="pending-modal__table">
@@ -1062,7 +1135,7 @@ export default function ProfilePage() {
                 </table>
               </div>
             ) : (
-              <p className="pending-modal__empty">Detalhes do pedido indisponíveis.</p>
+              <p className="pending-modal__empty">Ainda a sincronizar os detalhes do pedido. Tente novamente dentro de alguns segundos.</p>
             )}
             <div className="pending-modal__footer">
               <button type="button" className="pending-modal__dismiss" onClick={() => setIsPendingDetailOpen(false)}>Fechar</button>
@@ -1456,6 +1529,15 @@ export default function ProfilePage() {
               {profileErrors.funcao && <small>{profileErrors.funcao}</small>}
             </label>
             <label>
+              <span>Número mecanográfico</span>
+              <input
+                type="text"
+                value={draftProfile.numeroMecanografico}
+                disabled={!canEditContract || !editingSections.contract}
+                onChange={(event) => handleProfileChange('numeroMecanografico', event.target.value)}
+              />
+            </label>
+            <label>
               <span>Data início do contrato</span>
               <input type="date" value={draftProfile.dataInicioContrato} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('dataInicioContrato', event.target.value)} />
               {profileErrors.dataInicioContrato && <small>{profileErrors.dataInicioContrato}</small>}
@@ -1569,10 +1651,44 @@ export default function ProfilePage() {
         <article className="profile-card profile-card--full">
           <div className="section-headline">
             <h2>8. Pedido de Benefícios</h2>
+            {canEdit && (
+              <button className={`section-edit-button${editingSections.benefits ? ' is-active' : ''}`} type="button" onClick={() => toggleSectionEdit('benefits')}>
+                ✏️
+              </button>
+            )}
           </div>
-          <div className="profile-trainings-empty">
-            <strong>Em breve</strong>
-            <p>Esta secção ficará disponível numa próxima fase.</p>
+          <div className="profile-fields profile-fields--2">
+            <label>
+              <span>Número do Cartão Continente</span>
+              <input
+                type="text"
+                value={draftProfile.numeroCartaoContinente}
+                disabled={!editingSections.benefits}
+                onChange={(event) => handleProfileChange('numeroCartaoContinente', event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Voucher NOS</span>
+              <input
+                type="text"
+                value={draftProfile.voucherNosData}
+                disabled={!editingSections.benefits}
+                onChange={(event) => handleProfileChange('voucherNosData', event.target.value)}
+                placeholder="Ex.: 2026-05, código ou referência"
+              />
+            </label>
+            <label className="field-span-2">
+              <span>Comprovativo Cartão Continente (PDF/JPG)</span>
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg"
+                disabled={!editingSections.benefits}
+                onClick={handleFileInputClick}
+                onChange={(event) => handleFileChange('comprovativoCartaoContinente', event)}
+              />
+              {renderFileLink(draftProfile.comprovativoCartaoContinente)}
+              {profileErrors.comprovativoCartaoContinente && <small>{profileErrors.comprovativoCartaoContinente}</small>}
+            </label>
           </div>
         </article>
         )}

@@ -971,16 +971,35 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       where: collaboratorWhere,
       select: {
         id: true,
+        username: true,
+        email: true,
+        role: true,
         isActive: true,
-        team: { select: { name: true } },
+        team: { select: { id: true, name: true } },
+        teamMemberships: {
+          where: { isActive: true },
+          select: {
+            team: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
         profile: {
           select: {
+            nomeAbreviado: true,
+            nomeCompleto: true,
             dataNascimento: true,
             dataInicioContrato: true,
             genero: true,
             habilitacoesLiterarias: true,
             cargo: true,
             categoriaProfissional: true,
+            numeroMecanografico: true,
+            localidade: true,
+            workCountry: true,
             funcao: true,
           },
         },
@@ -1057,6 +1076,205 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
   ]);
 
   const collaboratorRows = usersResult.status === 'fulfilled' ? usersResult.value : [];
+
+  const filterSearch = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+  const filterTeamId = typeof req.query.teamId === 'string' ? req.query.teamId.trim() : '';
+  const filterRole = typeof req.query.role === 'string' ? req.query.role.trim().toUpperCase() : '';
+  const filterGender = typeof req.query.gender === 'string' ? req.query.gender.trim() : '';
+  const filterFunction = typeof req.query.function === 'string' ? req.query.function.trim() : '';
+  const filterGeography = typeof req.query.geography === 'string' ? req.query.geography.trim() : '';
+  const filterLevel = typeof req.query.level === 'string' ? req.query.level.trim() : '';
+  const filterIsActive = typeof req.query.isActive === 'string' ? req.query.isActive.trim().toLowerCase() : '';
+
+  const getDisplayName = (user: typeof collaboratorRows[number]) => (
+    user.profile?.nomeAbreviado?.trim()
+      || user.profile?.nomeCompleto?.trim()
+      || user.username
+  );
+
+  const getUserTeams = (user: typeof collaboratorRows[number]) => {
+    const map = new Map<string, { id: string; name: string }>();
+
+    if (user.team?.id && user.team?.name) {
+      map.set(user.team.id, { id: user.team.id, name: user.team.name });
+    }
+
+    for (const membership of user.teamMemberships) {
+      if (membership.team?.id && membership.team?.name) {
+        map.set(membership.team.id, { id: membership.team.id, name: membership.team.name });
+      }
+    }
+
+    return Array.from(map.values());
+  };
+
+  const getHierarchyLevel = (user: typeof collaboratorRows[number]) => (
+    user.profile?.cargo?.trim()
+      || user.profile?.categoriaProfissional?.trim()
+      || user.role
+  );
+
+  const getGeography = (user: typeof collaboratorRows[number]) => (
+    user.profile?.localidade?.trim()
+      || user.profile?.workCountry
+      || 'Não informado'
+  );
+
+  const getFunction = (user: typeof collaboratorRows[number]) => (
+    user.profile?.funcao?.trim()
+      || 'Não informado'
+  );
+
+  const buildDistribution = (
+    rows: typeof collaboratorRows,
+    getLabel: (item: typeof collaboratorRows[number]) => string,
+  ) => {
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      const label = getLabel(row).trim() || 'Não informado';
+      map.set(label, (map.get(label) || 0) + 1);
+    }
+
+    const total = rows.length;
+    return Array.from(map.entries())
+      .map(([label, count]) => ({
+        label,
+        count,
+        share: total > 0 ? (count / total) * 100 : 0,
+      }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  };
+
+  const buildCharacterization = (rows: typeof collaboratorRows) => {
+    const ageValues = rows
+      .map((item) => parseIsoDate(item.profile?.dataNascimento || ''))
+      .filter((value): value is Date => value !== null)
+      .map((birthDate) => yearsBetween(birthDate));
+
+    const tenureValues = rows
+      .map((item) => parseIsoDate(item.profile?.dataInicioContrato || ''))
+      .filter((value): value is Date => value !== null)
+      .map((startDate) => yearsBetween(startDate));
+
+    const activeCount = rows.filter((item) => item.isActive !== false).length;
+    const total = rows.length;
+
+    return {
+      headcount: total,
+      averages: {
+        age: average(ageValues),
+        tenure: average(tenureValues),
+      },
+      retentionRate: total > 0 ? (activeCount / total) * 100 : 0,
+      distributions: {
+        hierarchy: buildDistribution(rows, getHierarchyLevel),
+        geography: buildDistribution(rows, getGeography),
+        gender: buildDistribution(rows, (item) => normalizeGender(item.profile?.genero)),
+        function: buildDistribution(rows, getFunction),
+      },
+    };
+  };
+
+  const teamOptions = Array.from(new Map(
+    collaboratorRows
+      .flatMap((item) => getUserTeams(item))
+      .map((team) => [team.id, team]),
+  ).values()).sort((a, b) => a.name.localeCompare(b.name));
+
+  const levelOptions = Array.from(new Set(collaboratorRows.map((item) => getHierarchyLevel(item)).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b));
+  const geographyOptions = Array.from(new Set(collaboratorRows.map((item) => getGeography(item)).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b));
+  const functionOptions = Array.from(new Set(collaboratorRows.map((item) => getFunction(item)).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b));
+  const genderOptions = Array.from(new Set(collaboratorRows.map((item) => normalizeGender(item.profile?.genero))))
+    .sort((a, b) => a.localeCompare(b));
+
+  const selectedRows = collaboratorRows.filter((item) => {
+    const teams = getUserTeams(item);
+
+    if (filterTeamId && !teams.some((team) => team.id === filterTeamId)) {
+      return false;
+    }
+
+    if (filterRole && item.role !== filterRole) {
+      return false;
+    }
+
+    if (filterGender && normalizeGender(item.profile?.genero) !== filterGender) {
+      return false;
+    }
+
+    if (filterFunction && getFunction(item) !== filterFunction) {
+      return false;
+    }
+
+    if (filterGeography && getGeography(item) !== filterGeography) {
+      return false;
+    }
+
+    if (filterLevel && getHierarchyLevel(item) !== filterLevel) {
+      return false;
+    }
+
+    if (filterIsActive === 'active' && item.isActive === false) {
+      return false;
+    }
+
+    if (filterIsActive === 'inactive' && item.isActive !== false) {
+      return false;
+    }
+
+    if (!filterSearch) {
+      return true;
+    }
+
+    const haystack = [
+      getDisplayName(item),
+      item.username,
+      item.email,
+      teams.map((team) => team.name).join(' '),
+      getHierarchyLevel(item),
+      getFunction(item),
+      getGeography(item),
+      item.profile?.numeroMecanografico || '',
+    ].join(' ').toLowerCase();
+
+    return haystack.includes(filterSearch);
+  });
+
+  const selectedTeamName = filterTeamId
+    ? (teamOptions.find((team) => team.id === filterTeamId)?.name || 'Equipa filtrada')
+    : 'Todas as equipas';
+
+  const teamInsights = {
+    appliedFilters: {
+      search: filterSearch,
+      teamId: filterTeamId,
+      role: filterRole,
+      gender: filterGender,
+      function: filterFunction,
+      geography: filterGeography,
+      level: filterLevel,
+      isActive: filterIsActive,
+    },
+    selectedTeamName,
+    availableFilters: {
+      teams: teamOptions,
+      roles: ['COLABORADOR', 'MANAGER', 'COORDENADOR', 'ADMIN'],
+      genders: genderOptions,
+      functions: functionOptions,
+      geographies: geographyOptions,
+      levels: levelOptions,
+      activeStates: [
+        { value: 'all', label: 'Todos' },
+        { value: 'active', label: 'Ativos' },
+        { value: 'inactive', label: 'Inativos' },
+      ],
+    },
+    selected: buildCharacterization(selectedRows),
+    company: buildCharacterization(collaboratorRows),
+  };
   const teamCount = new Set(
     collaboratorRows
       .map((item) => item.team?.name?.trim())
@@ -1232,6 +1450,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       timeInCurrentLevelByCargo,
     },
     recentPromotions: promotionEvents.slice(0, 8),
+    teamInsights,
   });
 });
 
@@ -1489,6 +1708,7 @@ router.get('/teams/me', requireAuth, async (req, res) => {
               profile: {
                 select: {
                   nomeAbreviado: true, nomeCompleto: true,
+                  dataNascimento: true,
                   nacionalidade: true,
                   cargo: true,
                   categoriaProfissional: true,
@@ -1602,6 +1822,7 @@ router.get('/teams/me/:teamId', requireAuth, async (req, res) => {
               profile: {
                 select: {
                   nomeAbreviado: true, nomeCompleto: true,
+                  dataNascimento: true,
                   nacionalidade: true,
                   cargo: true,
                   categoriaProfissional: true,

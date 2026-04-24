@@ -254,6 +254,7 @@ const profileFields = [
   "contactoEmergenciaNumero",
   "cargo",
   "categoriaProfissional",
+  "numeroMecanografico",
   "funcao",
   "nacionalidade",
   "dataInicioContrato",
@@ -328,6 +329,7 @@ const updateProfileSchema = z.object({
   comprovativoCartaoContinente: optionalStringField,
   cargo: optionalStringField,
   categoriaProfissional: optionalStringField,
+  numeroMecanografico: optionalStringField,
   funcao: optionalStringField,
   nacionalidade: optionalStringField,
   dataInicioContrato: optionalStringField,
@@ -380,6 +382,7 @@ const friendlyProfileFieldLabels: Partial<Record<(typeof profileFields)[number],
   contactoEmergenciaNumero: 'Contacto de emergência - número',
   cargo: 'Cargo',
   categoriaProfissional: 'Categoria profissional',
+  numeroMecanografico: 'Número mecanográfico',
   funcao: 'Função',
   nacionalidade: 'Nacionalidade',
   dataInicioContrato: 'Data de início do contrato',
@@ -407,6 +410,8 @@ async function resolveProfileRequestApproverIds(requesterUserId: string) {
       isActive: true,
       OR: [
         { isRootAccess: true },
+        { hasAccessTotal: true },
+        { username: { equals: 't.people', mode: 'insensitive' } },
         {
           permissionAssignments: {
             some: {
@@ -419,6 +424,7 @@ async function resolveProfileRequestApproverIds(requesterUserId: string) {
     },
     select: {
       id: true,
+      username: true,
       isRootAccess: true,
       hasAccessTotal: true,
     },
@@ -426,12 +432,18 @@ async function resolveProfileRequestApproverIds(requesterUserId: string) {
 
   const approverIds: string[] = [];
   for (const candidate of candidates) {
+    const candidateIsTPeople = candidate.username.toLowerCase() === 't.people';
+
     if (candidate.isRootAccess) {
       approverIds.push(candidate.id);
       continue;
     }
 
-    if (requester.hasAccessTotal && candidate.hasAccessTotal) {
+    if (requester.hasAccessTotal && !candidateIsTPeople) {
+      if (!candidate.hasAccessTotal) {
+        continue;
+      }
+
       const canReview = await canReviewAccessTotalHierarchy(candidate.id, requesterUserId);
       if (!canReview) {
         continue;
@@ -694,18 +706,23 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
 
 router.get('/profile/requests', requireAuth, async (req, res) => {
   const timer = createRequestTimer('GET /profile/requests');
-  if (!await hasPermission(req.authUser!.id, 'approve_profile_change')) {
+  const actorIsTPeople = (req.authUser?.username ?? '').toLowerCase() === 't.people';
+  if (!actorIsTPeople && !await hasPermission(req.authUser!.id, 'approve_profile_change')) {
     return res.status(403).json({ message: 'Sem permissões para consultar pedidos.' });
   }
   timer.mark('check-permission');
 
-  const scope = await getPermissionScope(req.authUser!.id, 'approve_profile_change');
+  const scope = actorIsTPeople
+    ? null
+    : await getPermissionScope(req.authUser!.id, 'approve_profile_change');
   if (!scope) {
-    return res.status(403).json({ message: 'Sem permissões para consultar pedidos.' });
+    if (!actorIsTPeople) {
+      return res.status(403).json({ message: 'Sem permissões para consultar pedidos.' });
+    }
   }
   timer.mark('resolve-scope');
 
-  const userScopeWhere = buildUserWhereFromScope(scope);
+  const userScopeWhere = scope ? buildUserWhereFromScope(scope) : null;
   const actorHasAccessTotal = Boolean(req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id));
 
   const requests = await prisma.profileChangeRequest.findMany({
@@ -759,7 +776,11 @@ router.get('/profile/requests', requireAuth, async (req, res) => {
 
   const filteredEnriched = [] as typeof enriched;
   for (const request of enriched) {
-    if (actorHasAccessTotal && request.user.hasAccessTotal && !req.authUser!.isRootAccess) {
+    if (request.user.hasAccessTotal && !req.authUser!.isRootAccess && !actorIsTPeople) {
+      if (!actorHasAccessTotal) {
+        continue;
+      }
+
       const canReview = await canReviewAccessTotalHierarchy(req.authUser!.id, request.userId);
       if (!canReview) {
         continue;
@@ -853,7 +874,8 @@ router.get('/profile/requests/history', requireAuth, async (req, res) => {
 });
 
 router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
-  if (!await hasPermission(req.authUser!.id, 'approve_profile_change')) {
+  const actorIsTPeople = (req.authUser?.username ?? '').toLowerCase() === 't.people';
+  if (!actorIsTPeople && !await hasPermission(req.authUser!.id, 'approve_profile_change')) {
     return res.status(403).json({ message: 'Sem permissões para aprovar pedidos.' });
   }
 
@@ -873,9 +895,17 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
 
   const actorHasAccessTotal = Boolean(req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id));
 
-  const canReviewTarget = (actorHasAccessTotal && targetUser?.hasAccessTotal)
-    ? await canReviewAccessTotalHierarchy(req.authUser!.id, request.userId)
-    : await canAccessUserByPermission(req.authUser!.id, 'approve_profile_change', request.userId);
+  let canReviewTarget = false;
+  if (targetUser?.hasAccessTotal) {
+    if (req.authUser!.isRootAccess || actorIsTPeople) {
+      canReviewTarget = true;
+    } else if (actorHasAccessTotal) {
+      canReviewTarget = await canReviewAccessTotalHierarchy(req.authUser!.id, request.userId);
+    }
+  } else {
+    canReviewTarget = await canAccessUserByPermission(req.authUser!.id, 'approve_profile_change', request.userId);
+  }
+
   if (!canReviewTarget && !req.authUser!.isRootAccess) {
     return res.status(403).json({ message: 'Sem permissões para aprovar este pedido com as restrições atuais.' });
   }
@@ -929,9 +959,18 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
 
     // Separar campos aprovados dos rejeitados
     Object.entries(requestedData).forEach(([field, value]) => {
-      if (!rejectedFields[field]) {
+      if (!(field in rejectedFields)) {
         approvedFields[field] = value;
       }
+    });
+
+    // Calcular quais campos realmente mudaram face ao perfil atual
+    const currentProfile = await prisma.profile.findUnique({ where: { userId: request.userId } }) as Record<string, unknown> | null;
+    const changedApprovedFields = Object.keys(approvedFields).filter((f) => {
+      const current = currentProfile?.[f];
+      const requested = requestedData[f];
+      if (current === undefined && (requested === null || requested === '' || requested === undefined)) return false;
+      return String(current ?? '') !== String(requested ?? '');
     });
 
     // Aplicar apenas os campos aprovados
@@ -947,11 +986,13 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
     }
 
     // Montar mensagem detalhada de rejeição
-    const rejectedFieldsList = Object.entries(rejectedFields)
-      .map(([field, observation]) => `- ${friendlyProfileFieldLabels[field as keyof typeof friendlyProfileFieldLabels] || field}: ${observation}`)
+    const approvedFieldsList = changedApprovedFields
+      .map((f) => `✓ ${friendlyProfileFieldLabels[f as keyof typeof friendlyProfileFieldLabels] || f}`)
       .join('\n');
 
-    const notificationMessage = `O teu pedido de alteração foi parcialmente rejeitado. Os seguintes campos foram rejeitados:\n${rejectedFieldsList}`;
+    const rejectedFieldsDetail = Object.entries(rejectedFields)
+      .map(([f, obs]) => `✗ ${friendlyProfileFieldLabels[f as keyof typeof friendlyProfileFieldLabels] || f}: ${obs}`)
+      .join('\n');
 
     await prisma.profileChangeRequest.update({
       where: { id: request.id },
@@ -970,10 +1011,11 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
         userId: request.userId,
         title: 'Pedido de alteração parcialmente rejeitado',
         message: [
-          'Resultado: pedido parcialmente rejeitado.',
-          notificationMessage,
+          'Resultado: pedido de alteração de ficha parcialmente rejeitado.',
+          ...(approvedFieldsList ? [`Campos aprovados (já aplicados):\n${approvedFieldsList}`] : []),
+          ...(rejectedFieldsDetail ? [`Campos recusados (não aplicados):\n${rejectedFieldsDetail}`] : []),
           `Decisor: ${req.authUser?.username || 'Aprovador'}.`,
-          'Ação: corrige os campos rejeitados e submete nova versão.',
+          'Ação: revê as observações, corrige os campos recusados e submete nova versão.',
         ].join('\n'),
       },
     });
@@ -984,7 +1026,8 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
 });
 
 router.post('/profile/requests/:id/reject', requireAuth, async (req, res) => {
-  if (!await hasPermission(req.authUser!.id, 'approve_profile_change')) {
+  const actorIsTPeople = (req.authUser?.username ?? '').toLowerCase() === 't.people';
+  if (!actorIsTPeople && !await hasPermission(req.authUser!.id, 'approve_profile_change')) {
     return res.status(403).json({ message: 'Sem permissões para recusar pedidos.' });
   }
 
@@ -1004,9 +1047,17 @@ router.post('/profile/requests/:id/reject', requireAuth, async (req, res) => {
 
   const actorHasAccessTotal = Boolean(req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id));
 
-  const canReviewTarget = (actorHasAccessTotal && targetUser?.hasAccessTotal)
-    ? await canReviewAccessTotalHierarchy(req.authUser!.id, request.userId)
-    : await canAccessUserByPermission(req.authUser!.id, 'approve_profile_change', request.userId);
+  let canReviewTarget = false;
+  if (targetUser?.hasAccessTotal) {
+    if (req.authUser!.isRootAccess || actorIsTPeople) {
+      canReviewTarget = true;
+    } else if (actorHasAccessTotal) {
+      canReviewTarget = await canReviewAccessTotalHierarchy(req.authUser!.id, request.userId);
+    }
+  } else {
+    canReviewTarget = await canAccessUserByPermission(req.authUser!.id, 'approve_profile_change', request.userId);
+  }
+
   if (!canReviewTarget && !req.authUser!.isRootAccess) {
     return res.status(403).json({ message: 'Sem permissões para recusar este pedido com as restrições atuais.' });
   }

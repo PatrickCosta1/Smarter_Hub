@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getBackendBase, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { MICROCOPY, resolveErrorMessage } from '../portal/microcopy';
@@ -107,6 +108,7 @@ function renderApprovalFieldValue(field: string, value: string) {
 
 export default function RHApprovalsPage() {
   const { hasPermission, isRootAccess, refreshNotifications } = usePortal();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<'profiles' | 'vacations'>('profiles');
   const [profileRequests, setProfileRequests] = useState<ProfileRequest[]>([]);
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([]);
@@ -129,10 +131,32 @@ export default function RHApprovalsPage() {
   const canReviewVacations = isRootAccess || hasPermission('approve_vacation') || hasPermission('reject_vacation') || hasPermission('view_all_vacations');
 
   useEffect(() => {
+    const requestedTab = searchParams.get('tab');
+
+    if (requestedTab === 'vacations' && canReviewVacations) {
+      setActiveTab('vacations');
+      return;
+    }
+
+    if (requestedTab === 'profiles' && canReviewProfiles) {
+      setActiveTab('profiles');
+      return;
+    }
+
     if (!canReviewProfiles && canReviewVacations) {
       setActiveTab('vacations');
     }
-  }, [canReviewProfiles, canReviewVacations]);
+  }, [canReviewProfiles, canReviewVacations, searchParams]);
+
+  useEffect(() => {
+    if (searchParams.get('tab') === activeTab) {
+      return;
+    }
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', activeTab);
+    setSearchParams(nextParams, { replace: true });
+  }, [activeTab, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!canReviewProfiles && !canReviewVacations) {
@@ -325,20 +349,6 @@ export default function RHApprovalsPage() {
 
   return (
     <section className="trainings-shell">
-      <header className="trainings-hero">
-        <div>
-          <p className="hero-kicker">Aprovações</p>
-          <h2>Aprovações</h2>
-          <p>Analisa e decide os pedidos pendentes do teu nível de responsabilidade.</p>
-        </div>
-
-        <div className="trainings-hours-summary">
-          <article>
-            <span>Pedidos em aberto</span>
-            <strong>{isLoadingData ? <LoadingInline variant="metric" /> : requestCount}</strong>
-          </article>
-        </div>
-      </header>
 
       <div className="rh-tabs">
         {canReviewProfiles && (

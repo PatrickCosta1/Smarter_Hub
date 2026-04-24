@@ -237,6 +237,19 @@ async function validateVacationCountryPolicy(params: {
     return [] as string[];
   }
 
+  // PT 30/04 deadline blocker (with test bypass for April)
+  if (params.country === 'PT') {
+    const today = new Date();
+    const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const deadline = '2026-04-30';
+    const currentMonth = today.getMonth() + 1; // 1-12
+    const bypassDeadline = process.env.VACATION_PT_DEADLINE_BYPASS === 'true' || currentMonth === 4;
+
+    if (todayIso > deadline && !bypassDeadline) {
+      throw new Error('Política PT: Pedidos de férias devem ser registados até 30 de abril. Prazo expirado para este ano.');
+    }
+  }
+
   const year = toLocalDate(params.dataInicio).getFullYear();
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
@@ -636,12 +649,15 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
       hasAccessTotal: true,
       accessTotalGrantedById: true,
       teamId: true,
+      profile: { select: { workCountry: true } },
     },
   });
 
   if (!requester) {
     return [] as Array<{ level: number; approverIds: string[] }>;
   }
+
+  const requesterCountry = requester.profile?.workCountry ?? 'PT';
 
   const requesterHasAccessTotal = Boolean(requester.hasAccessTotal);
 
@@ -671,6 +687,9 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
         id: { not: userId },
         isActive: true,
         OR: [{ isRootAccess: true }, { hasAccessTotal: true }],
+        profile: {
+          workCountry: requesterCountry,
+        },
       },
       select: {
         id: true,
@@ -700,6 +719,9 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
         username: {
           equals: 't.people',
           mode: 'insensitive',
+        },
+        profile: {
+          workCountry: requesterCountry,
         },
       },
       select: { id: true },
@@ -774,6 +796,11 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
       isEnabled: true,
       permission: {
         code: 'approve_vacation',
+      },
+      user: {
+        profile: {
+          workCountry: requesterCountry,
+        },
       },
     },
     select: {
@@ -1927,9 +1954,11 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
   }
 
   const id = typeof req.params.id === 'string' ? req.params.id : '';
-  const reason = typeof validation.data.reason === 'string' && validation.data.reason.trim()
-    ? validation.data.reason.trim()
-    : 'Pedido recusado.';
+  const reason = typeof validation.data.reason === 'string' ? validation.data.reason.trim() : '';
+
+  if (!reason) {
+    return res.status(400).json({ message: 'Motivo da rejeição é obrigatório.' });
+  }
 
   const vacation = await prisma.vacation.findUnique({
     where: { id },
@@ -2044,6 +2073,150 @@ router.post('/vacations/:id/reject', requireAuth, async (req: Request, res: Resp
   });
 
   return res.json({ success: true });
+});
+
+router.post('/vacations/:id/mark-processado', requireAuth, async (req: Request, res: Response) => {
+  const userId = req.authUser!.id;
+  const [isFullAccess, canManageVacations] = await Promise.all([
+    isAccessTotal(userId),
+    hasPermission(userId, 'manage_vacation_rules'),
+  ]);
+
+  if (!isFullAccess && !canManageVacations && !req.authUser!.isRootAccess) {
+    return res.status(403).json({ message: 'Sem permissões para marcar férias como processado.' });
+  }
+
+  const id = typeof req.params.id === 'string' ? req.params.id : '';
+
+  const vacation = await prisma.vacation.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      status: true,
+      userId: true,
+      processadoAt: true,
+      dataInicio: true,
+      dataFim: true,
+    },
+  });
+
+  if (!vacation) {
+    return res.status(404).json({ message: 'Pedido de férias não encontrado.' });
+  }
+
+  if (vacation.status !== 'APPROVED') {
+    return res.status(400).json({ message: 'Apenas pedidos aprovados podem ser marcados como processado.' });
+  }
+
+  if (vacation.processadoAt) {
+    return res.status(400).json({ message: 'Este pedido já foi marcado como processado.' });
+  }
+
+  const updated = await prisma.vacation.update({
+    where: { id },
+    data: {
+      processadoAt: new Date(),
+      processadoById: userId,
+    },
+  });
+
+  await prisma.notification.create({
+    data: {
+      userId: vacation.userId,
+      title: 'Férias processadas',
+      message: `Tuas férias de ${formatIsoDatePt(vacation.dataInicio)} até ${formatIsoDatePt(vacation.dataFim)} foram marcadas como processadas. Confirmação de realização será solicitada após o período.`,
+    },
+  });
+
+  return res.json({ success: true, data: updated });
+});
+
+router.post('/vacations/:id/mark-realizado', requireAuth, async (req: Request, res: Response) => {
+  const userId = req.authUser!.id;
+  const id = typeof req.params.id === 'string' ? req.params.id : '';
+
+  const vacation = await prisma.vacation.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      status: true,
+      userId: true,
+      dataFim: true,
+      realizadoByIds: true,
+      processadoAt: true,
+    },
+  });
+
+  if (!vacation) {
+    return res.status(404).json({ message: 'Pedido de férias não encontrado.' });
+  }
+
+  if (vacation.status !== 'APPROVED') {
+    return res.status(400).json({ message: 'Apenas pedidos aprovados podem ser marcados como realizado.' });
+  }
+
+  if (!vacation.processadoAt) {
+    return res.status(400).json({ message: 'Este pedido ainda não foi processado. Aguarde confirmação de pagamento da RH.' });
+  }
+
+  // Dual-confirm logic: first collaborator confirms, then RH validates
+  const realizadoByIds: string[] = vacation.realizadoByIds ? JSON.parse(vacation.realizadoByIds as any) : [];
+  const isCollaboratorConfirm = vacation.userId === userId;
+  const isRHConfirm = !isCollaboratorConfirm && (req.authUser!.isRootAccess || await isAccessTotal(userId));
+
+  if (!isCollaboratorConfirm && !isRHConfirm) {
+    return res.status(403).json({ message: 'Sem permissões para confirmar realização.' });
+  }
+
+  if (realizadoByIds.includes(userId)) {
+    return res.status(400).json({ message: 'Tu já confirmaste a realização deste período.' });
+  }
+
+  realizadoByIds.push(userId);
+
+  const isFullyConfirmed = realizadoByIds.length >= 2; // Both collab and RH
+
+  const updated = await prisma.vacation.update({
+    where: { id },
+    data: {
+      realizadoByIds: JSON.stringify(realizadoByIds),
+      ...(isFullyConfirmed ? { realizadoAt: new Date() } : {}),
+    },
+  });
+
+  if (isCollaboratorConfirm) {
+    // Notify RH to validate
+    const rhUsers = await prisma.user.findMany({
+      where: {
+        isActive: true,
+        OR: [{ isRootAccess: true }, { hasAccessTotal: true }],
+      },
+      select: { id: true },
+    });
+
+    for (const rh of rhUsers) {
+      if (rh.id !== vacation.userId) {
+        await prisma.notification.create({
+          data: {
+            userId: rh.id,
+            title: 'Confirmação de realização de férias pendente',
+            message: `O colaborador confirmou que realizou as suas férias. Favor validar a realização.`,
+          },
+        });
+      }
+    }
+  } else if (isRHConfirm && isFullyConfirmed) {
+    // Notify collaborator that vacation is fully confirmed
+    await prisma.notification.create({
+      data: {
+        userId: vacation.userId,
+        title: 'Férias validadas',
+        message: 'Tuas férias foram validadas e finalizadas. Obrigado!',
+      },
+    });
+  }
+
+  return res.json({ success: true, data: updated, fully_confirmed: isFullyConfirmed });
 });
 
 router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) => {

@@ -115,6 +115,7 @@ export const initialProfileData: ProfileData = {
   contactoEmergenciaNumero: '',
   cargo: '',
   categoriaProfissional: '',
+  numeroMecanografico: '',
   funcao: '',
   dataInicioContrato: '',
   dataFimContrato: '',

@@ -45,6 +45,7 @@ const profileKeys: Array<keyof ProfileData> = [
   'contactoEmergenciaNumero',
   'cargo',
   'categoriaProfissional',
+  'numeroMecanografico',
   'funcao',
   'dataInicioContrato',
   'dataFimContrato',
@@ -446,12 +447,12 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     } finally {
       if (notificationsPostMutationSyncTimeoutRef.current !== null) {
         window.clearTimeout(notificationsPostMutationSyncTimeoutRef.current);
+        notificationsPostMutationSyncTimeoutRef.current = null;
       }
 
-      notificationsPostMutationSyncTimeoutRef.current = window.setTimeout(() => {
-        notificationsPostMutationSyncTimeoutRef.current = null;
-        void refreshNotifications(authToken, false);
-      }, 2500);
+      // Evita piscar de itens apagados por leitura de cache stale logo após mutações.
+      clearApiCache('/notifications/me');
+      void refreshNotifications(authToken, true);
     }
   }, [authToken, refreshNotifications]);
 

@@ -44,21 +44,26 @@ export default function HomePage() {
     : shortName || fullName || currentUser?.username || 'Colaborador';
   const [pendingProfileRequests, setPendingProfileRequests] = useState(0);
   const [pendingVacationRequests, setPendingVacationRequests] = useState(0);
+  const [pendingProfileApprovals, setPendingProfileApprovals] = useState(0);
+  const [pendingVacationApprovals, setPendingVacationApprovals] = useState(0);
   const [assignedTrainings, setAssignedTrainings] = useState(0);
   const [ownPendingProfileRequest, setOwnPendingProfileRequest] = useState(false);
+  const [ownPendingVacationCount, setOwnPendingVacationCount] = useState(0);
   const [isLoadingPendingProfileRequests, setIsLoadingPendingProfileRequests] = useState(true);
   const [isLoadingPendingVacationRequests, setIsLoadingPendingVacationRequests] = useState(true);
   const [isLoadingAssignedTrainings, setIsLoadingAssignedTrainings] = useState(true);
   const [isLoadingOwnPendingProfileRequest, setIsLoadingOwnPendingProfileRequest] = useState(true);
 
   const totalPending = useMemo(
-    () => (isManagerFlow ? pendingProfileRequests + pendingVacationRequests : Number(ownPendingProfileRequest)),
-    [isManagerFlow, ownPendingProfileRequest, pendingProfileRequests, pendingVacationRequests],
+    () => (isManagerFlow ? pendingProfileApprovals + pendingVacationApprovals : Number(ownPendingProfileRequest)),
+    [isManagerFlow, ownPendingProfileRequest, pendingProfileApprovals, pendingVacationApprovals],
   );
 
   const isLoadingMetrics = isManagerFlow || isTPeople
-    ? isLoadingPendingProfileRequests || isLoadingPendingVacationRequests || isLoadingAssignedTrainings
+    ? isLoadingPendingProfileRequests || isLoadingPendingVacationRequests || isLoadingAssignedTrainings || isLoadingOwnPendingProfileRequest
     : isLoadingOwnPendingProfileRequest;
+  const approvalsDefaultTab = pendingVacationApprovals > 0 && pendingProfileApprovals === 0 ? 'vacations' : 'profiles';
+  const approvalsDefaultPath = `/aprovacoes?tab=${approvalsDefaultTab}`;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -74,74 +79,91 @@ export default function HomePage() {
 
         if (canViewUserList) {
           try {
-            const summary = await apiRequestCached<DashboardSummaryMetrics>('/users/dashboard-summary', {
-              headers,
-              signal: controller.signal,
-            }, 15000);
+            const [summary, profileApprovals, vacationApprovals, ownRequest, ownVacations] = await Promise.all([
+              apiRequestCached<DashboardSummaryMetrics>('/users/dashboard-summary', {
+                headers,
+                signal: controller.signal,
+              }, 15000, true),
+              apiRequestCached<unknown[]>('/profile/requests', { headers, signal: controller.signal }, 15000, true),
+              apiRequestCached<unknown[]>('/vacations/requests', { headers, signal: controller.signal }, 15000, true),
+              apiRequestCached<{ pending?: boolean }>('/profile/requests/me', { headers, signal: controller.signal }, 15000),
+              apiRequestCached<Array<{ status: string }>>('/vacations/me', { headers, signal: controller.signal }, 15000),
+            ]);
 
             if (!controller.signal.aborted) {
               setPendingProfileRequests(Number(summary.totals?.pendingProfileRequests || 0));
               setPendingVacationRequests(Number(summary.totals?.pendingVacationRequests || 0));
+              setPendingProfileApprovals(profileApprovals.length);
+              setPendingVacationApprovals(vacationApprovals.length);
               setAssignedTrainings(Number(summary.totals?.trainingsAssigned || 0));
+              setOwnPendingProfileRequest(Boolean(ownRequest.pending));
+              setOwnPendingVacationCount(ownVacations.filter((v) => v.status === 'PENDING').length);
             }
           } catch (error) {
             if (!isAbortError(error) && !controller.signal.aborted) {
               setPendingProfileRequests(0);
               setPendingVacationRequests(0);
+              setPendingProfileApprovals(0);
+              setPendingVacationApprovals(0);
               setAssignedTrainings(0);
+              setOwnPendingProfileRequest(false);
+              setOwnPendingVacationCount(0);
             }
           } finally {
             if (!controller.signal.aborted) {
               setIsLoadingPendingProfileRequests(false);
               setIsLoadingPendingVacationRequests(false);
               setIsLoadingAssignedTrainings(false);
+              setIsLoadingOwnPendingProfileRequest(false);
             }
           }
         } else {
-          const [profileRequestsResult, vacationRequestsResult, assignedTrainingsResult] = await Promise.allSettled([
-            apiRequestCached<unknown[]>('/profile/requests', { headers, signal: controller.signal }, 15000),
-            apiRequestCached<unknown[]>('/vacations/requests', { headers, signal: controller.signal }, 15000),
+          const [profileRequestsResult, vacationRequestsResult, assignedTrainingsResult, ownRequestResult, ownVacationsResult] = await Promise.allSettled([
+            apiRequestCached<unknown[]>('/profile/requests', { headers, signal: controller.signal }, 15000, true),
+            apiRequestCached<unknown[]>('/vacations/requests', { headers, signal: controller.signal }, 15000, true),
             apiRequestCached<Array<{ status?: string }>>('/trainings/assigned', { headers, signal: controller.signal }, 15000),
+            apiRequestCached<{ pending?: boolean }>('/profile/requests/me', { headers, signal: controller.signal }, 15000),
+            apiRequestCached<Array<{ status: string }>>('/vacations/me', { headers, signal: controller.signal }, 15000),
           ]);
 
           if (!controller.signal.aborted) {
             setPendingProfileRequests(profileRequestsResult.status === 'fulfilled' ? profileRequestsResult.value.length : 0);
             setPendingVacationRequests(vacationRequestsResult.status === 'fulfilled' ? vacationRequestsResult.value.length : 0);
+            setPendingProfileApprovals(profileRequestsResult.status === 'fulfilled' ? profileRequestsResult.value.length : 0);
+            setPendingVacationApprovals(vacationRequestsResult.status === 'fulfilled' ? vacationRequestsResult.value.length : 0);
             setAssignedTrainings(
               assignedTrainingsResult.status === 'fulfilled'
                 ? assignedTrainingsResult.value.filter((item) => item.status === 'ASSIGNED').length
                 : 0,
             );
+            setOwnPendingProfileRequest(ownRequestResult.status === 'fulfilled' ? Boolean(ownRequestResult.value.pending) : false);
+            setOwnPendingVacationCount(ownVacationsResult.status === 'fulfilled' ? ownVacationsResult.value.filter((v) => v.status === 'PENDING').length : 0);
             setIsLoadingPendingProfileRequests(false);
             setIsLoadingPendingVacationRequests(false);
             setIsLoadingAssignedTrainings(false);
+            setIsLoadingOwnPendingProfileRequest(false);
           }
         }
-
-        setOwnPendingProfileRequest(false);
-        setIsLoadingOwnPendingProfileRequest(false);
         return;
       }
 
-      void apiRequestCached<{ pending?: boolean }>('/profile/requests/me', { headers: getAuthHeaders(), signal: controller.signal }, 15000)
-        .then((ownRequest) => {
-          if (!controller.signal.aborted) {
-            setOwnPendingProfileRequest(Boolean(ownRequest.pending));
-          }
-        })
-        .catch((error) => {
-          if (!isAbortError(error) && !controller.signal.aborted) {
-            setOwnPendingProfileRequest(false);
-          }
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) {
-            setIsLoadingOwnPendingProfileRequest(false);
-          }
-        });
+      const headers = getAuthHeaders();
+      void Promise.allSettled([
+        apiRequestCached<{ pending?: boolean }>('/profile/requests/me', { headers, signal: controller.signal }, 15000),
+        apiRequestCached<Array<{ status: string }>>('/vacations/me', { headers, signal: controller.signal }, 15000),
+      ]).then(([profileResult, vacationsResult]) => {
+        if (!controller.signal.aborted) {
+          setOwnPendingProfileRequest(profileResult.status === 'fulfilled' ? Boolean(profileResult.value.pending) : false);
+          setOwnPendingVacationCount(vacationsResult.status === 'fulfilled' ? vacationsResult.value.filter((v) => v.status === 'PENDING').length : 0);
+          setIsLoadingOwnPendingProfileRequest(false);
+          setIsLoadingPendingVacationRequests(false);
+        }
+      });
 
       setPendingProfileRequests(0);
       setPendingVacationRequests(0);
+      setPendingProfileApprovals(0);
+      setPendingVacationApprovals(0);
       setAssignedTrainings(0);
     })();
 
@@ -166,7 +188,7 @@ export default function HomePage() {
                 ? 'Visão global da organização com foco em decisões e operação.'
                 : isManagerFlow
                   ? 'Consulta as pendências da equipa e age com rapidez.'
-                  : 'O teu espaço pessoal — ficha, férias, formações e notificações.'}
+                  : 'O teu espaço pessoal - ficha, férias, formações e notificações.'}
             </p>
           </div>
 
@@ -179,13 +201,20 @@ export default function HomePage() {
               </>
             ) : isManagerFlow || isTPeople ? (
               <>
-                <div className={`home-metric${pendingProfileRequests > 0 ? ' home-metric--alert' : ''}`}>
-                  <span>Fichas pendentes</span>
-                  <strong>{pendingProfileRequests}</strong>
-                </div>
-                <div className={`home-metric${pendingVacationRequests > 0 ? ' home-metric--alert' : ''}`}>
+                {isTPeople ? (
+                  <div className={`home-metric${pendingProfileRequests > 0 ? ' home-metric--alert' : ''}`}>
+                    <span>Fichas pendentes</span>
+                    <strong>{pendingProfileRequests}</strong>
+                  </div>
+                ) : (
+                  <div className={`home-metric${ownPendingProfileRequest ? ' home-metric--alert' : ''}`}>
+                    <span>Minha ficha</span>
+                    <strong>{ownPendingProfileRequest ? 'Em análise' : 'OK'}</strong>
+                  </div>
+                )}
+                <div className={`home-metric${ownPendingVacationCount > 0 ? ' home-metric--alert' : ''}`}>
                   <span>Férias pendentes</span>
-                  <strong>{pendingVacationRequests}</strong>
+                  <strong>{ownPendingVacationCount}</strong>
                 </div>
                 <div className="home-metric">
                   <span>Formações ativas</span>
@@ -218,12 +247,12 @@ export default function HomePage() {
             {isTPeople ? (
               <>
                 <Button variant="primary" type="button" onClick={() => navigate('/colaboradores')}>Gerir colaboradores</Button>
-                <Button variant="ghost" type="button" onClick={() => navigate('/aprovacoes')}>Ver aprovações</Button>
+                <Button variant="ghost" type="button" onClick={() => navigate(approvalsDefaultPath)}>Ver aprovações</Button>
               </>
             ) : isManagerFlow ? (
               <>
-                <Button variant="primary" type="button" onClick={() => navigate('/aprovacoes')}>
-                  Ver pendências {totalPending > 0 && <span className="home-cta-badge">{totalPending}</span>}
+                <Button variant="primary" type="button" onClick={() => navigate(approvalsDefaultPath)}>
+                  Ver aprovações {totalPending > 0 && <span className="home-cta-badge">{totalPending}</span>}
                 </Button>
                 <Button variant="ghost" type="button" onClick={() => navigate('/colaboradores')}>Colaboradores</Button>
               </>
@@ -272,14 +301,14 @@ export default function HomePage() {
               <p className="home-card__label">Aprovações</p>
               <h3>Fichas pendentes</h3>
               <small>{pendingProfileRequests > 0 ? `${pendingProfileRequests} pedido(s) aguardam revisão.` : 'Sem fichas por aprovar.'}</small>
-              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/aprovacoes')}>Abrir</Button>
+              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/aprovacoes?tab=profiles')}>Abrir</Button>
             </Card>
 
             <Card as="article" className={`home-card${pendingVacationRequests > 0 ? ' home-card--alert' : ''}`}>
               <p className="home-card__label">Aprovações</p>
               <h3>Férias pendentes</h3>
               <small>{pendingVacationRequests > 0 ? `${pendingVacationRequests} pedido(s) de férias por validar.` : 'Sem pedidos de férias pendentes.'}</small>
-              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/aprovacoes')}>Abrir</Button>
+              <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/aprovacoes?tab=vacations')}>Abrir</Button>
             </Card>
 
             <Card as="article" className="home-card">

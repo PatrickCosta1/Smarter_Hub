@@ -46,6 +46,7 @@ export type ProfileData = {
   contactoEmergenciaNumero: string;
   cargo: string;
   categoriaProfissional: string;
+  numeroMecanografico: string;
   funcao: string;
   dataInicioContrato: string;
   dataFimContrato: string;

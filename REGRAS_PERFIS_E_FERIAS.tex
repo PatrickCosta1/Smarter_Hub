@@ -77,8 +77,11 @@
   \item Pedidos que atravessam o fim/início de ano devem aparecer nas vistas do(s) ano(s) respetivo(s).
   \item Ausências podem usar horas e podem ter anexos pendentes sem prazo fixo.
   \item Férias podem ser pedidas a meio dia.
+  \item Se a seleção de pedido incluir fim de semana, o tipo deve ficar bloqueado para ausência (não férias).
   \item Equipas mãe podem ter um campo de centro de custo (texto) associado à estrutura.
   \item O centro de custo das equipas mãe é informação reservada a utilizadores com acesso total.
+  \item A secção \textit{Pedido de Benefícios} da ficha deve incluir, no mínimo, Cartão Continente e Voucher NOS.
+  \item A ficha deve incluir o campo \textit{Número mecanográfico} na área contratual.
 \end{itemize}
 
 \section{Matriz por perfil}
@@ -105,6 +108,10 @@ Admin & Tudo: todas as equipas, membros, férias, ausências, aprovações, fich
 HR (futuro) & A definir, atualmente absorvido pelo admin & A definir & A definir & A definir \\
 \bottomrule
 \end{longtable}
+
+\subsection{Regra de hierarquia para acesso total}
+
+Utilizadores com \texttt{hasAccessTotal} no mesmo nível hierárquico não podem receber, visualizar nem decidir pedidos entre si (férias/ausências e alterações de ficha), nem editar ficha administrativa ou gerir permissões/acesso total entre si. A decisão/gestão só é permitida quando existe relação hierárquica válida na cadeia de concessão de acesso total (concedente $\rightarrow$ concedido) ou quando o decisor/gestor é \texttt{root}.
 
 \section{Menus por perfil}
 
@@ -207,8 +214,12 @@ HR (futuro) & A definir, atualmente absorvido pelo admin & A definir & A definir
   \item HR não existe como role final neste momento.
   \item O fluxo de administração de equipas e memberships deve ser feito por admin.
   \item A página de equipas deve ser comum, mas mostrar conteúdo diferente por perfil.
+  \item A navegação para \textit{Aprovações} (hero e notificações) deve abrir diretamente o separador relevante (ficha ou férias/ausências).
   \item O histórico de férias e decisões deve manter a versão anterior quando houver edição de um pedido já aprovado.
-  \item Utilizadores com acesso total devem poder exportar o mapa de férias em formato Excel (XLSX), com filtros por ano e equipa.
+  \item Na vista \textit{Férias da equipa}, deve existir um calendário mensal por colaborador (um mês de cada vez, com navegação anterior/seguinte), mostrando apenas pedidos \textbf{aprovados} (férias e ausências) com distinção visual por tipo e comparação de dois ou mais colaboradores através de modal dedicado.
+  \item O calendário de \textit{Férias da equipa} deve também assinalar e legendar dias especiais (feriados, dias automáticos/extra, fins de semana e aniversários observados), e a modal da equipa deve incluir um submenu específico de \textit{Aniversários} com visão de próximos eventos e agrupamento mensal.
+  \item A \textit{Dashboard} deve privilegiar uma vista simplificada com filtros e pesquisa, centrada na caracterização da equipa (idade média, tempo médio na empresa, distribuições por nível/geografia/género/função e taxa de retenção), sempre com comparação explícita face ao perfil médio da empresa.
+  \item Utilizadores com acesso total devem poder exportar o mapa de férias em formato Excel (XLSX), com período totalmente personalizável (data início/fim), filtros por equipa/colaborador e separação de abas (resumo, detalhe e parâmetros da exportação).
   \item Utilizadores com acesso total devem poder atribuir férias diretamente a colaboradores de nível inferior, sem fluxo de aprovação intermédia.
 \end{itemize}
 
@@ -246,7 +257,7 @@ HR (futuro) & A definir, atualmente absorvido pelo admin & A definir & A definir
   \item \textbf{Férias e ausências (dias automáticos da empresa)}: utilizadores com permissão de gestão de regras de férias podem configurar, por ano e país, quais as datas automáticas dadas pela empresa (ex.: trocar 24/12 por 26/12). Se não existir configuração explícita, o sistema usa o conjunto padrão legado.
   \item \textbf{Perfil}: ficha colaborador, pedidos de alteração, aprovação e histórico.
   \item \textbf{Perfil (ficha)}: a ficha é organizada em \textbf{Dados Pessoais}, \textbf{Dados de Contacto}, \textbf{Documentos de Identificação}, \textbf{Dados Fiscais e Bancários}, \textbf{Contacto de Emergência}, \textbf{Dados Contratuais}, \textbf{Dados de Formação} e \textbf{Pedido de Benefícios (em breve)}.
-  \item \textbf{Perfil (exportação)}: na página de colaboradores deve existir ação global de \textbf{Exportar} com seleção simples do colaborador (pesquisa e filtros) para gerar ficheiro \textbf{Excel} estruturado para cliente.
+  \item \textbf{Perfil (exportação)}: na página de colaboradores deve existir ação global de \textbf{Exportar} com seleção simples do colaborador (pesquisa e filtros) para gerar ficheiro \textbf{Excel} em modelo institucional, organizado por secções (\textbf{Identificação do colaborador}, \textbf{Habilitações literárias}, \textbf{Contacto de Emergência}, \textbf{Dados de contrato e remuneração} e \textbf{Outras informações}); campos não preenchidos na ficha devem ser exportados com célula vazia.
   \item \textbf{Perfil (importação)}: na página de colaboradores deve existir ação global de \textbf{Importar em massa} por ficheiro \textbf{Excel} ou \textbf{CSV} para criação de novos colaboradores com a ficha base; o modelo Excel deve incluir \textbf{dropdowns orientados} para campos de domínio, com seleção de \textbf{equipa principal} e campo de \textbf{subequipa} quando aplicável, e os \textbf{campos de comprovativos} ficam excluídos da importação, sendo preenchidos posteriormente na ficha individual; esta ação é reservada a utilizadores com \textbf{acesso total}.
   \item \textbf{Formações}: atribuição, estado de conclusão e consulta.
   \item \textbf{Formações (detalhe funcional)}: o campo de referência temporal da formação é \textbf{Data de início}; a vista \textbf{A Minha Ficha} inclui uma aba \textbf{Formações} apenas para consulta estilizada das formações do colaborador.

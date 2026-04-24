@@ -808,7 +808,6 @@ button {
 .trainings-form span,
 .trainings-list-head span {
   font-size: 0.82rem;
-  color: #ffffff;
   font-weight: 800;
 }
 
@@ -948,7 +947,7 @@ button {
   border-radius: 10px;
   border: 1px solid #9fc3fd;
   background: #eaf3ff;
-  color: #1859b2;
+  color: #1859b2 !important;
   font-size: 0.76rem;
   font-weight: 800;
   padding: 0 10px;
@@ -1143,8 +1142,7 @@ button {
 
 .manager-team-card:hover {
   transform: translateY(-2px);
-  border-left-color: var(--team-color, #4B79F5);
-  border-color: #98bff8;
+  border-color: var(--team-color);
   box-shadow: 0 10px 24px rgba(19, 66, 136, 0.14);
 }
 
@@ -1640,11 +1638,35 @@ button {
 }
 
 /* Export tab */
-.vacations-export-form {
+.vacations-export-compact-bar {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #d5e5ff;
+  background: linear-gradient(180deg, #ffffff 0%, #f4f8ff 100%);
+}
+
+.vacations-export-compact-bar__summary {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.vacations-export-compact-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.vacations-export-form {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
   align-items: flex-end;
-  flex-wrap: wrap;
   padding: 14px 16px;
   background: #f4f8ff;
   border: 1px solid #d5e5ff;
@@ -1691,6 +1713,34 @@ button {
   flex-shrink: 0;
 }
 
+.vacations-export-form__presets {
+  grid-column: 1 / -2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.vacations-export-preset-btn {
+  border: 1px solid #bfd5f5;
+  background: #ffffff;
+  color: #2b5d9d;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.vacations-export-preset-btn:hover {
+  border-color: #8eb4eb;
+  background: #eef5ff;
+}
+
+.vacations-export-preset-btn:active {
+  transform: translateY(1px);
+}
+
 .vacations-export-form__action span {
   font-size: 0.75rem;
 }
@@ -1705,6 +1755,153 @@ button {
   color: #6783aa;
   font-size: 0.8rem;
   line-height: 1.55;
+}
+
+.vacations-export-collaborators {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid #d6e7ff;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.vacations-export-collaborators__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.vacations-export-collaborators__head h4 {
+  margin: 0;
+  color: #1f467e;
+  font-size: 0.96rem;
+}
+
+.vacations-export-collaborators__head p {
+  margin: 2px 0 0;
+  color: #6283b0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.vacations-export-collaborators__controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.vacations-export-collaborators__search input {
+  min-width: 0;
+}
+
+.vacations-export-collaborators__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.vacations-export-selected-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vacations-export-selected-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #bfd5f5;
+  background: #eef5ff;
+  color: #264e86;
+  border-radius: 999px;
+  padding: 6px 11px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.vacations-export-selected-chip span {
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vacations-export-selected-chip small {
+  color: #5d7ea8;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.vacations-export-selected-chip strong {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.vacations-export-selected-chip:hover {
+  border-color: #8eb4eb;
+  background: #e4efff;
+}
+
+.vacations-export-collaborators__results {
+  max-height: 220px;
+  overflow: auto;
+  padding: 2px;
+}
+
+.vacations-export-collaborator-result--selected {
+  border-color: #6da5f1;
+  background: #eef5ff;
+  box-shadow: inset 0 0 0 1px rgba(109, 165, 241, 0.28);
+}
+
+@media (max-width: 1180px) {
+  .vacations-export-compact-bar__actions {
+    justify-content: flex-start;
+  }
+
+  .vacations-export-form {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .vacations-export-form__presets {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 780px) {
+  .vacations-export-compact-bar__actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .vacations-export-compact-bar__actions button {
+    width: 100%;
+  }
+
+  .vacations-export-form {
+    grid-template-columns: 1fr;
+  }
+
+  .vacations-export-form__action {
+    width: 100%;
+  }
+
+  .vacations-export-form__action button {
+    width: 100%;
+  }
+
+  .vacations-export-collaborators__head,
+  .vacations-export-collaborators__controls {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .vacations-export-collaborators__actions button {
+    width: 100%;
+  }
 }
 
 .vacations-direct-card {
