@@ -192,9 +192,9 @@ describe('vacations rules', () => {
     const db = {
       vacation: {
         findMany: vi.fn().mockResolvedValue([
-          { id: 'v1', dataInicio: '2026-01-03', dataFim: '2026-01-16', partialDay: 'FULL' },
-          { id: 'v2', dataInicio: '2026-02-01', dataFim: '2026-02-06', partialDay: 'FULL' },
-          { id: 'v3', dataInicio: '2026-03-01', dataFim: '2026-03-06', partialDay: 'FULL' },
+          { id: 'v1', dataInicio: '2026-01-05', dataFim: '2026-01-16', partialDay: 'FULL', requestType: 'VACATION' },
+          { id: 'v2', dataInicio: '2026-02-02', dataFim: '2026-02-13', partialDay: 'FULL', requestType: 'VACATION' },
+          { id: 'v3', dataInicio: '2026-03-02', dataFim: '2026-03-13', partialDay: 'FULL', requestType: 'VACATION' },
         ]),
       },
     };
@@ -205,8 +205,8 @@ describe('vacations rules', () => {
         userId: 'u-1',
         country: 'BR',
         requestType: 'VACATION',
-        dataInicio: '2026-04-01',
-        dataFim: '2026-04-07',
+        dataInicio: '2026-04-13', // Monday, not after holiday
+        dataFim: '2026-04-24',
         partialDay: 'FULL',
       }),
     ).rejects.toThrow('no máximo, 3 períodos');
@@ -216,8 +216,8 @@ describe('vacations rules', () => {
     const db = {
       vacation: {
         findMany: vi.fn().mockResolvedValue([
-          { id: 'v1', dataInicio: '2026-01-01', dataFim: '2026-01-06', partialDay: 'FULL' },
-          { id: 'v2', dataInicio: '2026-02-01', dataFim: '2026-02-06', partialDay: 'FULL' },
+          { id: 'v1', dataInicio: '2026-01-05', dataFim: '2026-01-09', partialDay: 'FULL', requestType: 'VACATION' },
+          { id: 'v2', dataInicio: '2026-02-02', dataFim: '2026-02-06', partialDay: 'FULL', requestType: 'VACATION' },
         ]),
       },
     };
@@ -228,10 +228,123 @@ describe('vacations rules', () => {
         userId: 'u-1',
         country: 'BR',
         requestType: 'VACATION',
-        dataInicio: '2026-03-01',
+        dataInicio: '2026-03-02', // Monday
         dataFim: '2026-03-06',
         partialDay: 'FULL',
       }),
     ).rejects.toThrow('14 dias');
+  });
+
+  // ─── Phase 2B: PT 1st-year cap ────────────────────────────────────────────
+
+  it('Phase 2B: PT 1st-year cap — blocks if total would exceed 20 days', async () => {
+    process.env.VACATION_PT_DEADLINE_BYPASS = 'true';
+    const contractYear = 2026;
+    const db = {
+      vacation: {
+        // Already has ~18 business days (4 full weeks Mon-Fri)
+        findMany: vi.fn().mockResolvedValue([
+          { dataInicio: '2026-06-01', dataFim: '2026-06-26', partialDay: 'FULL', requestType: 'VACATION' },
+        ]),
+      },
+    };
+
+    // Adding 5 more days would exceed 20 total
+    await expect(
+      __vacationTestables.validateVacationCountryPolicy({
+        db: db as never,
+        userId: 'u-1',
+        country: 'PT',
+        requestType: 'VACATION',
+        dataInicio: '2026-07-01',
+        dataFim: '2026-07-07',
+        partialDay: 'FULL',
+        dataInicioContrato: `${contractYear}-03-01`, // hired after Jan 1 same year → first year
+      }),
+    ).rejects.toThrow('1.º ano de contrato');
+
+    delete process.env.VACATION_PT_DEADLINE_BYPASS;
+  });
+
+  it('Phase 2B: PT 1st-year cap — allows if total stays within 20 days', async () => {
+    process.env.VACATION_PT_DEADLINE_BYPASS = 'true';
+    const contractYear = 2026;
+    const db = {
+      vacation: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+    };
+
+    // 10 business days (Mon-Fri 2 weeks) is within limit
+    const result = await __vacationTestables.validateVacationCountryPolicy({
+      db: db as never,
+      userId: 'u-1',
+      country: 'PT',
+      requestType: 'VACATION',
+      dataInicio: '2026-06-01',
+      dataFim: '2026-06-12',
+      partialDay: 'FULL',
+      dataInicioContrato: `${contractYear}-03-01`,
+    });
+
+    expect(Array.isArray(result)).toBe(true);
+    delete process.env.VACATION_PT_DEADLINE_BYPASS;
+  });
+
+  // ─── Phase 2C: BR Wednesday blocker ───────────────────────────────────────
+
+  it('Phase 2C: BR rejects vacation starting on Wednesday', async () => {
+    const db = { vacation: { findMany: vi.fn().mockResolvedValue([]) } };
+
+    // 2026-06-03 is a Wednesday
+    await expect(
+      __vacationTestables.validateVacationCountryPolicy({
+        db: db as never,
+        userId: 'u-1',
+        country: 'BR',
+        requestType: 'VACATION',
+        dataInicio: '2026-06-03',
+        dataFim: '2026-06-12',
+        partialDay: 'FULL',
+      }),
+    ).rejects.toThrow('quarta-feira');
+  });
+
+  it('Phase 2C: BR allows vacation starting on Monday', async () => {
+    const db = { vacation: { findMany: vi.fn().mockResolvedValue([]) } };
+
+    // 2026-06-01 is a Monday — 14 business days Mon–Fri (two full weeks Mon–Fri)
+    const result = await __vacationTestables.validateVacationCountryPolicy({
+      db: db as never,
+      userId: 'u-1',
+      country: 'BR',
+      requestType: 'VACATION',
+      dataInicio: '2026-06-01',
+      dataFim: '2026-06-19',
+      partialDay: 'FULL',
+    });
+
+    expect(Array.isArray(result)).toBe(true);
+  });
+
+  // ─── Phase 2C: BR Estagiário Recesso helpers ──────────────────────────────
+
+  it('Phase 2C: getBrRecessoPeriods returns two periods per year', () => {
+    const periods = __vacationTestables.getBrRecessoPeriods(2026);
+    expect(periods).toHaveLength(2);
+    expect(periods[0]).toEqual({ start: '2025-12-24', end: '2026-01-01' });
+    expect(periods[1]).toEqual({ start: '2026-12-24', end: '2027-01-01' });
+  });
+
+  it('Phase 2C: calcBrInternEffectiveDays excludes recesso days', () => {
+    // Dec 24–31 are recesso, Jan 1 too; should be 0 effective days
+    const effectiveDays = __vacationTestables.calcBrInternEffectiveDays('2026-12-24', '2026-12-31');
+    expect(effectiveDays).toBe(0);
+  });
+
+  it('Phase 2C: calcBrInternEffectiveDays counts normal business days outside recesso', () => {
+    // 2026-06-01 to 2026-06-05: Mon–Fri = 5 business days, no recesso
+    const effectiveDays = __vacationTestables.calcBrInternEffectiveDays('2026-06-01', '2026-06-05');
+    expect(effectiveDays).toBe(5);
   });
 });

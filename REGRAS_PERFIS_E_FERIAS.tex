@@ -73,6 +73,11 @@
   \item Um pedido aprovado pode ser alterado por versionamento, não por edição direta do registo final.
   \item Deve existir histórico de decisões, versões e motivos.
   \item Em PT, quando ainda não existe período de 10 dias úteis consecutivos no ano, pedidos mais curtos geram aviso de conformidade, mas não bloqueiam a submissão.
+  \item \textbf{PT — cap do 1.º ano}: colaboradores contratados após 1 de janeiro do ano corrente têm direito a no máximo 20 dias úteis de férias nesse ano. O sistema bloqueia a submissão se o total acumulado (PENDING + APPROVED + novo pedido) ultrapassar esse limite.
+  \item \textbf{PT — lembrete de transitados}: o sistema notifica automaticamente colaboradores com férias transitadas do ano anterior que expiram a 30 de abril, com antecedência configurável (default: 30 dias antes). Acionado por job diário via \texttt{POST /vacations/jobs/carryover-reminder}.
+  \item \textbf{BR — bloqueio de quarta-feira}: pedidos de férias BR não podem ter início à quarta-feira.
+  \item \textbf{BR — bloqueio pós-feriado}: o período de férias BR não pode iniciar no dia útil imediatamente a seguir a um feriado nacional.
+  \item \textbf{BR — recesso de estagiários}: colaboradores com \texttt{isIntern = true} usufruem de recesso automático nas semanas de encerramento (24 de dezembro a 1 de janeiro). Os dias de recesso não são deduzidos do saldo de férias. O sistema exclui esses dias ao calcular os dias efetivos de um pedido.
   \item Deve evitar-se ter cerca de um terço da equipa em férias em simultâneo.
   \item Pedidos que atravessam o fim/início de ano devem aparecer nas vistas do(s) ano(s) respetivo(s).
   \item Ausências podem usar horas e podem ter anexos pendentes sem prazo fixo.

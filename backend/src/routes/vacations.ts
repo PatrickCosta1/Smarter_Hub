@@ -232,6 +232,9 @@ async function validateVacationCountryPolicy(params: {
   dataFim: string;
   partialDay: 'FULL' | 'AM' | 'PM';
   excludeVacationId?: string;
+  // Extra profile fields for additional policy checks
+  dataInicioContrato?: string | null;
+  isIntern?: boolean;
 }) {
   if (params.requestType !== 'VACATION') {
     return [] as string[];
@@ -287,16 +290,61 @@ async function validateVacationCountryPolicy(params: {
     const holidayDates = await collectHolidayDates(params.country, years);
     const hasMandatoryConsecutiveBlock = currentYearPeriods.some((period) => vacationDaysForMetrics(period, holidayDates) >= 10);
     const requestedDays = vacationDaysForMetrics(requestedPeriod, holidayDates);
+    const warnings: string[] = [];
 
     if (!hasMandatoryConsecutiveBlock && requestedDays < 10) {
-      return [`Política PT: este pedido tem apenas ${requestedDays} dias úteis. No regime PT deve existir pelo menos um período de férias com 10 dias úteis consecutivos no ano.`];
+      warnings.push(`Política PT: este pedido tem apenas ${requestedDays} dias úteis. No regime PT deve existir pelo menos um período de férias com 10 dias úteis consecutivos no ano.`);
     }
 
-    return [] as string[];
+    // Phase 2B: 1st-year cap — contratados após Jan 1 do ano corrente têm max 20 dias úteis
+    if (params.dataInicioContrato) {
+      const requestYear = toLocalDate(params.dataInicio).getFullYear();
+      const contractStart = toLocalDate(params.dataInicioContrato);
+      const isFirstContractYear = contractStart.getFullYear() === requestYear && contractStart > toLocalDate(`${requestYear}-01-01`);
+
+      if (isFirstContractYear) {
+        const allPeriodsIncludingNew = [...currentYearPeriods, requestedPeriod];
+        const totalUsedDays = allPeriodsIncludingNew.reduce((sum, p) => sum + vacationDaysForMetrics(p, holidayDates), 0);
+        if (totalUsedDays > 20) {
+          throw new Error(`Política PT: colaboradores no 1.º ano de contrato têm direito a no máximo 20 dias úteis de férias. Total acumulado seria ${totalUsedDays} dias.`);
+        }
+      }
+    }
+
+    return warnings;
   }
 
   if (params.partialDay !== 'FULL') {
     throw new Error('Política BR: pedidos de férias fracionados em meio-dia não são permitidos.');
+  }
+
+  // Phase 2C: BR Wednesday blocker — férias não podem começar quarta-feira
+  const startDayOfWeek = toLocalDate(params.dataInicio).getDay(); // 0=Sun, 3=Wed
+  if (startDayOfWeek === 3) {
+    throw new Error('Política BR: o período de férias não pode ter início à quarta-feira.');
+  }
+
+  // Phase 2C: BR Post-holiday blocker — não pode começar no dia útil imediatamente após feriado
+  const startYear = toLocalDate(params.dataInicio).getFullYear();
+  const brHolidayDatesForStart = await collectHolidayDates('BR', [startYear, startYear - 1]);
+  {
+    // Find the previous business day before dataInicio
+    const startDate = toLocalDate(params.dataInicio);
+    const dayBefore = new Date(startDate);
+    dayBefore.setDate(dayBefore.getDate() - 1);
+    const dayBeforeIso = dateToISO(dayBefore);
+    const twoDaysBefore = new Date(startDate);
+    twoDaysBefore.setDate(twoDaysBefore.getDate() - 2);
+    const twoDaysBeforeIso = dateToISO(twoDaysBefore);
+    // If the day immediately before is a holiday (or weekend before a holiday), block
+    if (brHolidayDatesForStart.has(dayBeforeIso)) {
+      throw new Error('Política BR: o período de férias não pode iniciar no dia útil imediatamente após um feriado.');
+    }
+    // Also block if dayBefore is weekend and twoDaysBefore is a holiday
+    const dayBeforeIsWeekend = isWeekendIso(dayBeforeIso);
+    if (dayBeforeIsWeekend && brHolidayDatesForStart.has(twoDaysBeforeIso)) {
+      throw new Error('Política BR: o período de férias não pode iniciar no dia útil imediatamente após um feriado.');
+    }
   }
 
   const allPeriods = [...currentYearPeriods, requestedPeriod];
@@ -310,9 +358,17 @@ async function validateVacationCountryPolicy(params: {
     ...allPeriods.flatMap((period) => [toLocalDate(period.dataInicio).getFullYear(), toLocalDate(period.dataFim).getFullYear()]),
   ]);
   const holidayDates = await collectHolidayDates(params.country, years);
-  const periodLengths = allPeriods.map((period) => vacationDaysForMetrics(period, holidayDates));
+
+  // Phase 2C: BR Estagiário recesso — effective days exclude company recesso (Dec 24 – Jan 1)
+  // For interns, compute effective days (excluding recesso) instead of raw calendar days
+  const effectivePeriodDays = (period: { dataInicio: string; dataFim: string; requestType?: string; partialDay?: 'FULL' | 'AM' | 'PM' }) =>
+    params.isIntern
+      ? calcBrInternEffectiveDays(period.dataInicio, period.dataFim)
+      : vacationDaysForMetrics({ requestType: 'VACATION', partialDay: 'FULL', ...period }, holidayDates);
+
+  const periodLengths = allPeriods.map((period) => effectivePeriodDays(period));
   if (periodLengths.some((days) => days < 5)) {
-    throw new Error('Política BR: cada período de férias deve ter, no mínimo, 5 dias corridos.');
+    throw new Error('Política BR: cada período de férias deve ter, no mínimo, 5 dias corridos (excluindo recesso para estagiários).');
   }
 
   if (allPeriods.length >= 3 && !periodLengths.some((days) => days >= 14)) {
@@ -509,6 +565,40 @@ async function collectHolidayDates(countryCode: 'PT' | 'BR', years: Iterable<num
   return holidayDates;
 }
 
+/**
+ * Returns the BR intern recesso (company closure) date ranges for a given year.
+ * Standard: Dec 24 to Jan 1 (inclusive). Intern estagiários do not consume férias during recesso.
+ * Returns an array of { start, end } ISO strings.
+ */
+function getBrRecessoPeriods(year: number): Array<{ start: string; end: string }> {
+  return [
+    // Dec 24 of prev year to Jan 1 of current year (New Year)
+    { start: `${year - 1}-12-24`, end: `${year}-01-01` },
+    // Dec 24 of current year to Jan 1 of next year (Christmas/NYE)
+    { start: `${year}-12-24`, end: `${year + 1}-01-01` },
+  ];
+}
+
+/**
+ * Returns the number of vacation days for a BR intern request, excluding any days that
+ * fall within the company recesso (which do not count against their vacation balance).
+ */
+function calcBrInternEffectiveDays(dataInicio: string, dataFim: string): number {
+  const year = toLocalDate(dataInicio).getFullYear();
+  const recessoPeriods = getBrRecessoPeriods(year);
+  const allDays = enumerateDates(dataInicio, dataFim);
+
+  const effectiveDays = allDays.filter((iso) => {
+    // Weekend: doesn't count anyway
+    if (isWeekendIso(iso)) return false;
+    // If day falls in recesso: doesn't count against vacation balance
+    const inRecesso = recessoPeriods.some((r) => iso >= r.start && iso <= r.end);
+    return !inRecesso;
+  });
+
+  return effectiveDays.length;
+}
+
 export const __vacationTestables = {
   vacationSchema,
   hasDateOverlap,
@@ -518,6 +608,8 @@ export const __vacationTestables = {
   validateVacationCountryPolicy,
   enumerateDates,
   isWeekendIso,
+  getBrRecessoPeriods,
+  calcBrInternEffectiveDays,
 };
 
 function brVacationDaysByAbsences(absences: number) {
@@ -1519,7 +1611,7 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
 
     const profile = await prisma.profile.findUnique({
       where: { userId },
-      select: { workCountry: true, nomeCompleto: true, nomeAbreviado: true },
+      select: { workCountry: true, nomeCompleto: true, nomeAbreviado: true, dataInicioContrato: true, isIntern: true },
     });
     const country = profile?.workCountry ?? 'PT';
 
@@ -1545,6 +1637,8 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
         dataInicio: data.dataInicio,
         dataFim: data.dataFim,
         partialDay: data.partialDay,
+        dataInicioContrato: profile?.dataInicioContrato || null,
+        isIntern: profile?.isIntern ?? false,
       });
 
       if (data.requestType === 'VACATION' && contextTeamId) {
@@ -3120,6 +3214,87 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
   } catch (error) {
     console.error('[GET /vacations/export]', error);
     return res.status(500).json({ error: 'Falha ao gerar exportação do mapa de férias.' });
+  }
+});
+
+// Phase 2B: PT Carryover Reminder Job
+// POST /vacations/jobs/carryover-reminder
+// Sends notifications to PT collaborators whose carried-over vacation balance expires within N days.
+// Should be called by an external cron job (e.g., daily at 08:00).
+// Secured by JOBS_SECRET header matching env var JOBS_SECRET.
+router.post('/vacations/jobs/carryover-reminder', async (req: Request, res: Response) => {
+  try {
+    const secret = req.headers['x-jobs-secret'];
+    if (!secret || secret !== process.env.JOBS_SECRET) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const daysAhead = typeof req.query.daysAhead === 'string' ? Math.max(1, parseInt(req.query.daysAhead, 10) || 30) : 30;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const targetDate = new Date(today);
+    targetDate.setDate(today.getDate() + daysAhead);
+
+    // PT carryover rule: férias transitadas do ano anterior expiram a 30 de abril do ano corrente
+    const currentYear = today.getFullYear();
+    const carryoverExpiry = new Date(`${currentYear}-04-30T00:00:00`);
+
+    // Only send reminder if expiry is within daysAhead window and hasn't passed yet
+    if (today > carryoverExpiry) {
+      return res.json({ skipped: true, reason: 'Carryover expiry already passed for this year.', notified: 0 });
+    }
+
+    if (carryoverExpiry > targetDate) {
+      return res.json({ skipped: true, reason: `Carryover expiry is more than ${daysAhead} days away.`, notified: 0 });
+    }
+
+    // Find PT collaborators with approved carryover balance credits for previous year
+    const prevYear = currentYear - 1;
+    const carryoverCredits = await prisma.vacationBalanceCredit.findMany({
+      where: {
+        year: prevYear,
+        reason: { contains: 'transitad', mode: 'insensitive' },
+        user: {
+          profile: { workCountry: 'PT' },
+        },
+      },
+      select: {
+        userId: true,
+        days: true,
+        user: {
+          select: {
+            profile: { select: { nomeAbreviado: true, nomeCompleto: true } },
+          },
+        },
+      },
+    });
+
+    if (carryoverCredits.length === 0) {
+      return res.json({ skipped: false, notified: 0 });
+    }
+
+    const expiryFormatted = formatIsoDatePt(dateToISO(carryoverExpiry));
+    const daysRemaining = Math.round((carryoverExpiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    const notifyPromises = carryoverCredits.map(async (credit) => {
+      const name = String(credit.user.profile?.nomeAbreviado ?? '').trim()
+        || String(credit.user.profile?.nomeCompleto ?? '').trim()
+        || 'Colaborador';
+      await notifyUsers(
+        prisma,
+        [credit.userId],
+        `Férias transitadas a expirar em ${daysRemaining} dia(s)`,
+        `${name}, tens ${credit.days} dia(s) de férias transitados de ${prevYear} que expiram a ${expiryFormatted}. Certifica-te de que os utilizas antes do prazo.`,
+      );
+    });
+
+    await Promise.allSettled(notifyPromises);
+
+    return res.json({ skipped: false, notified: carryoverCredits.length, expiresAt: dateToISO(carryoverExpiry), daysRemaining });
+  } catch (error) {
+    console.error('[POST /vacations/jobs/carryover-reminder]', error);
+    return res.status(500).json({ error: 'Erro ao enviar lembretes de carryover.' });
   }
 });
 
