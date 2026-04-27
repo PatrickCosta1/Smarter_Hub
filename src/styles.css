@@ -1475,37 +1475,37 @@ button {
 }
 
 .vacations-company-days-card {
-  border: 1px solid #d5e5ff;
-  background: linear-gradient(180deg, #ffffff, #f5f9ff);
+  border: 1px solid #e5e7eb;
+  background: #fff;
 }
 
 .vacations-company-days-subtitle {
   margin: 4px 0 0;
-  color: #5f7da6;
+  color: #6b7280;
   font-size: 0.82rem;
   line-height: 1.5;
 }
 
 .vacations-company-days-badge {
   white-space: nowrap;
-  font-size: 0.72rem;
-  font-weight: 800;
-  padding: 3px 10px;
-  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
   letter-spacing: 0.02em;
   align-self: center;
 }
 
 .vacations-company-days-badge--legacy {
-  background: #fff4d6;
-  color: #8a6300;
-  border: 1px solid #f5d87a;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
 }
 
 .vacations-company-days-badge--custom {
-  background: #e2f0ff;
-  color: #1a5cbf;
-  border: 1px solid #aac8f8;
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
 }
 
 /* Add row — horizontal inline form */
@@ -1514,10 +1514,10 @@ button {
   gap: 10px;
   align-items: flex-end;
   flex-wrap: wrap;
-  padding: 14px 16px;
-  background: #f4f8ff;
-  border: 1px solid #d5e5ff;
-  border-radius: 12px;
+  padding: 14px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   margin-bottom: 4px;
 }
 
@@ -1529,19 +1529,20 @@ button {
 
 .vacations-company-days-add-field span {
   font-size: 0.75rem;
-  font-weight: 800;
-  color: #395b8e;
+  font-weight: 600;
+  color: #374151;
   white-space: nowrap;
 }
 
 .vacations-company-days-add-field select,
 .vacations-company-days-add-field input {
-  min-height: 38px;
-  border-radius: 10px;
-  border: 1px solid #bfd5f5;
-  background: #ffffff;
+  min-height: 36px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #fff;
   padding: 0 10px;
   font-size: 0.86rem;
+  color: #111827;
 }
 
 .vacations-company-days-add-field--narrow {
@@ -1578,28 +1579,28 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: #ffffff;
-  border: 1px solid #c8ddf8;
-  border-radius: 100px;
-  padding: 5px 6px 5px 12px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 6px 10px;
+  transition: all 140ms;
 }
 
 .vacations-company-days-chip:hover {
-  border-color: #91b8f0;
-  box-shadow: 0 1px 4px rgba(90, 140, 220, 0.15);
+  border-color: #d1d5db;
+  background: #f3f4f6;
 }
 
 .vacations-company-days-chip__date {
-  font-size: 0.82rem;
-  font-weight: 800;
-  color: #0f3f84;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1e40af;
   white-space: nowrap;
 }
 
 .vacations-company-days-chip__label {
   font-size: 0.78rem;
-  color: #4f6f9b;
+  color: #374151;
   white-space: nowrap;
 }
 
@@ -1607,23 +1608,23 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
   border: none;
-  background: #f0f5ff;
-  color: #6b8abb;
+  background: #fee2e2;
+  color: #dc2626;
   font-size: 0.9rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   line-height: 1;
   padding: 0;
-  transition: background 0.12s, color 0.12s;
+  transition: all 140ms;
 }
 
 .vacations-company-days-chip__remove:hover:not(:disabled) {
-  background: #ffe0e0;
-  color: #c0392b;
+  background: #fca5a5;
+  color: #7f1d1d;
 }
 
 .vacations-company-days-chip__remove:disabled {
@@ -1633,7 +1634,7 @@ button {
 
 .vacations-company-days-empty {
   margin: 0;
-  color: #6783aa;
+  color: #6b7280;
   font-size: 0.82rem;
 }
 

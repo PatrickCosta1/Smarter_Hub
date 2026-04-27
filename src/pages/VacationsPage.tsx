@@ -433,6 +433,9 @@ export default function VacationsPage() {
   const [isSavingCompanyExtraDays, setIsSavingCompanyExtraDays] = useState(false);
   const [companyExtraDaysSource, setCompanyExtraDaysSource] = useState<'configured' | 'legacy'>('legacy');
   const [companyExtraDaysError, setCompanyExtraDaysError] = useState('');
+  // Modal state para selecionar "este ano ou próximo ano?" ao adicionar dias automáticos
+  const [isAddCompanyExtraDayModalOpen, setIsAddCompanyExtraDayModalOpen] = useState(false);
+  const [companyExtraDayModalYear, setCompanyExtraDayModalYear] = useState<number | null>(null);
   const [exportYear, setExportYear] = useState(new Date().getFullYear());
   const [exportRangeMode, setExportRangeMode] = useState<'year' | 'custom'>('year');
   const [exportStartDate, setExportStartDate] = useState(`${new Date().getFullYear()}-01-01`);
@@ -935,16 +938,27 @@ export default function VacationsPage() {
       showToast('error', 'Seleciona um mês e um dia para adicionar.');
       return;
     }
+    // Abrir modal em vez de adicionar diretamente
+    setCompanyExtraDayModalYear(null);
+    setIsAddCompanyExtraDayModalOpen(true);
+  }
+
+  async function confirmAddCompanyExtraDay(selectedYear: number) {
+    const monthNum = parseInt(companyExtraDayMonth, 10);
+    const dayNum = parseInt(companyExtraDayDay, 10);
     const mmdd = `${String(monthNum).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
     const trimmedLabel = companyExtraDayLabel.trim() || 'Dia dado pela empresa';
     if (companyExtraDays.some((item) => item.date === mmdd)) {
       showToast('info', 'Esse dia já está na lista.');
+      setIsAddCompanyExtraDayModalOpen(false);
       return;
     }
     const updated = [...companyExtraDays, { date: mmdd, label: trimmedLabel }].sort((a, b) => a.date.localeCompare(b.date));
     setCompanyExtraDayMonth('12');
     setCompanyExtraDayDay('25');
     setCompanyExtraDayLabel('Dia dado pela empresa');
+    setIsAddCompanyExtraDayModalOpen(false);
+    setCompanyExtraYear(selectedYear);
     await saveCompanyExtraDays(updated);
   }
 
@@ -1845,6 +1859,41 @@ export default function VacationsPage() {
         </div>
       )}
 
+      {isAddCompanyExtraDayModalOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="add-company-extra-day-modal-title" onClick={(e) => { if (e.target === e.currentTarget) setIsAddCompanyExtraDayModalOpen(false); }}>
+          <div className="add-company-extra-day-modal">
+            <div className="add-company-extra-day-modal__header">
+              <h2 id="add-company-extra-day-modal-title">Quando aplicar este dia?</h2>
+              <button type="button" className="add-company-extra-day-modal__close" onClick={() => setIsAddCompanyExtraDayModalOpen(false)} aria-label="Fechar">×</button>
+            </div>
+            <p className="add-company-extra-day-modal__description">
+              Escolhe se este dia deve ser aplicado já no ano atual ou apenas no próximo ano.
+            </p>
+            <div className="add-company-extra-day-modal__options">
+              <button
+                type="button"
+                className="add-company-extra-day-modal__option"
+                onClick={() => void confirmAddCompanyExtraDay(new Date().getFullYear())}
+              >
+                <span className="add-company-extra-day-modal__option-label">Já neste ano</span>
+                <span className="add-company-extra-day-modal__option-year">{new Date().getFullYear()}</span>
+              </button>
+              <button
+                type="button"
+                className="add-company-extra-day-modal__option"
+                onClick={() => void confirmAddCompanyExtraDay(new Date().getFullYear() + 1)}
+              >
+                <span className="add-company-extra-day-modal__option-label">Próximo ano</span>
+                <span className="add-company-extra-day-modal__option-year">{new Date().getFullYear() + 1}</span>
+              </button>
+            </div>
+            <div className="add-company-extra-day-modal__footer">
+              <button type="button" className="add-company-extra-day-modal__cancel" onClick={() => setIsAddCompanyExtraDayModalOpen(false)}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <nav className="rh-tabs">
         {allowedTabs.includes('overview') && (
           <button type="button" className={activeTab === 'overview' ? 'is-active' : ''} onClick={() => setActiveTab('overview')}>Resumo</button>
@@ -2183,8 +2232,27 @@ export default function VacationsPage() {
 
           {!isTPeople && (
             <section className="vacations-history-card" aria-label="Histórico de pedidos">
-              <div className="trainings-list-head">
-                <h3>Histórico de pedidos</h3>
+              <div className="trainings-list-head vacations-history-head">
+                <div>
+                  <h3>Histórico de pedidos</h3>
+                  <p className="vacations-history-subtitle">
+                    Consulta rápida de férias e ausências submetidas, com estado, período e ações disponíveis.
+                  </p>
+                </div>
+                <div className="vacations-history-kpis" aria-label="Indicadores do histórico">
+                  <span className="vacations-history-kpi vacations-history-kpi--all">
+                    <strong>{sortedRecords.length}</strong>
+                    <small>Total</small>
+                  </span>
+                  <span className="vacations-history-kpi vacations-history-kpi--pending">
+                    <strong>{sortedRecords.filter((record) => record.status === 'PENDING').length}</strong>
+                    <small>Pendentes</small>
+                  </span>
+                  <span className="vacations-history-kpi vacations-history-kpi--approved">
+                    <strong>{sortedRecords.filter((record) => record.status === 'APPROVED').length}</strong>
+                    <small>Aprovados</small>
+                  </span>
+                </div>
               </div>
 
               {conflictRange && conflictRecordIds.size > 0 && (
@@ -2196,8 +2264,8 @@ export default function VacationsPage() {
                 </div>
               )}
 
-              <div className="trainings-table-wrap">
-                <table className="trainings-table" aria-label="Lista de pedidos">
+              <div className="trainings-table-wrap vacations-history-table-wrap">
+                <table className="trainings-table vacations-history-table" aria-label="Lista de pedidos">
                   <thead>
                     <tr>
                       <th>Pedido</th>
@@ -2220,19 +2288,31 @@ export default function VacationsPage() {
                         key={record.id}
                         className={`vacation-history-row vacation-history-row--${record.status.toLowerCase()}${conflictRecordIds.has(record.id) ? ' vacation-history-row--conflict' : ''}`}
                       >
-                        <td>
+                        <td className="vacations-history-col vacations-history-col--request">
+                          <span className={`vacations-history-type-tag vacations-history-type-tag--${getVacationTypeTag(record.requestType)}`}>
+                            {getVacationRequestKind(record.requestType)}
+                          </span>
                           <strong>{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</strong>
+                          <small>Submetido em {formatDateTime(record.createdAt)}</small>
                         </td>
-                        <td>{formatShortDate(record.dataInicio)} - {formatShortDate(record.dataFim)}</td>
-                        <td>{calculateDuration(record)}</td>
-                        <td>{record.contextTeam?.name || '-'}</td>
-                        <td>
+                        <td className="vacations-history-col vacations-history-col--period">
+                          <strong>{formatShortDate(record.dataInicio)} - {formatShortDate(record.dataFim)}</strong>
+                          <small>V{record.versionNumber || 1}</small>
+                        </td>
+                        <td className="vacations-history-col vacations-history-col--days">
+                          <strong>{calculateDuration(record)}</strong>
+                          <small>{record.requestType === 'VACATION' ? 'dias úteis' : 'dias corridos'}</small>
+                        </td>
+                        <td className="vacations-history-col vacations-history-col--team">{record.contextTeam?.name || 'Contexto principal'}</td>
+                        <td className="vacations-history-col vacations-history-col--status">
                           <Badge tone={getVacationStatusTone(record.status) === 'approved' ? 'success' : getVacationStatusTone(record.status) === 'pending' ? 'warning' : getVacationStatusTone(record.status) === 'rejected' ? 'danger' : 'neutral'}>
                             {formatVacationStatusLabel(record.status)}
                           </Badge>
                         </td>
-                        <td>{record.observacoes || 'Sem observações'} · V{record.versionNumber || 1}</td>
-                        <td>
+                        <td className="vacations-history-col vacations-history-col--summary">
+                          <span>{record.observacoes?.trim() || 'Sem observações'}</span>
+                        </td>
+                        <td className="vacations-history-col vacations-history-col--actions">
                           {record.status === 'PENDING' || record.status === 'APPROVED' ? (
                             <div className="trainings-row-actions">
                               <button type="button" onClick={() => startEdit(record)}>Editar</button>
@@ -2246,6 +2326,50 @@ export default function VacationsPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="vacations-history-mobile-list" aria-label="Histórico de pedidos (mobile)">
+                {sortedRecords.length === 0 && (
+                  <article className="vacations-history-mobile-card vacations-history-mobile-card--empty">
+                    <p>Sem pedidos submetidos.</p>
+                  </article>
+                )}
+
+                {sortedRecords.map((record) => (
+                  <article
+                    key={`mobile-${record.id}`}
+                    className={`vacations-history-mobile-card vacation-history-row--${record.status.toLowerCase()}${conflictRecordIds.has(record.id) ? ' vacation-history-row--conflict' : ''}`}
+                  >
+                    <header>
+                      <div>
+                        <span className={`vacations-history-type-tag vacations-history-type-tag--${getVacationTypeTag(record.requestType)}`}>
+                          {getVacationRequestKind(record.requestType)}
+                        </span>
+                        <strong>{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</strong>
+                      </div>
+                      <Badge tone={getVacationStatusTone(record.status) === 'approved' ? 'success' : getVacationStatusTone(record.status) === 'pending' ? 'warning' : getVacationStatusTone(record.status) === 'rejected' ? 'danger' : 'neutral'}>
+                        {formatVacationStatusLabel(record.status)}
+                      </Badge>
+                    </header>
+
+                    <div className="vacations-history-mobile-grid">
+                      <span><small>Período</small><strong>{formatShortDate(record.dataInicio)} - {formatShortDate(record.dataFim)}</strong></span>
+                      <span><small>Dias</small><strong>{calculateDuration(record)}</strong></span>
+                      <span><small>Equipa</small><strong>{record.contextTeam?.name || 'Contexto principal'}</strong></span>
+                      <span><small>Versão</small><strong>V{record.versionNumber || 1}</strong></span>
+                    </div>
+
+                    <p>{record.observacoes?.trim() || 'Sem observações'}</p>
+                    <small>Submetido em {formatDateTime(record.createdAt)}</small>
+
+                    {(record.status === 'PENDING' || record.status === 'APPROVED') && (
+                      <div className="trainings-row-actions vacations-history-mobile-actions">
+                        <button type="button" onClick={() => startEdit(record)}>Editar</button>
+                        {record.status === 'PENDING' && <button type="button" onClick={() => void handleCancelPending(record.id)}>Anular</button>}
+                      </div>
+                    )}
+                  </article>
+                ))}
               </div>
             </section>
           )}
