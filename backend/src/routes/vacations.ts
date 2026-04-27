@@ -58,7 +58,7 @@ const vacationSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['dataInicio'],
-          message: 'Pedido de férias não pode começar ao fim de semana.',
+          message: 'A data de início das férias tem de ser num dia útil.',
         });
       }
 
@@ -66,7 +66,7 @@ const vacationSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['dataFim'],
-          message: 'Pedido de férias não pode terminar ao fim de semana.',
+          message: 'A data de fim das férias tem de ser num dia útil.',
         });
       }
     }
@@ -114,6 +114,7 @@ const companyExtraDayItemSchema = z.object({
 
 const updateCompanyExtraDaysSchema = z.object({
   country: z.enum(['PT', 'BR']).optional(),
+  year: z.number().int().min(2000).max(2100).optional(),
   days: z.array(companyExtraDayItemSchema).max(40),
 });
 
@@ -222,6 +223,7 @@ function isVacationBusinessRuleError(error: unknown) {
   return [
     'Política PT:',
     'Política BR:',
+    'Conflito de período:',
     'Pedido de férias',
     'Pedidos de férias',
     'Não existem aprovadores configurados',
@@ -245,11 +247,11 @@ async function enforceVacationBusinessDays(params: {
   const endIsWeekend = end.getDay() === 0 || end.getDay() === 6;
 
   if (startIsWeekend) {
-    throw new Error('Pedido de férias não pode começar ao fim de semana.');
+    throw new Error('Pedido inválido: a data de início das férias tem de ser num dia útil.');
   }
 
   if (endIsWeekend) {
-    throw new Error('Pedido de férias não pode terminar ao fim de semana.');
+    throw new Error('Pedido inválido: a data de fim das férias tem de ser num dia útil.');
   }
 
   void params.country;
@@ -281,7 +283,7 @@ async function validateVacationCountryPolicy(params: {
     const bypassDeadline = process.env.VACATION_PT_DEADLINE_BYPASS === 'true' || currentMonth === 4;
 
     if (todayIso > deadline && !bypassDeadline) {
-      throw new Error('Política PT: Pedidos de férias devem ser registados até 30 de abril. Prazo expirado para este ano.');
+      throw new Error('Política PT: já não é possível submeter férias para este ano após 30 de abril.');
     }
   }
 
@@ -325,7 +327,7 @@ async function validateVacationCountryPolicy(params: {
     const warnings: string[] = [];
 
     if (!hasMandatoryConsecutiveBlock && requestedDays < 10) {
-      warnings.push(`Política PT: este pedido tem apenas ${requestedDays} dias úteis. No regime PT deve existir pelo menos um período de férias com 10 dias úteis consecutivos no ano.`);
+      warnings.push(`Política PT: este pedido tem ${requestedDays} dia(s) útil(eis). Deve existir pelo menos um período anual com 10 dias úteis consecutivos.`);
     }
 
     // Phase 2B: 1st-year proportional cap — cálculo único do 1.º ano de contrato,
@@ -340,7 +342,7 @@ async function validateVacationCountryPolicy(params: {
         const totalUsedDays = allPeriodsIncludingNew.reduce((sum, p) => sum + vacationDaysForMetrics(p, holidayDates), 0);
         if (totalUsedDays > maxAllowed) {
           throw new Error(
-            `Política PT: no 1.º ano de contrato, o direito é calculado de uma vez com base em ${ptEntitlement.monthsInFirstContractYear} mês(es) desse ano (${maxAllowed} dias úteis, máx. 20). Total acumulado seria ${totalUsedDays} dias.`,
+            `Política PT: no 1.º ano de contrato, o teu limite anual é ${maxAllowed} dia(s) útil(eis) (2 dias por mês do 1.º ano, máx. 20). Com este pedido ficarias com ${totalUsedDays} dia(s) no total.`,
           );
         }
       }
@@ -350,7 +352,7 @@ async function validateVacationCountryPolicy(params: {
   }
 
   if (params.partialDay !== 'FULL') {
-    throw new Error('Política BR: pedidos de férias fracionados em meio-dia não são permitidos.');
+    throw new Error('Política BR: férias em meio-dia não são permitidas. Seleciona um período de dia inteiro.');
   }
 
   // BR Estagiário — só pode tirar férias após 12 meses completos de estágio
@@ -359,19 +361,19 @@ async function validateVacationCountryPolicy(params: {
     const today = new Date();
     const internMonths = (today.getFullYear() - contractStart.getFullYear()) * 12 + (today.getMonth() - contractStart.getMonth());
     if (internMonths < 12) {
-      throw new Error(`Política BR: estagiários só têm direito a férias após 12 meses completos de estágio (${internMonths} meses trabalhados).`);
+      throw new Error(`Política BR: ainda não podes marcar férias. Estagiários só podem marcar após 12 meses completos (atualmente: ${internMonths} meses).`);
     }
   }
 
   // Phase 2C: BR Wednesday blocker — férias não podem começar quarta-feira
   const startDayOfWeek = toLocalDate(params.dataInicio).getDay(); // 0=Sun, 3=Wed, 5=Fri
   if (startDayOfWeek === 3) {
-    throw new Error('Política BR: o período de férias não pode ter início à quarta-feira.');
+    throw new Error('Política BR: a data de início das férias não pode ser à quarta-feira.');
   }
 
   // BR Friday blocker — férias não podem começar sexta-feira
   if (startDayOfWeek === 5) {
-    throw new Error('Política BR: o período de férias não pode ter início à sexta-feira.');
+    throw new Error('Política BR: a data de início das férias não pode ser à sexta-feira.');
   }
 
   // Phase 2C: BR Post-holiday blocker — não pode começar no dia útil imediatamente após feriado
@@ -388,18 +390,18 @@ async function validateVacationCountryPolicy(params: {
     const twoDaysBeforeIso = dateToISO(twoDaysBefore);
     // If the day immediately before is a holiday (or weekend before a holiday), block
     if (brHolidayDatesForStart.has(dayBeforeIso)) {
-      throw new Error('Política BR: o período de férias não pode iniciar no dia útil imediatamente após um feriado.');
+      throw new Error('Política BR: a data de início não pode ser no primeiro dia útil após feriado.');
     }
     // Also block if dayBefore is weekend and twoDaysBefore is a holiday
     const dayBeforeIsWeekend = isWeekendIso(dayBeforeIso);
     if (dayBeforeIsWeekend && brHolidayDatesForStart.has(twoDaysBeforeIso)) {
-      throw new Error('Política BR: o período de férias não pode iniciar no dia útil imediatamente após um feriado.');
+      throw new Error('Política BR: a data de início não pode ser no primeiro dia útil após feriado.');
     }
   }
 
   const allPeriods = [...currentYearPeriods, requestedPeriod];
   if (allPeriods.length > 3) {
-    throw new Error('Política BR: férias só podem ser divididas em, no máximo, 3 períodos por ano.');
+    throw new Error('Política BR: só podes dividir férias em até 3 períodos no ano.');
   }
 
   const years = new Set<number>([
@@ -414,11 +416,11 @@ async function validateVacationCountryPolicy(params: {
 
   const periodLengths = allPeriods.map((period) => effectivePeriodDays(period));
   if (periodLengths.some((days) => days < 5)) {
-    throw new Error('Política BR: cada período de férias deve ter, no mínimo, 5 dias corridos (excluindo recesso para estagiários).');
+    throw new Error('Política BR: cada período de férias deve ter pelo menos 5 dias corridos.');
   }
 
   if (allPeriods.length >= 3 && !periodLengths.some((days) => days >= 14)) {
-    throw new Error('Política BR: quando as férias são divididas em 3 períodos, pelo menos um deve ter 14 dias ou mais.');
+    throw new Error('Política BR: ao dividir em 3 períodos, pelo menos um deles deve ter 14 dias ou mais.');
   }
 
   // BR Concessivo rule — deve marcar férias com pelo menos 30 dias de antecedência
@@ -437,7 +439,7 @@ async function validateVacationCountryPolicy(params: {
     const daysUntilConcessivoEnd = Math.floor((concessivoEnd.getTime() - todayConc.getTime()) / (1000 * 60 * 60 * 24));
     if (daysUntilConcessivoEnd >= 0 && daysUntilConcessivoEnd < 30) {
       throw new Error(
-        `Política BR: faltam ${daysUntilConcessivoEnd} dia(s) para o fim do período concessivo (${dateToISO(concessivoEnd)}). O pedido deve ser registado com pelo menos 30 dias de antecedência.`,
+        `Política BR: este pedido já não cumpre a antecedência mínima de 30 dias para o fim do período concessivo (${dateToISO(concessivoEnd)}). Faltam ${daysUntilConcessivoEnd} dia(s).`,
       );
     }
   }
@@ -447,6 +449,42 @@ async function validateVacationCountryPolicy(params: {
 
 function hasDateOverlap(startA: string, endA: string, startB: string, endB: string) {
   return !(endA < startB || endB < startA);
+}
+
+async function enforceNoRequestOverlap(params: {
+  db: Pick<Prisma.TransactionClient, 'vacation'>;
+  userId: string;
+  dataInicio: string;
+  dataFim: string;
+  excludeVacationId?: string;
+}) {
+  const overlapping = await params.db.vacation.findFirst({
+    where: {
+      userId: params.userId,
+      status: { in: ['PENDING', 'APPROVED'] },
+      ...(params.excludeVacationId ? { id: { not: params.excludeVacationId } } : {}),
+      dataInicio: { lte: params.dataFim },
+      dataFim: { gte: params.dataInicio },
+    },
+    select: {
+      id: true,
+      requestType: true,
+      dataInicio: true,
+      dataFim: true,
+      status: true,
+    },
+    orderBy: [{ dataInicio: 'asc' }],
+  });
+
+  if (!overlapping) {
+    return;
+  }
+
+  const overlapType = describeVacationRequestType(overlapping.requestType);
+  const overlapStatus = overlapping.status === 'APPROVED' ? 'aprovado' : 'pendente';
+  throw new Error(
+    `Conflito de período: já existe um pedido de ${overlapType} (${overlapStatus}) entre ${formatIsoDatePt(overlapping.dataInicio)} e ${formatIsoDatePt(overlapping.dataFim)}. Remove ou altera esse pedido antes de continuar.`,
+  );
 }
 
 function vacationDaysForMetrics(
@@ -529,11 +567,24 @@ async function resolveConfiguredCompanyExtraDays(params: {
     select: { date: true, label: true },
   });
 
-  if (dbDays.length > 0) {
+  const yearPrefix = `${params.year}-`;
+  const scopedDays = dbDays.filter((item) => isIsoDate(item.date) && item.date.startsWith(yearPrefix));
+  const legacyConfiguredDays = dbDays.filter((item) => /^\d{2}-\d{2}$/.test(item.date));
+
+  if (scopedDays.length > 0) {
     return {
       source: 'configured' as const,
-      days: dbDays.map((item) => ({
-        // Expand MM-DD → YYYY-MM-DD for the requested year
+      days: scopedDays.map((item) => ({
+        date: item.date,
+        label: item.label || 'Dia dado pela empresa',
+      })),
+    };
+  }
+
+  if (legacyConfiguredDays.length > 0) {
+    return {
+      source: 'configured' as const,
+      days: legacyConfiguredDays.map((item) => ({
         date: `${params.year}-${item.date}`,
         label: item.label || 'Dia dado pela empresa',
       })),
@@ -1448,6 +1499,10 @@ router.get('/vacations/company-extra-days', requireAuth, async (req: Request, re
     const country = (typeof req.query.country === 'string' && (req.query.country === 'PT' || req.query.country === 'BR'))
       ? req.query.country
       : (userProfile?.workCountry ?? 'PT');
+    const requestedYear = Number(req.query.year);
+    const year = Number.isInteger(requestedYear) && requestedYear >= 2000 && requestedYear <= 2100
+      ? requestedYear
+      : new Date().getFullYear();
 
     const dbDays = await prisma.vacationCompanyExtraDay.findMany({
       where: { country },
@@ -1455,13 +1510,25 @@ router.get('/vacations/company-extra-days', requireAuth, async (req: Request, re
       select: { date: true, label: true },
     });
 
-    const source = dbDays.length > 0 ? 'configured' : 'legacy';
-    const days = dbDays.length > 0
-      ? dbDays.map((item) => ({ date: item.date, label: item.label || 'Dia dado pela empresa' }))
-      : buildLegacyCompanyExtraDays({ year: new Date().getFullYear(), localidade: null })
-          .map((fullDate) => ({ date: fullDate.slice(5), label: 'Dia dado pela empresa' }));
+    const yearPrefix = `${year}-`;
+    const scopedDays = dbDays
+      .filter((item) => isIsoDate(item.date) && item.date.startsWith(yearPrefix))
+      .map((item) => ({ date: item.date.slice(5), label: item.label || 'Dia dado pela empresa' }));
+    const legacyConfiguredDays = dbDays
+      .filter((item) => /^\d{2}-\d{2}$/.test(item.date))
+      .map((item) => ({ date: item.date, label: item.label || 'Dia dado pela empresa' }));
 
-    return res.json({ country, source, days });
+    const source = scopedDays.length > 0 || legacyConfiguredDays.length > 0 ? 'configured' : 'legacy';
+    const days = scopedDays.length > 0
+      ? scopedDays
+      : legacyConfiguredDays.length > 0
+        ? legacyConfiguredDays
+        : buildLegacyCompanyExtraDays({ year, localidade: null }).map((fullDate) => ({
+            date: fullDate.slice(5),
+            label: 'Dia dado pela empresa',
+          }));
+
+    return res.json({ country, year, source, days });
   } catch (error) {
     console.error('[GET /vacations/company-extra-days]', error);
     return res.status(500).json({ error: 'Falha ao carregar dias automáticos da empresa.' });
@@ -1481,6 +1548,7 @@ router.put('/vacations/company-extra-days', requireAuth, async (req: Request, re
       select: { workCountry: true },
     });
     const country = payload.country ?? userProfile?.workCountry ?? 'PT';
+    const year = payload.year ?? new Date().getFullYear();
 
     const seen = new Set<string>();
     const uniqueDays = payload.days
@@ -1494,15 +1562,17 @@ router.put('/vacations/company-extra-days', requireAuth, async (req: Request, re
         return true;
       });
 
+    const yearPrefix = `${year}-`;
+
     await prisma.$transaction(async (tx) => {
-      // Replace all days for this country
-      await tx.vacationCompanyExtraDay.deleteMany({ where: { country } });
+      // Replace only this year's scoped config, preserving other years and legacy records.
+      await tx.vacationCompanyExtraDay.deleteMany({ where: { country, date: { startsWith: yearPrefix } } });
 
       if (uniqueDays.length > 0) {
         await tx.vacationCompanyExtraDay.createMany({
           data: uniqueDays.map((item) => ({
             country,
-            date: item.date,
+            date: `${yearPrefix}${item.date}`,
             label: item.label,
             createdById: req.authUser!.id,
           })),
@@ -1510,7 +1580,7 @@ router.put('/vacations/company-extra-days', requireAuth, async (req: Request, re
       }
     });
 
-    return res.json({ country, days: uniqueDays });
+    return res.json({ country, year, source: 'configured', days: uniqueDays });
   } catch (error) {
     console.error('[PUT /vacations/company-extra-days]', error);
     if (error instanceof z.ZodError) {
@@ -1745,6 +1815,13 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
 
     let policyWarnings: string[] = [];
     const vacation = await prisma.$transaction(async (tx) => {
+      await enforceNoRequestOverlap({
+        db: tx,
+        userId,
+        dataInicio: data.dataInicio,
+        dataFim: data.dataFim,
+      });
+
       policyWarnings = await validateVacationCountryPolicy({
         db: tx,
         userId,
@@ -2060,6 +2137,7 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
       where: { id },
       select: {
         id: true,
+        userId: true,
         requestType: true,
         contextTeamId: true,
         dataInicio: true,
@@ -2067,6 +2145,16 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
         partialDay: true,
       },
     });
+
+    if (currentVacation) {
+      await enforceNoRequestOverlap({
+        db: tx,
+        userId: currentVacation.userId,
+        dataInicio: currentVacation.dataInicio,
+        dataFim: currentVacation.dataFim,
+        excludeVacationId: currentVacation.id,
+      });
+    }
 
     if (!currentVacation || currentVacation.requestType !== 'VACATION' || !currentVacation.contextTeamId) {
       return finalizeVacationApproval(tx, id, req.authUser!.id, canApproveByException);
@@ -2141,7 +2229,7 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
     refreshedVacation.status === 'APPROVED' &&
     refreshedVacation.requestType !== 'VACATION'
   ) {
-    await applyAbsenceOverrideVacations(prisma, refreshedVacation);
+    // Sem ajustes automáticos: pedidos sobrepostos são bloqueados na origem.
   }
 
   return res.json({ success: true });
@@ -2568,6 +2656,14 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
 
     let policyWarnings: string[] = [];
     const created = await prisma.$transaction(async (tx) => {
+      await enforceNoRequestOverlap({
+        db: tx,
+        userId,
+        dataInicio: data.dataInicio,
+        dataFim: data.dataFim,
+        excludeVacationId: id,
+      });
+
       policyWarnings = await validateVacationCountryPolicy({
         db: tx,
         userId,

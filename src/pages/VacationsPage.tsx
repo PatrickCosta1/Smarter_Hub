@@ -104,8 +104,14 @@ type CompanyExtraDay = {
 
 type CompanyExtraDaysPayload = {
   country: 'PT' | 'BR';
+  year?: number;
   source?: 'configured' | 'legacy';
   days: CompanyExtraDay[];
+};
+
+type ConflictRange = {
+  start: string;
+  end: string;
 };
 
 type VacationDraft = {
@@ -360,6 +366,10 @@ function formatDateTime(value: string) {
   }).format(parsedDate);
 }
 
+function hasDateRangeOverlap(firstStart: string, firstEnd: string, secondStart: string, secondEnd: string) {
+  return firstStart <= secondEnd && secondStart <= firstEnd;
+}
+
 function buildMonthGrid(year: number, monthIndex: number) {
   const first = new Date(year, monthIndex, 1);
   const last = new Date(year, monthIndex + 1, 0);
@@ -394,6 +404,7 @@ export default function VacationsPage() {
   const [records, setRecords] = useState<VacationRecord[]>([]);
   const [overview, setOverview] = useState<VacationOverview | null>(null);
   const [calendarData, setCalendarData] = useState<CalendarPayload | null>(null);
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [isOverviewLoading, setIsOverviewLoading] = useState(false);
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
   const [overviewError, setOverviewError] = useState('');
@@ -417,6 +428,7 @@ export default function VacationsPage() {
   const [companyExtraDayMonth, setCompanyExtraDayMonth] = useState('12');
   const [companyExtraDayDay, setCompanyExtraDayDay] = useState('25');
   const [companyExtraDayLabel, setCompanyExtraDayLabel] = useState('Dia dado pela empresa');
+  const [companyExtraYear, setCompanyExtraYear] = useState(new Date().getFullYear());
   const [isLoadingCompanyExtraDays, setIsLoadingCompanyExtraDays] = useState(false);
   const [isSavingCompanyExtraDays, setIsSavingCompanyExtraDays] = useState(false);
   const [companyExtraDaysSource, setCompanyExtraDaysSource] = useState<'configured' | 'legacy'>('legacy');
@@ -445,6 +457,7 @@ export default function VacationsPage() {
   const [isLoadingAssignCandidates, setIsLoadingAssignCandidates] = useState(false);
   const [isCreditingVacationBalance, setIsCreditingVacationBalance] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [conflictRange, setConflictRange] = useState<ConflictRange | null>(null);
   // Calendar range selection:
   // selectionAnchor = first clicked day (waiting for second click)
   // hoverDay = day being hovered while anchor is set (live range preview)
@@ -457,7 +470,7 @@ export default function VacationsPage() {
   const cacheRef = useRef<{
     recordsLoaded?: boolean;
     overviewLoaded?: boolean;
-    calendarLoaded?: boolean;
+    calendarLoadedYear?: number;
   }>({});
 
   const sortedRecords = useMemo(
@@ -489,6 +502,19 @@ export default function VacationsPage() {
       return dataFimDate < today; // Only show completed vacations
     });
   }, [approvedVacationRequests]);
+
+  const conflictRecordIds = useMemo(() => {
+    if (!conflictRange) {
+      return new Set<string>();
+    }
+
+    return new Set(
+      sortedRecords
+        .filter((record) => record.status !== 'CANCELLED' && record.status !== 'REJECTED')
+        .filter((record) => hasDateRangeOverlap(record.dataInicio, record.dataFim, conflictRange.start, conflictRange.end))
+        .map((record) => record.id),
+    );
+  }, [conflictRange, sortedRecords]);
 
   const calendarRequestDays = useMemo(() => {
     if (!calendarData) {
@@ -709,8 +735,9 @@ export default function VacationsPage() {
       return;
     }
 
-    void loadCompanyExtraDays();
-  }, [activeTab, canManageVacationRules]);
+    const requestedYear = activeTab === 'overview' ? new Date().getFullYear() : companyExtraYear;
+    void loadCompanyExtraDays(requestedYear);
+  }, [activeTab, canManageVacationRules, companyExtraYear]);
 
   useEffect(() => {
     if (activeTab !== 'export' || !canExport) return;
@@ -746,7 +773,7 @@ export default function VacationsPage() {
   }, [activeTab, canExport, exportTeamId, exportCollaboratorSearch]);
 
   useEffect(() => {
-    if (activeTab !== 'calendar' || cacheRef.current.calendarLoaded) {
+    if (activeTab !== 'calendar' || cacheRef.current.calendarLoadedYear === calendarYear) {
       return;
     }
 
@@ -755,17 +782,17 @@ export default function VacationsPage() {
     setIsCalendarLoading(true);
     setCalendarError('');
 
-    void loadCalendar(controller.signal)
+    void loadCalendar(calendarYear, controller.signal)
       .then(() => {
         if (!controller.signal.aborted) {
-          cacheRef.current.calendarLoaded = true;
+          cacheRef.current.calendarLoadedYear = calendarYear;
         }
       })
       .catch((error) => {
         if (isAbortError(error) || controller.signal.aborted) {
           return;
         }
-        cacheRef.current.calendarLoaded = false;
+        cacheRef.current.calendarLoadedYear = undefined;
       })
       .finally(() => {
         if (!disposed) {
@@ -777,7 +804,7 @@ export default function VacationsPage() {
       disposed = true;
       controller.abort();
     };
-  }, [activeTab]);
+  }, [activeTab, calendarYear]);
 
   useEffect(() => {
     if (overview?.country !== 'BR') {
@@ -869,17 +896,13 @@ export default function VacationsPage() {
     }
   }
 
-  async function loadCalendar(signal?: AbortSignal) {
+  async function loadCalendar(year: number = calendarYear, signal?: AbortSignal) {
     try {
-      const year = new Date().getFullYear();
       const data = await apiRequestCached<CalendarPayload>(`/vacations/calendar?year=${year}`, {
         headers: getAuthHeaders(),
         signal,
       }, 60000);
       setCalendarData(data);
-      if (canManageVacationRules && data.extraDayDetails) {
-        setCompanyExtraDays(data.extraDayDetails);
-      }
       return data;
     } catch (error) {
       if (!isAbortError(error) && !signal?.aborted) {
@@ -889,11 +912,11 @@ export default function VacationsPage() {
     }
   }
 
-  async function loadCompanyExtraDays() {
+  async function loadCompanyExtraDays(year: number = companyExtraYear) {
     try {
       setIsLoadingCompanyExtraDays(true);
       setCompanyExtraDaysError('');
-      const payload = await apiRequest<CompanyExtraDaysPayload>('/vacations/company-extra-days', {
+      const payload = await apiRequest<CompanyExtraDaysPayload>(`/vacations/company-extra-days?year=${year}`, {
         headers: getAuthHeaders(),
       });
       setCompanyExtraDays(payload.days ?? []);
@@ -1135,18 +1158,22 @@ export default function VacationsPage() {
         headers: getAuthHeaders(),
         body: JSON.stringify({
           country: profile.workCountry,
+          year: companyExtraYear,
           days: normalizedDays,
         }),
       });
 
       setCompanyExtraDays(payload.days ?? []);
-      setCompanyExtraDaysSource('configured');
+      setCompanyExtraDaysSource(payload.source ?? 'configured');
       clearApiCache('/vacations/calendar');
       clearApiCache('/vacations/overview');
       if (activeTab === 'overview' && !isTPeople) {
         void loadOverview();
       }
-      void loadCalendar();
+      if (activeTab === 'calendar' && calendarYear === companyExtraYear) {
+        cacheRef.current.calendarLoadedYear = undefined;
+        void loadCalendar(calendarYear);
+      }
       showToast('success', 'Dias automáticos atualizados.');
     } catch (error) {
       setCompanyExtraDaysError(error instanceof Error ? error.message : 'Falha ao guardar dias automáticos da empresa.');
@@ -1331,10 +1358,12 @@ export default function VacationsPage() {
         void loadOverview();
       }
       if (activeTab === 'calendar') {
-        void loadCalendar();
+        cacheRef.current.calendarLoadedYear = undefined;
+        void loadCalendar(calendarYear);
       }
       void refreshNotifications();
       resetForm();
+      setConflictRange(null);
       const actionLabel = editingId ? 'Pedido atualizado com sucesso.' : 'Pedido submetido com sucesso.';
       const typeLabel = requestType === 'VACATION'
         ? `Férias${payload.partialDay !== 'FULL' ? ` (${payload.partialDay === 'AM' ? 'meio-dia manhã' : 'meio-dia tarde'})` : ''}`
@@ -1379,6 +1408,10 @@ export default function VacationsPage() {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Falha ao submeter pedido.';
+      const isConflict = message.toLowerCase().includes('conflito de período');
+      if (isConflict) {
+        setConflictRange({ start: payload.dataInicio, end: payload.dataFim });
+      }
       setSubmissionNotice({ tone: 'error', message });
       showToast('error', message, {
         title: 'Não foi possível submeter o pedido',
@@ -1386,6 +1419,13 @@ export default function VacationsPage() {
           `Tipo em edição: ${requestType === 'VACATION' ? 'Férias' : 'Ausência'}`,
           `Período tentado: ${formatShortDate(payload.dataInicio)} - ${formatShortDate(payload.dataFim)}`,
         ],
+        highlight: isConflict
+          ? {
+              tone: 'warning',
+              label: 'Conflito detetado no histórico',
+              message: 'As linhas sobrepostas ficaram assinaladas para revisão rápida.',
+            }
+          : undefined,
         persist: true,
       });
     } finally {
@@ -1417,6 +1457,7 @@ export default function VacationsPage() {
     setSelectionAnchor(null);
     setHoverDay(null);
     setSubmissionNotice(null);
+    setConflictRange(null);
     setActiveTab('calendar');
     showToast('info', 'Modo edição ativo. Ao submeter, será criada uma nova versão do pedido.');
   }
@@ -1459,7 +1500,8 @@ export default function VacationsPage() {
         void loadOverview();
       }
       if (activeTab === 'calendar') {
-        void loadCalendar();
+        cacheRef.current.calendarLoadedYear = undefined;
+        void loadCalendar(calendarYear);
       }
       void refreshNotifications();
       showToast('success', 'Pedido cancelado.');
@@ -1519,6 +1561,7 @@ export default function VacationsPage() {
     setDraftErrors({});
     setSubmissionNotice(null);
     setEditingId(null);
+    setConflictRange(null);
   }
 
   function getDayRangeClass(iso: string): string {
@@ -1920,6 +1963,33 @@ export default function VacationsPage() {
           className="trainings-list-card vacations-calendar-integrated"
           onMouseLeave={() => selectionAnchor !== null && setHoverDay(selectionAnchor)}
         >
+          <div className="vacations-calendar-toolbar" aria-label="Navegação de ano do calendário">
+            <div className="vacations-calendar-toolbar__title">
+              <h3>Calendário {calendarYear}</h3>
+              <p>Podes consultar anos anteriores e futuros sem perder o histórico.</p>
+            </div>
+            <div className="vacations-calendar-toolbar__actions">
+              <button type="button" className="vacations-calendar-toolbar__btn" onClick={() => setCalendarYear((year) => year - 1)}>
+                Ano anterior
+              </button>
+              <select
+                className="vacations-calendar-toolbar__year-select"
+                value={calendarYear}
+                onChange={(event) => setCalendarYear(Number(event.target.value))}
+              >
+                {Array.from({ length: 9 }, (_, index) => new Date().getFullYear() - 4 + index).map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+              <button type="button" className="vacations-calendar-toolbar__btn" onClick={() => setCalendarYear((year) => year + 1)}>
+                Próximo ano
+              </button>
+              <button type="button" className="vacations-calendar-toolbar__btn vacations-calendar-toolbar__btn--ghost" onClick={() => setCalendarYear(new Date().getFullYear())}>
+                Ano atual
+              </button>
+            </div>
+          </div>
+
           <div className="vacations-legend vacations-legend--sticky" aria-label="Legenda do calendário">
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--holiday" />Feriado</span>
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--weekend" />Fim de semana</span>
@@ -1949,7 +2019,7 @@ export default function VacationsPage() {
                 type="button"
                 className="vacations-panel-state__action"
                 onClick={() => {
-                  cacheRef.current.calendarLoaded = false;
+                  cacheRef.current.calendarLoadedYear = undefined;
                   setCalendarError('');
                   setIsCalendarLoading(false);
                   setActiveTab('calendar');
@@ -2034,7 +2104,7 @@ export default function VacationsPage() {
                         {editingId ? ' · Editando pedido' : ''}
                       </small>
                       {draft.requestKind === 'ABSENCE' && includesWeekend && (
-                        <small>Inclui fim de semana: permitido para ausências.</small>
+                        <small> - Inclui fim de semana: permitido para ausências.</small>
                       )}
                     </div>
                     <button type="button" className="cal-booking-bar__reselect" title="Alterar intervalo" onClick={() => {
@@ -2117,6 +2187,15 @@ export default function VacationsPage() {
                 <h3>Histórico de pedidos</h3>
               </div>
 
+              {conflictRange && conflictRecordIds.size > 0 && (
+                <div className="vacations-panel-state vacations-panel-state--error vacations-history-conflict-banner" role="status" aria-live="polite">
+                  <p>
+                    Conflito detetado para o período {formatShortDate(conflictRange.start)} - {formatShortDate(conflictRange.end)}.
+                    Linhas sobrepostas destacadas abaixo.
+                  </p>
+                </div>
+              )}
+
               <div className="trainings-table-wrap">
                 <table className="trainings-table" aria-label="Lista de pedidos">
                   <thead>
@@ -2137,7 +2216,10 @@ export default function VacationsPage() {
                       </tr>
                     )}
                     {sortedRecords.map((record) => (
-                      <tr key={record.id} className={`vacation-history-row vacation-history-row--${record.status.toLowerCase()}`}>
+                      <tr
+                        key={record.id}
+                        className={`vacation-history-row vacation-history-row--${record.status.toLowerCase()}${conflictRecordIds.has(record.id) ? ' vacation-history-row--conflict' : ''}`}
+                      >
                         <td>
                           <strong>{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</strong>
                         </td>
@@ -2177,7 +2259,7 @@ export default function VacationsPage() {
               <h3>Dias automáticos da empresa</h3>
               <p className="vacations-company-days-subtitle">
                 Dias extra dados pela empresa que aparecem no calendário de todos os colaboradores.
-                Aplicados a todos os anos automaticamente.
+                Configuração isolada por ano de aplicação.
               </p>
             </div>
             {companyExtraDaysSource === 'legacy' && (
@@ -2192,6 +2274,20 @@ export default function VacationsPage() {
             <div className="vacations-panel-state"><p>A carregar...</p></div>
           ) : (
             <>
+              <div className="vacations-company-days-year-row">
+                <label className="vacations-company-days-add-field vacations-company-days-add-field--narrow">
+                  <span>Ano de aplicação</span>
+                  <select value={companyExtraYear} onChange={(e) => setCompanyExtraYear(Number(e.target.value))}>
+                    {Array.from({ length: 9 }, (_, index) => new Date().getFullYear() - 2 + index).map((year) => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </label>
+                <p className="vacations-company-days-year-row__hint">
+                  Define aqui se os dias entram já no ano atual ou apenas no próximo.
+                </p>
+              </div>
+
               <div className="vacations-company-days-add-row">
                 <label className="vacations-company-days-add-field">
                   <span>Mês</span>
