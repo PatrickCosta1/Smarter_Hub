@@ -29,6 +29,16 @@ type TrainingRecord = {
     username: string;
     email: string;
     role: string;
+    team?: {
+      id: string;
+      name: string;
+    } | null;
+    teamMemberships?: Array<{
+      team?: {
+        id: string;
+        name: string;
+      } | null;
+    }>;
     profile?: {
       nomeAbreviado?: string;
       nomeCompleto?: string;
@@ -142,6 +152,24 @@ function getTrainingOwnerLabel(record: TrainingRecord) {
   return formatAbbreviatedUserName(record.user);
 }
 
+function getTrainingTeamLabel(record: TrainingRecord) {
+  const primaryTeam = record.user?.team?.name?.trim() || '';
+  const membershipTeams = (record.user?.teamMemberships || [])
+    .map((membership) => membership.team?.name?.trim() || '')
+    .filter(Boolean);
+
+  const teamSet = new Set<string>();
+  if (primaryTeam) {
+    teamSet.add(primaryTeam);
+  }
+  for (const teamName of membershipTeams) {
+    teamSet.add(teamName);
+  }
+
+  const teams = Array.from(teamSet);
+  return teams.length > 0 ? teams.join(', ') : '-';
+}
+
 export default function TrainingsPage() {
   const { hasPermission, isRootAccess, refreshNotifications } = usePortal();
   const canAssignTraining = isRootAccess || hasPermission('assign_training');
@@ -168,6 +196,7 @@ export default function TrainingsPage() {
   const [recordsLoaded, setRecordsLoaded] = useState(false);
   const [completeConfirmRecordId, setCompleteConfirmRecordId] = useState<string | null>(null);
   const [recentAssigned, setRecentAssigned] = useState<RecentAssignedItem[]>([]);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
 
   // ── Advanced filters
   const [entidadeFilter, setEntidadeFilter] = useState('');
@@ -199,6 +228,21 @@ export default function TrainingsPage() {
   );
 
   const isOwnScope = scope === 'mine';
+  const showTeamColumn = scope === 'hierarchy';
+
+  const tableColumnCount = useMemo(() => {
+    let count = 8;
+    if (!isOwnScope) {
+      count += 1;
+    }
+    if (showTeamColumn) {
+      count += 1;
+    }
+    if (isOwnScope && canMarkCompleted) {
+      count += 1;
+    }
+    return count;
+  }, [canMarkCompleted, isOwnScope, showTeamColumn]);
 
   const sortedRecords = useMemo(() => {
     return [...records].sort((a, b) => {
@@ -254,6 +298,7 @@ export default function TrainingsPage() {
           record.user?.username ?? '',
           record.user?.profile?.nomeCompleto ?? '',
           record.user?.profile?.nomeAbreviado ?? '',
+          getTrainingTeamLabel(record),
         ].join(' ').toLowerCase();
         if (!textHaystack.includes(normalized)) return false;
       }
@@ -380,6 +425,171 @@ export default function TrainingsPage() {
   function sortIcon(field: SortField) {
     if (sortField !== field) return <span className="sort-icon sort-icon--idle" aria-hidden="true">⇕</span>;
     return <span className="sort-icon sort-icon--active" aria-hidden="true">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+  }
+
+  async function handleExportExcel() {
+    if (visibleRecords.length === 0 || isExportingExcel) {
+      return;
+    }
+
+    try {
+      setIsExportingExcel(true);
+      const ExcelJS = await import('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Smarter Hub';
+      workbook.created = new Date();
+      workbook.modified = new Date();
+
+      const scopeLabel = scope === 'mine' ? 'Minhas' : scope === 'team' ? 'Equipa' : 'Organização';
+      const sheet = workbook.addWorksheet('Formações', {
+        views: [{ state: 'frozen', ySplit: 3 }],
+        properties: { defaultColWidth: 18 },
+      });
+
+      const headerColumns: Array<{ header: string; key: string; width: number }> = [
+        { header: 'Formação', key: 'nome', width: 30 },
+      ];
+      if (!isOwnScope) {
+        headerColumns.push({ header: 'Colaborador', key: 'colaborador', width: 24 });
+      }
+      if (showTeamColumn) {
+        headerColumns.push({ header: 'Equipa', key: 'equipa', width: 24 });
+      }
+      headerColumns.push(
+        { header: 'Origem', key: 'origem', width: 20 },
+        { header: 'Estado', key: 'estado', width: 14 },
+        { header: 'Horas', key: 'horas', width: 10 },
+        { header: 'Data de início', key: 'dataInicio', width: 14 },
+        { header: 'Data conclusão', key: 'dataConclusao', width: 16 },
+        { header: 'Entidade', key: 'entidade', width: 24 },
+        { header: 'Link', key: 'link', width: 42 },
+      );
+
+      const lastColumnLetter = String.fromCharCode(64 + headerColumns.length);
+      sheet.mergeCells(`A1:${lastColumnLetter}1`);
+      const titleCell = sheet.getCell('A1');
+      titleCell.value = `Exportação de Formações | ${scopeLabel}`;
+      titleCell.font = { name: 'Calibri', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } };
+
+      sheet.mergeCells(`A2:${lastColumnLetter}2`);
+      const metaCell = sheet.getCell('A2');
+      metaCell.value = `Gerado em ${new Date().toLocaleString('pt-PT')} | ${visibleRecords.length} registo(s) | Filtros ativos: ${activeFilterCount}`;
+      metaCell.font = { name: 'Calibri', size: 10, color: { argb: 'FF31537C' } };
+      metaCell.alignment = { vertical: 'middle', horizontal: 'left' };
+      metaCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF2FB' } };
+
+      const headerRow = sheet.getRow(3);
+      headerRow.values = headerColumns.map((column) => column.header);
+      headerRow.font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } };
+      headerRow.height = 22;
+
+      for (const record of visibleRecords) {
+        const rowData: Array<string | number> = [record.nome];
+        if (!isOwnScope) {
+          rowData.push(getTrainingOwnerLabel(record));
+        }
+        if (showTeamColumn) {
+          rowData.push(getTrainingTeamLabel(record));
+        }
+        rowData.push(
+          getTrainingOriginLabel(record),
+          formatTrainingStatusLabel(record.status),
+          record.horas,
+          getTrainingStartDate(record) || '-',
+          record.dataConclusao || '-',
+          record.entidade || '-',
+          record.link || '-',
+        );
+        sheet.addRow(rowData);
+      }
+
+      sheet.columns = headerColumns.map((column) => ({ width: column.width }));
+
+      for (let rowIndex = 4; rowIndex <= visibleRecords.length + 3; rowIndex += 1) {
+        const row = sheet.getRow(rowIndex);
+        const isEven = rowIndex % 2 === 0;
+        row.eachCell((cell, colNumber) => {
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+            left: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+            bottom: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+            right: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          };
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: isEven ? 'FFF9FCFF' : 'FFFFFFFF' },
+          };
+          if (colNumber === 1 || colNumber === headerColumns.length) {
+            cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+          } else {
+            cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          }
+        });
+      }
+
+      sheet.autoFilter = {
+        from: { row: 3, column: 1 },
+        to: { row: 3, column: headerColumns.length },
+      };
+
+      const filtersSheet = workbook.addWorksheet('Parâmetros', {
+        properties: { defaultColWidth: 36 },
+      });
+      filtersSheet.getRow(1).values = ['Parâmetro', 'Valor'];
+      filtersSheet.getRow(1).font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } };
+      filtersSheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E75B6' } };
+
+      filtersSheet.addRows([
+        ['Âmbito', scopeConfig.summaryLabel],
+        ['Pesquisa', query || '-'],
+        ['Estado', statusFilter === 'all' ? 'Todos' : statusFilter],
+        ['Colaborador', recordsCollaboratorFilter || '-'],
+        ['Entidade', entidadeFilter || '-'],
+        ['Data início de', dataInicioFrom || '-'],
+        ['Data início até', dataInicioTo || '-'],
+        ['Horas mínimas', horasMin || '-'],
+        ['Horas máximas', horasMax || '-'],
+        ['Origem', origemFilter],
+        ['Ordenação', `${sortField} (${sortDir})`],
+        ['Total exportado', String(visibleRecords.length)],
+      ]);
+
+      for (let rowIndex = 2; rowIndex <= 13; rowIndex += 1) {
+        const row = filtersSheet.getRow(rowIndex);
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+            left: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+            bottom: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+            right: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+          };
+        });
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const today = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `formacoes-${scopeLabel.toLowerCase()}-${today}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setStatus('Exportação Excel gerada com sucesso.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Falha ao exportar formações para Excel.');
+    } finally {
+      setIsExportingExcel(false);
+    }
   }
 
   async function loadTrainings(signal?: AbortSignal) {
@@ -596,6 +806,9 @@ export default function TrainingsPage() {
               </small>
             </div>
             <div className="trainings-list-head__topbar-actions">
+              <Button type="button" variant="ghost" onClick={handleExportExcel} disabled={visibleRecords.length === 0 || isExportingExcel}>
+                {isExportingExcel ? 'A exportar...' : 'Exportar Excel'}
+              </Button>
               {canAssignTraining && (
                 <Button type="button" variant="primary" onClick={openAssignModal}>Nova formação</Button>
               )}
@@ -745,6 +958,7 @@ export default function TrainingsPage() {
               <tr>
                 <th className="sortable-th" onClick={() => toggleSort('nome')}>Formação {sortIcon('nome')}</th>
                 {!isOwnScope && <th>Colaborador</th>}
+                {showTeamColumn && <th>Equipa</th>}
                 <th>Origem</th>
                 <th>Link</th>
                 <th className="sortable-th" onClick={() => toggleSort('horas')}>Horas {sortIcon('horas')}</th>
@@ -758,11 +972,11 @@ export default function TrainingsPage() {
             <tbody>
               {(isRecordsLoading && !recordsLoaded) ? (
                 <tr>
-                  <td colSpan={isOwnScope && canMarkCompleted ? 9 : 8}>A carregar formações...</td>
+                  <td colSpan={tableColumnCount}>A carregar formações...</td>
                 </tr>
               ) : visibleRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={isOwnScope && canMarkCompleted ? 9 : 8}>
+                  <td colSpan={tableColumnCount}>
                     {scopeConfig.emptyMessage}
                   </td>
                 </tr>
@@ -771,6 +985,7 @@ export default function TrainingsPage() {
                   <tr key={record.id}>
                     <td>{record.nome}</td>
                     {!isOwnScope && <td>{getTrainingOwnerLabel(record)}</td>}
+                    {showTeamColumn && <td>{getTrainingTeamLabel(record)}</td>}
                     <td>{getTrainingOriginLabel(record)}</td>
                     <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
                     <td>{formatHours(record.horas)} h</td>
@@ -814,6 +1029,11 @@ export default function TrainingsPage() {
               {!isOwnScope && (
                 <p>
                   <span>Colaborador:</span> {getTrainingOwnerLabel(record)}
+                </p>
+              )}
+              {showTeamColumn && (
+                <p>
+                  <span>Equipa:</span> {getTrainingTeamLabel(record)}
                 </p>
               )}
               <p>

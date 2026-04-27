@@ -69,6 +69,23 @@ const assignedTrainingInclude = {
       email: true,
       role: true,
       hasAccessTotal: true,
+      team: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+      teamMemberships: {
+        where: { isActive: true },
+        select: {
+          team: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
       profile: {
         select: {
           nomeAbreviado: true,
