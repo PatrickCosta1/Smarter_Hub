@@ -139,7 +139,7 @@ export default function PortalLayout() {
     }
 
     if (path === '/formacoes') {
-      void safePrefetch(canManageTrainings ? '/trainings/assigned' : '/trainings/me', 45000);
+      void safePrefetch('/trainings/me', 45000);
       return;
     }
 

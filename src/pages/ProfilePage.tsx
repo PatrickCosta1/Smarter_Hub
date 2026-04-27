@@ -72,17 +72,40 @@ const profileFieldLabels: Partial<Record<keyof ProfileData, string>> = {
   localidade: 'Localidade',
   codigoPostal: 'Código postal',
   matriculaCarro: 'Matrícula do carro',
+  localNascimentoPais: 'País de nascimento',
+  localNascimentoCidade: 'Cidade de nascimento',
+  nomePai: 'Nome do pai',
+  nomeMae: 'Nome da mãe',
   cartaoCidadao: 'Cartão de cidadão',
   validadeCartaoCidadao: 'Validade do cartão de cidadão',
   nif: 'NIF',
+  cpf: 'CPF',
+  pis: 'PIS',
+  ctps: 'CTPS',
+  ctpsSerie: 'Série da CTPS',
+  ctpsDataExpedicao: 'Data de expedição da CTPS',
+  rg: 'RG',
+  rgOrgaoEmissor: 'Órgão emissor do RG',
+  rgDataExpedicao: 'Data de expedição do RG',
+  cnh: 'CNH',
+  cnhCategoria: 'Categoria da CNH',
+  cnhDataValidade: 'Data de validade da CNH',
+  tituloEleitor: 'Título de eleitor',
+  zonaEleitoral: 'Zona eleitoral',
+  secaoEleitoral: 'Seção eleitoral',
+  certificadoReservista: 'Certificado de reservista',
   niss: 'NISS',
   iban: 'IBAN',
   situacaoIrs: 'Situação IRS',
   numeroDependentes: 'Número de dependentes',
   irsJovem: 'IRS Jovem',
   anoPrimeiroDesconto: 'Ano do primeiro desconto',
+  primeiroEmprego: 'Primeiro emprego',
+  recebeAposentadoria: 'Recebe aposentadoria',
+  recebeSeguroDesemprego: 'Recebe seguro de desemprego',
+  valeTransporte: 'Vale transporte',
   numeroCartaoContinente: 'Número cartão continente',
-  voucherNosData: 'Voucher NOS',
+  voucherNosData: 'Data último pedido voucher NOS',
   comprovativoMoradaFiscal: 'Comprovativo morada fiscal',
   comprovativoCartaoCidadao: 'Comprovativo cartão cidadão',
   comprovativoIban: 'Comprovativo IBAN',
@@ -407,6 +430,7 @@ function SearchableDropdown({ label, value, placeholder, options, columns = 1, d
 
 function validateProfile(profile: ProfileData, canEditContract: boolean = true): ProfileFieldError {
   const errors: ProfileFieldError = {};
+  const isBrProfile = profile.workCountry === 'BR';
 
   const contractFields: Array<keyof ProfileData> = [
     'cargo',
@@ -417,7 +441,7 @@ function validateProfile(profile: ProfileData, canEditContract: boolean = true):
     'regimeHorario',
   ];
 
-  const requiredKeys: Array<keyof ProfileData> = [
+  const commonRequiredKeys: Array<keyof ProfileData> = [
     'nomeCompleto',
     'nomeAbreviado',
     'dataNascimento',
@@ -430,6 +454,15 @@ function validateProfile(profile: ProfileData, canEditContract: boolean = true):
     'endereco',
     'localidade',
     'codigoPostal',
+    'contactoEmergenciaNome',
+    'contactoEmergenciaParentesco',
+    'contactoEmergenciaNumero',
+    'comprovativoMoradaFiscal',
+    'comprovativoIban',
+    ...(canEditContract ? contractFields : []),
+  ];
+
+  const ptRequiredKeys: Array<keyof ProfileData> = [
     'cartaoCidadao',
     'nif',
     'niss',
@@ -438,17 +471,26 @@ function validateProfile(profile: ProfileData, canEditContract: boolean = true):
     'numeroDependentes',
     'irsJovem',
     'anoPrimeiroDesconto',
-    'comprovativoMoradaFiscal',
     'comprovativoCartaoCidadao',
-    'comprovativoIban',
-    'contactoEmergenciaNome',
-    'contactoEmergenciaParentesco',
-    'contactoEmergenciaNumero',
-    ...(canEditContract ? contractFields : []),
   ];
 
-  requiredKeys.forEach((key) => {
-    if (!profile[key].trim()) {
+  const brRequiredKeys: Array<keyof ProfileData> = [
+    'localNascimentoPais',
+    'localNascimentoCidade',
+    'cpf',
+    'pis',
+    'ctps',
+    'ctpsSerie',
+    'ctpsDataExpedicao',
+    'rg',
+    'rgOrgaoEmissor',
+    'rgDataExpedicao',
+    'nomePai',
+    'nomeMae',
+  ];
+
+  [...commonRequiredKeys, ...(isBrProfile ? brRequiredKeys : ptRequiredKeys)].forEach((key) => {
+    if (!String(profile[key] ?? '').trim()) {
       errors[key] = 'Campo obrigatório.';
     }
   });
@@ -457,15 +499,27 @@ function validateProfile(profile: ProfileData, canEditContract: boolean = true):
     errors.emailPessoal = 'Email inválido.';
   }
 
-  if (profile.nif && !/^\d{9}$/.test(profile.nif)) {
+  if (!isBrProfile && profile.nif && !/^\d{9}$/.test(profile.nif)) {
     errors.nif = 'O NIF deve ter 9 dígitos.';
   }
 
-  if (profile.numeroDependentes && !/^\d+$/.test(profile.numeroDependentes)) {
+  if (isBrProfile && profile.cpf && !/^\d{11}$/.test(profile.cpf)) {
+    errors.cpf = 'CPF deve ter 11 dígitos.';
+  }
+
+  if (isBrProfile && profile.pis && !/^\d{11}$/.test(profile.pis)) {
+    errors.pis = 'PIS deve ter 11 dígitos.';
+  }
+
+  if (isBrProfile && profile.codigoPostal && !/^\d{5}-?\d{3}$/.test(profile.codigoPostal)) {
+    errors.codigoPostal = 'CEP inválido. Use 00000-000.';
+  }
+
+  if (!isBrProfile && profile.numeroDependentes && !/^\d+$/.test(profile.numeroDependentes)) {
     errors.numeroDependentes = 'Use apenas números inteiros.';
   }
 
-  if (profile.anoPrimeiroDesconto && !/^\d{4}$/.test(profile.anoPrimeiroDesconto)) {
+  if (!isBrProfile && profile.anoPrimeiroDesconto && !/^\d{4}$/.test(profile.anoPrimeiroDesconto)) {
     errors.anoPrimeiroDesconto = 'Indique o ano com 4 dígitos.';
   }
 
@@ -494,6 +548,13 @@ function formatPtDate(value: string) {
   }).format(parsed);
 }
 
+function formatLocalDateOnly(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function formatTrainingHours(value: number) {
   return new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(value);
 }
@@ -514,7 +575,7 @@ function resolveTrainingOrigin(record: ProfileTrainingRecord) {
 }
 
 export default function ProfilePage() {
-  const { profile, saveProfile, hasPermission, isRootAccess, isAccessTotal, currentUser } = usePortal();
+  const { profile, saveProfile, setProfile, hasPermission, isRootAccess, isAccessTotal, currentUser } = usePortal();
 
   const [draftProfile, setDraftProfile] = useState<ProfileData>(profile);
   const [editingSections, setEditingSections] = useState<Record<SectionKey, boolean>>({
@@ -553,6 +614,7 @@ export default function ProfilePage() {
   const [isLoadingOwnTrainings, setIsLoadingOwnTrainings] = useState(false);
   const [ownTrainingsLoaded, setOwnTrainingsLoaded] = useState(false);
   const [ownTrainingsStatus, setOwnTrainingsStatus] = useState('');
+  const [isRequestingVoucherNos, setIsRequestingVoucherNos] = useState(false);
 
   const canEdit =
     isRootAccess
@@ -576,7 +638,14 @@ export default function ProfilePage() {
 
   const profileCompletion = useMemo(() => {
     const fields = Object.values(draftProfile);
-    const filled = fields.filter((item) => item.trim().length > 0).length;
+    const filled = fields.filter((item) => {
+      if (typeof item === 'boolean') {
+        return true;
+      }
+
+      return String(item ?? '').trim().length > 0;
+    }).length;
+
     return Math.round((filled / fields.length) * 100);
   }, [draftProfile]);
 
@@ -592,6 +661,60 @@ export default function ProfilePage() {
   const completionIssueCount = completionIssueEntries.length;
 
   const collaboratorName = useMemo(() => `${draftProfile.nomeCompleto} ${draftProfile.nomeAbreviado}`.trim(), [draftProfile.nomeAbreviado, draftProfile.nomeCompleto]);
+  const heroName = useMemo(
+    () => draftProfile.nomeCompleto.trim() || draftProfile.nomeAbreviado.trim() || collaboratorName || 'Colaborador',
+    [collaboratorName, draftProfile.nomeAbreviado, draftProfile.nomeCompleto],
+  );
+  const heroRoleLine = useMemo(() => {
+    const cargo = draftProfile.cargo.trim() || 'Nível por definir';
+    const funcao = draftProfile.funcao.trim() || 'Função por definir';
+    return `${cargo} • ${funcao}`;
+  }, [draftProfile.cargo, draftProfile.funcao]);
+  const contractCostCenter = useMemo(() => {
+    return currentUser?.team?.costCenter?.trim() || '';
+  }, [currentUser?.team?.costCenter]);
+  const isBrProfile = draftProfile.workCountry === 'BR';
+  const isSemTermoContract = useMemo(() => {
+    const normalized = draftProfile.tipoContrato
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    return normalized === 'sem termo';
+  }, [draftProfile.tipoContrato]);
+  const voucherLastRequestDate = useMemo(() => {
+    const normalized = draftProfile.voucherNosData.trim();
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+    if (!match) {
+      return null;
+    }
+
+    const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+
+    return parsed;
+  }, [draftProfile.voucherNosData]);
+  const voucherNextEligibleDate = useMemo(() => {
+    if (!voucherLastRequestDate) {
+      return null;
+    }
+
+    const nextDate = new Date(voucherLastRequestDate);
+    nextDate.setFullYear(nextDate.getFullYear() + 2);
+    return nextDate;
+  }, [voucherLastRequestDate]);
+  const voucherIsInCooldown = useMemo(() => {
+    if (!voucherNextEligibleDate) {
+      return false;
+    }
+
+    const today = new Date();
+    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return todayDate < voucherNextEligibleDate;
+  }, [voucherNextEligibleDate]);
   const hasUnsavedChanges = useMemo(() => JSON.stringify(draftProfile) !== JSON.stringify(profile), [draftProfile, profile]);
   const pendingRequestCreatedLabel = useMemo(() => {
     if (!pendingRequestCreatedAt) {
@@ -863,6 +986,19 @@ export default function ProfilePage() {
 
   }
 
+  function handleProfileBooleanChange(
+    field: 'primeiroEmprego' | 'recebeAposentadoria' | 'recebeSeguroDesemprego' | 'valeTransporte',
+    value: boolean,
+  ) {
+    setDraftProfile((current) => ({ ...current, [field]: value }));
+
+    setProfileErrors((current) => {
+      const updated = { ...current };
+      delete updated[field];
+      return updated;
+    });
+  }
+
   function toggleAddressMode(separate: boolean) {
     setShowSeparateAddresses(separate);
     if (!separate) {
@@ -1045,15 +1181,61 @@ export default function ProfilePage() {
     showToast('success', result.message || 'Alterações guardadas com sucesso.');
   }
 
+  async function handleVoucherNosRequest() {
+    if (isRequestingVoucherNos) {
+      return;
+    }
+
+    if (!isSemTermoContract) {
+      showToast('error', 'O voucher NOS só pode ser pedido por colaboradores com contrato sem termo.');
+      return;
+    }
+
+    if (voucherIsInCooldown && voucherNextEligibleDate) {
+      showToast('error', `Novo pedido disponível em ${formatPtDate(formatLocalDateOnly(voucherNextEligibleDate))}.`);
+      return;
+    }
+
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    if (!token) {
+      showToast('error', 'Sessão inválida. Faz login novamente.');
+      return;
+    }
+
+    setIsRequestingVoucherNos(true);
+
+    try {
+      const response = await apiRequest<{ message?: string; lastRequestDate?: string }>('/profile/me/voucher-nos/request', {
+        method: 'POST',
+        headers: authHeaders(token),
+      });
+
+      const lastRequestDate = response.lastRequestDate || formatLocalDateOnly(new Date());
+      const nextProfile = {
+        ...draftProfile,
+        voucherNosData: lastRequestDate,
+      };
+
+      setDraftProfile(nextProfile);
+      setProfile(nextProfile);
+      showToast('success', response.message || 'Pedido de voucher NOS enviado para t.people.');
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Não foi possível emitir o voucher NOS.');
+    } finally {
+      setIsRequestingVoucherNos(false);
+    }
+  }
+
   return (
     <>
       <section className="profile-hero">
         <div className="hero-main">
           <p className="hero-kicker">Ficha de colaborador</p>
-          <h1>{profile.nomeAbreviado || collaboratorName}</h1>
+          <h1>{heroName}</h1>
+          <p className="profile-hero__role-line">{heroRoleLine}</p>
           <div className="profile-hero__meta">
-            <span>{profile.cargo || 'Cargo por definir'}</span>
             <span>{teamName}</span>
+            <span>{draftProfile.workCountry || 'PT'}</span>
           </div>
         </div>
 
@@ -1221,13 +1403,37 @@ export default function ProfilePage() {
               <span>Nacionalidade</span>
               <input type="text" value={draftProfile.nacionalidade} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('nacionalidade', event.target.value)} />
             </label>
+            {isBrProfile && (
+              <>
+                <label>
+                  <span>País de nascimento</span>
+                  <input type="text" value={draftProfile.localNascimentoPais} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('localNascimentoPais', event.target.value)} />
+                  {profileErrors.localNascimentoPais && <small>{profileErrors.localNascimentoPais}</small>}
+                </label>
+                <label>
+                  <span>Cidade de nascimento</span>
+                  <input type="text" value={draftProfile.localNascimentoCidade} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('localNascimentoCidade', event.target.value)} />
+                  {profileErrors.localNascimentoCidade && <small>{profileErrors.localNascimentoCidade}</small>}
+                </label>
+                <label>
+                  <span>Nome do pai</span>
+                  <input type="text" value={draftProfile.nomePai} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('nomePai', event.target.value)} />
+                  {profileErrors.nomePai && <small>{profileErrors.nomePai}</small>}
+                </label>
+                <label>
+                  <span>Nome da mãe</span>
+                  <input type="text" value={draftProfile.nomeMae} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('nomeMae', event.target.value)} />
+                  {profileErrors.nomeMae && <small>{profileErrors.nomeMae}</small>}
+                </label>
+              </>
+            )}
             <label>
               <span>Email pessoal</span>
               <input type="email" value={draftProfile.emailPessoal} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('emailPessoal', event.target.value)} />
               {profileErrors.emailPessoal && <small>{profileErrors.emailPessoal}</small>}
             </label>
             <label>
-              <span>Telemóvel</span>
+              <span>{isBrProfile ? 'Contacto telefónico' : 'Telemóvel'}</span>
               <input type="text" value={draftProfile.telemovel} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('telemovel', event.target.value)} />
               {profileErrors.telemovel && <small>{profileErrors.telemovel}</small>}
             </label>
@@ -1235,10 +1441,12 @@ export default function ProfilePage() {
               <span>GitHub (se aplicável)</span>
               <input type="text" value={draftProfile.githubUser} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('githubUser', event.target.value)} placeholder="username" />
             </label>
-            <label>
-              <span>Matrícula do carro</span>
-              <input type="text" value={draftProfile.matriculaCarro} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('matriculaCarro', event.target.value)} />
-            </label>
+            {!isBrProfile && (
+              <label>
+                <span>Matrícula do carro</span>
+                <input type="text" value={draftProfile.matriculaCarro} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('matriculaCarro', event.target.value)} />
+              </label>
+            )}
           </div>
         </article>
         )}
@@ -1307,7 +1515,7 @@ export default function ProfilePage() {
               {profileErrors.localidade && <small>{profileErrors.localidade}</small>}
             </label>
             <label>
-              <span>Código postal</span>
+              <span>{isBrProfile ? 'CEP' : 'Código postal'}</span>
               <input type="text" value={draftProfile.codigoPostal} disabled={!editingSections.contacts} onChange={(event) => handleProfileChange('codigoPostal', event.target.value)} />
               {profileErrors.codigoPostal && <small>{profileErrors.codigoPostal}</small>}
             </label>
@@ -1338,17 +1546,82 @@ export default function ProfilePage() {
             )}
           </div>
           <div className="profile-fields">
-            <label>
-              <span>Cartão Cidadão</span>
-              <input type="text" value={draftProfile.cartaoCidadao} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('cartaoCidadao', event.target.value)} />
-              {profileErrors.cartaoCidadao && <small>{profileErrors.cartaoCidadao}</small>}
-            </label>
-            <label>
-              <span>Validade do cartão de cidadão</span>
-              <input type="date" value={draftProfile.validadeCartaoCidadao} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('validadeCartaoCidadao', event.target.value)} />
-            </label>
+            {!isBrProfile ? (
+              <>
+                <label>
+                  <span>Cartão Cidadão</span>
+                  <input type="text" value={draftProfile.cartaoCidadao} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('cartaoCidadao', event.target.value)} />
+                  {profileErrors.cartaoCidadao && <small>{profileErrors.cartaoCidadao}</small>}
+                </label>
+                <label>
+                  <span>Validade do cartão de cidadão</span>
+                  <input type="date" value={draftProfile.validadeCartaoCidadao} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('validadeCartaoCidadao', event.target.value)} />
+                </label>
+              </>
+            ) : (
+              <>
+                <label>
+                  <span>RG</span>
+                  <input type="text" value={draftProfile.rg} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('rg', event.target.value)} />
+                  {profileErrors.rg && <small>{profileErrors.rg}</small>}
+                </label>
+                <label>
+                  <span>Órgão emissor (RG)</span>
+                  <input type="text" value={draftProfile.rgOrgaoEmissor} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('rgOrgaoEmissor', event.target.value)} />
+                  {profileErrors.rgOrgaoEmissor && <small>{profileErrors.rgOrgaoEmissor}</small>}
+                </label>
+                <label>
+                  <span>Data expedição (RG)</span>
+                  <input type="date" value={draftProfile.rgDataExpedicao} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('rgDataExpedicao', event.target.value)} />
+                  {profileErrors.rgDataExpedicao && <small>{profileErrors.rgDataExpedicao}</small>}
+                </label>
+                <label>
+                  <span>CTPS</span>
+                  <input type="text" value={draftProfile.ctps} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('ctps', event.target.value)} />
+                  {profileErrors.ctps && <small>{profileErrors.ctps}</small>}
+                </label>
+                <label>
+                  <span>Série (CTPS)</span>
+                  <input type="text" value={draftProfile.ctpsSerie} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('ctpsSerie', event.target.value)} />
+                  {profileErrors.ctpsSerie && <small>{profileErrors.ctpsSerie}</small>}
+                </label>
+                <label>
+                  <span>Data expedição (CTPS)</span>
+                  <input type="date" value={draftProfile.ctpsDataExpedicao} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('ctpsDataExpedicao', event.target.value)} />
+                  {profileErrors.ctpsDataExpedicao && <small>{profileErrors.ctpsDataExpedicao}</small>}
+                </label>
+                <label>
+                  <span>CNH</span>
+                  <input type="text" value={draftProfile.cnh} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('cnh', event.target.value)} />
+                </label>
+                <label>
+                  <span>Categoria (CNH)</span>
+                  <input type="text" value={draftProfile.cnhCategoria} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('cnhCategoria', event.target.value)} />
+                </label>
+                <label>
+                  <span>Validade (CNH)</span>
+                  <input type="date" value={draftProfile.cnhDataValidade} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('cnhDataValidade', event.target.value)} />
+                </label>
+                <label>
+                  <span>Título de eleitor</span>
+                  <input type="text" value={draftProfile.tituloEleitor} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('tituloEleitor', event.target.value)} />
+                </label>
+                <label>
+                  <span>Zona eleitoral</span>
+                  <input type="text" value={draftProfile.zonaEleitoral} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('zonaEleitoral', event.target.value)} />
+                </label>
+                <label>
+                  <span>Seção eleitoral</span>
+                  <input type="text" value={draftProfile.secaoEleitoral} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('secaoEleitoral', event.target.value)} />
+                </label>
+                <label>
+                  <span>Certificado de reservista</span>
+                  <input type="text" value={draftProfile.certificadoReservista} disabled={!editingSections.documents} onChange={(event) => handleProfileChange('certificadoReservista', event.target.value)} />
+                </label>
+              </>
+            )}
             <label className="field-span-2">
-              <span>Comprovativo cartão cidadão (PDF/JPG)</span>
+              <span>{isBrProfile ? 'Comprovativo documento de identificação (PDF/JPG)' : 'Comprovativo cartão cidadão (PDF/JPG)'}</span>
               <input
                 type="file"
                 accept=".pdf,.jpg,.jpeg"
@@ -1374,16 +1647,33 @@ export default function ProfilePage() {
             )}
           </div>
           <div className="profile-fields">
-            <label>
-              <span>NIF</span>
-              <input type="text" value={draftProfile.nif} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('nif', event.target.value)} />
-              {profileErrors.nif && <small>{profileErrors.nif}</small>}
-            </label>
-            <label>
-              <span>NISS</span>
-              <input type="text" value={draftProfile.niss} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('niss', event.target.value)} />
-              {profileErrors.niss && <small>{profileErrors.niss}</small>}
-            </label>
+            {!isBrProfile ? (
+              <>
+                <label>
+                  <span>NIF</span>
+                  <input type="text" value={draftProfile.nif} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('nif', event.target.value)} />
+                  {profileErrors.nif && <small>{profileErrors.nif}</small>}
+                </label>
+                <label>
+                  <span>NISS</span>
+                  <input type="text" value={draftProfile.niss} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('niss', event.target.value)} />
+                  {profileErrors.niss && <small>{profileErrors.niss}</small>}
+                </label>
+              </>
+            ) : (
+              <>
+                <label>
+                  <span>CPF</span>
+                  <input type="text" value={draftProfile.cpf} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('cpf', event.target.value)} />
+                  {profileErrors.cpf && <small>{profileErrors.cpf}</small>}
+                </label>
+                <label>
+                  <span>PIS</span>
+                  <input type="text" value={draftProfile.pis} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('pis', event.target.value)} />
+                  {profileErrors.pis && <small>{profileErrors.pis}</small>}
+                </label>
+              </>
+            )}
             <label>
               <span>IBAN</span>
               <input type="text" value={draftProfile.iban} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('iban', event.target.value)} />
@@ -1401,46 +1691,82 @@ export default function ProfilePage() {
               {renderFileLink(draftProfile.comprovativoIban)}
               {profileErrors.comprovativoIban && <small>{profileErrors.comprovativoIban}</small>}
             </label>
-            <label>
-              <span>Estado civil</span>
-              <select value={draftProfile.estadoCivil} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('estadoCivil', event.target.value)}>
-                <option value="">Selecionar</option>
-                {estadoCivilOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
-              {profileErrors.estadoCivil && <small>{profileErrors.estadoCivil}</small>}
-            </label>
-            <label className="field-span-2">
-              <span>Situação IRS</span>
-              <select value={draftProfile.situacaoIrs} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('situacaoIrs', event.target.value)}>
-                <option value="">Selecionar</option>
-                {situacaoIrsOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
-              {profileErrors.situacaoIrs && <small>{profileErrors.situacaoIrs}</small>}
-            </label>
-            <label>
-              <span>Número de dependentes</span>
-              <input type="number" min="0" value={draftProfile.numeroDependentes} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('numeroDependentes', event.target.value)} />
-              {profileErrors.numeroDependentes && <small>{profileErrors.numeroDependentes}</small>}
-            </label>
-            <label>
-              <span>IRS Jovem</span>
-              <select value={draftProfile.irsJovem} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('irsJovem', event.target.value)}>
-                <option value="">Selecionar</option>
-                {irsJovemOptions.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
-              {profileErrors.irsJovem && <small>{profileErrors.irsJovem}</small>}
-            </label>
-            <label>
-              <span>Ano do primeiro desconto</span>
-              <input type="text" inputMode="numeric" value={draftProfile.anoPrimeiroDesconto} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('anoPrimeiroDesconto', event.target.value)} />
-              {profileErrors.anoPrimeiroDesconto && <small>{profileErrors.anoPrimeiroDesconto}</small>}
-            </label>
+            {!isBrProfile && (
+              <>
+                <label>
+                  <span>Estado civil</span>
+                  <select value={draftProfile.estadoCivil} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('estadoCivil', event.target.value)}>
+                    <option value="">Selecionar</option>
+                    {estadoCivilOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                  {profileErrors.estadoCivil && <small>{profileErrors.estadoCivil}</small>}
+                </label>
+                <label className="field-span-2">
+                  <span>Situação IRS</span>
+                  <select value={draftProfile.situacaoIrs} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('situacaoIrs', event.target.value)}>
+                    <option value="">Selecionar</option>
+                    {situacaoIrsOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                  {profileErrors.situacaoIrs && <small>{profileErrors.situacaoIrs}</small>}
+                </label>
+                <label>
+                  <span>Número de dependentes</span>
+                  <input type="number" min="0" value={draftProfile.numeroDependentes} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('numeroDependentes', event.target.value)} />
+                  {profileErrors.numeroDependentes && <small>{profileErrors.numeroDependentes}</small>}
+                </label>
+                <label>
+                  <span>IRS Jovem</span>
+                  <select value={draftProfile.irsJovem} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('irsJovem', event.target.value)}>
+                    <option value="">Selecionar</option>
+                    {irsJovemOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                  {profileErrors.irsJovem && <small>{profileErrors.irsJovem}</small>}
+                </label>
+                <label>
+                  <span>Ano do primeiro desconto</span>
+                  <input type="text" inputMode="numeric" value={draftProfile.anoPrimeiroDesconto} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('anoPrimeiroDesconto', event.target.value)} />
+                  {profileErrors.anoPrimeiroDesconto && <small>{profileErrors.anoPrimeiroDesconto}</small>}
+                </label>
+              </>
+            )}
+            {isBrProfile && (
+              <>
+                <label>
+                  <span>Primeiro emprego</span>
+                  <select value={draftProfile.primeiroEmprego ? 'SIM' : 'NAO'} disabled={!editingSections.tax} onChange={(event) => handleProfileBooleanChange('primeiroEmprego', event.target.value === 'SIM')}>
+                    <option value="SIM">Sim</option>
+                    <option value="NAO">Não</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Recebe aposentadoria</span>
+                  <select value={draftProfile.recebeAposentadoria ? 'SIM' : 'NAO'} disabled={!editingSections.tax} onChange={(event) => handleProfileBooleanChange('recebeAposentadoria', event.target.value === 'SIM')}>
+                    <option value="SIM">Sim</option>
+                    <option value="NAO">Não</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Recebe seguro de desemprego</span>
+                  <select value={draftProfile.recebeSeguroDesemprego ? 'SIM' : 'NAO'} disabled={!editingSections.tax} onChange={(event) => handleProfileBooleanChange('recebeSeguroDesemprego', event.target.value === 'SIM')}>
+                    <option value="SIM">Sim</option>
+                    <option value="NAO">Não</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Vale transporte</span>
+                  <select value={draftProfile.valeTransporte ? 'SIM' : 'NAO'} disabled={!editingSections.tax} onChange={(event) => handleProfileBooleanChange('valeTransporte', event.target.value === 'SIM')}>
+                    <option value="SIM">Sim</option>
+                    <option value="NAO">Não</option>
+                  </select>
+                </label>
+              </>
+            )}
           </div>
         </article>
         )}
@@ -1494,7 +1820,16 @@ export default function ProfilePage() {
           </div>
           <div className="profile-fields profile-fields--contract">
             <label>
-              <span>Cargo</span>
+              <span>Número mecanográfico</span>
+              <input
+                type="text"
+                value={draftProfile.numeroMecanografico}
+                disabled={!canEditContract || !editingSections.contract}
+                onChange={(event) => handleProfileChange('numeroMecanografico', event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Nível (cargo)</span>
               <SearchableDropdown
                 label="Cargo"
                 value={draftProfile.cargo}
@@ -1506,7 +1841,7 @@ export default function ProfilePage() {
               {profileErrors.cargo && <small>{profileErrors.cargo}</small>}
             </label>
             <label>
-              <span>Categoria profissional</span>
+              <span>Categoria</span>
               <input
                 type="text"
                 value={draftProfile.categoriaProfissional}
@@ -1515,30 +1850,40 @@ export default function ProfilePage() {
               />
               {profileErrors.categoriaProfissional && <small>{profileErrors.categoriaProfissional}</small>}
             </label>
-            <label className="field-span-2">
+            <label>
               <span>Função</span>
               <SearchableDropdown
                 label="Função"
                 value={draftProfile.funcao}
                 placeholder="Selecionar função"
                 options={funcaoOptions}
-                columns={2}
+                columns={1}
                 disabled={!canEditContract || !editingSections.contract}
                 onChange={(value) => handleProfileChange('funcao', value)}
               />
               {profileErrors.funcao && <small>{profileErrors.funcao}</small>}
             </label>
             <label>
-              <span>Número mecanográfico</span>
+              <span>CC (centro de custo)</span>
               <input
                 type="text"
-                value={draftProfile.numeroMecanografico}
-                disabled={!canEditContract || !editingSections.contract}
-                onChange={(event) => handleProfileChange('numeroMecanografico', event.target.value)}
+                value={contractCostCenter}
+                placeholder="Preenchido com base na equipa"
+                disabled
+                readOnly
               />
             </label>
             <label>
-              <span>Data início do contrato</span>
+              <span>Equipa</span>
+              <input
+                type="text"
+                value={teamName}
+                disabled
+                readOnly
+              />
+            </label>
+            <label>
+              <span>Data admissão</span>
               <input type="date" value={draftProfile.dataInicioContrato} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('dataInicioContrato', event.target.value)} />
               {profileErrors.dataInicioContrato && <small>{profileErrors.dataInicioContrato}</small>}
             </label>
@@ -1557,7 +1902,7 @@ export default function ProfilePage() {
               {profileErrors.tipoContrato && <small>{profileErrors.tipoContrato}</small>}
             </label>
             <label>
-              <span>Regime horário</span>
+              <span>Regime contrato</span>
               <select value={draftProfile.regimeHorario} disabled={!canEditContract || !editingSections.contract} onChange={(event) => handleProfileChange('regimeHorario', event.target.value)}>
                 <option value="">Selecionar</option>
                 {regimeHorarioOptions.map((option) => (
@@ -1658,37 +2003,61 @@ export default function ProfilePage() {
             )}
           </div>
           <div className="profile-fields profile-fields--2">
-            <label>
-              <span>Número do Cartão Continente</span>
-              <input
-                type="text"
-                value={draftProfile.numeroCartaoContinente}
-                disabled={!editingSections.benefits}
-                onChange={(event) => handleProfileChange('numeroCartaoContinente', event.target.value)}
-              />
-            </label>
-            <label>
-              <span>Voucher NOS</span>
-              <input
-                type="text"
-                value={draftProfile.voucherNosData}
-                disabled={!editingSections.benefits}
-                onChange={(event) => handleProfileChange('voucherNosData', event.target.value)}
-                placeholder="Ex.: 2026-05, código ou referência"
-              />
-            </label>
-            <label className="field-span-2">
-              <span>Comprovativo Cartão Continente (PDF/JPG)</span>
-              <input
-                type="file"
-                accept=".pdf,.jpg,.jpeg"
-                disabled={!editingSections.benefits}
-                onClick={handleFileInputClick}
-                onChange={(event) => handleFileChange('comprovativoCartaoContinente', event)}
-              />
-              {renderFileLink(draftProfile.comprovativoCartaoContinente)}
-              {profileErrors.comprovativoCartaoContinente && <small>{profileErrors.comprovativoCartaoContinente}</small>}
-            </label>
+            {!isBrProfile && (
+              <label>
+                <span>Número do Cartão Continente</span>
+                <input
+                  type="text"
+                  value={draftProfile.numeroCartaoContinente}
+                  disabled={!editingSections.benefits}
+                  onChange={(event) => handleProfileChange('numeroCartaoContinente', event.target.value)}
+                />
+              </label>
+            )}
+            <div className="profile-voucher-nos field-span-2" role="status" aria-live="polite">
+              <div className="profile-voucher-nos__copy">
+                <span className="profile-voucher-nos__title">Voucher NOS</span>
+                <strong>
+                  {voucherLastRequestDate
+                    ? `Último pedido em ${formatPtDate(draftProfile.voucherNosData)}`
+                    : 'Ainda sem pedidos de voucher NOS'}
+                </strong>
+                <small>
+                  {voucherNextEligibleDate
+                    ? `Próximo pedido disponível em ${formatPtDate(formatLocalDateOnly(voucherNextEligibleDate))}`
+                    : 'Sem pedidos anteriores, podes emitir agora se o contrato for sem termo.'}
+                </small>
+              </div>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={handleVoucherNosRequest}
+                disabled={isRequestingVoucherNos || !isSemTermoContract || voucherIsInCooldown}
+              >
+                {isRequestingVoucherNos ? 'A emitir...' : 'Emitir voucher'}
+              </Button>
+              {!isSemTermoContract && (
+                <p className="profile-voucher-nos__hint">Disponível apenas para contrato sem termo.</p>
+              )}
+              {isSemTermoContract && voucherIsInCooldown && voucherNextEligibleDate && (
+                <p className="profile-voucher-nos__hint">Pedido bloqueado até {formatPtDate(formatLocalDateOnly(voucherNextEligibleDate))}.</p>
+              )}
+            </div>
+            {!isBrProfile && (
+              <label className="field-span-2">
+                <span>Comprovativo Cartão Continente (PDF/JPG)</span>
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg"
+                  disabled={!editingSections.benefits}
+                  onClick={handleFileInputClick}
+                  onChange={(event) => handleFileChange('comprovativoCartaoContinente', event)}
+                />
+                {renderFileLink(draftProfile.comprovativoCartaoContinente)}
+                {profileErrors.comprovativoCartaoContinente && <small>{profileErrors.comprovativoCartaoContinente}</small>}
+              </label>
+            )}
           </div>
         </article>
         )}

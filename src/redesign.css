@@ -2544,6 +2544,271 @@
   margin-bottom: 12px;
 }
 
+.trainings-hero--scoped {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.trainings-hero__intro {
+  display: grid;
+  gap: 12px;
+}
+
+.trainings-hero__eyebrow {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(138, 178, 232, 0.5);
+  color: #2d5f9f;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.trainings-scope-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.trainings-scope-switch__item {
+  border: 1px solid #cfe1fb;
+  background: rgba(255, 255, 255, 0.82);
+  color: #2d5f9f;
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.trainings-scope-switch__item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(43, 97, 169, 0.12);
+  border-color: #a7c7f3;
+}
+
+.trainings-scope-switch__item.is-active {
+  background: linear-gradient(135deg, #1d6fcf, #4f98ef);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 16px 32px rgba(24, 92, 174, 0.22);
+}
+
+.trainings-hours-summary--hero {
+  height: 100%;
+}
+
+.trainings-list-head--filters {
+  display: grid;
+  gap: 16px;
+}
+
+.trainings-list-head__title {
+  display: grid;
+  gap: 4px;
+}
+
+.trainings-list-head__title h3 {
+  margin: 0;
+}
+
+.trainings-list-head__title small {
+  color: #58739c;
+}
+
+.trainings-list-head__title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.trainings-list-head__topbar-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.trainings-filter-active-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  background: #ddeeff;
+  color: #1553a0;
+  border: 1px solid #b3d0f5;
+  letter-spacing: 0.01em;
+}
+
+.trainings-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 249, 255, 0.95));
+  border: 1px solid #d8e6fa;
+}
+
+.trainings-filter-grid--basic {
+  grid-template-columns: 1fr 1fr 1fr auto;
+  align-items: end;
+}
+
+.trainings-filter-grid label {
+  display: grid;
+  gap: 8px;
+}
+
+.trainings-filter-grid input,
+.trainings-filter-grid select {
+  min-height: 44px;
+  border-radius: 14px;
+  border: 1px solid #cfe0f8;
+  background: #fff;
+  padding: 0 14px;
+  color: #1f3556;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.trainings-filter-grid__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  justify-content: flex-end;
+  grid-column: 1 / -1;
+}
+
+.trainings-filter-grid__actions--inline {
+  grid-column: auto;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ── Advanced filter toggle button ── */
+.trainings-adv-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1px solid #cfe0f8;
+  background: #fff;
+  color: #1f3a6e;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms, border-color 160ms, box-shadow 160ms;
+  white-space: nowrap;
+}
+
+.trainings-adv-toggle:hover {
+  background: #eef5ff;
+  border-color: #9dc5f0;
+}
+
+.trainings-adv-toggle.is-open {
+  background: #e6f0ff;
+  border-color: #4f8fe0;
+  color: #1044a0;
+  box-shadow: 0 0 0 3px rgba(79, 143, 224, 0.12);
+}
+
+.trainings-adv-toggle__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #1553a0;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* ── Advanced filter panel ── */
+.trainings-filter-advanced {
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f4f9ff 0%, #edf4ff 100%);
+  border: 1px solid #cde1fb;
+  padding: 18px 20px;
+  animation: trainings-adv-in 180ms ease;
+}
+
+@keyframes trainings-adv-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.trainings-filter-advanced__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.trainings-filter-advanced__grid label {
+  display: grid;
+  gap: 7px;
+}
+
+.trainings-filter-advanced__grid input,
+.trainings-filter-advanced__grid select {
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid #cfe0f8;
+  background: #fff;
+  padding: 0 12px;
+  color: #1f3556;
+  font-size: 0.9rem;
+}
+
+/* ── Sortable table headers ── */
+.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.sortable-th:hover {
+  background: rgba(79, 143, 224, 0.06);
+}
+
+.sort-icon {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 0.8em;
+  vertical-align: middle;
+  transition: color 150ms;
+}
+
+.sort-icon--idle {
+  color: #afc5e0;
+}
+
+.sort-icon--active {
+  color: #1553a0;
+  font-weight: 800;
+}
+
 .trainings-list-head h3 {
   margin: 0;
   color: var(--hub-ink-strong);
@@ -2658,6 +2923,35 @@
 }
 
 @media (max-width: 760px) {
+  .trainings-hero--scoped {
+    grid-template-columns: 1fr;
+  }
+
+  .trainings-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trainings-filter-grid--basic {
+    grid-template-columns: 1fr;
+  }
+
+  .trainings-filter-grid__actions--inline {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .trainings-filter-advanced__grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .trainings-filter-grid__actions {
+    justify-content: stretch;
+  }
+
+  .trainings-filter-grid__actions .ui-button {
+    width: 100%;
+  }
+
   .home-actions .ui-button,
   .account-actions .ui-button {
     width: 100%;
@@ -4395,6 +4689,14 @@
   font-size: 0.9rem;
 }
 
+.profile-hero .profile-hero__role-line {
+  margin-top: 4px;
+  color: #2f4f74;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
 .profile-hero .profile-hero__meta {
   margin-top: 10px;
   display: flex;
@@ -4736,6 +5038,44 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.profile-voucher-nos {
+  border: 1px solid #d8e6fb;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f7fbff 0%, #eef5ff 100%);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.profile-voucher-nos__copy {
+  display: grid;
+  gap: 4px;
+}
+
+.profile-voucher-nos__title {
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #416187;
+  font-weight: 700;
+}
+
+.profile-voucher-nos__copy strong {
+  color: #15314f;
+  font-size: 0.96rem;
+}
+
+.profile-voucher-nos__copy small,
+.profile-voucher-nos__hint {
+  color: #49688d;
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.profile-voucher-nos .ui-button {
+  justify-self: start;
 }
 
 .profile-option-modal {
@@ -6345,42 +6685,162 @@
 }
 
 .collaborators-filter-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid var(--elite-line);
-  background: linear-gradient(180deg, #fcfdff, #f6f9fc);
+  grid-template-columns: minmax(260px, 2.2fr) repeat(6, minmax(118px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid #d4e1f0;
+  background:
+    radial-gradient(circle at 4% 10%, rgba(32, 105, 194, 0.08), transparent 42%),
+    linear-gradient(165deg, #f8fbff, #eef4fb 68%, #f7fbff);
+  box-shadow: 0 10px 24px rgba(16, 53, 102, 0.08);
 }
 
 .collaborators-filter-grid label {
-  gap: 6px;
+  gap: 4px;
+  padding: 8px 9px;
+  border-radius: 10px;
+  border: 1px solid #dde7f3;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
 }
 
 .collaborators-filter-grid label span {
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   font-weight: 800;
-  color: #475569;
+  color: #4a607d;
 }
 
 .collaborators-filter-grid input,
 .collaborators-filter-grid select {
-  border: 1px solid #dbe2ea;
-  border-radius: 10px;
-  min-height: 38px;
-  padding: 8px 10px;
-  background: #fff;
+  border: 1px solid #d4deea;
+  border-radius: 9px;
+  min-height: 34px;
+  padding: 6px 9px;
+  background: #fbfdff;
   color: #0f172a;
+  font-size: 0.84rem;
 }
 
 .collaborators-filter-grid input:focus,
 .collaborators-filter-grid select:focus {
   outline: none;
-  border-color: #1f5eb3;
-  box-shadow: 0 0 0 3px rgba(31, 94, 179, 0.15);
+  border-color: #205fae;
+  box-shadow: 0 0 0 3px rgba(32, 95, 174, 0.14);
+}
+
+.vacations-sell-card {
+  margin-top: 0.9rem;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid #d0e5ff;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(19, 127, 99, 0.11), transparent 40%),
+    linear-gradient(145deg, #f8fdff, #eef7ff 72%, #f5fcff);
+  box-shadow: 0 12px 28px rgba(18, 66, 122, 0.1);
+}
+
+.vacations-sell-card__head h4 {
+  margin: 0;
+  font-size: 1.02rem;
+  color: #0f4b8a;
+}
+
+.vacations-sell-card__head p {
+  margin: 4px 0 0;
+  font-size: 0.86rem;
+  color: #557195;
+}
+
+.vacations-sell-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vacations-sell-card__meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #cae0fb;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 0.76rem;
+  color: #234c7c;
+}
+
+.vacations-sell-card__meta strong {
+  color: #0a2e56;
+}
+
+.vacations-sell-card__actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.vacations-sell-card__input-wrap {
+  display: grid;
+  gap: 4px;
+}
+
+.vacations-sell-card__input-wrap span {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 800;
+  color: #516a8a;
+}
+
+.vacations-sell-card__input-wrap input {
+  width: 128px;
+  min-height: 36px;
+  border-radius: 9px;
+  border: 1px solid #c8dbf2;
+  background: #ffffff;
+  padding: 7px 10px;
+  font-weight: 700;
+  color: #10335f;
+}
+
+.vacations-sell-card__input-wrap input:focus {
+  outline: none;
+  border-color: #2672ce;
+  box-shadow: 0 0 0 3px rgba(38, 114, 206, 0.14);
+}
+
+@media (max-width: 1520px) {
+  .collaborators-filter-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1080px) {
+  .collaborators-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .collaborators-filter-grid,
+  .vacations-sell-card__actions {
+    grid-template-columns: 1fr;
+  }
+
+  .vacations-sell-card__actions {
+    display: grid;
+  }
+
+  .vacations-sell-card__input-wrap input,
+  .vacations-sell-card__actions .btn-primary {
+    width: 100%;
+  }
 }
 
 .collaborators-export-actions {

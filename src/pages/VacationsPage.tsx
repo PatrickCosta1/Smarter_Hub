@@ -76,6 +76,7 @@ type VacationOverview = {
     unjustifiedAbsences?: number;
     baseEntitledDays?: number;
     extraBalanceDays?: number;
+    availableEntitledDays?: number;
     soldVacationDays?: number;
     maxSellableDays?: number;
     entitledDays: number;
@@ -585,13 +586,18 @@ export default function VacationsPage() {
     const pendingVacationDays = overview?.pendingVacationDays ?? pendingVacationDaysFromRecords;
     const approvedAbsenceDays = overview?.approvedAbsenceDays ?? approvedAbsenceDaysFromRecords;
     const pendingAbsenceDays = overview?.pendingAbsenceDays ?? pendingAbsenceDaysFromRecords;
+    const rawEntitlement = overview?.calculation?.entitledDays ?? (overview?.country === 'BR' ? 0 : 22);
+    const soldVacationDays = overview?.country === 'BR' ? (overview?.calculation?.soldVacationDays ?? 0) : 0;
+    const availableEntitlement = overview?.country === 'BR'
+      ? (overview?.calculation?.availableEntitledDays ?? Math.max(rawEntitlement - soldVacationDays, 0))
+      : rawEntitlement;
 
     return {
       approvedVacationDays,
       pendingVacationDays,
       approvedAbsenceDays,
       pendingAbsenceDays,
-      entitlement: overview?.calculation?.entitledDays ?? (overview?.country === 'BR' ? 0 : 22),
+      entitlement: availableEntitlement,
       creditedDays: overview?.calculation?.extraBalanceDays ?? 0,
     };
   }, [overview, sortedRecords]);
@@ -1871,23 +1877,29 @@ export default function VacationsPage() {
               </div>
 
               {overview.country === 'BR' && (
-                <div className="vacations-actions-card" style={{ marginTop: '1rem' }}>
-                  <div>
+                <div className="vacations-sell-card">
+                  <div className="vacations-sell-card__head">
                     <h4>Venda de férias (abono)</h4>
-                    <p>
-                      Pode vender até {overview.calculation?.maxSellableDays ?? 0} dia(s). Já vendido:{' '}
-                      <strong>{overview.calculation?.soldVacationDays ?? 0}</strong>.
-                    </p>
+                    <p>Defina quantos dias quer vender no período atual.</p>
                   </div>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <input
-                      type="number"
-                      min={0}
-                      max={overview.calculation?.maxSellableDays ?? 0}
-                      value={sellVacationDaysInput}
-                      onChange={(event) => setSellVacationDaysInput(event.target.value)}
-                      style={{ width: '120px' }}
-                    />
+
+                  <div className="vacations-sell-card__meta" aria-label="Resumo de venda de férias">
+                    <span>Máx. vendável: <strong>{overview.calculation?.maxSellableDays ?? 0}</strong></span>
+                    <span>Já vendido: <strong>{overview.calculation?.soldVacationDays ?? 0}</strong></span>
+                  </div>
+
+                  <div className="vacations-sell-card__actions">
+                    <label className="vacations-sell-card__input-wrap" htmlFor="sell-vacation-days-input">
+                      <span>Dias a vender</span>
+                      <input
+                        id="sell-vacation-days-input"
+                        type="number"
+                        min={0}
+                        max={overview.calculation?.maxSellableDays ?? 0}
+                        value={sellVacationDaysInput}
+                        onChange={(event) => setSellVacationDaysInput(event.target.value)}
+                      />
+                    </label>
                     <button type="button" className="btn-primary" onClick={() => void submitSellVacationDays()} disabled={isSellingVacationDays}>
                       {isSellingVacationDays ? 'A guardar...' : 'Guardar venda'}
                     </button>

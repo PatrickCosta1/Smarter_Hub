@@ -128,7 +128,7 @@ function AppRoutes() {
       }
 
       if (canManageTrainings || canViewOwnTrainings) {
-        requests.push(safePrefetch(canManageTrainings ? '/trainings/assigned' : '/trainings/me', 60000));
+        requests.push(safePrefetch('/trainings/me', 60000));
       }
 
       void Promise.allSettled(requests);

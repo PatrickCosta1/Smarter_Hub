@@ -25,15 +25,38 @@ const profileKeys: Array<keyof ProfileData> = [
   'localidade',
   'codigoPostal',
   'matriculaCarro',
+  'localNascimentoPais',
+  'localNascimentoCidade',
+  'nomePai',
+  'nomeMae',
   'cartaoCidadao',
   'validadeCartaoCidadao',
   'nif',
+  'cpf',
+  'pis',
+  'ctps',
+  'ctpsSerie',
+  'ctpsDataExpedicao',
+  'rg',
+  'rgOrgaoEmissor',
+  'rgDataExpedicao',
+  'cnh',
+  'cnhCategoria',
+  'cnhDataValidade',
+  'tituloEleitor',
+  'zonaEleitoral',
+  'secaoEleitoral',
+  'certificadoReservista',
   'niss',
   'iban',
   'situacaoIrs',
   'numeroDependentes',
   'irsJovem',
   'anoPrimeiroDesconto',
+  'primeiroEmprego',
+  'recebeAposentadoria',
+  'recebeSeguroDesemprego',
+  'valeTransporte',
   'numeroCartaoContinente',
   'voucherNosData',
   'comprovativoMoradaFiscal',
@@ -60,8 +83,19 @@ function normalizeProfileData(input: unknown): ProfileData {
 
   profileKeys.forEach((key) => {
     const value = source[key];
+
     if (key === 'workCountry') {
       normalized.workCountry = value === 'BR' ? 'BR' : 'PT';
+      return;
+    }
+
+    if (
+      key === 'primeiroEmprego'
+      || key === 'recebeAposentadoria'
+      || key === 'recebeSeguroDesemprego'
+      || key === 'valeTransporte'
+    ) {
+      normalized[key] = value === true;
       return;
     }
 

@@ -89,7 +89,11 @@
   \item Se a seleção de pedido incluir fim de semana, o tipo deve ficar bloqueado para ausência (não férias).
   \item Equipas mãe podem ter um campo de centro de custo (texto) associado à estrutura.
   \item O centro de custo das equipas mãe é informação reservada a utilizadores com acesso total.
+  \item Na ficha do colaborador, o campo de centro de custo em \textit{Dados Contratuais} deve ser preenchido com o centro de custo efetivo da equipa do utilizador.
   \item A secção \textit{Pedido de Benefícios} da ficha deve incluir, no mínimo, Cartão Continente e Voucher NOS.
+  \item Para colaboradores com \textit{workCountry = BR}, a ficha deve apresentar nomenclaturas e campos específicos do Brasil (ex.: CPF/PIS/CTPS/RG/CNH/Título de eleitor), ocultar \textit{Matrícula do carro}, tratar \textit{Código Postal} como \textit{CEP} e não apresentar o bloco de Cartão Continente.
+  \item O Voucher NOS só pode ser pedido por colaboradores com contrato \textit{Sem termo}; após um pedido, o próximo só é permitido passados 2 anos da data do último pedido.
+  \item O pedido de Voucher NOS é efetuado via botão \textit{Emitir voucher}, gera pedido para \texttt{t.people} e deve apresentar ao colaborador a data do último pedido.
   \item A ficha deve incluir o campo \textit{Número mecanográfico} na área contratual.
 \end{itemize}
 

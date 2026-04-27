@@ -79,7 +79,7 @@ export default function HomePage() {
 
         if (canViewUserList) {
           try {
-            const [summary, profileApprovals, vacationApprovals, ownRequest, ownVacations] = await Promise.all([
+            const [summary, profileApprovals, vacationApprovals, ownRequest, ownVacations, ownTrainings] = await Promise.all([
               apiRequestCached<DashboardSummaryMetrics>('/users/dashboard-summary', {
                 headers,
                 signal: controller.signal,
@@ -88,6 +88,7 @@ export default function HomePage() {
               apiRequestCached<unknown[]>('/vacations/requests', { headers, signal: controller.signal }, 15000, true),
               apiRequestCached<{ pending?: boolean }>('/profile/requests/me', { headers, signal: controller.signal }, 15000),
               apiRequestCached<Array<{ status: string }>>('/vacations/me', { headers, signal: controller.signal }, 15000),
+              apiRequestCached<Array<{ status?: string }>>('/trainings/me', { headers, signal: controller.signal }, 15000),
             ]);
 
             if (!controller.signal.aborted) {
@@ -95,7 +96,7 @@ export default function HomePage() {
               setPendingVacationRequests(Number(summary.totals?.pendingVacationRequests || 0));
               setPendingProfileApprovals(profileApprovals.length);
               setPendingVacationApprovals(vacationApprovals.length);
-              setAssignedTrainings(Number(summary.totals?.trainingsAssigned || 0));
+              setAssignedTrainings(ownTrainings.filter((item) => item.status === 'ASSIGNED').length);
               setOwnPendingProfileRequest(Boolean(ownRequest.pending));
               setOwnPendingVacationCount(ownVacations.filter((v) => v.status === 'PENDING').length);
             }
@@ -121,7 +122,7 @@ export default function HomePage() {
           const [profileRequestsResult, vacationRequestsResult, assignedTrainingsResult, ownRequestResult, ownVacationsResult] = await Promise.allSettled([
             apiRequestCached<unknown[]>('/profile/requests', { headers, signal: controller.signal }, 15000, true),
             apiRequestCached<unknown[]>('/vacations/requests', { headers, signal: controller.signal }, 15000, true),
-            apiRequestCached<Array<{ status?: string }>>('/trainings/assigned', { headers, signal: controller.signal }, 15000),
+            apiRequestCached<Array<{ status?: string }>>('/trainings/me', { headers, signal: controller.signal }, 15000),
             apiRequestCached<{ pending?: boolean }>('/profile/requests/me', { headers, signal: controller.signal }, 15000),
             apiRequestCached<Array<{ status: string }>>('/vacations/me', { headers, signal: controller.signal }, 15000),
           ]);
@@ -217,7 +218,7 @@ export default function HomePage() {
                   <strong>{ownPendingVacationCount}</strong>
                 </div>
                 <div className="home-metric">
-                  <span>Formações ativas</span>
+                  <span>Minhas formações ativas</span>
                   <strong>{assignedTrainings}</strong>
                 </div>
                 <div className={`home-metric${unreadNotifications > 0 ? ' home-metric--info' : ''}`}>
@@ -236,7 +237,7 @@ export default function HomePage() {
                   <strong>{unreadNotifications}</strong>
                 </div>
                 <div className="home-metric">
-                  <span>Formações ativas</span>
+                  <span>Minhas formações ativas</span>
                   <strong>{assignedTrainings}</strong>
                 </div>
               </>
@@ -312,9 +313,9 @@ export default function HomePage() {
             </Card>
 
             <Card as="article" className="home-card">
-              <p className="home-card__label">Equipa</p>
-              <h3>Formações ativas</h3>
-              <small>{assignedTrainings > 0 ? `${assignedTrainings} formação(ões) atribuídas à equipa.` : 'Sem formações atribuídas.'}</small>
+              <p className="home-card__label">Desenvolvimento</p>
+              <h3>Minhas formações ativas</h3>
+              <small>{assignedTrainings > 0 ? `${assignedTrainings} formação(ões) ativas para ti.` : 'Sem formações ativas para ti.'}</small>
               <Button size="sm" variant="secondary" type="button" onClick={() => navigate('/formacoes')}>Ver formações</Button>
             </Card>
 

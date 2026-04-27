@@ -29,6 +29,10 @@ type TrainingRecord = {
     username: string;
     email: string;
     role: string;
+    profile?: {
+      nomeAbreviado?: string;
+      nomeCompleto?: string;
+    } | null;
   };
   assignedBy?: {
     id: string;
@@ -68,6 +72,10 @@ type RecentAssignedItem = {
   collaborator: string;
   createdAt: string;
 };
+
+type TrainingsScope = 'mine' | 'team' | 'hierarchy';
+type SortField = 'createdAt' | 'nome' | 'horas' | 'dataInicio' | 'dataConclusao' | 'status';
+type OrigemFilter = 'all' | 'propria' | 'atribuida';
 
 const EMPTY_ASSIGN_DRAFT: AssignDraft = {
   nome: '',
@@ -126,11 +134,25 @@ function getTrainingStartDate(record: TrainingRecord) {
   return record.dataInicio?.trim() || '';
 }
 
+function getTrainingOwnerLabel(record: TrainingRecord) {
+  if (!record.user) {
+    return '-';
+  }
+
+  return formatAbbreviatedUserName(record.user);
+}
+
 export default function TrainingsPage() {
   const { hasPermission, isRootAccess, refreshNotifications } = usePortal();
-  const canManage = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
+  const canAssignTraining = isRootAccess || hasPermission('assign_training');
+  const canViewHierarchyTrainings = isRootAccess || hasPermission('view_all_trainings');
+  const canViewTeamTrainings = canAssignTraining;
+  const canMarkCompleted = isRootAccess || hasPermission('mark_training_completed');
+  const [scope, setScope] = useState<TrainingsScope>('mine');
 
   const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [recordsCollaboratorFilter, setRecordsCollaboratorFilter] = useState('');
   const [records, setRecords] = useState<TrainingRecord[]>([]);
   const [status, setStatus] = useState('');
 
@@ -146,6 +168,19 @@ export default function TrainingsPage() {
   const [recordsLoaded, setRecordsLoaded] = useState(false);
   const [completeConfirmRecordId, setCompleteConfirmRecordId] = useState<string | null>(null);
   const [recentAssigned, setRecentAssigned] = useState<RecentAssignedItem[]>([]);
+
+  // ── Advanced filters
+  const [entidadeFilter, setEntidadeFilter] = useState('');
+  const [dataInicioFrom, setDataInicioFrom] = useState('');
+  const [dataInicioTo, setDataInicioTo] = useState('');
+  const [horasMin, setHorasMin] = useState('');
+  const [horasMax, setHorasMax] = useState('');
+  const [origemFilter, setOrigemFilter] = useState<OrigemFilter>('all');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
+  // ── Sort
+  const [sortField, setSortField] = useState<SortField>('createdAt');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const filteredCollaborators = useMemo(() => {
     const q = collaboratorQuery.trim().toLowerCase();
@@ -163,30 +198,128 @@ export default function TrainingsPage() {
     [allCollaborators, selectedUserIds],
   );
 
-  const sortedRecords = useMemo(
-    () => [...records].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [records],
-  );
+  const isOwnScope = scope === 'mine';
+
+  const sortedRecords = useMemo(() => {
+    return [...records].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'nome': cmp = a.nome.localeCompare(b.nome, 'pt'); break;
+        case 'horas': cmp = a.horas - b.horas; break;
+        case 'dataInicio': cmp = (a.dataInicio || '').localeCompare(b.dataInicio || ''); break;
+        case 'dataConclusao': cmp = (a.dataConclusao || '').localeCompare(b.dataConclusao || ''); break;
+        case 'status': cmp = (a.status || '').localeCompare(b.status || ''); break;
+        default: cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [records, sortField, sortDir]);
 
   const visibleRecords = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-
-    if (!normalized) {
-      return sortedRecords;
-    }
+    const normalizedCollaborator = recordsCollaboratorFilter.trim().toLowerCase();
+    const horasMinVal = horasMin ? parseFloat(horasMin.replace(',', '.')) : null;
+    const horasMaxVal = horasMax ? parseFloat(horasMax.replace(',', '.')) : null;
 
     return sortedRecords.filter((record) => {
-      return [record.nome, record.entidade, getTrainingStartDate(record), record.link, record.user?.username ?? '']
-        .join(' ')
-        .toLowerCase()
-        .includes(normalized);
+      if (statusFilter !== 'all' && (record.status || '') !== statusFilter) return false;
+
+      if (!isOwnScope && normalizedCollaborator) {
+        const collabHaystack = [
+          record.user?.username ?? '',
+          record.user?.email ?? '',
+          record.user?.profile?.nomeCompleto ?? '',
+          record.user?.profile?.nomeAbreviado ?? '',
+        ].join(' ').toLowerCase();
+        if (!collabHaystack.includes(normalizedCollaborator)) return false;
+      }
+
+      if (entidadeFilter && record.entidade !== entidadeFilter) return false;
+
+      if (dataInicioFrom && (record.dataInicio || '') < dataInicioFrom) return false;
+      if (dataInicioTo && (record.dataInicio || '') > dataInicioTo) return false;
+
+      if (horasMinVal !== null && !Number.isNaN(horasMinVal) && record.horas < horasMinVal) return false;
+      if (horasMaxVal !== null && !Number.isNaN(horasMaxVal) && record.horas > horasMaxVal) return false;
+
+      if (origemFilter === 'propria' && record.assignedBy) return false;
+      if (origemFilter === 'atribuida' && !record.assignedBy) return false;
+
+      if (normalized) {
+        const textHaystack = [
+          record.nome,
+          record.entidade,
+          getTrainingStartDate(record),
+          record.link,
+          record.user?.username ?? '',
+          record.user?.profile?.nomeCompleto ?? '',
+          record.user?.profile?.nomeAbreviado ?? '',
+        ].join(' ').toLowerCase();
+        if (!textHaystack.includes(normalized)) return false;
+      }
+
+      return true;
     });
-  }, [query, sortedRecords]);
+  }, [query, recordsCollaboratorFilter, scope, sortedRecords, statusFilter, entidadeFilter, dataInicioFrom, dataInicioTo, horasMin, horasMax, origemFilter, isOwnScope]);
 
   const totalHours = useMemo(() => records.reduce((sum, record) => sum + record.horas, 0), [records]);
   const assignedCount = useMemo(() => records.filter((record) => record.status === 'ASSIGNED').length, [records]);
   const completedCount = useMemo(() => records.filter((record) => record.status === 'COMPLETED').length, [records]);
-  const criticalCount = useMemo(() => (canManage ? assignedCount : assignedCount), [canManage, assignedCount]);
+
+  const uniqueEntidades = useMemo(() => {
+    const set = new Set(records.map((r) => r.entidade).filter(Boolean));
+    return [...set].sort((a, b) => a.localeCompare(b, 'pt'));
+  }, [records]);
+
+  const activeFilterCount = useMemo(() => {
+    let n = 0;
+    if (query) n++;
+    if (statusFilter !== 'all') n++;
+    if (recordsCollaboratorFilter) n++;
+    if (entidadeFilter) n++;
+    if (dataInicioFrom) n++;
+    if (dataInicioTo) n++;
+    if (horasMin) n++;
+    if (horasMax) n++;
+    if (origemFilter !== 'all') n++;
+    return n;
+  }, [query, statusFilter, recordsCollaboratorFilter, entidadeFilter, dataInicioFrom, dataInicioTo, horasMin, horasMax, origemFilter]);
+  const scopeConfig = useMemo(() => {
+    switch (scope) {
+      case 'team':
+        return {
+          title: 'Formações da equipa',
+          description: 'Consulta todas as formações das pessoas da tua equipa e filtra rapidamente por colaborador ou estado.',
+          summaryLabel: 'Equipa',
+          emptyMessage: 'Sem formações registadas para os colaboradores da tua equipa.',
+        };
+      case 'hierarchy':
+        return {
+          title: 'Vista global de formações',
+          description: 'Acompanha o percurso formativo de toda a organização. Filtra por colaborador ou estado para analisar rapidamente o envolvimento formativo.',
+          summaryLabel: 'Organização',
+          emptyMessage: 'Não existem formações registadas na organização.',
+        };
+      default:
+        return {
+          title: 'Minhas formações',
+          description: 'Consulta apenas as tuas formações ativas e concluídas num espaço mais claro e focado.',
+          summaryLabel: 'Pessoais',
+          emptyMessage: 'Sem formações para apresentar.',
+        };
+    }
+  }, [scope]);
+
+  const availableScopes = useMemo(() => {
+    const scopes: Array<{ id: TrainingsScope; label: string }> = [{ id: 'mine', label: 'Minhas' }];
+    if (canViewTeamTrainings) {
+      scopes.push({ id: 'team', label: 'Equipa' });
+    }
+    if (canViewHierarchyTrainings) {
+      scopes.push({ id: 'hierarchy', label: 'Organização' });
+    }
+    return scopes;
+  }, [canViewHierarchyTrainings, canViewTeamTrainings]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -194,14 +327,69 @@ export default function TrainingsPage() {
     void loadTrainings(controller.signal);
 
     return () => controller.abort();
-  }, [canManage]);
+  }, [scope]);
+
+  useEffect(() => {
+    if (scope === 'team' && !canViewTeamTrainings) {
+      setScope(canViewHierarchyTrainings ? 'hierarchy' : 'mine');
+      return;
+    }
+
+    if (scope === 'hierarchy' && !canViewHierarchyTrainings) {
+      setScope('mine');
+    }
+  }, [canViewHierarchyTrainings, canViewTeamTrainings, scope]);
+
+  useEffect(() => {
+    if (isOwnScope) {
+      setRecordsCollaboratorFilter('');
+    }
+    // Reset advanced filters whenever scope changes
+    setEntidadeFilter('');
+    setDataInicioFrom('');
+    setDataInicioTo('');
+    setHorasMin('');
+    setHorasMax('');
+    setOrigemFilter('all');
+    setQuery('');
+    setStatusFilter('all');
+  }, [isOwnScope, scope]);
 
 
+  function clearAllFilters() {
+    setQuery('');
+    setStatusFilter('all');
+    setRecordsCollaboratorFilter('');
+    setEntidadeFilter('');
+    setDataInicioFrom('');
+    setDataInicioTo('');
+    setHorasMin('');
+    setHorasMax('');
+    setOrigemFilter('all');
+  }
+
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  }
+
+  function sortIcon(field: SortField) {
+    if (sortField !== field) return <span className="sort-icon sort-icon--idle" aria-hidden="true">⇕</span>;
+    return <span className="sort-icon sort-icon--active" aria-hidden="true">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+  }
 
   async function loadTrainings(signal?: AbortSignal) {
     setIsRecordsLoading(records.length === 0);
     try {
-      const path = canManage ? '/trainings/assigned' : '/trainings/me';
+      const path = scope === 'team'
+        ? '/trainings/team'
+        : scope === 'hierarchy'
+          ? '/trainings/hierarchy'
+          : '/trainings/me';
       const data = await apiRequestCached<TrainingRecord[]>(path, {
         headers: getAuthHeaders(),
         signal,
@@ -213,7 +401,7 @@ export default function TrainingsPage() {
         return;
       }
 
-      setStatus(error instanceof Error ? error.message : 'Falha ao carregar formações.');
+      setStatus(error instanceof Error ? error.message : `Falha ao carregar ${scope === 'team' ? 'formações da equipa' : 'as tuas formações'}.`);
     } finally {
       if (!signal?.aborted) {
         setIsRecordsLoading(false);
@@ -355,16 +543,199 @@ export default function TrainingsPage() {
 
   return (
     <section className="trainings-shell">
-      
+      <section className="trainings-hero trainings-hero--scoped" aria-label="Resumo das formações visíveis">
+        <div className="trainings-hero__intro">
+          <span className="trainings-hero__eyebrow">Formações</span>
+          <h2>{scopeConfig.title}</h2>
+          <p>{scopeConfig.description}</p>
+          <div className="trainings-scope-switch" role="tablist" aria-label="Âmbitos de visibilidade das formações">
+            {availableScopes.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`trainings-scope-switch__item${scope === item.id ? ' is-active' : ''}`}
+                onClick={() => setScope(item.id)}
+                aria-pressed={scope === item.id}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="trainings-hours-summary trainings-hours-summary--hero">
+          <article>
+            <span>Âmbito</span>
+            <strong>{scopeConfig.summaryLabel}</strong>
+          </article>
+          <article>
+            <span>Ativas</span>
+            <strong>{assignedCount}</strong>
+          </article>
+          <article>
+            <span>Concluídas</span>
+            <strong>{completedCount}</strong>
+          </article>
+          <article>
+            <span>Horas</span>
+            <strong>{formatHours(totalHours)} h</strong>
+          </article>
+        </div>
+      </section>
 
       <section className="trainings-list-card">
-        <div className="trainings-list-head">
-          <label>
-            <span>Pesquisar</span>
-            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nome, entidade, colaborador..." />
-          </label>
-          {canManage && (
-            <Button type="button" variant="primary" onClick={openAssignModal}>Nova formação</Button>
+        <div className="trainings-list-head trainings-list-head--filters">
+          <div className="trainings-list-head__title-row">
+            <div className="trainings-list-head__title">
+              <h3>{scopeConfig.title}</h3>
+              <small>
+                {visibleRecords.length === records.length
+                  ? `${records.length} formação${records.length !== 1 ? 'ões' : ''}`
+                  : `${visibleRecords.length} de ${records.length} formação${records.length !== 1 ? 'ões' : ''}`}
+                {activeFilterCount > 0 && <span className="trainings-filter-active-badge">{activeFilterCount} filtro{activeFilterCount !== 1 ? 's' : ''} ativo{activeFilterCount !== 1 ? 's' : ''}</span>}
+              </small>
+            </div>
+            <div className="trainings-list-head__topbar-actions">
+              {canAssignTraining && (
+                <Button type="button" variant="primary" onClick={openAssignModal}>Nova formação</Button>
+              )}
+            </div>
+          </div>
+
+          {/* ── Basic filters ── */}
+          <div className="trainings-filter-grid trainings-filter-grid--basic">
+            <label>
+              <span>Pesquisar</span>
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Nome, entidade, link, colaborador..."
+              />
+            </label>
+
+            <label>
+              <span>Estado</span>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="all">Todos os estados</option>
+                <option value="ASSIGNED">Ativa</option>
+                <option value="COMPLETED">Concluída</option>
+              </select>
+            </label>
+
+            {!isOwnScope && (
+              <label>
+                <span>Colaborador</span>
+                <input
+                  type="search"
+                  value={recordsCollaboratorFilter}
+                  onChange={(event) => setRecordsCollaboratorFilter(event.target.value)}
+                  placeholder="Nome, username ou email..."
+                />
+              </label>
+            )}
+
+            <div className="trainings-filter-grid__actions trainings-filter-grid__actions--inline">
+              <button
+                type="button"
+                className={`trainings-adv-toggle${showAdvancedFilters ? ' is-open' : ''}`}
+                onClick={() => setShowAdvancedFilters((v) => !v)}
+                aria-expanded={showAdvancedFilters}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M2 4h12M4 8h8M6 12h4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                </svg>
+                Filtros avançados
+                {activeFilterCount > 0 && (
+                  <span className="trainings-adv-toggle__badge">{activeFilterCount}</span>
+                )}
+              </button>
+              {activeFilterCount > 0 && (
+                <Button type="button" variant="ghost" onClick={clearAllFilters}>Limpar tudo</Button>
+              )}
+            </div>
+          </div>
+
+          {/* ── Advanced filters panel ── */}
+          {showAdvancedFilters && (
+            <div className="trainings-filter-advanced">
+              <div className="trainings-filter-advanced__grid">
+                {uniqueEntidades.length > 0 && (
+                  <label>
+                    <span>Entidade</span>
+                    <select value={entidadeFilter} onChange={(e) => setEntidadeFilter(e.target.value)}>
+                      <option value="">Todas as entidades</option>
+                      {uniqueEntidades.map((e) => (
+                        <option key={e} value={e}>{e}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                <label>
+                  <span>Data início — de</span>
+                  <input type="date" value={dataInicioFrom} onChange={(e) => setDataInicioFrom(e.target.value)} />
+                </label>
+
+                <label>
+                  <span>Data início — até</span>
+                  <input type="date" value={dataInicioTo} onChange={(e) => setDataInicioTo(e.target.value)} />
+                </label>
+
+                <label>
+                  <span>Horas mínimas</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={horasMin}
+                    onChange={(e) => setHorasMin(e.target.value)}
+                    placeholder="Ex: 4"
+                  />
+                </label>
+
+                <label>
+                  <span>Horas máximas</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={horasMax}
+                    onChange={(e) => setHorasMax(e.target.value)}
+                    placeholder="Ex: 40"
+                  />
+                </label>
+
+                <label>
+                  <span>Origem</span>
+                  <select value={origemFilter} onChange={(e) => setOrigemFilter(e.target.value as OrigemFilter)}>
+                    <option value="all">Todas as origens</option>
+                    <option value="propria">Própria (auto-registo)</option>
+                    <option value="atribuida">Atribuída por gestor</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Ordenar por</span>
+                  <select value={sortField} onChange={(e) => setSortField(e.target.value as SortField)}>
+                    <option value="createdAt">Data de registo</option>
+                    <option value="nome">Nome da formação</option>
+                    <option value="horas">Horas</option>
+                    <option value="dataInicio">Data de início</option>
+                    <option value="dataConclusao">Data de conclusão</option>
+                    <option value="status">Estado</option>
+                  </select>
+                </label>
+
+                <label>
+                  <span>Direção</span>
+                  <select value={sortDir} onChange={(e) => setSortDir(e.target.value as 'asc' | 'desc')}>
+                    <option value="desc">Mais recente primeiro</option>
+                    <option value="asc">Mais antigo primeiro</option>
+                  </select>
+                </label>
+              </div>
+            </div>
           )}
         </div>
 
@@ -372,32 +743,34 @@ export default function TrainingsPage() {
           <table className="trainings-table" aria-label="Lista de formações">
             <thead>
               <tr>
-                <th>Formação</th>
-                {canManage && <th>Colaborador</th>}
+                <th className="sortable-th" onClick={() => toggleSort('nome')}>Formação {sortIcon('nome')}</th>
+                {!isOwnScope && <th>Colaborador</th>}
                 <th>Origem</th>
                 <th>Link</th>
-                <th>Horas</th>
-                <th>Data de início</th>
+                <th className="sortable-th" onClick={() => toggleSort('horas')}>Horas {sortIcon('horas')}</th>
+                <th className="sortable-th" onClick={() => toggleSort('dataInicio')}>Data de início {sortIcon('dataInicio')}</th>
                 <th>Entidade</th>
-                <th>Data conclusão</th>
-                <th>Estado</th>
-                {!canManage && <th>Ações</th>}
+                <th className="sortable-th" onClick={() => toggleSort('dataConclusao')}>Data conclusão {sortIcon('dataConclusao')}</th>
+                <th className="sortable-th" onClick={() => toggleSort('status')}>Estado {sortIcon('status')}</th>
+                {isOwnScope && canMarkCompleted && <th>Ações</th>}
               </tr>
             </thead>
             <tbody>
               {(isRecordsLoading && !recordsLoaded) ? (
                 <tr>
-                  <td colSpan={canManage ? 9 : 9}>A carregar formações...</td>
+                  <td colSpan={isOwnScope && canMarkCompleted ? 9 : 8}>A carregar formações...</td>
                 </tr>
               ) : visibleRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={canManage ? 9 : 9}>Sem formações para apresentar.</td>
+                  <td colSpan={isOwnScope && canMarkCompleted ? 9 : 8}>
+                    {scopeConfig.emptyMessage}
+                  </td>
                 </tr>
               ) : (
                 visibleRecords.map((record) => (
                   <tr key={record.id}>
                     <td>{record.nome}</td>
-                    {canManage && <td>{record.user?.username || '-'}</td>}
+                    {!isOwnScope && <td>{getTrainingOwnerLabel(record)}</td>}
                     <td>{getTrainingOriginLabel(record)}</td>
                     <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
                     <td>{formatHours(record.horas)} h</td>
@@ -409,7 +782,7 @@ export default function TrainingsPage() {
                         {formatTrainingStatusLabel(record.status)}
                       </Badge>
                     </td>
-                    {!canManage && (
+                    {isOwnScope && canMarkCompleted && (
                       <td>
                         {record.status === 'ASSIGNED' ? (
                           <div className="trainings-row-actions">
@@ -428,7 +801,7 @@ export default function TrainingsPage() {
         </div>
 
         <div className="trainings-mobile-list">
-          {visibleRecords.length === 0 && !isRecordsLoading && <article className="trainings-mobile-card">Sem formações para apresentar.</article>}
+          {visibleRecords.length === 0 && !isRecordsLoading && <article className="trainings-mobile-card">{scopeConfig.emptyMessage}</article>}
 
           {visibleRecords.map((record) => (
             <article key={`mobile-${record.id}`} className="trainings-mobile-card">
@@ -438,9 +811,9 @@ export default function TrainingsPage() {
                   {formatTrainingStatusLabel(record.status)}
                 </Badge>
               </header>
-              {canManage && (
+              {!isOwnScope && (
                 <p>
-                  <span>Colaborador:</span> {record.user?.username || '-'}
+                  <span>Colaborador:</span> {getTrainingOwnerLabel(record)}
                 </p>
               )}
               <p>
@@ -465,7 +838,7 @@ export default function TrainingsPage() {
                 )}
               </div>
 
-              {!canManage && record.status === 'ASSIGNED' && (
+              {isOwnScope && canMarkCompleted && record.status === 'ASSIGNED' && (
                 <div className="trainings-row-actions">
                   <Button type="button" size="sm" variant="secondary" onClick={() => openCompleteConfirm(record.id)}>Concluir</Button>
                 </div>

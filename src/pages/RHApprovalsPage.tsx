@@ -113,7 +113,9 @@ function renderApprovalFieldValue(field: string, value: string) {
 export default function RHApprovalsPage() {
   const { hasPermission, isRootAccess, refreshNotifications } = usePortal();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<'profiles' | 'vacations'>('profiles');
+  const [activeTab, setActiveTab] = useState<'profiles' | 'vacations'>(() => (
+    searchParams.get('tab') === 'vacations' ? 'vacations' : 'profiles'
+  ));
   const [profileRequests, setProfileRequests] = useState<ProfileRequest[]>([]);
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([]);
   const [rejectReason, setRejectReason] = useState('');
@@ -135,32 +137,28 @@ export default function RHApprovalsPage() {
   const canReviewVacations = isRootAccess || hasPermission('approve_vacation') || hasPermission('reject_vacation') || hasPermission('view_all_vacations');
 
   useEffect(() => {
-    const requestedTab = searchParams.get('tab');
-
-    if (requestedTab === 'vacations' && canReviewVacations) {
+    if (activeTab === 'profiles' && !canReviewProfiles && canReviewVacations) {
       setActiveTab('vacations');
       return;
     }
 
-    if (requestedTab === 'profiles' && canReviewProfiles) {
+    if (activeTab === 'vacations' && !canReviewVacations && canReviewProfiles) {
       setActiveTab('profiles');
+    }
+  }, [activeTab, canReviewProfiles, canReviewVacations]);
+
+  function handleTabChange(nextTab: 'profiles' | 'vacations') {
+    if (nextTab === activeTab) {
       return;
     }
 
-    if (!canReviewProfiles && canReviewVacations) {
-      setActiveTab('vacations');
-    }
-  }, [canReviewProfiles, canReviewVacations, searchParams]);
-
-  useEffect(() => {
-    if (searchParams.get('tab') === activeTab) {
-      return;
-    }
-
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('tab', activeTab);
-    setSearchParams(nextParams, { replace: true });
-  }, [activeTab, searchParams, setSearchParams]);
+    setActiveTab(nextTab);
+    setSearchParams((currentParams) => {
+      const nextParams = new URLSearchParams(currentParams);
+      nextParams.set('tab', nextTab);
+      return nextParams;
+    }, { replace: true });
+  }
 
   useEffect(() => {
     if (!canReviewProfiles && !canReviewVacations) {
@@ -391,12 +389,12 @@ export default function RHApprovalsPage() {
 
       <div className="rh-tabs">
         {canReviewProfiles && (
-          <button type="button" className={activeTab === 'profiles' ? 'is-active' : ''} onClick={() => setActiveTab('profiles')}>
+          <button type="button" className={activeTab === 'profiles' ? 'is-active' : ''} onClick={() => handleTabChange('profiles')}>
             Alterações de ficha ({isLoadingProfileRequests ? '...' : profileRequests.length})
           </button>
         )}
         {canReviewVacations && (
-          <button type="button" className={activeTab === 'vacations' ? 'is-active' : ''} onClick={() => setActiveTab('vacations')}>
+          <button type="button" className={activeTab === 'vacations' ? 'is-active' : ''} onClick={() => handleTabChange('vacations')}>
             Férias e ausências ({isLoadingVacationRequests ? '...' : vacationRequests.length})
           </button>
         )}
