@@ -235,14 +235,38 @@ const profileFields = [
   "localidade",
   "codigoPostal",
   "matriculaCarro",
+  "localNascimentoPais",
+  "localNascimentoCidade",
+  "nomePai",
+  "nomeMae",
   "cartaoCidadao",
+  "validadeCartaoCidadao",
   "nif",
+  "cpf",
+  "pis",
+  "ctps",
+  "ctpsSerie",
+  "ctpsDataExpedicao",
+  "rg",
+  "rgOrgaoEmissor",
+  "rgDataExpedicao",
+  "cnh",
+  "cnhCategoria",
+  "cnhDataValidade",
+  "tituloEleitor",
+  "zonaEleitoral",
+  "secaoEleitoral",
+  "certificadoReservista",
   "niss",
   "iban",
   "situacaoIrs",
   "numeroDependentes",
   "irsJovem",
   "anoPrimeiroDesconto",
+  "primeiroEmprego",
+  "recebeAposentadoria",
+  "recebeSeguroDesemprego",
+  "valeTransporte",
   "numeroCartaoContinente",
   "voucherNosData",
   "comprovativoMoradaFiscal",
@@ -261,7 +285,6 @@ const profileFields = [
   "dataFimContrato",
   "tipoContrato",
   "regimeHorario",
-  "validadeCartaoCidadao",
   "githubUser",
   "workCountry",
 ] as const;
@@ -272,7 +295,7 @@ function normalizeProfilePayload(payload: unknown) {
   }
 
   const source = payload as Record<string, unknown>;
-  const normalized: Partial<Record<(typeof profileFields)[number], string>> = {};
+  const normalized: Partial<Record<(typeof profileFields)[number], unknown>> = {};
 
   profileFields.forEach((field) => {
     if (!(field in source)) {
@@ -280,6 +303,16 @@ function normalizeProfilePayload(payload: unknown) {
     }
 
     const rawValue = source[field];
+    if (
+      field === 'primeiroEmprego'
+      || field === 'recebeAposentadoria'
+      || field === 'recebeSeguroDesemprego'
+      || field === 'valeTransporte'
+    ) {
+      normalized[field] = rawValue === true;
+      return;
+    }
+
     normalized[field] = rawValue == null ? "" : String(rawValue);
   });
 
@@ -305,14 +338,6 @@ const updateProfileSchema = z.object({
   endereco: requiredStringField('Endereço'),
   localidade: requiredStringField('Localidade'),
   codigoPostal: requiredStringField('Código postal'),
-  cartaoCidadao: requiredStringField('Cartão de cidadão'),
-  nif: z.string().min(1, 'NIF é obrigatório.').regex(/^\d{9}$/, 'NIF deve ter 9 dígitos.'),
-  niss: z.string().min(1, 'NISS é obrigatório.').regex(/^\d+$/, 'NISS deve conter apenas dígitos.'),
-  iban: z.string().min(1, 'IBAN é obrigatório.').regex(/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/, 'IBAN inválido.'),
-  situacaoIrs: requiredStringField('Situação IRS'),
-  numeroDependentes: z.string().min(1, 'Número de dependentes é obrigatório.').regex(/^\d+$/, 'Deve ser um número inteiro.'),
-  irsJovem: requiredStringField('IRS Jovem'),
-  anoPrimeiroDesconto: z.string().min(1, 'Ano do primeiro desconto é obrigatório.').regex(/^\d{4}$/, 'Deve ser um ano com 4 dígitos.'),
   contactoEmergenciaNome: requiredStringField('Contacto de emergência - nome'),
   contactoEmergenciaParentesco: requiredStringField('Contacto de emergência - parentesco'),
   contactoEmergenciaNumero: requiredStringField('Contacto de emergência - número'),
@@ -321,6 +346,38 @@ const updateProfileSchema = z.object({
   curso: optionalStringField,
   faculdade: optionalStringField,
   matriculaCarro: optionalStringField,
+  localNascimentoPais: optionalStringField,
+  localNascimentoCidade: optionalStringField,
+  nomePai: optionalStringField,
+  nomeMae: optionalStringField,
+  cartaoCidadao: optionalStringField,
+  validadeCartaoCidadao: optionalStringField,
+  nif: optionalStringField,
+  cpf: optionalStringField,
+  pis: optionalStringField,
+  ctps: optionalStringField,
+  ctpsSerie: optionalStringField,
+  ctpsDataExpedicao: optionalStringField,
+  rg: optionalStringField,
+  rgOrgaoEmissor: optionalStringField,
+  rgDataExpedicao: optionalStringField,
+  cnh: optionalStringField,
+  cnhCategoria: optionalStringField,
+  cnhDataValidade: optionalStringField,
+  tituloEleitor: optionalStringField,
+  zonaEleitoral: optionalStringField,
+  secaoEleitoral: optionalStringField,
+  certificadoReservista: optionalStringField,
+  niss: optionalStringField,
+  iban: optionalStringField,
+  situacaoIrs: optionalStringField,
+  numeroDependentes: optionalStringField,
+  irsJovem: optionalStringField,
+  anoPrimeiroDesconto: optionalStringField,
+  primeiroEmprego: z.boolean().optional(),
+  recebeAposentadoria: z.boolean().optional(),
+  recebeSeguroDesemprego: z.boolean().optional(),
+  valeTransporte: z.boolean().optional(),
   numeroCartaoContinente: optionalStringField,
   voucherNosData: optionalStringField,
   comprovativoMoradaFiscal: optionalStringField,
@@ -336,9 +393,96 @@ const updateProfileSchema = z.object({
   dataFimContrato: optionalStringField,
   tipoContrato: optionalStringField,
   regimeHorario: optionalStringField,
-  validadeCartaoCidadao: optionalStringField,
   githubUser: optionalStringField,
   workCountry: z.enum(['PT', 'BR']).optional(),
+}).superRefine((data, ctx) => {
+  const country = data.workCountry === 'BR' ? 'BR' : 'PT';
+
+  const requireNonEmpty = (field: keyof typeof data, label: string) => {
+    if (String(data[field] ?? '').trim()) {
+      return;
+    }
+
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [field as string],
+      message: `${label} é obrigatório.`,
+    });
+  };
+
+  if (country === 'PT') {
+    requireNonEmpty('cartaoCidadao', 'Cartão de cidadão');
+    requireNonEmpty('nif', 'NIF');
+    requireNonEmpty('niss', 'NISS');
+    requireNonEmpty('iban', 'IBAN');
+    requireNonEmpty('situacaoIrs', 'Situação IRS');
+    requireNonEmpty('numeroDependentes', 'Número de dependentes');
+    requireNonEmpty('irsJovem', 'IRS Jovem');
+    requireNonEmpty('anoPrimeiroDesconto', 'Ano do primeiro desconto');
+
+    if (String(data.nif ?? '').trim() && !/^\d{9}$/.test(String(data.nif ?? '').trim())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['nif'], message: 'NIF deve ter 9 dígitos.' });
+    }
+
+    if (String(data.niss ?? '').trim() && !/^\d+$/.test(String(data.niss ?? '').trim())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['niss'], message: 'NISS deve conter apenas dígitos.' });
+    }
+
+    if (String(data.iban ?? '').trim() && !/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(String(data.iban ?? '').trim().toUpperCase())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['iban'], message: 'IBAN inválido.' });
+    }
+
+    if (String(data.numeroDependentes ?? '').trim() && !/^\d+$/.test(String(data.numeroDependentes ?? '').trim())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['numeroDependentes'], message: 'Deve ser um número inteiro.' });
+    }
+
+    if (String(data.anoPrimeiroDesconto ?? '').trim() && !/^\d{4}$/.test(String(data.anoPrimeiroDesconto ?? '').trim())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['anoPrimeiroDesconto'], message: 'Deve ser um ano com 4 dígitos.' });
+    }
+  }
+
+  if (country === 'BR') {
+    requireNonEmpty('cpf', 'CPF');
+    requireNonEmpty('pis', 'PIS');
+    requireNonEmpty('ctps', 'CTPS');
+    requireNonEmpty('ctpsSerie', 'Série da CTPS');
+    requireNonEmpty('ctpsDataExpedicao', 'Data de expedição da CTPS');
+    requireNonEmpty('rg', 'RG');
+    requireNonEmpty('rgOrgaoEmissor', 'Órgão emissor do RG');
+    requireNonEmpty('rgDataExpedicao', 'Data de expedição do RG');
+    requireNonEmpty('localNascimentoPais', 'País de nascimento');
+    requireNonEmpty('localNascimentoCidade', 'Cidade de nascimento');
+    requireNonEmpty('nomePai', 'Nome do pai');
+    requireNonEmpty('nomeMae', 'Nome da mãe');
+
+    if (data.primeiroEmprego == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['primeiroEmprego'], message: 'Primeiro emprego é obrigatório.' });
+    }
+
+    if (data.recebeAposentadoria == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['recebeAposentadoria'], message: 'Campo obrigatório.' });
+    }
+
+    if (data.recebeSeguroDesemprego == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['recebeSeguroDesemprego'], message: 'Campo obrigatório.' });
+    }
+
+    if (data.valeTransporte == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['valeTransporte'], message: 'Campo obrigatório.' });
+    }
+
+    if (String(data.cpf ?? '').trim() && !/^\d{11}$/.test(String(data.cpf ?? '').trim())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['cpf'], message: 'CPF deve ter 11 dígitos.' });
+    }
+
+    if (String(data.pis ?? '').trim() && !/^\d{11}$/.test(String(data.pis ?? '').trim())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['pis'], message: 'PIS deve ter 11 dígitos.' });
+    }
+
+    if (String(data.codigoPostal ?? '').trim() && !/^\d{5}-?\d{3}$/.test(String(data.codigoPostal ?? '').trim())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['codigoPostal'], message: 'CEP inválido. Use 00000-000.' });
+    }
+  }
 });
 
 const reviewRequestSchema = z.object({
@@ -363,14 +507,37 @@ const friendlyProfileFieldLabels: Partial<Record<(typeof profileFields)[number],
   localidade: 'Localidade',
   codigoPostal: 'Código postal',
   matriculaCarro: 'Matrícula',
+  localNascimentoPais: 'País de nascimento',
+  localNascimentoCidade: 'Cidade de nascimento',
+  nomePai: 'Nome do pai',
+  nomeMae: 'Nome da mãe',
   cartaoCidadao: 'Cartão de cidadão',
   nif: 'NIF',
+  cpf: 'CPF',
+  pis: 'PIS',
+  ctps: 'CTPS',
+  ctpsSerie: 'Série da CTPS',
+  ctpsDataExpedicao: 'Data de expedição da CTPS',
+  rg: 'RG',
+  rgOrgaoEmissor: 'Órgão emissor do RG',
+  rgDataExpedicao: 'Data de expedição do RG',
+  cnh: 'CNH',
+  cnhCategoria: 'Categoria da CNH',
+  cnhDataValidade: 'Data de validade da CNH',
+  tituloEleitor: 'Título de eleitor',
+  zonaEleitoral: 'Zona eleitoral',
+  secaoEleitoral: 'Seção eleitoral',
+  certificadoReservista: 'Certificado de reservista',
   niss: 'NISS',
   iban: 'IBAN',
   situacaoIrs: 'Situação IRS',
   numeroDependentes: 'Número de dependentes',
   irsJovem: 'IRS Jovem',
   anoPrimeiroDesconto: 'Ano do primeiro desconto',
+  primeiroEmprego: 'Primeiro emprego',
+  recebeAposentadoria: 'Recebe aposentadoria',
+  recebeSeguroDesemprego: 'Recebe seguro de desemprego',
+  valeTransporte: 'Vale transporte',
   numeroCartaoContinente: 'Número do cartão continente',
   voucherNosData: 'Voucher NOS',
   comprovativoMoradaFiscal: 'Comprovativo da morada fiscal',
