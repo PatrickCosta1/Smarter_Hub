@@ -535,6 +535,58 @@ function getChangedKeys(current: Record<string, unknown> | null, next: Record<st
   return Object.keys(next).filter((key) => String(baseline[key] ?? '') !== String(next[key] ?? ''));
 }
 
+const VOUCHER_NOS_COOLDOWN_YEARS = 2;
+const TPEOPLE_USERNAME = 't.people';
+
+function formatDateOnly(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function toDateOnly(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function parseDateOnly(value: string) {
+  const normalized = value.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(year, month - 1, day);
+
+  if (
+    Number.isNaN(parsed.getTime())
+    || parsed.getFullYear() !== year
+    || parsed.getMonth() !== month - 1
+    || parsed.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function addYears(date: Date, years: number) {
+  const next = new Date(date);
+  next.setFullYear(next.getFullYear() + years);
+  return next;
+}
+
+function normalizeContractType(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 router.get("/profile/me", requireAuth, async (req, res) => {
   const userId = req.authUser!.id;
 
@@ -547,6 +599,98 @@ router.get("/profile/me", requireAuth, async (req, res) => {
   }
 
   return res.json(profile);
+});
+
+router.post('/profile/me/voucher-nos/request', requireAuth, async (req, res) => {
+  const userId = req.authUser!.id;
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      username: true,
+      profile: {
+        select: {
+          nomeAbreviado: true,
+          nomeCompleto: true,
+          tipoContrato: true,
+          voucherNosData: true,
+        },
+      },
+    },
+  });
+
+  if (!user || !user.profile) {
+    return res.status(404).json({ message: 'Perfil não encontrado.' });
+  }
+
+  if (normalizeContractType(user.profile.tipoContrato) !== 'sem termo') {
+    return res.status(403).json({ message: 'O voucher NOS só pode ser pedido por colaboradores com contrato sem termo.' });
+  }
+
+  const today = toDateOnly(new Date());
+  const lastRequestDate = parseDateOnly(user.profile.voucherNosData);
+
+  if (lastRequestDate) {
+    const nextEligibleDate = addYears(lastRequestDate, VOUCHER_NOS_COOLDOWN_YEARS);
+    if (today < nextEligibleDate) {
+      return res.status(409).json({
+        message: `Já existe um pedido de voucher NOS. Novo pedido apenas após ${formatDateOnly(nextEligibleDate)}.`,
+        lastRequestDate: formatDateOnly(lastRequestDate),
+        nextEligibleDate: formatDateOnly(nextEligibleDate),
+      });
+    }
+  }
+
+  const recipients = await prisma.user.findMany({
+    where: {
+      username: {
+        equals: TPEOPLE_USERNAME,
+        mode: 'insensitive',
+      },
+      isActive: true,
+    },
+    select: { id: true },
+  });
+
+  if (recipients.length === 0) {
+    return res.status(503).json({ message: 'Conta t.people não encontrada ou inativa. Contacte o administrador.' });
+  }
+
+  const requestDate = formatDateOnly(today);
+  const nextEligibleDate = formatDateOnly(addYears(today, VOUCHER_NOS_COOLDOWN_YEARS));
+  const requesterName = resolveRequesterDisplayName(user.profile) || user.username;
+
+  await prisma.profile.upsert({
+    where: { userId },
+    update: { voucherNosData: requestDate },
+    create: {
+      userId,
+      voucherNosData: requestDate,
+    },
+  });
+
+  await prisma.notification.createMany({
+    data: recipients.map((recipient) => ({
+      userId: recipient.id,
+      title: 'Pedido de emissão de voucher NOS',
+      message: `${requesterName} solicitou emissão do voucher NOS em ${requestDate}. Próxima elegibilidade: ${nextEligibleDate}.`,
+    })),
+  });
+
+  await prisma.notification.create({
+    data: {
+      userId,
+      title: 'Pedido de voucher NOS submetido',
+      message: `Pedido enviado para t.people em ${requestDate}. Próxima elegibilidade em ${nextEligibleDate}.`,
+    },
+  });
+
+  return res.status(201).json({
+    message: 'Pedido de emissão enviado para t.people.',
+    lastRequestDate: requestDate,
+    nextEligibleDate,
+  });
 });
 
 router.get('/profile/requests/me', requireAuth, async (req, res) => {

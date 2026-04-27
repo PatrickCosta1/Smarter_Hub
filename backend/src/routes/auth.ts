@@ -33,6 +33,32 @@ const localLoginSchema = z.object({
   password: z.string().min(1),
 });
 
+const authTeamSelect = {
+  id: true,
+  name: true,
+  costCenter: true,
+  parentTeam: {
+    select: {
+      costCenter: true,
+    },
+  },
+} as const;
+
+function mapAuthTeam(
+  team: { id: string; name: string; costCenter: string | null; parentTeam?: { costCenter: string | null } | null } | null | undefined,
+  canViewCostCenter: boolean,
+) {
+  if (!team) {
+    return null;
+  }
+
+  return {
+    id: team.id,
+    name: team.name,
+    costCenter: canViewCostCenter ? (team.costCenter || team.parentTeam?.costCenter || null) : null,
+  };
+}
+
 function parseBooleanEnv(value: string | undefined, fallback = false) {
   if (!value) {
     return fallback;
@@ -168,10 +194,7 @@ async function provisionUserFromMicrosoft(email: string, decodedToken: Awaited<R
       isRootAccess: true,
         hasAccessTotal: true,
         team: {
-          select: {
-            id: true,
-            name: true,
-          },
+          select: authTeamSelect,
         },
     },
   });
@@ -291,10 +314,7 @@ router.post('/auth/microsoft', async (req, res) => {
         isRootAccess: true,
           hasAccessTotal: true,
         team: {
-          select: {
-            id: true,
-            name: true,
-          },
+          select: authTeamSelect,
         },
       },
     });
@@ -307,12 +327,22 @@ router.post('/auth/microsoft', async (req, res) => {
       user = await provisionUserFromMicrosoft(email, decodedToken);
     }
 
+    if (!user) {
+      return res.status(500).json({ message: 'Falha a resolver utilizador autenticado.' });
+    }
+
     if (!user.isActive) {
       return res.status(403).json({ message: 'Conta inativa. Contacta RH para mais informações.' });
     }
 
     const token = signAuthToken(user);
-    return res.json({ token, user });
+    return res.json({
+      token,
+      user: {
+        ...user,
+        team: mapAuthTeam(user.team, Boolean(user.isRootAccess || user.hasAccessTotal)),
+      },
+    });
   } catch (error) {
     console.error('[POST /auth/microsoft]', error);
     return res.status(401).json({ message: 'Falha ao validar autenticação Microsoft.' });
@@ -331,15 +361,17 @@ router.get("/auth/me", requireAuth, async (req, res) => {
       isRootAccess: true,
         hasAccessTotal: true,
       team: {
-        select: {
-          id: true,
-          name: true,
-        },
+        select: authTeamSelect,
       },
     },
   });
 
-  return res.json({ user });
+  return res.json({
+    user: user ? {
+      ...user,
+      team: mapAuthTeam(user.team, Boolean(user.isRootAccess || user.hasAccessTotal)),
+    } : null,
+  });
 });
 
 router.patch('/auth/account', requireAuth, async (_req, res) => {
