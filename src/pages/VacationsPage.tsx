@@ -2231,189 +2231,131 @@ export default function VacationsPage() {
           )}
 
           {!isTPeople && (
-            <section className="vacations-history-card" aria-label="Histórico de pedidos">
-              <div className="trainings-list-head vacations-history-head">
-                <div>
-                  <h3>Histórico de pedidos</h3>
-                  <p className="vacations-history-subtitle">
-                    Consulta rápida de férias e ausências submetidas, com estado, período e ações disponíveis.
-                  </p>
+            <section className="vhist" aria-label="Histórico de pedidos">
+              <div className="vhist__header">
+                <div className="vhist__title-block">
+                  <h3 className="vhist__title">Pedidos</h3>
+                  <p className="vhist__sub">Férias e ausências submetidas</p>
                 </div>
-                <div className="vacations-history-kpis" aria-label="Indicadores do histórico">
-                  <span className="vacations-history-kpi vacations-history-kpi--all">
-                    <strong>{sortedRecords.length}</strong>
-                    <small>Total</small>
-                  </span>
-                  <span className="vacations-history-kpi vacations-history-kpi--pending">
-                    <strong>{sortedRecords.filter((record) => record.status === 'PENDING').length}</strong>
-                    <small>Pendentes</small>
-                  </span>
-                  <span className="vacations-history-kpi vacations-history-kpi--approved">
-                    <strong>{sortedRecords.filter((record) => record.status === 'APPROVED').length}</strong>
-                    <small>Aprovados</small>
-                  </span>
+                <div className="vhist__stats" aria-label="Indicadores">
+                  <span className="vhist__stat">{sortedRecords.length}<em>total</em></span>
+                  <span className="vhist__stat vhist__stat--warn">{sortedRecords.filter((r) => r.status === 'PENDING').length}<em>pendentes</em></span>
+                  <span className="vhist__stat vhist__stat--ok">{sortedRecords.filter((r) => r.status === 'APPROVED').length}<em>aprovados</em></span>
                 </div>
               </div>
 
               {conflictRange && conflictRecordIds.size > 0 && (
-                <div className="vacations-panel-state vacations-panel-state--error vacations-history-conflict-banner" role="status" aria-live="polite">
-                  <p>
-                    Conflito detetado para o período {formatShortDate(conflictRange.start)} - {formatShortDate(conflictRange.end)}.
-                    Linhas sobrepostas destacadas abaixo.
-                  </p>
+                <div className="vhist__conflict-notice" role="alert">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  Conflito detetado: {formatShortDate(conflictRange.start)} — {formatShortDate(conflictRange.end)}
                 </div>
               )}
 
-              <div className="trainings-table-wrap vacations-history-table-wrap">
-                <table className="trainings-table vacations-history-table" aria-label="Lista de pedidos">
-                  <thead>
-                    <tr>
-                      <th>Pedido</th>
-                      <th>Período</th>
-                      <th>Dias</th>
-                      <th>Equipa</th>
-                      <th>Estado</th>
-                      <th>Resumo</th>
-                      <th>Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedRecords.length === 0 && (
-                      <tr>
-                        <td colSpan={7}>Sem pedidos submetidos.</td>
-                      </tr>
-                    )}
+              {sortedRecords.length === 0 ? (
+                <div className="vhist__empty">Nenhum pedido submetido ainda.</div>
+              ) : (
+                <>
+                  <div className="vhist__table-wrap">
+                    <table className="vhist__table">
+                      <thead>
+                        <tr>
+                          <th>Tipo</th>
+                          <th>Período</th>
+                          <th>Dur.</th>
+                          <th>Equipa</th>
+                          <th>Estado</th>
+                          <th>Nota</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedRecords.map((record) => (
+                          <tr key={record.id} className={conflictRecordIds.has(record.id) ? 'vhist__row--conflict' : ''}>
+                            <td>
+                              <span className={`vhist__type vhist__type--${getVacationTypeTag(record.requestType)}`}>{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</span>
+                              <span className="vhist__meta">{formatDateTime(record.createdAt)}</span>
+                            </td>
+                            <td className="vhist__period">
+                              {formatShortDate(record.dataInicio)} – {formatShortDate(record.dataFim)}
+                              <span className="vhist__meta">V{record.versionNumber || 1}</span>
+                            </td>
+                            <td className="vhist__days">
+                              <strong>{calculateDuration(record)}</strong>
+                              <span className="vhist__meta">{record.requestType === 'VACATION' ? 'úteis' : 'corridos'}</span>
+                            </td>
+                            <td className="vhist__meta">{record.contextTeam?.name || 'Principal'}</td>
+                            <td>
+                              <span className={`vhist__badge vhist__badge--${record.status.toLowerCase()}`}>{formatVacationStatusLabel(record.status)}</span>
+                            </td>
+                            <td className="vhist__note">{record.observacoes?.trim() || <span className="vhist__meta">—</span>}</td>
+                            <td className="vhist__actions">
+                              {record.status === 'PENDING' || record.status === 'APPROVED' ? (
+                                <>
+                                  <button type="button" className="vhist__action-btn" onClick={() => startEdit(record)}>Editar</button>
+                                  {record.status === 'PENDING' && <button type="button" className="vhist__action-btn vhist__action-btn--danger" onClick={() => void handleCancelPending(record.id)}>Anular</button>}
+                                </>
+                              ) : <span className="vhist__meta">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="vhist__cards" aria-label="Lista de pedidos (mobile)">
                     {sortedRecords.map((record) => (
-                      <tr
-                        key={record.id}
-                        className={`vacation-history-row vacation-history-row--${record.status.toLowerCase()}${conflictRecordIds.has(record.id) ? ' vacation-history-row--conflict' : ''}`}
-                      >
-                        <td className="vacations-history-col vacations-history-col--request">
-                          <span className={`vacations-history-type-tag vacations-history-type-tag--${getVacationTypeTag(record.requestType)}`}>
-                            {getVacationRequestKind(record.requestType)}
-                          </span>
-                          <strong>{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</strong>
-                          <small>Submetido em {formatDateTime(record.createdAt)}</small>
-                        </td>
-                        <td className="vacations-history-col vacations-history-col--period">
-                          <strong>{formatShortDate(record.dataInicio)} - {formatShortDate(record.dataFim)}</strong>
-                          <small>V{record.versionNumber || 1}</small>
-                        </td>
-                        <td className="vacations-history-col vacations-history-col--days">
-                          <strong>{calculateDuration(record)}</strong>
-                          <small>{record.requestType === 'VACATION' ? 'dias úteis' : 'dias corridos'}</small>
-                        </td>
-                        <td className="vacations-history-col vacations-history-col--team">{record.contextTeam?.name || 'Contexto principal'}</td>
-                        <td className="vacations-history-col vacations-history-col--status">
-                          <Badge tone={getVacationStatusTone(record.status) === 'approved' ? 'success' : getVacationStatusTone(record.status) === 'pending' ? 'warning' : getVacationStatusTone(record.status) === 'rejected' ? 'danger' : 'neutral'}>
-                            {formatVacationStatusLabel(record.status)}
-                          </Badge>
-                        </td>
-                        <td className="vacations-history-col vacations-history-col--summary">
-                          <span>{record.observacoes?.trim() || 'Sem observações'}</span>
-                        </td>
-                        <td className="vacations-history-col vacations-history-col--actions">
-                          {record.status === 'PENDING' || record.status === 'APPROVED' ? (
-                            <div className="trainings-row-actions">
-                              <button type="button" onClick={() => startEdit(record)}>Editar</button>
-                              {record.status === 'PENDING' && <button type="button" onClick={() => void handleCancelPending(record.id)}>Anular</button>}
-                            </div>
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                      </tr>
+                      <article key={`m-${record.id}`} className={`vhist__card${conflictRecordIds.has(record.id) ? ' vhist__card--conflict' : ''}`}>
+                        <div className="vhist__card-top">
+                          <span className={`vhist__type vhist__type--${getVacationTypeTag(record.requestType)}`}>{getVacationTypeLabel(record.requestType)}</span>
+                          <span className={`vhist__badge vhist__badge--${record.status.toLowerCase()}`}>{formatVacationStatusLabel(record.status)}</span>
+                        </div>
+                        <div className="vhist__card-row">
+                          <div className="vhist__card-field"><span>Período</span><strong>{formatShortDate(record.dataInicio)} – {formatShortDate(record.dataFim)}</strong></div>
+                          <div className="vhist__card-field"><span>Duração</span><strong>{calculateDuration(record)} {record.requestType === 'VACATION' ? 'úteis' : 'dias'}</strong></div>
+                          <div className="vhist__card-field"><span>Equipa</span><strong>{record.contextTeam?.name || 'Principal'}</strong></div>
+                        </div>
+                        {record.observacoes?.trim() && <p className="vhist__card-note">{record.observacoes.trim()}</p>}
+                        <span className="vhist__meta">Submetido em {formatDateTime(record.createdAt)}</span>
+                        {(record.status === 'PENDING' || record.status === 'APPROVED') && (
+                          <div className="vhist__card-actions">
+                            <button type="button" className="vhist__action-btn" onClick={() => startEdit(record)}>Editar</button>
+                            {record.status === 'PENDING' && <button type="button" className="vhist__action-btn vhist__action-btn--danger" onClick={() => void handleCancelPending(record.id)}>Anular</button>}
+                          </div>
+                        )}
+                      </article>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="vacations-history-mobile-list" aria-label="Histórico de pedidos (mobile)">
-                {sortedRecords.length === 0 && (
-                  <article className="vacations-history-mobile-card vacations-history-mobile-card--empty">
-                    <p>Sem pedidos submetidos.</p>
-                  </article>
-                )}
-
-                {sortedRecords.map((record) => (
-                  <article
-                    key={`mobile-${record.id}`}
-                    className={`vacations-history-mobile-card vacation-history-row--${record.status.toLowerCase()}${conflictRecordIds.has(record.id) ? ' vacation-history-row--conflict' : ''}`}
-                  >
-                    <header>
-                      <div>
-                        <span className={`vacations-history-type-tag vacations-history-type-tag--${getVacationTypeTag(record.requestType)}`}>
-                          {getVacationRequestKind(record.requestType)}
-                        </span>
-                        <strong>{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</strong>
-                      </div>
-                      <Badge tone={getVacationStatusTone(record.status) === 'approved' ? 'success' : getVacationStatusTone(record.status) === 'pending' ? 'warning' : getVacationStatusTone(record.status) === 'rejected' ? 'danger' : 'neutral'}>
-                        {formatVacationStatusLabel(record.status)}
-                      </Badge>
-                    </header>
-
-                    <div className="vacations-history-mobile-grid">
-                      <span><small>Período</small><strong>{formatShortDate(record.dataInicio)} - {formatShortDate(record.dataFim)}</strong></span>
-                      <span><small>Dias</small><strong>{calculateDuration(record)}</strong></span>
-                      <span><small>Equipa</small><strong>{record.contextTeam?.name || 'Contexto principal'}</strong></span>
-                      <span><small>Versão</small><strong>V{record.versionNumber || 1}</strong></span>
-                    </div>
-
-                    <p>{record.observacoes?.trim() || 'Sem observações'}</p>
-                    <small>Submetido em {formatDateTime(record.createdAt)}</small>
-
-                    {(record.status === 'PENDING' || record.status === 'APPROVED') && (
-                      <div className="trainings-row-actions vacations-history-mobile-actions">
-                        <button type="button" onClick={() => startEdit(record)}>Editar</button>
-                        {record.status === 'PENDING' && <button type="button" onClick={() => void handleCancelPending(record.id)}>Anular</button>}
-                      </div>
-                    )}
-                  </article>
-                ))}
-              </div>
+                  </div>
+                </>
+              )}
             </section>
           )}
         </section>
       )}
 
       {activeTab === 'company-days' && canManageVacationRules && (
-        <section className="trainings-list-card vacations-company-days-card">
-          <div className="trainings-list-head">
+        <section className="vauto trainings-list-card">
+          <div className="vauto__header">
             <div>
-              <h3>Dias automáticos da empresa</h3>
-              <p className="vacations-company-days-subtitle">
-                Dias extra dados pela empresa que aparecem no calendário de todos os colaboradores.
-                Configuração isolada por ano de aplicação.
-              </p>
+              <h3 className="vauto__title">Dias automáticos</h3>
+              <p className="vauto__sub">Dias extra dados pela empresa · visíveis no calendário de todos</p>
             </div>
-            {companyExtraDaysSource === 'legacy' && (
-              <span className="vacations-company-days-badge vacations-company-days-badge--legacy">Padrão antigo</span>
-            )}
-            {companyExtraDaysSource === 'configured' && (
-              <span className="vacations-company-days-badge vacations-company-days-badge--custom">Configurado</span>
-            )}
+            <div className="vauto__header-right">
+              <div className="vauto__year-nav" aria-label="Ano">
+                <button type="button" className="vauto__year-btn" onClick={() => { setCompanyExtraYear((y) => y - 1); }} aria-label="Ano anterior">‹</button>
+                <span className="vauto__year-label">{companyExtraYear}</span>
+                <button type="button" className="vauto__year-btn" onClick={() => { setCompanyExtraYear((y) => y + 1); }} aria-label="Próximo ano">›</button>
+              </div>
+              {companyExtraDaysSource === 'legacy' && <span className="vauto__src-tag vauto__src-tag--legacy">Padrão antigo</span>}
+              {companyExtraDaysSource === 'configured' && <span className="vauto__src-tag vauto__src-tag--ok">Configurado</span>}
+            </div>
           </div>
 
           {isLoadingCompanyExtraDays ? (
-            <div className="vacations-panel-state"><p>A carregar...</p></div>
+            <div className="vauto__loading">A carregar…</div>
           ) : (
             <>
-              <div className="vacations-company-days-year-row">
-                <label className="vacations-company-days-add-field vacations-company-days-add-field--narrow">
-                  <span>Ano de aplicação</span>
-                  <select value={companyExtraYear} onChange={(e) => setCompanyExtraYear(Number(e.target.value))}>
-                    {Array.from({ length: 9 }, (_, index) => new Date().getFullYear() - 2 + index).map((year) => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
-                  </select>
-                </label>
-                <p className="vacations-company-days-year-row__hint">
-                  Define aqui se os dias entram já no ano atual ou apenas no próximo.
-                </p>
-              </div>
-
-              <div className="vacations-company-days-add-row">
-                <label className="vacations-company-days-add-field">
+              <div className="vauto__form">
+                <label className="vauto__field">
                   <span>Mês</span>
                   <select value={companyExtraDayMonth} onChange={(e) => setCompanyExtraDayMonth(e.target.value)}>
                     <option value="01">Janeiro</option>
@@ -2430,8 +2372,7 @@ export default function VacationsPage() {
                     <option value="12">Dezembro</option>
                   </select>
                 </label>
-
-                <label className="vacations-company-days-add-field vacations-company-days-add-field--narrow">
+                <label className="vauto__field vauto__field--sm">
                   <span>Dia</span>
                   <select value={companyExtraDayDay} onChange={(e) => setCompanyExtraDayDay(e.target.value)}>
                     {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
@@ -2439,9 +2380,8 @@ export default function VacationsPage() {
                     ))}
                   </select>
                 </label>
-
-                <label className="vacations-company-days-add-field vacations-company-days-add-field--grow">
-                  <span>Etiqueta</span>
+                <label className="vauto__field vauto__field--grow">
+                  <span>Descrição</span>
                   <input
                     type="text"
                     value={companyExtraDayLabel}
@@ -2450,44 +2390,58 @@ export default function VacationsPage() {
                     placeholder="Ex.: Encerramento de Natal"
                   />
                 </label>
-
-                <div className="vacations-company-days-add-btn">
-                  <span className="vacations-company-days-add-btn__spacer">&#8203;</span>
-                  <Button type="button" variant="primary" isLoading={isSavingCompanyExtraDays} onClick={() => void addCompanyExtraDay()}>
-                    + Adicionar
-                  </Button>
-                </div>
+                <button
+                  type="button"
+                  className="vauto__add-btn"
+                  disabled={isSavingCompanyExtraDays}
+                  onClick={() => void addCompanyExtraDay()}
+                >
+                  {isSavingCompanyExtraDays ? '…' : '+ Adicionar'}
+                </button>
               </div>
 
               {companyExtraDaysError && (
-                <div className="vacations-panel-state vacations-panel-state--error">
-                  <p>{companyExtraDaysError}</p>
-                </div>
+                <div className="vauto__error">{companyExtraDaysError}</div>
               )}
 
               {companyExtraDays.length === 0 ? (
-                <p className="vacations-company-days-empty">Sem dias configurados. Adiciona o primeiro acima.</p>
+                <div className="vauto__empty">
+                  <p>Nenhum dia configurado para {companyExtraYear}.</p>
+                  <span>Usa o formulário acima para adicionar o primeiro.</span>
+                </div>
               ) : (
-                <ul className="vacations-company-days-chips">
-                  {companyExtraDays.map((item) => {
-                    const [mm, dd] = item.date.split('-');
-                    return (
-                      <li key={item.date} className="vacations-company-days-chip">
-                        <span className="vacations-company-days-chip__date">{dd}/{mm}</span>
-                        <span className="vacations-company-days-chip__label">{item.label}</span>
-                        <button
-                          type="button"
-                          className="vacations-company-days-chip__remove"
-                          title="Remover dia"
-                          disabled={isSavingCompanyExtraDays}
-                          onClick={() => void removeCompanyExtraDay(item.date)}
-                        >
-                          ×
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <table className="vauto__list">
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Descrição</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {companyExtraDays.map((item) => {
+                      const [mm, dd] = item.date.split('-');
+                      const monthName = MONTHS[parseInt(mm, 10) - 1] || mm;
+                      return (
+                        <tr key={item.date}>
+                          <td className="vauto__list-date">{dd} {monthName}</td>
+                          <td className="vauto__list-label">{item.label}</td>
+                          <td className="vauto__list-action">
+                            <button
+                              type="button"
+                              className="vauto__remove-btn"
+                              disabled={isSavingCompanyExtraDays}
+                              onClick={() => void removeCompanyExtraDay(item.date)}
+                              aria-label={`Remover ${item.label}`}
+                            >
+                              Remover
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               )}
             </>
           )}
