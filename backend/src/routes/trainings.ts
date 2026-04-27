@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
-import { buildUserWhereFromScope, canAccessUserByPermission, getPermissionScope, hasPermission } from '../lib/permission-engine.js';
+import { buildUserWhereFromScope, canAccessUserByPermission, canReviewAccessTotalHierarchy, getPermissionScope, hasPermission } from '../lib/permission-engine.js';
 import { notifyUsers, notifyUsersByPermission } from '../lib/notifications.js';
 
 const router = Router();
@@ -44,6 +44,95 @@ function parsePagination(query: Request['query']) {
   };
 }
 
+const ownTrainingInclude = {
+  assignedBy: {
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      role: true,
+      profile: {
+        select: {
+          nomeAbreviado: true,
+          nomeCompleto: true,
+        },
+      },
+    },
+  },
+};
+
+const assignedTrainingInclude = {
+  user: {
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      role: true,
+      hasAccessTotal: true,
+      profile: {
+        select: {
+          nomeAbreviado: true,
+          nomeCompleto: true,
+        },
+      },
+    },
+  },
+  assignedBy: {
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      role: true,
+      profile: {
+        select: {
+          nomeAbreviado: true,
+          nomeCompleto: true,
+        },
+      },
+    },
+  },
+};
+
+async function getLedTeamIds(userId: string) {
+  const teams = await prisma.team.findMany({
+    where: { managerId: userId },
+    select: { id: true },
+  });
+
+  return teams.map((team) => team.id);
+}
+
+async function filterHierarchyRecordsForActor(
+  actorUserId: string,
+  actorIsRootAccess: boolean,
+  actorHasAccessTotal: boolean,
+  records: Array<{
+    user?: {
+      id: string;
+      hasAccessTotal?: boolean;
+    } | null;
+  }>,
+) {
+  if (actorIsRootAccess || !actorHasAccessTotal) {
+    return records;
+  }
+
+  const allowedAccessTotalIds = new Set<string>();
+
+  for (const record of records) {
+    if (!record.user?.hasAccessTotal || allowedAccessTotalIds.has(record.user.id)) {
+      continue;
+    }
+
+    const canReview = await canReviewAccessTotalHierarchy(actorUserId, record.user.id);
+    if (canReview) {
+      allowedAccessTotalIds.add(record.user.id);
+    }
+  }
+
+  return records.filter((record) => !record.user?.hasAccessTotal || allowedAccessTotalIds.has(record.user.id));
+}
+
 router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
@@ -54,27 +143,11 @@ router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => 
     }
 
     const where = { userId };
-    const include = {
-      assignedBy: {
-        select: {
-          id: true,
-          username: true,
-          email: true,
-          role: true,
-          profile: {
-            select: {
-              nomeAbreviado: true,
-              nomeCompleto: true,
-            },
-          },
-        },
-      },
-    };
 
     if (!pagination) {
       const trainings = await prisma.training.findMany({
         where,
-        include,
+        include: ownTrainingInclude,
         orderBy: { createdAt: 'desc' },
       });
 
@@ -85,7 +158,7 @@ router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => 
       prisma.training.count({ where }),
       prisma.training.findMany({
         where,
-        include,
+        include: ownTrainingInclude,
         orderBy: { createdAt: 'desc' },
         skip: pagination.skip,
         take: pagination.take,
@@ -96,6 +169,119 @@ router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => 
   } catch (error) {
     console.error('[GET /trainings/me]', error);
     res.status(500).json({ error: 'Falha ao buscar formações' });
+  }
+});
+
+router.get('/trainings/team', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.authUser!.id;
+    const pagination = parsePagination(req.query);
+    const [canViewOwn, canAssignOthers, canViewAll, ledTeamIds] = await Promise.all([
+      hasPermission(userId, 'view_trainings'),
+      hasPermission(userId, 'assign_training'),
+      hasPermission(userId, 'view_all_trainings'),
+      getLedTeamIds(userId),
+    ]);
+
+    if (!canViewOwn && !canAssignOthers && !canViewAll) {
+      return res.status(403).json({ error: 'Sem permissões para consultar formações.' });
+    }
+
+    if (ledTeamIds.length === 0) {
+      if (!pagination) {
+        return res.json([]);
+      }
+
+      return res.json({ total: 0, page: pagination.page, pageSize: pagination.pageSize, rows: [] });
+    }
+
+    const where = {
+      userId: { not: userId },
+      user: {
+        OR: [
+          { teamId: { in: ledTeamIds } },
+          {
+            teamMemberships: {
+              some: {
+                isActive: true,
+                teamId: { in: ledTeamIds },
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    if (!pagination) {
+      const trainings = await prisma.training.findMany({
+        where,
+        include: assignedTrainingInclude,
+        orderBy: [{ user: { username: 'asc' } }, { createdAt: 'desc' }],
+      });
+
+      return res.json(trainings);
+    }
+
+    const [total, rows] = await Promise.all([
+      prisma.training.count({ where }),
+      prisma.training.findMany({
+        where,
+        include: assignedTrainingInclude,
+        orderBy: [{ user: { username: 'asc' } }, { createdAt: 'desc' }],
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
+
+    return res.json({ total, page: pagination.page, pageSize: pagination.pageSize, rows });
+  } catch (error) {
+    console.error('[GET /trainings/team]', error);
+    return res.status(500).json({ error: 'Falha ao buscar formações da equipa' });
+  }
+});
+
+router.get('/trainings/hierarchy', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const actorUserId = req.authUser!.id;
+    const pagination = parsePagination(req.query);
+
+    if (!await hasPermission(actorUserId, 'view_all_trainings')) {
+      return res.status(403).json({ message: 'Sem permissões para consultar formações da hierarquia.' });
+    }
+
+    const scope = await getPermissionScope(actorUserId, 'view_all_trainings');
+    if (!scope) {
+      return res.status(403).json({ message: 'Sem permissões para consultar formações da hierarquia.' });
+    }
+
+    const userScopeWhere = buildUserWhereFromScope(scope);
+    const baseWhere = {
+      userId: { not: actorUserId },
+      ...(userScopeWhere ? { user: userScopeWhere } : {}),
+    };
+
+    const records = await prisma.training.findMany({
+      where: baseWhere,
+      include: assignedTrainingInclude,
+      orderBy: [{ user: { username: 'asc' } }, { createdAt: 'desc' }],
+    });
+
+    const filteredRecords = await filterHierarchyRecordsForActor(
+      actorUserId,
+      Boolean(req.authUser!.isRootAccess),
+      Boolean(req.authUser!.hasAccessTotal),
+      records,
+    );
+
+    if (!pagination) {
+      return res.json(filteredRecords);
+    }
+
+    const pagedRows = filteredRecords.slice(pagination.skip, pagination.skip + pagination.take);
+    return res.json({ total: filteredRecords.length, page: pagination.page, pageSize: pagination.pageSize, rows: pagedRows });
+  } catch (error) {
+    console.error('[GET /trainings/hierarchy]', error);
+    return res.status(500).json({ error: 'Falha ao buscar formações da hierarquia' });
   }
 });
 
@@ -118,35 +304,10 @@ router.get('/trainings/assigned', requireAuth, async (req: Request, res: Respons
     ...(userScopeWhere ? { user: userScopeWhere } : {}),
   };
 
-  const include = {
-    user: {
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        role: true,
-      },
-    },
-    assignedBy: {
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        role: true,
-        profile: {
-          select: {
-            nomeAbreviado: true,
-            nomeCompleto: true,
-          },
-        },
-      },
-    },
-  };
-
   if (!pagination) {
     const trainings = await prisma.training.findMany({
       where,
-      include,
+      include: assignedTrainingInclude,
       orderBy: { createdAt: 'desc' },
     });
 
@@ -157,7 +318,7 @@ router.get('/trainings/assigned', requireAuth, async (req: Request, res: Respons
     prisma.training.count({ where }),
     prisma.training.findMany({
       where,
-      include,
+      include: assignedTrainingInclude,
       orderBy: { createdAt: 'desc' },
       skip: pagination.skip,
       take: pagination.take,
