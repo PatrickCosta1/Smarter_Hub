@@ -602,7 +602,10 @@ export default function VacationsPage() {
     };
   }, [overview, sortedRecords]);
 
-  const remainingVacationDays = Math.max(overviewStats.entitlement - overviewStats.approvedVacationDays, 0);
+  const remainingVacationDays = Math.max(
+    overviewStats.entitlement - overviewStats.approvedVacationDays - overviewStats.pendingVacationDays,
+    0,
+  );
   const selectedAssignCandidate = useMemo(
     () => assignCandidates.find((item) => item.id === assignSelectedUserId) ?? null,
     [assignCandidates, assignSelectedUserId],
@@ -1862,7 +1865,7 @@ export default function VacationsPage() {
                 <article>
                   <span>Tem para gastar</span>
                   <strong>{remainingVacationDays.toLocaleString('pt-PT')} dias</strong>
-                  <small>Saldo ainda disponível.</small>
+                  <small>Saldo livre (desconta aprovados e pendentes).</small>
                 </article>
                 <article>
                   <span>Pedidos pendentes</span>

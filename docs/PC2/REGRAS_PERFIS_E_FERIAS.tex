@@ -73,7 +73,7 @@
   \item Um pedido aprovado pode ser alterado por versionamento, não por edição direta do registo final.
   \item Deve existir histórico de decisões, versões e motivos.
   \item Em PT, quando ainda não existe período de 10 dias úteis consecutivos no ano, pedidos mais curtos geram aviso de conformidade, mas não bloqueiam a submissão.
-  \item \textbf{PT — cap proporcional do 1.º ano}: colaboradores contratados após 1 de janeiro do ano corrente têm direito a 2 dias úteis por cada mês trabalhado (máximo 20 dias úteis no ano). O sistema bloqueia a submissão se o total acumulado (PENDING + APPROVED + novo pedido) ultrapassar esse limite proporcional.
+  \item \textbf{PT — cap proporcional do 1.º ano}: colaboradores contratados após 1 de janeiro do ano corrente têm direito proporcional de 2 dias úteis por mês do primeiro ano de contrato (máximo 20 dias úteis no ano), calculado de uma só vez para esse ano e não por acumulação mensal. O sistema bloqueia a submissão se o total acumulado (PENDING + APPROVED + novo pedido) ultrapassar esse limite proporcional.
   \item \textbf{PT — lembrete de transitados}: o sistema notifica automaticamente colaboradores com férias transitadas do ano anterior que expiram a 30 de abril, com antecedência configurável (default: 30 dias antes). Acionado por job diário via \texttt{POST /vacations/jobs/carryover-reminder}.
   \item \textbf{BR — bloqueio de quarta-feira}: pedidos de férias BR não podem ter início à quarta-feira.
   \item \textbf{BR — bloqueio de sexta-feira}: pedidos de férias BR não podem ter início à sexta-feira.

@@ -147,6 +147,38 @@ function formatIsoDatePt(iso: string) {
   return `${day}/${month}/${year}`;
 }
 
+function resolvePtBaseEntitlementForYear(dataInicioContrato: string | null | undefined, year: number) {
+  if (!dataInicioContrato || !isIsoDate(dataInicioContrato)) {
+    return {
+      baseEntitledDays: 22,
+      isFirstYearProportional: false,
+      monthsInFirstContractYear: 12,
+    };
+  }
+
+  const contractStart = toLocalDate(dataInicioContrato);
+  const yearStart = toLocalDate(`${year}-01-01`);
+  const isFirstYearProportional = contractStart.getFullYear() === year && contractStart > yearStart;
+
+  if (!isFirstYearProportional) {
+    return {
+      baseEntitledDays: 22,
+      isFirstYearProportional: false,
+      monthsInFirstContractYear: 12,
+    };
+  }
+
+  // Cálculo único do 1.º ano de contrato: meses de contratação até dezembro (inclusive), não por acumulação mensal.
+  const monthsInFirstContractYear = 12 - contractStart.getMonth();
+  const baseEntitledDays = Math.min(20, Math.max(0, monthsInFirstContractYear * 2));
+
+  return {
+    baseEntitledDays,
+    isFirstYearProportional: true,
+    monthsInFirstContractYear,
+  };
+}
+
 function isIsoDate(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
@@ -296,22 +328,19 @@ async function validateVacationCountryPolicy(params: {
       warnings.push(`Política PT: este pedido tem apenas ${requestedDays} dias úteis. No regime PT deve existir pelo menos um período de férias com 10 dias úteis consecutivos no ano.`);
     }
 
-    // Phase 2B: 1st-year proportional cap — contratados após Jan 1 do ano corrente têm
-    // direito a 2 dias úteis por mês trabalhado, máximo 20 dias úteis
+    // Phase 2B: 1st-year proportional cap — cálculo único do 1.º ano de contrato,
+    // sem distribuição mês a mês.
     if (params.dataInicioContrato) {
       const requestYear = toLocalDate(params.dataInicio).getFullYear();
-      const contractStart = toLocalDate(params.dataInicioContrato);
-      const isFirstContractYear = contractStart.getFullYear() === requestYear && contractStart > toLocalDate(`${requestYear}-01-01`);
+      const ptEntitlement = resolvePtBaseEntitlementForYear(params.dataInicioContrato, requestYear);
 
-      if (isFirstContractYear) {
-        const today = new Date();
-        const completedMonths = (today.getFullYear() - contractStart.getFullYear()) * 12 + (today.getMonth() - contractStart.getMonth());
-        const maxAllowed = Math.min(20, completedMonths * 2);
+      if (ptEntitlement.isFirstYearProportional) {
+        const maxAllowed = ptEntitlement.baseEntitledDays;
         const allPeriodsIncludingNew = [...currentYearPeriods, requestedPeriod];
         const totalUsedDays = allPeriodsIncludingNew.reduce((sum, p) => sum + vacationDaysForMetrics(p, holidayDates), 0);
         if (totalUsedDays > maxAllowed) {
           throw new Error(
-            `Política PT: colaboradores no 1.º ano de contrato têm direito a ${maxAllowed} dias úteis de férias (2 dias por mês trabalhado, máx. 20). Total acumulado seria ${totalUsedDays} dias.`,
+            `Política PT: no 1.º ano de contrato, o direito é calculado de uma vez com base em ${ptEntitlement.monthsInFirstContractYear} mês(es) desse ano (${maxAllowed} dias úteis, máx. 20). Total acumulado seria ${totalUsedDays} dias.`,
           );
         }
       }
@@ -1514,6 +1543,7 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
     });
 
     if (country === 'PT') {
+      const ptEntitlement = resolvePtBaseEntitlementForYear(profile?.dataInicioContrato ?? null, currentYear);
       const approvedVacationDays = vacations
         .filter((item) => item.status === 'APPROVED' && item.requestType === 'VACATION')
         .reduce((sum, item) => sum + vacationDaysForMetrics(item, holidayDates), 0);
@@ -1531,7 +1561,7 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
         country: 'PT',
         year: currentYear,
         rules: {
-          baseDays: 22,
+          baseDays: ptEntitlement.baseEntitledDays,
           extraDays: companyExtraDays.days.map((item) => `${formatIsoDatePt(item.date)}${item.label ? ` (${item.label})` : ''}`),
           mandatoryConsecutiveDays: 10,
           carryOver: true,
@@ -1542,9 +1572,11 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
         approvedAbsenceDays,
         pendingAbsenceDays,
         calculation: {
-          entitledDays: 22 + extraBalanceDays,
-          baseEntitledDays: 22,
+          entitledDays: ptEntitlement.baseEntitledDays + extraBalanceDays,
+          baseEntitledDays: ptEntitlement.baseEntitledDays,
           extraBalanceDays,
+          monthsWorked: ptEntitlement.monthsInFirstContractYear,
+          acquisitionComplete: !ptEntitlement.isFirstYearProportional,
         },
       });
     }
