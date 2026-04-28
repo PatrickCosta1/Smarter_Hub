@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, FormEvent, Fragment, type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
 import { formatVacationStatusLabel, getVacationStatusTone } from '../portal/labels';
@@ -62,6 +62,11 @@ type TeamContext = {
   isPrimary: boolean;
 };
 
+type TeamScopeEntry = {
+  id: string;
+  name: string;
+};
+
 type VacationOverview = {
   country: 'PT' | 'BR';
   year: number;
@@ -97,6 +102,67 @@ type CalendarPayload = {
   requests: VacationRecord[];
 };
 
+type TeamVacation = {
+  id: string;
+  dataInicio: string;
+  dataFim: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  requestType: VacationRequestType;
+  partialDay?: VacationPartialDay;
+  contextTeam?: { id: string; name: string } | null;
+};
+
+type TeamVacationMember = {
+  id: string;
+  username: string;
+  email: string;
+  role: 'COLABORADOR' | 'MANAGER' | 'COORDENADOR' | 'ADMIN' | 'CONVIDADO';
+  teamId: string | null;
+  membershipRole: string;
+  isApprover: boolean;
+  approvalLevel: number | null;
+  profile?: {
+    nomeAbreviado?: string;
+    nomeCompleto?: string;
+    dataNascimento?: string;
+  } | null;
+  vacations: TeamVacation[];
+};
+
+type TeamVacationDetail = {
+  id: string;
+  name: string;
+  leaderId?: string | null;
+  manager?: {
+    id: string;
+    username: string;
+    profile?: {
+      nomeAbreviado?: string;
+      nomeCompleto?: string;
+    } | null;
+  } | null;
+  coordinator?: {
+    id: string;
+    username: string;
+    profile?: {
+      nomeAbreviado?: string;
+      nomeCompleto?: string;
+    } | null;
+  } | null;
+  members: TeamVacationMember[];
+};
+
+type TeamSpecialCalendarPayload = {
+  year: number;
+  country: 'PT' | 'BR';
+  holidays: string[];
+  weekendDays: string[];
+  extraDays: string[];
+  extraDayDetails?: Array<{ date: string; label: string }>;
+};
+
+type TeamCalendarPerson = TeamVacationMember & { isTeamLeader?: boolean };
+
 type CompanyExtraDay = {
   date: string;
   label: string;
@@ -128,7 +194,7 @@ type VacationDraft = {
 
 type DraftErrors = Partial<Record<keyof VacationDraft, string>>;
 
-type Subtab = 'overview' | 'calendar' | 'company-days' | 'export';
+type Subtab = 'overview' | 'calendar' | 'team-vacations' | 'company-days' | 'export';
 
 type ExportTeam = {
   id: string;
@@ -196,6 +262,12 @@ const MONTHS = [
   'Outubro',
   'Novembro',
   'Dezembro',
+];
+
+const TEAM_COLORS = [
+  '#4B79F5', '#8B5CF6', '#EC4899', '#EF4444', '#F97316',
+  '#EAB308', '#22C55E', '#06B6D4', '#14B8A6', '#6B7280',
+  '#1E40AF', '#7C3AED',
 ];
 
 function toLocalDate(dateText: string) {
@@ -290,6 +362,14 @@ function buildValidationErrors(draft: VacationDraft): DraftErrors {
 
   if (draft.requestKind === 'VACATION' && draft.partialDay !== 'FULL' && draft.dataInicio !== draft.dataFim) {
     errors.dataFim = 'Pedido de meio-dia deve ter início e fim no mesmo dia.';
+  }
+
+  if (draft.dataInicio) {
+    const today = new Date();
+    const todayISO = dayISO(today.getFullYear(), today.getMonth(), today.getDate());
+    if (draft.dataInicio < todayISO) {
+      errors.dataInicio = 'Não é possível fazer pedidos para datas passadas.';
+    }
   }
 
   return errors;
@@ -393,6 +473,50 @@ function buildMonthGrid(year: number, monthIndex: number) {
   return cells;
 }
 
+function getIsoDate(date: Date) {
+  return dayISO(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function clipRangeToMonth(startIso: string, endIso: string, monthStartIso: string, monthEndIso: string) {
+  const start = startIso > monthStartIso ? startIso : monthStartIso;
+  const end = endIso < monthEndIso ? endIso : monthEndIso;
+
+  if (start > end) {
+    return null;
+  }
+
+  return { start, end };
+}
+
+function enumerateIsoDates(startIso: string, endIso: string) {
+  const days: string[] = [];
+  const start = new Date(`${startIso}T00:00:00`);
+  const end = new Date(`${endIso}T00:00:00`);
+
+  for (let current = new Date(start); current <= end; current.setDate(current.getDate() + 1)) {
+    days.push(getIsoDate(current));
+  }
+
+  return days;
+}
+
+function getProfileDisplayName(input: {
+  username: string;
+  profile?: { nomeAbreviado?: string; nomeCompleto?: string } | null;
+}) {
+  const short = input.profile?.nomeAbreviado?.trim() || '';
+  if (short) {
+    return short;
+  }
+
+  const fullName = input.profile?.nomeCompleto?.trim() || '';
+  return fullName || input.username;
+}
+
+function formatTeamPerson(member: TeamVacationMember) {
+  return getProfileDisplayName({ username: member.username, profile: member.profile });
+}
+
 export default function VacationsPage() {
   const { profile, hasPermission, isRootAccess, isAccessTotal, refreshNotifications, currentUser } = usePortal();
   const isTPeople = currentUser?.username === 't.people';
@@ -424,6 +548,16 @@ export default function VacationsPage() {
   const lastToastRef = useRef<{ tone: 'success' | 'error' | 'info' | 'warning'; message: string; at: number } | null>(null);
   const toastTimeoutRef = useRef<number | null>(null);
   const [teamContexts, setTeamContexts] = useState<TeamContext[]>([]);
+  const [selectedTeamVacationId, setSelectedTeamVacationId] = useState('');
+  const [teamVacationDetailsByKey, setTeamVacationDetailsByKey] = useState<Record<string, TeamVacationDetail>>({});
+  const [loadingTeamVacationDetailKey, setLoadingTeamVacationDetailKey] = useState<string | null>(null);
+  const [teamVacationsMonthCursor, setTeamVacationsMonthCursor] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [teamVacationSearchQuery, setTeamVacationSearchQuery] = useState('');
+  const [teamSpecialCalendar, setTeamSpecialCalendar] = useState<TeamSpecialCalendarPayload | null>(null);
+  const [isLoadingTeamSpecialCalendar, setIsLoadingTeamSpecialCalendar] = useState(false);
   const [companyExtraDays, setCompanyExtraDays] = useState<CompanyExtraDay[]>([]);
   const [companyExtraDayMonth, setCompanyExtraDayMonth] = useState('12');
   const [companyExtraDayDay, setCompanyExtraDayDay] = useState('25');
@@ -578,15 +712,161 @@ export default function VacationsPage() {
   }, [calendarData]);
 
   const canManageVacationRules = isRootAccess || hasPermission('manage_vacation_rules');
+  const canAccessTeamVacationTab = !isTPeople && (currentUser?.role ?? '') !== 'CONVIDADO';
+
+  const teamVacationYear = teamVacationsMonthCursor.getFullYear();
+  const teamVacationMonthIndex = teamVacationsMonthCursor.getMonth();
+  const teamVacationMonthStartDate = useMemo(() => new Date(teamVacationYear, teamVacationMonthIndex, 1), [teamVacationMonthIndex, teamVacationYear]);
+  const teamVacationMonthEndDate = useMemo(() => new Date(teamVacationYear, teamVacationMonthIndex + 1, 0), [teamVacationMonthIndex, teamVacationYear]);
+  const teamVacationMonthStartIso = useMemo(() => getIsoDate(teamVacationMonthStartDate), [teamVacationMonthStartDate]);
+  const teamVacationMonthEndIso = useMemo(() => getIsoDate(teamVacationMonthEndDate), [teamVacationMonthEndDate]);
+  const teamVacationMonthLabel = `${MONTHS[teamVacationMonthIndex]} ${teamVacationYear}`;
+  const teamVacationDetailsKey = selectedTeamVacationId ? `${selectedTeamVacationId}-${teamVacationYear}` : '';
+  const selectedTeamVacationDetail = teamVacationDetailsKey ? teamVacationDetailsByKey[teamVacationDetailsKey] ?? null : null;
+
+  const selectedTeamVacationContext = useMemo(
+    () => teamContexts.find((item) => item.teamId === selectedTeamVacationId) ?? null,
+    [teamContexts, selectedTeamVacationId],
+  );
+
+  const teamVacationMonthDays = useMemo(() => {
+    const days = [] as Array<{ iso: string; day: number; weekDayLabel: string; isWeekend: boolean }>;
+
+    for (let day = 1; day <= teamVacationMonthEndDate.getDate(); day += 1) {
+      const date = new Date(teamVacationYear, teamVacationMonthIndex, day);
+      const iso = getIsoDate(date);
+      const weekDay = date.getDay();
+      const weekDayLabel = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'][weekDay] || '';
+      days.push({ iso, day, weekDayLabel, isWeekend: weekDay === 0 || weekDay === 6 });
+    }
+
+    return days;
+  }, [teamVacationMonthEndDate, teamVacationMonthIndex, teamVacationYear]);
+
+  const teamHolidaySet = useMemo(() => new Set(teamSpecialCalendar?.holidays ?? []), [teamSpecialCalendar]);
+  const teamExtraDayLabelByDate = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of teamSpecialCalendar?.extraDayDetails ?? []) {
+      map.set(item.date, item.label || 'Dia automático');
+    }
+    return map;
+  }, [teamSpecialCalendar]);
+  const teamExtraDaySet = useMemo(() => new Set(teamSpecialCalendar?.extraDays ?? []), [teamSpecialCalendar]);
+  const teamWeekendSet = useMemo(() => new Set(teamSpecialCalendar?.weekendDays ?? []), [teamSpecialCalendar]);
+
+  const approvedMonthEntries = useMemo(() => {
+    if (!selectedTeamVacationDetail) {
+      return [] as Array<{
+        member: TeamVacationMember;
+        vacation: TeamVacation;
+        clippedStartIso: string;
+        clippedEndIso: string;
+      }>;
+    }
+
+    return selectedTeamVacationDetail.members
+      .flatMap((member) => (
+        member.vacations
+          .filter((vacation) => vacation.status === 'APPROVED')
+          .map((vacation) => {
+            const clipped = clipRangeToMonth(vacation.dataInicio, vacation.dataFim, teamVacationMonthStartIso, teamVacationMonthEndIso);
+            if (!clipped) {
+              return null;
+            }
+
+            return {
+              member,
+              vacation,
+              clippedStartIso: clipped.start,
+              clippedEndIso: clipped.end,
+            };
+          })
+          .filter((item): item is {
+            member: TeamVacationMember;
+            vacation: TeamVacation;
+            clippedStartIso: string;
+            clippedEndIso: string;
+          } => item !== null)
+      ))
+      .sort((a, b) => {
+        const byStart = a.clippedStartIso.localeCompare(b.clippedStartIso);
+        if (byStart !== 0) {
+          return byStart;
+        }
+        return formatTeamPerson(a.member).localeCompare(formatTeamPerson(b.member));
+      });
+  }, [selectedTeamVacationDetail, teamVacationMonthEndIso, teamVacationMonthStartIso]);
+
+  const teamLeaderId = selectedTeamVacationDetail?.leaderId
+    ?? selectedTeamVacationDetail?.manager?.id
+    ?? selectedTeamVacationDetail?.coordinator?.id
+    ?? null;
+
+  const teamCalendarMembers = useMemo(() => {
+    if (!selectedTeamVacationDetail) {
+      return [] as TeamCalendarPerson[];
+    }
+
+    const base = [...selectedTeamVacationDetail.members].map((member) => ({
+      ...member,
+      isTeamLeader: teamLeaderId !== null && member.id === teamLeaderId,
+    }));
+
+    return base.sort((a, b) => {
+      const leaderBoost = Number(Boolean(b.isTeamLeader)) - Number(Boolean(a.isTeamLeader));
+      if (leaderBoost !== 0) {
+        return leaderBoost;
+      }
+      return formatTeamPerson(a).localeCompare(formatTeamPerson(b));
+    });
+  }, [selectedTeamVacationDetail, teamLeaderId]);
+
+  const filteredTeamCalendarMembers = useMemo(() => {
+    const normalizedQuery = teamVacationSearchQuery.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return teamCalendarMembers;
+    }
+
+    return teamCalendarMembers.filter((member) => [
+      formatTeamPerson(member),
+      member.username,
+      member.email,
+    ].join(' ').toLowerCase().includes(normalizedQuery));
+  }, [teamCalendarMembers, teamVacationSearchQuery]);
+
+  const memberColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (let index = 0; index < filteredTeamCalendarMembers.length; index += 1) {
+      const member = filteredTeamCalendarMembers[index];
+      map.set(member.id, TEAM_COLORS[index % TEAM_COLORS.length] || '#4B79F5');
+    }
+    return map;
+  }, [filteredTeamCalendarMembers]);
+
+  const approvedMonthByMemberByDay = useMemo(() => {
+    const map = new Map<string, Map<string, TeamVacation>>();
+
+    for (const entry of approvedMonthEntries) {
+      const memberDays = map.get(entry.member.id) ?? new Map<string, TeamVacation>();
+      const days = enumerateIsoDates(entry.clippedStartIso, entry.clippedEndIso);
+      for (const day of days) {
+        memberDays.set(day, entry.vacation);
+      }
+      map.set(entry.member.id, memberDays);
+    }
+
+    return map;
+  }, [approvedMonthEntries]);
 
   const allowedTabs = useMemo<Subtab[]>(() => {
     const tabs: Subtab[] = [];
     if (!isTPeople) tabs.push('overview', 'calendar');
     if (isTPeople) tabs.push('calendar');
+    if (canAccessTeamVacationTab && teamContexts.length > 0) tabs.push('team-vacations');
     if (canManageVacationRules) tabs.push('company-days');
     if (canExport) tabs.push('export');
     return tabs;
-  }, [canManageVacationRules, canExport, isTPeople]);
+  }, [canAccessTeamVacationTab, canManageVacationRules, canExport, isTPeople, teamContexts.length]);
 
   useEffect(() => {
     if (!allowedTabs.includes(activeTab)) {
@@ -816,6 +1096,33 @@ export default function VacationsPage() {
     setSellVacationDaysInput(String(overview.calculation?.soldVacationDays ?? 0));
   }, [overview]);
 
+  useEffect(() => {
+    if (!canAccessTeamVacationTab) {
+      return;
+    }
+
+    if (selectedTeamVacationId && teamContexts.some((item) => item.teamId === selectedTeamVacationId)) {
+      return;
+    }
+
+    const fallback = teamContexts.find((item) => item.isPrimary)?.teamId || teamContexts[0]?.teamId || '';
+    setSelectedTeamVacationId(fallback);
+  }, [canAccessTeamVacationTab, selectedTeamVacationId, teamContexts]);
+
+  useEffect(() => {
+    if (activeTab !== 'team-vacations' || !selectedTeamVacationId) {
+      return;
+    }
+
+    const controller = new AbortController();
+    void loadTeamVacationDetail(selectedTeamVacationId, teamVacationYear, controller.signal);
+    void loadTeamSpecialCalendar(teamVacationYear, controller.signal);
+
+    return () => {
+      controller.abort();
+    };
+  }, [activeTab, selectedTeamVacationId, teamVacationYear]);
+
   function showToast(
     tone: 'success' | 'error' | 'info' | 'warning',
     message: string,
@@ -912,6 +1219,29 @@ export default function VacationsPage() {
         setCalendarError(error instanceof Error ? error.message : 'Falha ao carregar calendário de férias.');
       }
       throw error;
+    }
+  }
+
+  async function loadTeamSpecialCalendar(year: number, signal?: AbortSignal) {
+    setIsLoadingTeamSpecialCalendar(true);
+
+    try {
+      const data = await apiRequestCached<TeamSpecialCalendarPayload>(`/vacations/calendar?year=${year}`, {
+        headers: getAuthHeaders(),
+        signal,
+      }, 60000);
+
+      if (!signal?.aborted) {
+        setTeamSpecialCalendar(data);
+      }
+    } catch (error) {
+      if (!isAbortError(error) && !signal?.aborted) {
+        showToast('error', error instanceof Error ? error.message : 'Falha ao carregar dias especiais da equipa.');
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoadingTeamSpecialCalendar(false);
+      }
     }
   }
 
@@ -1230,10 +1560,38 @@ export default function VacationsPage() {
 
   async function loadTeamContexts(signal?: AbortSignal) {
     try {
-      const data = await apiRequestCached<TeamContext[]>('/users/me/teams', {
-        headers: getAuthHeaders(),
-        signal,
-      }, 120000);
+      const [ownTeamContexts, scopedTeams] = await Promise.all([
+        apiRequestCached<TeamContext[]>('/users/me/teams', {
+          headers: getAuthHeaders(),
+          signal,
+        }, 120000),
+        apiRequestCached<TeamScopeEntry[]>('/teams/me?details=none', {
+          headers: getAuthHeaders(),
+          signal,
+        }, 120000).catch(() => []),
+      ]);
+
+      const merged = new Map<string, TeamContext>();
+      for (const item of ownTeamContexts) {
+        merged.set(item.teamId, item);
+      }
+
+      for (const team of scopedTeams) {
+        if (merged.has(team.id)) {
+          continue;
+        }
+
+        merged.set(team.id, {
+          teamId: team.id,
+          teamName: team.name,
+          membershipRole: 'PARTICIPANT',
+          isApprover: false,
+          approvalLevel: null,
+          isPrimary: false,
+        });
+      }
+
+      const data = Array.from(merged.values()).sort((a, b) => a.teamName.localeCompare(b.teamName, 'pt-PT'));
 
       if (!signal?.aborted) {
         setTeamContexts(data);
@@ -1245,6 +1603,36 @@ export default function VacationsPage() {
     } catch (error) {
       if (!isAbortError(error) && !signal?.aborted) {
         console.error('Falha ao carregar contextos de equipa:', error);
+      }
+    }
+  }
+
+  async function loadTeamVacationDetail(teamId: string, year: number, signal?: AbortSignal) {
+    const key = `${teamId}-${year}`;
+    if (teamVacationDetailsByKey[key]) {
+      return;
+    }
+
+    setLoadingTeamVacationDetailKey(key);
+    try {
+      const data = await apiRequestCached<TeamVacationDetail>(`/teams/me/${teamId}?year=${year}`, {
+        headers: getAuthHeaders(),
+        signal,
+      }, 45000);
+
+      if (!signal?.aborted) {
+        setTeamVacationDetailsByKey((current) => ({
+          ...current,
+          [key]: data,
+        }));
+      }
+    } catch (error) {
+      if (!isAbortError(error) && !signal?.aborted) {
+        showToast('error', error instanceof Error ? error.message : 'Falha ao carregar férias da equipa.');
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setLoadingTeamVacationDetailKey((current) => (current === key ? null : current));
       }
     }
   }
@@ -1525,6 +1913,10 @@ export default function VacationsPage() {
   }
 
   function handleDayClick(iso: string) {
+    const today = new Date();
+    const todayISO = dayISO(today.getFullYear(), today.getMonth(), today.getDate());
+    if (iso < todayISO) return; // block past dates silently
+
     if (draft.requestKind === 'VACATION' && isWeekendIso(iso)) {
       setDraft((current) => ({
         ...current,
@@ -1681,25 +2073,119 @@ export default function VacationsPage() {
       return <div key={key} className="vacations-day vacations-day--blank" />;
     }
 
+    const today = new Date();
+    const todayISO = dayISO(today.getFullYear(), today.getMonth(), today.getDate());
+    const isPastDay = iso < todayISO;
     const rangeClass = !isTPeople ? getDayRangeClass(iso) : '';
     const isAnchorDay = iso === selectionAnchor;
     const isVacationWeekend = !isTPeople && draft.requestKind === 'VACATION' && isWeekendIso(iso);
-    const canClickDay = !isTPeople;
-    const dayTitle = isVacationWeekend
-      ? 'Fim de semana: ao clicar, o pedido muda para ausência.'
-      : getDayLabel(iso);
+    const canClickDay = !isTPeople && !isPastDay;
+    const dayTitle = isPastDay
+      ? 'Data passada'
+      : isVacationWeekend
+        ? 'Fim de semana: ao clicar, o pedido muda para ausência.'
+        : getDayLabel(iso);
 
     return (
       <button
         type="button"
         key={key}
-        className={`vacations-day vacations-day--${getDayKind(iso)}${rangeClass}${isAnchorDay ? ' cal-day-anchor' : ''}`}
+        className={`vacations-day vacations-day--${getDayKind(iso)}${rangeClass}${isAnchorDay ? ' cal-day-anchor' : ''}${isPastDay ? ' vacations-day--past' : ''}`}
         title={dayTitle}
         onClick={() => canClickDay && handleDayClick(iso)}
         onMouseEnter={() => !isTPeople && handleDayMouseEnter(iso)}
       >
         {day}
       </button>
+    );
+  }
+
+  function shiftTeamVacationsMonth(direction: -1 | 1) {
+    setTeamVacationsMonthCursor((current) => new Date(current.getFullYear(), current.getMonth() + direction, 1));
+  }
+
+  function renderTeamVacationCalendar(members: TeamCalendarPerson[]) {
+    if (members.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="team-vac-calendar-wrap">
+        <div className="team-vac-calendar-legend" aria-label="Legenda de dias especiais">
+          <span className="team-vac-calendar-legend__item"><i className="is-vacation" />Férias aprovadas</span>
+          <span className="team-vac-calendar-legend__item"><i className="is-absence" />Ausência aprovada</span>
+          <span className="team-vac-calendar-legend__item"><i className="is-holiday" />Feriado</span>
+          <span className="team-vac-calendar-legend__item"><i className="is-extra" />Dia automático</span>
+          <span className="team-vac-calendar-legend__item"><i className="is-weekend" />Fim de semana</span>
+        </div>
+
+        <div
+          className="team-vac-calendar-grid"
+          style={{ gridTemplateColumns: `220px repeat(${teamVacationMonthDays.length}, minmax(28px, 1fr))` }}
+        >
+          <div className="team-vac-calendar-grid__member-head">Colaborador</div>
+          {teamVacationMonthDays.map((day) => (
+            <div
+              key={`head-${day.iso}`}
+              className={`team-vac-calendar-grid__day-head${day.isWeekend ? ' is-weekend' : ''}`}
+              title={day.iso}
+            >
+              <small>{day.weekDayLabel}</small>
+              <strong>{day.day}</strong>
+            </div>
+          ))}
+
+          {members.map((member) => {
+            const memberColor = memberColorMap.get(member.id) || '#4B79F5';
+            const dayMap = approvedMonthByMemberByDay.get(member.id) ?? new Map<string, TeamVacation>();
+
+            return (
+              <Fragment key={`team-vac-row-${member.id}`}>
+                <div key={`team-vac-member-${member.id}`} className="team-vac-calendar-grid__member-cell">
+                  <span className="team-vac-calendar-grid__member-dot" style={{ background: memberColor }} />
+                  <div>
+                    <strong>{formatTeamPerson(member)}</strong>
+                    {member.email ? <small>{member.email}</small> : <small>Sem email disponível</small>}
+                    {member.isTeamLeader && <small className="team-vac-calendar-grid__member-role">Chefe da equipa</small>}
+                  </div>
+                </div>
+
+                {teamVacationMonthDays.map((day) => {
+                  const event = dayMap.get(day.iso);
+                  const isAbsence = event && event.requestType !== 'VACATION';
+                  const isHoliday = teamHolidaySet.has(day.iso);
+                  const isExtraDay = teamExtraDaySet.has(day.iso);
+
+                  const specialLabels: string[] = [];
+                  if (isHoliday) specialLabels.push('Feriado');
+                  if (isExtraDay) specialLabels.push(teamExtraDayLabelByDate.get(day.iso) || 'Dia automático');
+                  if (day.isWeekend || teamWeekendSet.has(day.iso)) specialLabels.push('Fim de semana');
+
+                  const titleParts = [
+                    event ? `${getVacationTypeLabel(event.requestType)} aprovada · ${formatShortDate(event.dataInicio)} até ${formatShortDate(event.dataFim)}` : null,
+                    specialLabels.length > 0 ? specialLabels.join(' · ') : null,
+                    day.iso,
+                  ].filter(Boolean);
+                  const title = titleParts.join(' | ');
+
+                  return (
+                    <div
+                      key={`${member.id}-${day.iso}`}
+                      className={`team-vac-calendar-grid__day-cell${day.isWeekend ? ' is-weekend' : ''}${event ? ' has-event' : ''}${isAbsence ? ' is-absence' : ''}${isHoliday ? ' is-holiday' : ''}${isExtraDay ? ' is-extra-day' : ''}`}
+                      style={event ? ({ '--member-color': memberColor } as CSSProperties) : undefined}
+                      title={title}
+                    >
+                      {event && <span className="team-vac-calendar-grid__event-pill" />}
+                      {!event && isHoliday && <span className="team-vac-calendar-grid__special-pill">F</span>}
+                      {!event && !isHoliday && isExtraDay && <span className="team-vac-calendar-grid__special-pill">A</span>}
+                    </div>
+                  );
+                })}
+              </Fragment>
+            );
+          })}
+        </div>
+      </div>
     );
   }
 
@@ -1901,6 +2387,9 @@ export default function VacationsPage() {
         {allowedTabs.includes('calendar') && (
           <button type="button" className={activeTab === 'calendar' ? 'is-active' : ''} onClick={() => setActiveTab('calendar')}>Calendário</button>
         )}
+        {allowedTabs.includes('team-vacations') && (
+          <button type="button" className={activeTab === 'team-vacations' ? 'is-active' : ''} onClick={() => setActiveTab('team-vacations')}>Férias da equipa</button>
+        )}
         {allowedTabs.includes('company-days') && (
           <button type="button" className={activeTab === 'company-days' ? 'is-active' : ''} onClick={() => setActiveTab('company-days')}>Dias automáticos</button>
         )}
@@ -1967,7 +2456,7 @@ export default function VacationsPage() {
                 <article>
                   <span>Dias dados pela empresa</span>
                   <strong>{companyExtraDays.length}</strong>
-                  <small>Configuração automática anual da empresa.</small>
+                  <small></small>
                 </article>
               </div>
 
@@ -2329,6 +2818,74 @@ export default function VacationsPage() {
               )}
             </section>
           )}
+        </section>
+      )}
+
+      {activeTab === 'team-vacations' && (
+        <section className="trainings-list-card manager-team-vacations-board">
+          <div className="team-vac-calendar-toolbar">
+            <div className="team-vac-calendar-toolbar__month-nav">
+              <Button type="button" variant="ghost" size="sm" onClick={() => shiftTeamVacationsMonth(-1)} aria-label="Mês anterior">←</Button>
+              <strong>{teamVacationMonthLabel}</strong>
+              <Button type="button" variant="ghost" size="sm" onClick={() => shiftTeamVacationsMonth(1)} aria-label="Mês seguinte">→</Button>
+            </div>
+
+            <div className="team-vac-calendar-toolbar__filters">
+              <label className="team-vac-calendar-toolbar__field">
+                <span className="team-vac-calendar-toolbar__field-label">Equipa</span>
+                <select
+                  className="team-vac-calendar-toolbar__select"
+                  value={selectedTeamVacationId}
+                  onChange={(event) => setSelectedTeamVacationId(event.target.value)}
+                >
+                  {teamContexts.map((team) => (
+                    <option key={team.teamId} value={team.teamId}>{team.teamName}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="team-vac-calendar-toolbar__field team-vac-calendar-toolbar__field--search">
+                <span className="team-vac-calendar-toolbar__field-label">Colaborador</span>
+                <input
+                  className="team-vac-calendar-toolbar__search"
+                  type="search"
+                  value={teamVacationSearchQuery}
+                  onChange={(event) => setTeamVacationSearchQuery(event.target.value)}
+                  placeholder="Filtrar colaborador..."
+                />
+              </label>
+            </div>
+          </div>
+
+          {selectedTeamVacationContext && (
+            <p className="team-vac-calendar-info">
+              Equipa selecionada: <strong>{selectedTeamVacationContext.teamName}</strong>
+            </p>
+          )}
+
+          {isLoadingTeamSpecialCalendar && (
+            <div className="team-vac-calendar-info">A carregar feriados e dias automáticos...</div>
+          )}
+
+          {loadingTeamVacationDetailKey === teamVacationDetailsKey && filteredTeamCalendarMembers.length === 0 && (
+            <article className="trainings-mobile-card">
+              <span className="loading-line loading-line--card-title" />
+              <span className="loading-line loading-line--card-body" />
+            </article>
+          )}
+
+          {!selectedTeamVacationId && (
+            <div className="vacations-panel-state">
+              <p>Sem equipa disponível para mostrar férias da equipa.</p>
+            </div>
+          )}
+
+          {selectedTeamVacationId && loadingTeamVacationDetailKey !== teamVacationDetailsKey && filteredTeamCalendarMembers.length === 0 && (
+            <div className="vacations-panel-state">
+              <p>Sem colaboradores para o filtro atual.</p>
+            </div>
+          )}
+
+          {filteredTeamCalendarMembers.length > 0 && renderTeamVacationCalendar(filteredTeamCalendarMembers)}
         </section>
       )}
 

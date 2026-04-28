@@ -6683,6 +6683,71 @@
   font-size: 0.95rem;
 }
 
+.team-vac-calendar-toolbar__filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.team-vac-calendar-toolbar__field {
+  display: grid;
+  gap: 4px;
+}
+
+.team-vac-calendar-toolbar__field-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #4a6691;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.team-vac-calendar-toolbar__select,
+.team-vac-calendar-toolbar__search {
+  border: 1px solid #b9cff0;
+  border-radius: 10px;
+  background: #f7fbff;
+  color: #1f3f72;
+  height: 38px;
+  font-size: 0.95rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.team-vac-calendar-toolbar__select {
+  min-width: 150px;
+  padding: 0 34px 0 12px;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, #5478ad 50%), linear-gradient(135deg, #5478ad 50%, transparent 50%);
+  background-position: calc(100% - 16px) 16px, calc(100% - 10px) 16px;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+.team-vac-calendar-toolbar__field--search {
+  min-width: 260px;
+}
+
+.team-vac-calendar-toolbar__search {
+  width: 100%;
+  padding: 0 12px;
+}
+
+.team-vac-calendar-toolbar__select:hover,
+.team-vac-calendar-toolbar__search:hover {
+  border-color: #8eb1e3;
+  background-color: #ffffff;
+}
+
+.team-vac-calendar-toolbar__select:focus-visible,
+.team-vac-calendar-toolbar__search:focus-visible {
+  outline: none;
+  border-color: #5a90d8;
+  box-shadow: 0 0 0 3px rgba(87, 140, 211, 0.2);
+  background-color: #ffffff;
+}
+
 .team-vac-calendar-wrap {
   border: 1px solid #dce8fb;
   border-radius: 14px;
@@ -7369,6 +7434,17 @@
   .team-vac-calendar-toolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .team-vac-calendar-toolbar__filters {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .team-vac-calendar-toolbar__field,
+  .team-vac-calendar-toolbar__field--search {
+    width: 100%;
+    min-width: 0;
   }
 
   .team-vac-calendar-toolbar__month-nav {

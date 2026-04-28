@@ -1468,6 +1468,11 @@ button {
   background: #fff;
 }
 
+.vacations-day--past {
+  opacity: 0.35;
+  cursor: not-allowed !important;
+}
+
 .vacations-shell .trainings-list-head small {
   color: #5c769c;
   font-weight: 700;

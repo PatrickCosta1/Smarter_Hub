@@ -1310,9 +1310,6 @@ export default function ManagerTeamsPage() {
               <button type="button" className={`notification-filter${teamModalTab === 'overview' ? ' is-active' : ''}`} onClick={() => setTeamModalTab('overview')}>
                 Visão geral
               </button>
-              <button type="button" className={`notification-filter${teamModalTab === 'vacations' ? ' is-active' : ''}`} onClick={() => setTeamModalTab('vacations')}>
-                Férias da equipa
-              </button>
               <button type="button" className={`notification-filter${teamModalTab === 'birthdays' ? ' is-active' : ''}`} onClick={() => setTeamModalTab('birthdays')}>
                 Aniversários
               </button>
@@ -1388,40 +1385,6 @@ export default function ManagerTeamsPage() {
                   ))}
                 </section>
               </>
-            )}
-
-            {teamModalTab === 'vacations' && (
-              <section className="manager-team-vacations-board">
-                <div className="team-vac-calendar-toolbar">
-                  <div className="team-vac-calendar-toolbar__month-nav">
-                    <Button type="button" variant="ghost" size="sm" onClick={() => shiftMonth(-1)} aria-label="Mês anterior">←</Button>
-                    <strong>{monthLabel}</strong>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => shiftMonth(1)} aria-label="Mês seguinte">→</Button>
-                  </div>
-                  <Button type="button" variant="primary" onClick={() => setIsCompareModalOpen(true)}>
-                    Comparar colaboradores
-                  </Button>
-                </div>
-
-                {isLoadingTeamSpecialCalendar && (
-                  <div className="team-vac-calendar-info">A carregar feriados, dias automáticos e aniversários...</div>
-                )}
-
-                {isSelectedTeamDetailLoading && teamCalendarMembers.length === 0 && (
-                  <article className="trainings-mobile-card">
-                    <Skeleton lines={4} />
-                  </article>
-                )}
-
-                {!isSelectedTeamDetailLoading && teamCalendarMembers.length === 0 && (
-                  <EmptyState
-                    title="Sem colaboradores na equipa."
-                    message="Quando a equipa tiver membros, o calendário aparecerá aqui automaticamente."
-                  />
-                )}
-
-                {!isSelectedTeamDetailLoading && teamCalendarMembers.length > 0 && renderVacationCalendar(teamCalendarMembers)}
-              </section>
             )}
 
             {teamModalTab === 'birthdays' && (

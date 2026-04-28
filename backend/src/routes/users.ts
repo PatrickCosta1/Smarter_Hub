@@ -103,14 +103,37 @@ const updateAdminUserSchema = z.object({
   teamId: z.string().nullable().optional(),
   codigoPostal: z.string().optional(),
   matriculaCarro: z.string().optional(),
+  localNascimentoPais: z.string().optional(),
+  localNascimentoCidade: z.string().optional(),
+  nomePai: z.string().optional(),
+  nomeMae: z.string().optional(),
   cartaoCidadao: z.string().optional(),
   nif: z.string().optional(),
+  cpf: z.string().optional(),
+  pis: z.string().optional(),
+  ctps: z.string().optional(),
+  ctpsSerie: z.string().optional(),
+  ctpsDataExpedicao: z.string().optional(),
+  rg: z.string().optional(),
+  rgOrgaoEmissor: z.string().optional(),
+  rgDataExpedicao: z.string().optional(),
+  cnh: z.string().optional(),
+  cnhCategoria: z.string().optional(),
+  cnhDataValidade: z.string().optional(),
+  tituloEleitor: z.string().optional(),
+  zonaEleitoral: z.string().optional(),
+  secaoEleitoral: z.string().optional(),
+  certificadoReservista: z.string().optional(),
   niss: z.string().optional(),
   iban: z.string().optional(),
   situacaoIrs: z.string().optional(),
   numeroDependentes: z.string().optional(),
   irsJovem: z.string().optional(),
   anoPrimeiroDesconto: z.string().optional(),
+  primeiroEmprego: z.boolean().optional(),
+  recebeAposentadoria: z.boolean().optional(),
+  recebeSeguroDesemprego: z.boolean().optional(),
+  valeTransporte: z.boolean().optional(),
   numeroCartaoContinente: z.string().optional(),
   voucherNosData: z.string().optional(),
   comprovativoMoradaFiscal: z.string().optional(),
@@ -123,6 +146,7 @@ const updateAdminUserSchema = z.object({
   validadeCartaoCidadao: z.string().optional(),
   cargo: z.string().optional(),
   categoriaProfissional: z.string().optional(),
+  numeroMecanografico: z.string().optional(),
   funcao: z.string().optional(),
   dataInicioContrato: z.string().optional(),
   dataFimContrato: z.string().optional(),
@@ -736,15 +760,38 @@ router.get('/users', requireAuth, async (req, res) => {
           endereco: true,
           codigoPostal: true,
           matriculaCarro: true,
+          localNascimentoPais: true,
+          localNascimentoCidade: true,
+          nomePai: true,
+          nomeMae: true,
           cartaoCidadao: true,
           validadeCartaoCidadao: true,
           nif: true,
+          cpf: true,
+          pis: true,
+          ctps: true,
+          ctpsSerie: true,
+          ctpsDataExpedicao: true,
+          rg: true,
+          rgOrgaoEmissor: true,
+          rgDataExpedicao: true,
+          cnh: true,
+          cnhCategoria: true,
+          cnhDataValidade: true,
+          tituloEleitor: true,
+          zonaEleitoral: true,
+          secaoEleitoral: true,
+          certificadoReservista: true,
           niss: true,
           iban: true,
           situacaoIrs: true,
           numeroDependentes: true,
           irsJovem: true,
           anoPrimeiroDesconto: true,
+          primeiroEmprego: true,
+          recebeAposentadoria: true,
+          recebeSeguroDesemprego: true,
+          valeTransporte: true,
           numeroCartaoContinente: true,
           voucherNosData: true,
           comprovativoMoradaFiscal: true,
@@ -756,6 +803,7 @@ router.get('/users', requireAuth, async (req, res) => {
           contactoEmergenciaNumero: true,
           cargo: true,
           categoriaProfissional: true,
+          numeroMecanografico: true,
           funcao: true,
           dataInicioContrato: true,
           dataFimContrato: true,
@@ -900,15 +948,38 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
             endereco: true,
             codigoPostal: true,
             matriculaCarro: true,
+            localNascimentoPais: true,
+            localNascimentoCidade: true,
+            nomePai: true,
+            nomeMae: true,
             cartaoCidadao: true,
             validadeCartaoCidadao: true,
             nif: true,
+            cpf: true,
+            pis: true,
+            ctps: true,
+            ctpsSerie: true,
+            ctpsDataExpedicao: true,
+            rg: true,
+            rgOrgaoEmissor: true,
+            rgDataExpedicao: true,
+            cnh: true,
+            cnhCategoria: true,
+            cnhDataValidade: true,
+            tituloEleitor: true,
+            zonaEleitoral: true,
+            secaoEleitoral: true,
+            certificadoReservista: true,
             niss: true,
             iban: true,
             situacaoIrs: true,
             numeroDependentes: true,
             irsJovem: true,
             anoPrimeiroDesconto: true,
+            primeiroEmprego: true,
+            recebeAposentadoria: true,
+            recebeSeguroDesemprego: true,
+            valeTransporte: true,
             numeroCartaoContinente: true,
             voucherNosData: true,
             comprovativoMoradaFiscal: true,
@@ -920,6 +991,7 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
             contactoEmergenciaNumero: true,
             cargo: true,
             categoriaProfissional: true,
+            numeroMecanografico: true,
             funcao: true,
             dataInicioContrato: true,
             dataFimContrato: true,
@@ -2353,6 +2425,7 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
       id: true,
       isRootAccess: true,
       hasAccessTotal: true,
+      profile: { select: { workCountry: true } },
     },
   });
 
@@ -2406,14 +2479,37 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
     ...(data.localidade !== undefined ? { localidade: data.localidade } : {}),
     ...(data.codigoPostal !== undefined ? { codigoPostal: data.codigoPostal } : {}),
     ...(data.matriculaCarro !== undefined ? { matriculaCarro: data.matriculaCarro } : {}),
+    ...(data.localNascimentoPais !== undefined ? { localNascimentoPais: data.localNascimentoPais } : {}),
+    ...(data.localNascimentoCidade !== undefined ? { localNascimentoCidade: data.localNascimentoCidade } : {}),
+    ...(data.nomePai !== undefined ? { nomePai: data.nomePai } : {}),
+    ...(data.nomeMae !== undefined ? { nomeMae: data.nomeMae } : {}),
     ...(data.cartaoCidadao !== undefined ? { cartaoCidadao: data.cartaoCidadao } : {}),
     ...(data.nif !== undefined ? { nif: data.nif } : {}),
+    ...(data.cpf !== undefined ? { cpf: data.cpf } : {}),
+    ...(data.pis !== undefined ? { pis: data.pis } : {}),
+    ...(data.ctps !== undefined ? { ctps: data.ctps } : {}),
+    ...(data.ctpsSerie !== undefined ? { ctpsSerie: data.ctpsSerie } : {}),
+    ...(data.ctpsDataExpedicao !== undefined ? { ctpsDataExpedicao: data.ctpsDataExpedicao } : {}),
+    ...(data.rg !== undefined ? { rg: data.rg } : {}),
+    ...(data.rgOrgaoEmissor !== undefined ? { rgOrgaoEmissor: data.rgOrgaoEmissor } : {}),
+    ...(data.rgDataExpedicao !== undefined ? { rgDataExpedicao: data.rgDataExpedicao } : {}),
+    ...(data.cnh !== undefined ? { cnh: data.cnh } : {}),
+    ...(data.cnhCategoria !== undefined ? { cnhCategoria: data.cnhCategoria } : {}),
+    ...(data.cnhDataValidade !== undefined ? { cnhDataValidade: data.cnhDataValidade } : {}),
+    ...(data.tituloEleitor !== undefined ? { tituloEleitor: data.tituloEleitor } : {}),
+    ...(data.zonaEleitoral !== undefined ? { zonaEleitoral: data.zonaEleitoral } : {}),
+    ...(data.secaoEleitoral !== undefined ? { secaoEleitoral: data.secaoEleitoral } : {}),
+    ...(data.certificadoReservista !== undefined ? { certificadoReservista: data.certificadoReservista } : {}),
     ...(data.niss !== undefined ? { niss: data.niss } : {}),
     ...(data.iban !== undefined ? { iban: data.iban } : {}),
     ...(data.situacaoIrs !== undefined ? { situacaoIrs: data.situacaoIrs } : {}),
     ...(data.numeroDependentes !== undefined ? { numeroDependentes: data.numeroDependentes } : {}),
     ...(data.irsJovem !== undefined ? { irsJovem: data.irsJovem } : {}),
     ...(data.anoPrimeiroDesconto !== undefined ? { anoPrimeiroDesconto: data.anoPrimeiroDesconto } : {}),
+    ...(data.primeiroEmprego !== undefined ? { primeiroEmprego: data.primeiroEmprego } : {}),
+    ...(data.recebeAposentadoria !== undefined ? { recebeAposentadoria: data.recebeAposentadoria } : {}),
+    ...(data.recebeSeguroDesemprego !== undefined ? { recebeSeguroDesemprego: data.recebeSeguroDesemprego } : {}),
+    ...(data.valeTransporte !== undefined ? { valeTransporte: data.valeTransporte } : {}),
     ...(data.numeroCartaoContinente !== undefined ? { numeroCartaoContinente: data.numeroCartaoContinente } : {}),
     ...(data.voucherNosData !== undefined ? { voucherNosData: data.voucherNosData } : {}),
     ...(data.comprovativoMoradaFiscal !== undefined ? { comprovativoMoradaFiscal: data.comprovativoMoradaFiscal } : {}),
@@ -2428,6 +2524,7 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
     ...(data.validadeCartaoCidadao !== undefined ? { validadeCartaoCidadao: data.validadeCartaoCidadao } : {}),
     ...(data.cargo !== undefined ? { cargo: data.cargo } : {}),
     ...(data.categoriaProfissional !== undefined ? { categoriaProfissional: data.categoriaProfissional } : {}),
+    ...(data.numeroMecanografico !== undefined ? { numeroMecanografico: data.numeroMecanografico } : {}),
     ...(data.funcao !== undefined ? { funcao: data.funcao } : {}),
     ...(data.dataInicioContrato !== undefined ? { dataInicioContrato: data.dataInicioContrato } : {}),
     ...(data.dataFimContrato !== undefined ? { dataFimContrato: data.dataFimContrato } : {}),
@@ -2489,11 +2586,123 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
     });
   }
 
+  // ── Country change side-effects ────────────────────────────────────────────
+  const previousCountry = existing.profile?.workCountry ?? 'PT';
+  const newCountry = data.workCountry;
+  let cancelledVacations = 0;
+
+  if (newCountry && newCountry !== previousCountry) {
+    // Cancel all PENDING vacation requests — they were submitted under old country rules
+    const pendingVacations = await prisma.vacation.findMany({
+      where: { userId, status: 'PENDING' },
+      select: { id: true, requestType: true, dataInicio: true, dataFim: true },
+    });
+
+    cancelledVacations = pendingVacations.length;
+
+    if (pendingVacations.length > 0) {
+      await prisma.vacation.updateMany({
+        where: { userId, status: 'PENDING' },
+        data: {
+          status: 'CANCELLED',
+          observacoes: `Cancelado automaticamente: mudança de país de trabalho de ${previousCountry} para ${newCountry}.`,
+        },
+      });
+    }
+
+    const countryLabel = (c: string) => (c === 'BR' ? 'Brasil' : 'Portugal');
+
+    // Clear fields that are exclusive to the previous country
+    const PT_ONLY_FIELDS = {
+      cartaoCidadao: '',
+      validadeCartaoCidadao: '',
+      nif: '',
+      niss: '',
+      iban: '',
+      situacaoIrs: '',
+      numeroDependentes: '',
+      irsJovem: '',
+      anoPrimeiroDesconto: '',
+      matriculaCarro: '',
+      numeroCartaoContinente: '',
+      voucherNosData: '',
+      comprovativoCartaoCidadao: '',
+      comprovativoIban: '',
+      comprovativoCartaoContinente: '',
+    };
+
+    const BR_ONLY_FIELDS = {
+      cpf: '',
+      pis: '',
+      ctps: '',
+      ctpsSerie: '',
+      ctpsDataExpedicao: '',
+      rg: '',
+      rgOrgaoEmissor: '',
+      rgDataExpedicao: '',
+      cnh: '',
+      cnhCategoria: '',
+      cnhDataValidade: '',
+      tituloEleitor: '',
+      zonaEleitoral: '',
+      secaoEleitoral: '',
+      certificadoReservista: '',
+      localNascimentoPais: '',
+      localNascimentoCidade: '',
+      nomePai: '',
+      nomeMae: '',
+      primeiroEmprego: false,
+      recebeAposentadoria: false,
+      recebeSeguroDesemprego: false,
+      valeTransporte: false,
+    };
+
+    // Clear the fields belonging to the OLD country (they no longer apply)
+    const fieldsToClean = previousCountry === 'PT' ? PT_ONLY_FIELDS : BR_ONLY_FIELDS;
+
+    // Clear codigoPostal when moving to BR — CEP format is different, avoid stale PT postal code
+    const extraClean = newCountry === 'BR' ? { codigoPostal: '' } : {};
+
+    await prisma.profile.update({
+      where: { userId },
+      data: { ...fieldsToClean, ...extraClean },
+    });
+
+    // Deactivate all team memberships — teams are country-scoped
+    await prisma.teamMembership.updateMany({
+      where: { userId, isActive: true },
+      data: { isActive: false },
+    });
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { teamId: null },
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId,
+        title: `País de trabalho alterado para ${countryLabel(newCountry)}`,
+        message: [
+          `O teu país de trabalho foi alterado de ${countryLabel(previousCountry)} para ${countryLabel(newCountry)}.`,
+          cancelledVacations > 0
+            ? `${cancelledVacations} pedido(s) de férias/ausências pendente(s) foram cancelados (regras diferentes entre países).`
+            : '',
+          `Os dados exclusivos de ${countryLabel(previousCountry)} foram removidos da tua ficha.`,
+          `A tua equipa foi removida — o administrador irá reatribuir-te à equipa correta em ${countryLabel(newCountry)}.`,
+          `Ação: completa os dados obrigatórios para ${countryLabel(newCountry)} na tua ficha.`,
+        ].filter(Boolean).join('\n'),
+      },
+    });
+  }
+
   return res.json({
     id: updatedUser.id,
     role: updatedUser.role,
     teamId: updatedUser.teamId,
     isActive: updatedUser.isActive,
+    cancelledVacations,
+    countryChanged: newCountry !== undefined && newCountry !== previousCountry,
   });
 });
 

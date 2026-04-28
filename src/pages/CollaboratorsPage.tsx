@@ -51,15 +51,38 @@ type CollaboratorRow = {
     funcao?: string;
     codigoPostal?: string;
     matriculaCarro?: string;
+    localNascimentoPais?: string;
+    localNascimentoCidade?: string;
+    nomePai?: string;
+    nomeMae?: string;
     cartaoCidadao?: string;
     validadeCartaoCidadao?: string;
     nif?: string;
+    cpf?: string;
+    pis?: string;
+    ctps?: string;
+    ctpsSerie?: string;
+    ctpsDataExpedicao?: string;
+    rg?: string;
+    rgOrgaoEmissor?: string;
+    rgDataExpedicao?: string;
+    cnh?: string;
+    cnhCategoria?: string;
+    cnhDataValidade?: string;
+    tituloEleitor?: string;
+    zonaEleitoral?: string;
+    secaoEleitoral?: string;
+    certificadoReservista?: string;
     niss?: string;
     iban?: string;
     situacaoIrs?: string;
     numeroDependentes?: string;
     irsJovem?: string;
     anoPrimeiroDesconto?: string;
+    primeiroEmprego?: boolean;
+    recebeAposentadoria?: boolean;
+    recebeSeguroDesemprego?: boolean;
+    valeTransporte?: boolean;
     numeroCartaoContinente?: string;
     voucherNosData?: string;
     comprovativoMoradaFiscal?: string;
@@ -69,6 +92,8 @@ type CollaboratorRow = {
     contactoEmergenciaNome?: string;
     contactoEmergenciaParentesco?: string;
     contactoEmergenciaNumero?: string;
+    categoriaProfissional?: string;
+    numeroMecanografico?: string;
     dataInicioContrato?: string;
     dataFimContrato?: string;
     tipoContrato?: string;
@@ -100,15 +125,38 @@ type CollaboratorEditDraft = {
   localidade: string;
   codigoPostal: string;
   matriculaCarro: string;
+  localNascimentoPais: string;
+  localNascimentoCidade: string;
+  nomePai: string;
+  nomeMae: string;
   cartaoCidadao: string;
   validadeCartaoCidadao: string;
   nif: string;
+  cpf: string;
+  pis: string;
+  ctps: string;
+  ctpsSerie: string;
+  ctpsDataExpedicao: string;
+  rg: string;
+  rgOrgaoEmissor: string;
+  rgDataExpedicao: string;
+  cnh: string;
+  cnhCategoria: string;
+  cnhDataValidade: string;
+  tituloEleitor: string;
+  zonaEleitoral: string;
+  secaoEleitoral: string;
+  certificadoReservista: string;
   niss: string;
   iban: string;
   situacaoIrs: string;
   numeroDependentes: string;
   irsJovem: string;
   anoPrimeiroDesconto: string;
+  primeiroEmprego: boolean;
+  recebeAposentadoria: boolean;
+  recebeSeguroDesemprego: boolean;
+  valeTransporte: boolean;
   numeroCartaoContinente: string;
   voucherNosData: string;
   comprovativoMoradaFiscal: string;
@@ -119,12 +167,17 @@ type CollaboratorEditDraft = {
   contactoEmergenciaParentesco: string;
   contactoEmergenciaNumero: string;
   cargo: string;
+  categoriaProfissional: string;
+  numeroMecanografico: string;
   funcao: string;
   dataInicioContrato: string;
   dataFimContrato: string;
   tipoContrato: string;
   regimeHorario: string;
 };
+
+type EditSection = 'identificacao' | 'contactos' | 'fiscal' | 'emergencia' | 'contrato';
+type EditFieldConfig = { key: keyof CollaboratorEditDraft; label: string; section: EditSection };
 
 function resolveStatusTone(message: string): 'success' | 'error' | 'info' {
   const normalized = message.toLowerCase();
@@ -139,7 +192,7 @@ function resolveStatusTone(message: string): 'success' | 'error' | 'info' {
   return 'info';
 }
 
-const EDIT_PROFILE_FIELDS: Array<{ key: keyof CollaboratorEditDraft; label: string; section: 'identificacao' | 'contactos' | 'fiscal' | 'emergencia' | 'contrato' }> = [
+const COMMON_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
   { key: 'nomeCompleto', label: 'Nome completo', section: 'identificacao' },
   { key: 'nomeAbreviado', label: 'Nome abreviado', section: 'identificacao' },
   { key: 'dataNascimento', label: 'Data de nascimento', section: 'identificacao' },
@@ -150,13 +203,28 @@ const EDIT_PROFILE_FIELDS: Array<{ key: keyof CollaboratorEditDraft; label: stri
   { key: 'faculdade', label: 'Faculdade', section: 'identificacao' },
   { key: 'nacionalidade', label: 'Nacionalidade', section: 'identificacao' },
   { key: 'emailPessoal', label: 'Email pessoal', section: 'contactos' },
-  { key: 'telemovel', label: 'Telemóvel', section: 'contactos' },
+  { key: 'telemovel', label: 'Telemóvel / contacto telefónico', section: 'contactos' },
   { key: 'githubUser', label: 'GitHub', section: 'contactos' },
   { key: 'moradaFiscal', label: 'Morada fiscal', section: 'contactos' },
   { key: 'endereco', label: 'Morada habitual', section: 'contactos' },
   { key: 'localidade', label: 'Localidade', section: 'contactos' },
-  { key: 'codigoPostal', label: 'Código postal', section: 'contactos' },
-  { key: 'matriculaCarro', label: 'Matrícula do carro', section: 'fiscal' },
+  { key: 'codigoPostal', label: 'Código postal / CEP', section: 'contactos' },
+  { key: 'comprovativoMoradaFiscal', label: 'Comprovativo morada fiscal', section: 'contactos' },
+  { key: 'contactoEmergenciaNome', label: 'Nome contacto emergência', section: 'emergencia' },
+  { key: 'contactoEmergenciaParentesco', label: 'Parentesco contacto emergência', section: 'emergencia' },
+  { key: 'contactoEmergenciaNumero', label: 'Número contacto emergência', section: 'emergencia' },
+  { key: 'numeroMecanografico', label: 'Número mecanográfico', section: 'contrato' },
+  { key: 'cargo', label: 'Cargo', section: 'contrato' },
+  { key: 'categoriaProfissional', label: 'Categoria profissional', section: 'contrato' },
+  { key: 'funcao', label: 'Função', section: 'contrato' },
+  { key: 'dataInicioContrato', label: 'Data início contrato', section: 'contrato' },
+  { key: 'dataFimContrato', label: 'Data fim contrato', section: 'contrato' },
+  { key: 'tipoContrato', label: 'Tipo contrato', section: 'contrato' },
+  { key: 'regimeHorario', label: 'Regime horário', section: 'contrato' },
+];
+
+const PT_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
+  { key: 'matriculaCarro', label: 'Matrícula do carro', section: 'identificacao' },
   { key: 'cartaoCidadao', label: 'Cartão de cidadão', section: 'fiscal' },
   { key: 'validadeCartaoCidadao', label: 'Validade cartão de cidadão', section: 'fiscal' },
   { key: 'nif', label: 'NIF', section: 'fiscal' },
@@ -172,16 +240,49 @@ const EDIT_PROFILE_FIELDS: Array<{ key: keyof CollaboratorEditDraft; label: stri
   { key: 'comprovativoCartaoCidadao', label: 'Comprovativo cartão de cidadão', section: 'fiscal' },
   { key: 'comprovativoIban', label: 'Comprovativo IBAN', section: 'fiscal' },
   { key: 'comprovativoCartaoContinente', label: 'Comprovativo cartão Continente', section: 'fiscal' },
-  { key: 'contactoEmergenciaNome', label: 'Nome contacto emergência', section: 'emergencia' },
-  { key: 'contactoEmergenciaParentesco', label: 'Parentesco contacto emergência', section: 'emergencia' },
-  { key: 'contactoEmergenciaNumero', label: 'Número contacto emergência', section: 'emergencia' },
-  { key: 'cargo', label: 'Cargo', section: 'contrato' },
-  { key: 'funcao', label: 'Função', section: 'contrato' },
-  { key: 'dataInicioContrato', label: 'Data início contrato', section: 'contrato' },
-  { key: 'dataFimContrato', label: 'Data fim contrato', section: 'contrato' },
-  { key: 'tipoContrato', label: 'Tipo contrato', section: 'contrato' },
-  { key: 'regimeHorario', label: 'Regime horário', section: 'contrato' },
 ];
+
+const BR_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
+  { key: 'localNascimentoPais', label: 'País de nascimento', section: 'identificacao' },
+  { key: 'localNascimentoCidade', label: 'Cidade de nascimento', section: 'identificacao' },
+  { key: 'nomePai', label: 'Nome do pai', section: 'identificacao' },
+  { key: 'nomeMae', label: 'Nome da mãe', section: 'identificacao' },
+  { key: 'rg', label: 'RG', section: 'fiscal' },
+  { key: 'rgOrgaoEmissor', label: 'Órgão emissor (RG)', section: 'fiscal' },
+  { key: 'rgDataExpedicao', label: 'Data expedição (RG)', section: 'fiscal' },
+  { key: 'ctps', label: 'CTPS', section: 'fiscal' },
+  { key: 'ctpsSerie', label: 'Série (CTPS)', section: 'fiscal' },
+  { key: 'ctpsDataExpedicao', label: 'Data expedição (CTPS)', section: 'fiscal' },
+  { key: 'cnh', label: 'CNH', section: 'fiscal' },
+  { key: 'cnhCategoria', label: 'Categoria (CNH)', section: 'fiscal' },
+  { key: 'cnhDataValidade', label: 'Validade (CNH)', section: 'fiscal' },
+  { key: 'tituloEleitor', label: 'Título de eleitor', section: 'fiscal' },
+  { key: 'zonaEleitoral', label: 'Zona eleitoral', section: 'fiscal' },
+  { key: 'secaoEleitoral', label: 'Seção eleitoral', section: 'fiscal' },
+  { key: 'certificadoReservista', label: 'Certificado de reservista', section: 'fiscal' },
+  { key: 'comprovativoCartaoCidadao', label: 'Comprovativo documento de identificação', section: 'fiscal' },
+  { key: 'cpf', label: 'CPF', section: 'fiscal' },
+  { key: 'pis', label: 'PIS', section: 'fiscal' },
+  { key: 'iban', label: 'IBAN', section: 'fiscal' },
+  { key: 'comprovativoIban', label: 'Comprovativo IBAN', section: 'fiscal' },
+  { key: 'primeiroEmprego', label: 'Primeiro emprego', section: 'fiscal' },
+  { key: 'recebeAposentadoria', label: 'Recebe aposentadoria', section: 'fiscal' },
+  { key: 'recebeSeguroDesemprego', label: 'Recebe seguro de desemprego', section: 'fiscal' },
+  { key: 'valeTransporte', label: 'Vale transporte', section: 'fiscal' },
+];
+
+const EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
+  ...COMMON_EDIT_PROFILE_FIELDS,
+  ...PT_EDIT_PROFILE_FIELDS,
+  ...BR_EDIT_PROFILE_FIELDS,
+];
+
+function getVisibleEditProfileFields(workCountry: 'PT' | 'BR') {
+  return [
+    ...COMMON_EDIT_PROFILE_FIELDS,
+    ...(workCountry === 'BR' ? BR_EDIT_PROFILE_FIELDS : PT_EDIT_PROFILE_FIELDS),
+  ];
+}
 
 const EMPTY_EDIT_DRAFT: CollaboratorEditDraft = {
   role: 'COLABORADOR',
@@ -205,15 +306,38 @@ const EMPTY_EDIT_DRAFT: CollaboratorEditDraft = {
   localidade: '',
   codigoPostal: '',
   matriculaCarro: '',
+  localNascimentoPais: '',
+  localNascimentoCidade: '',
+  nomePai: '',
+  nomeMae: '',
   cartaoCidadao: '',
   validadeCartaoCidadao: '',
   nif: '',
+  cpf: '',
+  pis: '',
+  ctps: '',
+  ctpsSerie: '',
+  ctpsDataExpedicao: '',
+  rg: '',
+  rgOrgaoEmissor: '',
+  rgDataExpedicao: '',
+  cnh: '',
+  cnhCategoria: '',
+  cnhDataValidade: '',
+  tituloEleitor: '',
+  zonaEleitoral: '',
+  secaoEleitoral: '',
+  certificadoReservista: '',
   niss: '',
   iban: '',
   situacaoIrs: '',
   numeroDependentes: '',
   irsJovem: '',
   anoPrimeiroDesconto: '',
+  primeiroEmprego: false,
+  recebeAposentadoria: false,
+  recebeSeguroDesemprego: false,
+  valeTransporte: false,
   numeroCartaoContinente: '',
   voucherNosData: '',
   comprovativoMoradaFiscal: '',
@@ -224,6 +348,8 @@ const EMPTY_EDIT_DRAFT: CollaboratorEditDraft = {
   contactoEmergenciaParentesco: '',
   contactoEmergenciaNumero: '',
   cargo: '',
+  categoriaProfissional: '',
+  numeroMecanografico: '',
   funcao: '',
   dataInicioContrato: '',
   dataFimContrato: '',
@@ -312,15 +438,38 @@ function buildEditDraftFromRow(item: CollaboratorRow): CollaboratorEditDraft {
     localidade: profile.localidade || '',
     codigoPostal: profile.codigoPostal || '',
     matriculaCarro: profile.matriculaCarro || '',
+    localNascimentoPais: profile.localNascimentoPais || '',
+    localNascimentoCidade: profile.localNascimentoCidade || '',
+    nomePai: profile.nomePai || '',
+    nomeMae: profile.nomeMae || '',
     cartaoCidadao: profile.cartaoCidadao || '',
     validadeCartaoCidadao: profile.validadeCartaoCidadao || '',
     nif: profile.nif || '',
+    cpf: profile.cpf || '',
+    pis: profile.pis || '',
+    ctps: profile.ctps || '',
+    ctpsSerie: profile.ctpsSerie || '',
+    ctpsDataExpedicao: profile.ctpsDataExpedicao || '',
+    rg: profile.rg || '',
+    rgOrgaoEmissor: profile.rgOrgaoEmissor || '',
+    rgDataExpedicao: profile.rgDataExpedicao || '',
+    cnh: profile.cnh || '',
+    cnhCategoria: profile.cnhCategoria || '',
+    cnhDataValidade: profile.cnhDataValidade || '',
+    tituloEleitor: profile.tituloEleitor || '',
+    zonaEleitoral: profile.zonaEleitoral || '',
+    secaoEleitoral: profile.secaoEleitoral || '',
+    certificadoReservista: profile.certificadoReservista || '',
     niss: profile.niss || '',
     iban: profile.iban || '',
     situacaoIrs: profile.situacaoIrs || '',
     numeroDependentes: profile.numeroDependentes || '',
     irsJovem: profile.irsJovem || '',
     anoPrimeiroDesconto: profile.anoPrimeiroDesconto || '',
+    primeiroEmprego: Boolean(profile.primeiroEmprego),
+    recebeAposentadoria: Boolean(profile.recebeAposentadoria),
+    recebeSeguroDesemprego: Boolean(profile.recebeSeguroDesemprego),
+    valeTransporte: Boolean(profile.valeTransporte),
     numeroCartaoContinente: profile.numeroCartaoContinente || '',
     voucherNosData: profile.voucherNosData || '',
     comprovativoMoradaFiscal: profile.comprovativoMoradaFiscal || '',
@@ -331,6 +480,8 @@ function buildEditDraftFromRow(item: CollaboratorRow): CollaboratorEditDraft {
     contactoEmergenciaParentesco: profile.contactoEmergenciaParentesco || '',
     contactoEmergenciaNumero: profile.contactoEmergenciaNumero || '',
     cargo: profile.cargo || '',
+    categoriaProfissional: profile.categoriaProfissional || '',
+    numeroMecanografico: profile.numeroMecanografico || '',
     funcao: profile.funcao || '',
     dataInicioContrato: profile.dataInicioContrato || '',
     dataFimContrato: profile.dataFimContrato || '',
@@ -476,7 +627,7 @@ type TeamOption = {
   name: string;
 };
 
-type CollaboratorImportProfile = Partial<Record<Exclude<keyof CollaboratorEditDraft, 'role' | 'teamId' | 'isActive' | 'workCountry' | 'nomeCompleto'>, string>>;
+type CollaboratorImportProfile = Partial<Record<Exclude<keyof CollaboratorEditDraft, 'role' | 'teamId' | 'isActive' | 'workCountry' | 'nomeCompleto' | 'primeiroEmprego' | 'recebeAposentadoria' | 'recebeSeguroDesemprego' | 'valeTransporte'>, string>>;
 
 type CollaboratorImportRow = {
   rowNumber: number;
@@ -535,11 +686,15 @@ const EMPTY_PERMISSION_DRAFT: PermissionDraft = {
 
 const IMPORT_PROFILE_FIELD_KEYS = EDIT_PROFILE_FIELDS
   .filter((field) => field.key !== 'nomeCompleto'
+    && field.key !== 'primeiroEmprego'
+    && field.key !== 'recebeAposentadoria'
+    && field.key !== 'recebeSeguroDesemprego'
+    && field.key !== 'valeTransporte'
     && field.key !== 'comprovativoMoradaFiscal'
     && field.key !== 'comprovativoCartaoCidadao'
     && field.key !== 'comprovativoIban'
     && field.key !== 'comprovativoCartaoContinente')
-  .map((field) => field.key) as Array<Exclude<keyof CollaboratorEditDraft, 'role' | 'teamId' | 'isActive' | 'workCountry' | 'nomeCompleto'>>;
+  .map((field) => field.key) as Array<Exclude<keyof CollaboratorEditDraft, 'role' | 'teamId' | 'isActive' | 'workCountry' | 'nomeCompleto' | 'primeiroEmprego' | 'recebeAposentadoria' | 'recebeSeguroDesemprego' | 'valeTransporte'>>;
 
 const IMPORT_FILE_ACCEPT = '.xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
 
@@ -770,7 +925,7 @@ function assignImportField(row: CollaboratorImportRow, targetKey: string, value:
       row.subTeamName = value.trim();
       return;
     default:
-      if (IMPORT_PROFILE_FIELD_KEYS.includes(targetKey as Exclude<keyof CollaboratorEditDraft, 'role' | 'teamId' | 'isActive' | 'workCountry' | 'nomeCompleto'>)) {
+      if (IMPORT_PROFILE_FIELD_KEYS.includes(targetKey as Exclude<keyof CollaboratorEditDraft, 'role' | 'teamId' | 'isActive' | 'workCountry' | 'nomeCompleto' | 'primeiroEmprego' | 'recebeAposentadoria' | 'recebeSeguroDesemprego' | 'valeTransporte'>)) {
         row.profile[targetKey as keyof CollaboratorImportProfile] = value.trim();
       }
   }
@@ -1219,6 +1374,8 @@ export default function CollaboratorsPage() {
   const [pendingTeamToAdd, setPendingTeamToAdd] = useState('');
   const [editDraft, setEditDraft] = useState<CollaboratorEditDraft>(EMPTY_EDIT_DRAFT);
   const [isSavingEditDraft, setIsSavingEditDraft] = useState(false);
+  const [isCountryChangeModalOpen, setIsCountryChangeModalOpen] = useState(false);
+  const [pendingCountryChange, setPendingCountryChange] = useState<{ from: 'PT' | 'BR'; to: 'PT' | 'BR' } | null>(null);
   const [customCargoOptions, setCustomCargoOptions] = useState<CustomProfileOption[]>([]);
   const [customFuncaoOptions, setCustomFuncaoOptions] = useState<CustomProfileOption[]>([]);
   const [isProfileOptionModalOpen, setIsProfileOptionModalOpen] = useState(false);
@@ -2003,14 +2160,24 @@ export default function CollaboratorsPage() {
     }
   }
 
-  async function saveCollaboratorDraft() {
+  async function saveCollaboratorDraft(confirmed = false) {
     if (!selectedRow) {
       return;
     }
 
+    // Detect country change and ask for confirmation first
+    const currentCountry = (selectedRow.profile?.workCountry || 'PT') as 'PT' | 'BR';
+    if (!confirmed && editDraft.workCountry !== currentCountry) {
+      setPendingCountryChange({ from: currentCountry, to: editDraft.workCountry });
+      setIsCountryChangeModalOpen(true);
+      return;
+    }
+
+    setIsCountryChangeModalOpen(false);
+    setPendingCountryChange(null);
     setIsSavingEditDraft(true);
     try {
-      await apiRequest(`/admin/users/${selectedRow.id}`, {
+      const result = await apiRequest<{ cancelledVacations?: number; countryChanged?: boolean }>(`/admin/users/${selectedRow.id}`, {
         method: 'PATCH',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -2035,15 +2202,38 @@ export default function CollaboratorsPage() {
           localidade: editDraft.localidade,
           codigoPostal: editDraft.codigoPostal,
           matriculaCarro: editDraft.matriculaCarro,
+          localNascimentoPais: editDraft.localNascimentoPais,
+          localNascimentoCidade: editDraft.localNascimentoCidade,
+          nomePai: editDraft.nomePai,
+          nomeMae: editDraft.nomeMae,
           cartaoCidadao: editDraft.cartaoCidadao,
           validadeCartaoCidadao: editDraft.validadeCartaoCidadao,
           nif: editDraft.nif,
+          cpf: editDraft.cpf,
+          pis: editDraft.pis,
+          ctps: editDraft.ctps,
+          ctpsSerie: editDraft.ctpsSerie,
+          ctpsDataExpedicao: editDraft.ctpsDataExpedicao,
+          rg: editDraft.rg,
+          rgOrgaoEmissor: editDraft.rgOrgaoEmissor,
+          rgDataExpedicao: editDraft.rgDataExpedicao,
+          cnh: editDraft.cnh,
+          cnhCategoria: editDraft.cnhCategoria,
+          cnhDataValidade: editDraft.cnhDataValidade,
+          tituloEleitor: editDraft.tituloEleitor,
+          zonaEleitoral: editDraft.zonaEleitoral,
+          secaoEleitoral: editDraft.secaoEleitoral,
+          certificadoReservista: editDraft.certificadoReservista,
           niss: editDraft.niss,
           iban: editDraft.iban,
           situacaoIrs: editDraft.situacaoIrs,
           numeroDependentes: editDraft.numeroDependentes,
           irsJovem: editDraft.irsJovem,
           anoPrimeiroDesconto: editDraft.anoPrimeiroDesconto,
+          primeiroEmprego: editDraft.primeiroEmprego,
+          recebeAposentadoria: editDraft.recebeAposentadoria,
+          recebeSeguroDesemprego: editDraft.recebeSeguroDesemprego,
+          valeTransporte: editDraft.valeTransporte,
           numeroCartaoContinente: editDraft.numeroCartaoContinente,
           voucherNosData: editDraft.voucherNosData,
           comprovativoMoradaFiscal: editDraft.comprovativoMoradaFiscal,
@@ -2054,6 +2244,8 @@ export default function CollaboratorsPage() {
           contactoEmergenciaParentesco: editDraft.contactoEmergenciaParentesco,
           contactoEmergenciaNumero: editDraft.contactoEmergenciaNumero,
           cargo: editDraft.cargo,
+          categoriaProfissional: editDraft.categoriaProfissional,
+          numeroMecanografico: editDraft.numeroMecanografico,
           funcao: editDraft.funcao,
           dataInicioContrato: editDraft.dataInicioContrato,
           dataFimContrato: editDraft.dataFimContrato,
@@ -2065,7 +2257,23 @@ export default function CollaboratorsPage() {
       clearApiCache('/users/collaborators');
       await loadCollaborators();
       await openDetails(selectedRow, 'ficha');
-      setStatus('Ficha atualizada com sucesso.');
+
+      if (result?.countryChanged) {
+        const countryLabel = (c: string) => (c === 'BR' ? 'Brasil' : 'Portugal');
+        const from = (selectedRow.profile?.workCountry || 'PT') as string;
+        const to = editDraft.workCountry as string;
+        const cancelled = result.cancelledVacations ?? 0;
+        const lines = [
+          `País de trabalho alterado de ${countryLabel(from)} para ${countryLabel(to)}.`,
+          cancelled > 0
+            ? `${cancelled} pedido(s) de férias/ausências pendente(s) foram cancelados automaticamente.`
+            : 'Sem pedidos pendentes para cancelar.',
+          'As equipas foram removidas — reatribui o colaborador à equipa correta.',
+        ];
+        setStatus(lines.join(' '));
+      } else {
+        setStatus('Ficha atualizada com sucesso.');
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Falha ao guardar ficha do colaborador.');
     } finally {
@@ -2228,15 +2436,33 @@ export default function CollaboratorsPage() {
       || fieldKey === 'comprovativoIban'
       || fieldKey === 'comprovativoCartaoContinente';
 
-    const value = editDraft[fieldKey] as string;
+    const value = editDraft[fieldKey];
 
     const onChangeValue = (nextValue: string) => {
       setEditDraft((current) => ({ ...current, [fieldKey]: nextValue }));
     };
 
+    const onChangeBooleanValue = (nextValue: boolean) => {
+      setEditDraft((current) => ({ ...current, [fieldKey]: nextValue }));
+    };
+
+    if (
+      fieldKey === 'primeiroEmprego'
+      || fieldKey === 'recebeAposentadoria'
+      || fieldKey === 'recebeSeguroDesemprego'
+      || fieldKey === 'valeTransporte'
+    ) {
+      return (
+        <select value={value ? 'SIM' : 'NAO'} onChange={(event) => onChangeBooleanValue(event.target.value === 'SIM')} disabled={!canEditUser}>
+          <option value="SIM">Sim</option>
+          <option value="NAO">Não</option>
+        </select>
+      );
+    }
+
     if (fieldKey === 'genero') {
       return (
-        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+        <select value={String(value || '')} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
           <option value="">Selecionar</option>
           {generoOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
@@ -2245,7 +2471,7 @@ export default function CollaboratorsPage() {
 
     if (fieldKey === 'estadoCivil') {
       return (
-        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+        <select value={String(value || '')} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
           <option value="">Selecionar</option>
           {estadoCivilOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
@@ -2254,7 +2480,7 @@ export default function CollaboratorsPage() {
 
     if (fieldKey === 'habilitacoesLiterarias') {
       return (
-        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+        <select value={String(value || '')} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
           <option value="">Selecionar</option>
           {habilitacoesOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
@@ -2263,7 +2489,7 @@ export default function CollaboratorsPage() {
 
     if (fieldKey === 'situacaoIrs') {
       return (
-        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+        <select value={String(value || '')} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
           <option value="">Selecionar</option>
           {situacaoIrsOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
@@ -2272,7 +2498,7 @@ export default function CollaboratorsPage() {
 
     if (fieldKey === 'irsJovem') {
       return (
-        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+        <select value={String(value || '')} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
           <option value="">Selecionar</option>
           {irsJovemOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
@@ -2281,18 +2507,26 @@ export default function CollaboratorsPage() {
 
     if (fieldKey === 'contactoEmergenciaParentesco') {
       return (
-        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+        <select value={String(value || '')} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
           <option value="">Selecionar</option>
           {parentescoOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
       );
     }
 
-    if (fieldKey === 'validadeCartaoCidadao') {
+    if (
+      fieldKey === 'dataNascimento'
+      || fieldKey === 'validadeCartaoCidadao'
+      || fieldKey === 'ctpsDataExpedicao'
+      || fieldKey === 'rgDataExpedicao'
+      || fieldKey === 'cnhDataValidade'
+      || fieldKey === 'dataInicioContrato'
+      || fieldKey === 'dataFimContrato'
+    ) {
       return (
         <input
           type="date"
-          value={value}
+          value={String(value || '')}
           onChange={(event) => onChangeValue(event.target.value)}
           disabled={!canEditUser}
         />
@@ -2301,7 +2535,7 @@ export default function CollaboratorsPage() {
 
     if (fieldKey === 'tipoContrato') {
       return (
-        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+        <select value={String(value || '')} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
           <option value="">Selecionar</option>
           {tipoContratoOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
@@ -2310,7 +2544,7 @@ export default function CollaboratorsPage() {
 
     if (fieldKey === 'regimeHorario') {
       return (
-        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+        <select value={String(value || '')} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
           <option value="">Selecionar</option>
           {regimeHorarioOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
@@ -2319,7 +2553,7 @@ export default function CollaboratorsPage() {
 
     if (fieldKey === 'cargo') {
       return (
-        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+        <select value={String(value || '')} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
           <option value="">Selecionar</option>
           {cargoDropdownOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
@@ -2328,7 +2562,7 @@ export default function CollaboratorsPage() {
 
     if (fieldKey === 'funcao') {
       return (
-        <select value={value} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+        <select value={String(value || '')} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
           <option value="">Selecionar</option>
           {funcaoDropdownOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
@@ -2336,7 +2570,7 @@ export default function CollaboratorsPage() {
     }
 
     if (isComprovativoField) {
-      const comprovativoUrl = normalizeFileUrl(value);
+      const comprovativoUrl = normalizeFileUrl(String(value || ''));
       return (
         <div className="collaborator-proof-field">
           <div className="collaborator-proof-field__actions">
@@ -2369,7 +2603,7 @@ export default function CollaboratorsPage() {
     return (
       <input
         type="text"
-        value={value}
+        value={String(value || '')}
         onChange={(event) => onChangeValue(event.target.value)}
         disabled={!canEditUser}
       />
@@ -3127,11 +3361,11 @@ export default function CollaboratorsPage() {
                   )}
                 </article>
 
-                {['identificacao', 'contactos', 'fiscal', 'emergencia', 'contrato'].map((section) => (
+                {(['identificacao', 'contactos', 'fiscal', 'emergencia', 'contrato'] as EditSection[]).map((section) => (
                   <article key={section} className="cm-section">
                     <h5 className="cm-section-title">{section === 'identificacao' ? 'Identificação' : section === 'contactos' ? 'Contactos e moradas' : section === 'fiscal' ? 'Fiscal e documentos' : section === 'emergencia' ? 'Emergência' : 'Contrato'}</h5>
                     <div className="collaborator-edit-grid">
-                      {EDIT_PROFILE_FIELDS.filter((field) => field.section === section).map((field) => (
+                      {getVisibleEditProfileFields(editDraft.workCountry).filter((field) => field.section === section).map((field) => (
                         <label key={field.key}>
                           <span>{field.label}</span>
                           {renderEditFieldControl(field.key)}
@@ -3669,6 +3903,46 @@ export default function CollaboratorsPage() {
             {activeConfirmTarget?.isActive
               ? `Isto vai desativar a conta de ${getDisplayName(activeConfirmTarget)}.`
               : `Isto vai reativar a conta de ${activeConfirmTarget ? getDisplayName(activeConfirmTarget) : 'este colaborador'}.`}
+          </p>
+        </div>
+      </Modal>
+
+      {/* Country change confirmation modal */}
+      <Modal
+        open={isCountryChangeModalOpen}
+        title="Confirmar mudança de país"
+        onClose={() => { setIsCountryChangeModalOpen(false); setPendingCountryChange(null); }}
+        width="min(500px, 94vw)"
+        footer={
+          <div className="modal-footer-split">
+            <Button type="button" variant="ghost" onClick={() => { setIsCountryChangeModalOpen(false); setPendingCountryChange(null); }}>Cancelar</Button>
+            <Button type="button" variant="primary" onClick={() => void saveCollaboratorDraft(true)}>Confirmar e guardar</Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ margin: 0 }}>
+            Está prestes a alterar o país de trabalho de{' '}
+            <strong>{pendingCountryChange?.from === 'BR' ? 'Brasil 🇧🇷' : 'Portugal 🇵🇹'}</strong>{' '}
+            para{' '}
+            <strong>{pendingCountryChange?.to === 'BR' ? 'Brasil 🇧🇷' : 'Portugal 🇵🇹'}</strong>.
+          </p>
+          <p style={{ margin: 0, fontWeight: 600 }}>O que vai acontecer automaticamente:</p>
+          <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.9rem' }}>
+            <li>Todos os <strong>pedidos de férias e ausências pendentes</strong> serão cancelados — foram submetidos sob as regras do país anterior.</li>
+            <li>Todas as <strong>equipas atuais</strong> serão removidas — deverá atribuir o colaborador a uma equipa do novo país.</li>
+            <li>
+              Os <strong>dados exclusivos de {pendingCountryChange?.from === 'PT' ? 'Portugal' : 'Brasil'} serão apagados</strong>:{' '}
+              {pendingCountryChange?.from === 'PT'
+                ? 'NIF, NISS, Cartão de Cidadão, IBAN, dados de IRS, matrícula, Cartão Continente, comprovativos.'
+                : 'CPF, PIS, CTPS, RG, CNH, Título de Eleitor, nome do pai/mãe, informações de benefícios (aposentadoria, seguro-desemprego, vale-transporte).'}
+            </li>
+            {pendingCountryChange?.to === 'BR' && (
+              <li>O <strong>código postal</strong> será apagado — o formato CEP do Brasil é diferente do código postal português.</li>
+            )}
+          </ul>
+          <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>
+            Os registos históricos aprovados, formações e dados existentes são mantidos.
           </p>
         </div>
       </Modal>
