@@ -165,7 +165,7 @@ describe('vacations rules', () => {
         dataFim: '2026-04-15',
         country: 'PT',
       }),
-    ).rejects.toThrow('não pode começar ao fim de semana');
+    ).rejects.toThrow('dia útil');
 
     await expect(
       __vacationTestables.enforceVacationBusinessDays({
@@ -243,7 +243,7 @@ describe('vacations rules', () => {
         dataFim: '2026-04-24',
         partialDay: 'FULL',
       }),
-    ).rejects.toThrow('no máximo, 3 períodos');
+    ).rejects.toThrow('até 3 períodos');
   });
 
   it('BR policy rejects when all three periods are shorter than 14-day requirement', async () => {
@@ -273,29 +273,26 @@ describe('vacations rules', () => {
 
   it('Phase 2B: PT 1st-year proportional cap — blocks if total exceeds earned days', async () => {
     process.env.VACATION_PT_DEADLINE_BYPASS = 'true';
-    const now = new Date();
-    const contractDate = new Date(now.getFullYear(), now.getMonth() - 2, 1); // ~2 completed months
-    const contractIso = `${contractDate.getFullYear()}-${String(contractDate.getMonth() + 1).padStart(2, '0')}-${String(contractDate.getDate()).padStart(2, '0')}`;
+    const contractIso = '2026-11-01';
     const db = {
       vacation: {
-        // Existing 1 business day already consumed in the same year
-        findMany: vi.fn().mockResolvedValue([{ dataInicio: '2026-03-02', dataFim: '2026-03-02', partialDay: 'FULL', requestType: 'VACATION' }]),
+        findMany: vi.fn().mockResolvedValue([]),
       },
     };
 
-    // ~2 months worked => 4 earned days; existing + requested long period should fail reliably
+    // Contrato em novembro de 2026 => proporcional do 1.º ano = 4 dias (nov+dez)
     await expect(
       __vacationTestables.validateVacationCountryPolicy({
         db: db as never,
         userId: 'u-1',
         country: 'PT',
         requestType: 'VACATION',
-        dataInicio: '2026-06-01',
-        dataFim: '2026-06-12',
+        dataInicio: '2026-12-01',
+        dataFim: '2026-12-12',
         partialDay: 'FULL',
         dataInicioContrato: contractIso,
       }),
-    ).rejects.toThrow('2 dias por mês trabalhado');
+    ).rejects.toThrow('2 dias por mês do 1.º ano');
 
     delete process.env.VACATION_PT_DEADLINE_BYPASS;
   });
@@ -400,7 +397,7 @@ describe('vacations rules', () => {
         isIntern: true,
         dataInicioContrato: contractIso,
       }),
-    ).rejects.toThrow('12 meses completos de estágio');
+    ).rejects.toThrow('12 meses completos');
   });
 
   it('Phase 2C: BR concessivo blocks request with less than 30 days remaining', async () => {
@@ -421,6 +418,6 @@ describe('vacations rules', () => {
         partialDay: 'FULL',
         dataInicioContrato: contractIso,
       }),
-    ).rejects.toThrow('30 dias de antecedência');
+    ).rejects.toThrow('antecedência mínima de 30 dias');
   });
 });

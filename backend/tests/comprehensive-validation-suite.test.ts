@@ -300,7 +300,7 @@ describe('Comprehensive validation test suite - ALTO #4.6', () => {
         rejectionReason: '', // Empty - invalid
       };
 
-      const isValid = approvalData.rejectionReason && approvalData.rejectionReason.trim().length > 0;
+      const isValid = Boolean(approvalData.rejectionReason && approvalData.rejectionReason.trim().length > 0);
 
       expect(isValid).toBe(false);
     });
@@ -312,7 +312,7 @@ describe('Comprehensive validation test suite - ALTO #4.6', () => {
         rejectionReason: 'Documentação incompleta', // Valid
       };
 
-      const isValid = approvalData.rejectionReason && approvalData.rejectionReason.trim().length > 0;
+      const isValid = Boolean(approvalData.rejectionReason && approvalData.rejectionReason.trim().length > 0);
 
       expect(isValid).toBe(true);
     });

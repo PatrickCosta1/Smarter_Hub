@@ -4,6 +4,7 @@ import { roleLabels } from '../portal/data';
 import { usePortal } from '../portal/context';
 import { MenuItem } from '../portal/types';
 import { apiRequestCached, authHeaders } from '../portal/api';
+import ChatbotWidget from '../components/ChatbotWidget';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -152,6 +153,7 @@ export default function PortalLayout() {
   }
 
   return (
+    <>
     <main className="app-shell">
       <div className="login-background" aria-hidden="true">
         <span className="shape shape-left" />
@@ -236,5 +238,7 @@ export default function PortalLayout() {
 
       </section>
     </main>
+    <ChatbotWidget />
+    </>
   );
 }

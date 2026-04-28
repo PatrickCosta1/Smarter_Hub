@@ -46,6 +46,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.5.2",
     "@types/supertest": "^7.2.0",
+    "@vitest/coverage-v8": "^4.1.5",
     "prisma": "^6.16.2",
     "supertest": "^7.2.2",
     "tsx": "^4.21.0",

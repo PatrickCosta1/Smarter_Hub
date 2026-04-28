@@ -4,11 +4,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock, permissionEngineMock } = vi.hoisted(() => ({
   prismaMock: {
+    user: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
     permission: {
+      upsert: vi.fn(),
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       findMany: vi.fn(),
     },
+    userPermission: {
+      findMany: vi.fn(),
+      deleteMany: vi.fn(),
+      createMany: vi.fn(),
+      upsert: vi.fn(),
+    },
+    permissionGrant: {
+      create: vi.fn(),
+      createMany: vi.fn(),
+    },
+    $transaction: vi.fn(),
   },
   permissionEngineMock: {
     canManagePermissions: vi.fn(),
@@ -50,7 +66,20 @@ function buildApp() {
 
 describe('permissions routes integration', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+    prismaMock.permission.upsert.mockResolvedValue({});
+    prismaMock.user.findUnique.mockResolvedValue({ id: 'target-user', hasAccessTotal: false, isRootAccess: false });
+    prismaMock.permission.findMany.mockResolvedValue([]);
+    prismaMock.$transaction.mockImplementation(async (ops: unknown) => {
+      if (typeof ops === 'function') {
+        return ops(prismaMock);
+      }
+      if (Array.isArray(ops)) {
+        return Promise.all(ops);
+      }
+      return undefined;
+    });
+    permissionEngineMock.isAccessTotal.mockResolvedValue(false);
     permissionEngineMock.normalizePermissionRestrictionPayload.mockImplementation((payload: unknown) => payload);
   });
 

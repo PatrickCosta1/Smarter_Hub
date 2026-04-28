@@ -148,7 +148,7 @@ describe('vacations routes integration', () => {
       });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toContain('não pode começar ao fim de semana');
+    expect(response.body.error).toContain('dia útil');
   });
 
   it('POST /api/vacations allows absence starting on weekend', async () => {
@@ -184,7 +184,7 @@ describe('vacations routes integration', () => {
       });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toContain('não pode terminar ao fim de semana');
+    expect(response.body.error).toContain('dia útil');
   });
 
   it('PUT /api/vacations/:id allows absence ending on weekend', async () => {

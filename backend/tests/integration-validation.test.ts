@@ -210,7 +210,7 @@ describe('Integration tests for validation across components - CRÍTICA #4.7', (
 
       // 2. Frontend validation fails
       const validation = {
-        reasonProvided: rejectionData.reason && rejectionData.reason.trim().length > 0,
+        reasonProvided: Boolean(rejectionData.reason && rejectionData.reason.trim().length > 0),
       };
 
       // 3. Error shown to user

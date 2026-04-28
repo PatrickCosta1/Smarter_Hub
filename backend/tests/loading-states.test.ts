@@ -124,7 +124,7 @@ describe('Consolidated loading states - MÉDIO #4.1', () => {
       const operations = [
         new Promise((resolve) => setTimeout(() => resolve('overview'), 100)),
         new Promise((resolve) => setTimeout(() => resolve('calendar'), 200)),
-        new Promise((resolve) => timeout(() => resolve('balance'), 150)),
+        new Promise((resolve) => setTimeout(() => resolve('balance'), 150)),
       ];
 
       // Using allSettled, max time is 200ms, not 450ms
@@ -190,7 +190,7 @@ describe('Consolidated loading states - MÉDIO #4.1', () => {
       const state = {
         isLoading: false,
         error: null,
-        data: { overview: {...}, calendar: {...} },
+        data: { overview: {}, calendar: {} },
       };
 
       const shouldShowData = !state.isLoading && state.error === null && state.data !== null;
@@ -264,7 +264,7 @@ describe('Consolidated loading states - MÉDIO #4.1', () => {
     it('BATCH: Batch multiple setState calls into single render', () => {
       const updates = [
         { key: 'isLoading', value: false },
-        { key: 'data', value: {...} },
+        { key: 'data', value: {} },
         { key: 'error', value: null },
       ];
 

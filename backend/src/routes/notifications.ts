@@ -196,27 +196,6 @@ router.patch("/notifications/read-all", requireAuth, async (req, res) => {
   return res.json({ updated, skipped });
 });
 
-router.delete('/notifications/:id', requireAuth, async (req, res) => {
-  const id = String(req.params.id);
-  const userId = req.authUser!.id;
-
-  const result = await prisma.notification.deleteMany({
-    where: { id, userId },
-  });
-
-  return res.json({ deleted: result.count });
-});
-
-router.delete('/notifications', requireAuth, async (req, res) => {
-  const userId = req.authUser!.id;
-
-  const result = await prisma.notification.deleteMany({
-    where: { userId },
-  });
-
-  return res.json({ deleted: result.count });
-});
-
 router.delete('/notifications/cleanup', requireAuth, async (req, res) => {
   if (req.authUser!.role !== 'ADMIN' && !req.authUser!.isRootAccess) {
     return res.status(403).json({ message: 'Sem permissões para executar limpeza de notificações.' });
@@ -236,6 +215,27 @@ router.delete('/notifications/cleanup', requireAuth, async (req, res) => {
   });
 
   return res.json({ deleted: result.count, olderThanDays, threshold: threshold.toISOString() });
+});
+
+router.delete('/notifications/:id', requireAuth, async (req, res) => {
+  const id = String(req.params.id);
+  const userId = req.authUser!.id;
+
+  const result = await prisma.notification.deleteMany({
+    where: { id, userId },
+  });
+
+  return res.json({ deleted: result.count });
+});
+
+router.delete('/notifications', requireAuth, async (req, res) => {
+  const userId = req.authUser!.id;
+
+  const result = await prisma.notification.deleteMany({
+    where: { userId },
+  });
+
+  return res.json({ deleted: result.count });
 });
 
 export { router as notificationsRouter };

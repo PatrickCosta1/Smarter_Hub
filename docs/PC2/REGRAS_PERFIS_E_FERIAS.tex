@@ -128,54 +128,72 @@ Utilizadores com \texttt{hasAccessTotal} no mesmo nível hierárquico não podem
 
 \section{Menus por perfil}
 
-\subsection{Colaborador}
+\subsection{Estado atual (menus dinâmicos por permissão)}
+\begin{itemize}
+  \item O menu lateral é construído dinamicamente por permissões (não apenas por role estática).
+  \item \textbf{Home} é sempre visível.
+  \item \textbf{Dashboard} só aparece para utilizadores com \texttt{isRootAccess} ou \texttt{accessTotal}.
+  \item \textbf{A Minha Ficha} aparece para utilizadores autenticados (exceto caso técnico \texttt{t.people}).
+  \item \textbf{Equipas} aparece para perfis não-convidado.
+  \item \textbf{Colaboradores} aparece com permissão \texttt{view\_user\_list}.
+  \item \textbf{Aprovações} aparece com pelo menos uma das permissões: \texttt{approve\_profile\_change}, \texttt{approve\_vacation}, \texttt{reject\_vacation}, \texttt{view\_all\_vacations}.
+  \item \textbf{Formações} aparece com pelo menos uma das permissões: \texttt{view\_trainings}, \texttt{view\_all\_trainings}, \texttt{request\_training}, \texttt{assign\_training}.
+  \item \textbf{Férias} aparece com pelo menos uma das permissões: \texttt{request\_vacation}, \texttt{view\_own\_vacations}, \texttt{view\_all\_vacations}, \texttt{manage\_vacation\_rules}.
+  \item \textbf{Recibos} aparece com \texttt{view\_receipts} ou \texttt{view\_all\_receipts}.
+  \item \textbf{Notificações} e \textbf{Perfil de acesso} são acessíveis por ícones no topo (não como item dedicado de menu lateral).
+\end{itemize}
+
+\subsection{Referência rápida por role (baseline esperada)}
+
+\textbf{Colaborador}
 \begin{itemize}
   \item Home
   \item A Minha Ficha
   \item Equipas
+  \item Formações
+  \item Férias
+  \item Recibos (quando \texttt{view\_receipts} ativo)
+\end{itemize}
+
+\textbf{Manager}
+\begin{itemize}
+  \item Home
+  \item A Minha Ficha
+  \item Equipas
+  \item Aprovações (se permissões de aprovação ativas)
+  \item Formações
+  \item Férias
+\end{itemize}
+
+\textbf{Coordenador}
+\begin{itemize}
+  \item Home
+  \item Equipas
+  \item Colaboradores (com \texttt{view\_user\_list})
+  \item Aprovações (se permissões de aprovação ativas)
+  \item A Minha Ficha
+  \item Formações
+  \item Férias
+\end{itemize}
+
+\textbf{Admin}
+\begin{itemize}
+  \item Home
+  \item Dashboard (root/access total)
+  \item A Minha Ficha
+  \item Equipas
+  \item Colaboradores
+  \item Aprovações
   \item Formações
   \item Férias
   \item Recibos
 \end{itemize}
 
-\subsection{Manager}
+\textbf{Convidado}
 \begin{itemize}
   \item Home
-  \item A Minha Ficha
-  \item Equipas
-  \item Aprovações
-  \item Formações
-  \item Férias
-\end{itemize}
-
-\subsection{Coordenador}
-\begin{itemize}
-  \item Home
-  \item Equipas
-  \item Aprovações
-  \item A Minha Ficha
-  \item Formações
-  \item Férias
-\end{itemize}
-
-\subsection{Admin}
-\begin{itemize}
-  \item Home
-  \item A Minha Ficha
-  \item Equipas
-  \item Administração
-  \item Aprovações
-  \item Formações
-  \item Férias
-  \item Recibos
-  \item Notificações
-\end{itemize}
-
-\subsection{Convidado}
-\begin{itemize}
-  \item Home
-  \item Onboarding
-  \item Notificações
+  \item Onboarding/A Minha Ficha
+  \item Notificações (via ícone superior)
 \end{itemize}
 
 \section{Vistas obrigatórias}
@@ -227,13 +245,22 @@ Utilizadores com \texttt{hasAccessTotal} no mesmo nível hierárquico não podem
   \item HR não existe como role final neste momento.
   \item O fluxo de administração de equipas e memberships deve ser feito por admin.
   \item A página de equipas deve ser comum, mas mostrar conteúdo diferente por perfil.
+  \item A página \textit{Perfil de acesso} está ativa e mostra \textbf{Email Microsoft}, \textbf{Tipo de conta} e \textbf{Identificador interno} a partir de \texttt{/auth/me}.
+  \item O \textit{Email pessoal} é um campo distinto e editável na secção \textit{Dados de Contacto} da \textit{A Minha Ficha}.
+  \item O bloco \textit{Voucher NOS} está implementado na secção \textit{Pedido de Benefícios} da \textit{A Minha Ficha}, com botão \textit{Emitir voucher}.
+  \item O pedido de voucher NOS chama \texttt{POST /profile/me/voucher-nos/request}, cria notificação para \texttt{t.people} e atualiza \texttt{voucherNosData} no perfil.
+  \item O voucher NOS aplica duas regras obrigatórias: \textbf{contrato sem termo} e \textbf{cooldown de 2 anos} entre pedidos.
   \item A navegação para \textit{Aprovações} (hero e notificações) deve abrir diretamente o separador relevante (ficha ou férias/ausências).
   \item O histórico de férias e decisões deve manter a versão anterior quando houver edição de um pedido já aprovado.
   \item Na página \textit{Férias}, deve existir um separador \textit{Férias da equipa} com calendário mensal por colaborador (um mês de cada vez, com navegação anterior/seguinte), mostrando apenas pedidos \textbf{aprovados} (férias e ausências) com distinção visual por tipo.
   \item O calendário de \textit{Férias da equipa} deve também assinalar e legendar dias especiais (feriados, dias automáticos/extra e fins de semana), mantendo leitura rápida e comparação entre colaboradores da equipa selecionada.
   \item A \textit{Dashboard} deve privilegiar uma vista simplificada com filtros e pesquisa, centrada na caracterização da equipa (idade média, tempo médio na empresa, distribuições por nível/geografia/género/função e taxa de retenção), sempre com comparação explícita face ao perfil médio da empresa.
+  \item A \textit{Dashboard} deve incluir filtro de período (incluindo presets de análise plurianual, como últimos 5 anos, e modo personalizado por data início/fim) para comparar cohorts temporais.
+  \item A \textit{Dashboard} deve permitir exportação Excel (XLSX) dos colaboradores que resultam da filtragem ativa, para suporte a relatórios e análises futuras.
   \item Utilizadores com acesso total devem poder exportar o mapa de férias em formato Excel (XLSX), com período totalmente personalizável (data início/fim), filtros por equipa/colaborador e separação de abas (resumo, detalhe e parâmetros da exportação).
   \item Utilizadores com acesso total devem poder atribuir férias diretamente a colaboradores de nível inferior, sem fluxo de aprovação intermédia.
+  \item O portal inclui \textbf{assistente interno (chatbot)} no canto inferior direito, com respostas contextualizadas por permissões e página atual.
+  \item O assistente deve priorizar respostas operacionais concretas (onde clicar, pré-condições e motivos de bloqueio) e não respostas genéricas.
 \end{itemize}
 
 \section{Visão global da plataforma}
@@ -250,6 +277,38 @@ Utilizadores com \texttt{hasAccessTotal} no mesmo nível hierárquico não podem
   \item \textbf{Versionamento funcional}: alterações em pedidos já aprovados geram nova versão em vez de sobrescrever histórico.
   \item \textbf{Auditabilidade}: decisões relevantes devem produzir trilha de eventos verificável.
   \item \textbf{Eficiência operacional}: reduzir redundância em armazenamento sem perder governança.
+  \item \textbf{Assistência contextual}: o assistente interno deve responder com base em permissões ativas, rota atual e regras de negócio aplicáveis ao perfil em sessão.
+\end{itemize}
+
+\section{Assistente interno (chatbot) — cobertura funcional completa}
+\subsection{Objetivo e âmbito}
+\begin{itemize}
+  \item O assistente interno cobre os módulos funcionais ativos do portal, com foco em orientação operacional concreta.
+  \item As respostas devem indicar \textbf{o que fazer}, \textbf{onde clicar}, \textbf{qual pré-condição falta} e \textbf{como desbloquear}.
+\end{itemize}
+
+\subsection{Personalização obrigatória}
+\begin{itemize}
+  \item Personalizar por \textbf{role/perfil efetivo} (incluindo Root Access e Access Total).
+  \item Personalizar por \textbf{permissões granulares} disponíveis no utilizador em sessão.
+  \item Personalizar por \textbf{rota atual} para evitar navegação genérica quando o utilizador já está no ecrã alvo.
+  \item Fornecer \textbf{diagnóstico de bloqueio} quando a ação não está disponível (permissão, elegibilidade, regra temporal, conflito).
+\end{itemize}
+
+\subsection{Cobertura mínima por domínio}
+\begin{itemize}
+  \item Identidade e acesso (login, perfil de acesso, email Microsoft vs email pessoal).
+  \item A Minha Ficha (edição por secções, validações e pedidos pendentes).
+  \item Benefícios (Voucher NOS e Cartão Continente, com regras de elegibilidade).
+  \item Equipas (consulta e gestão conforme escopo).
+  \item Colaboradores (lista, filtros, detalhe e operações administrativas).
+  \item Permissões (atribuição, revogação, restrições e acesso total).
+  \item Aprovações (perfil e férias/ausências, incluindo motivo obrigatório na rejeição).
+  \item Férias e ausências (submissão, estados, validações PT/BR e conflitos).
+  \item Formações (consulta e gestão/atribuição).
+  \item Recibos (consulta e download por escopo).
+  \item Dashboard (acesso condicionado, filtros de período e exportação XLSX).
+  \item Notificações (consulta, leitura e encaminhamento para ação).
 \end{itemize}
 
 \section{Arquitetura funcional e técnica}
@@ -270,7 +329,7 @@ Utilizadores com \texttt{hasAccessTotal} no mesmo nível hierárquico não podem
   \item \textbf{Férias e ausências (conflitos)}: quando um novo pedido colide com um período já existente, o sistema bloqueia a submissão e a interface destaca as linhas em conflito no histórico para facilitar a correção.
   \item \textbf{Férias e ausências (dias automáticos da empresa)}: utilizadores com permissão de gestão de regras de férias podem configurar, por ano e país, quais as datas automáticas dadas pela empresa (ex.: trocar 24/12 por 26/12). Se não existir configuração explícita, o sistema usa o conjunto padrão legado.
   \item \textbf{Perfil}: ficha colaborador, pedidos de alteração, aprovação e histórico.
-  \item \textbf{Perfil (ficha)}: a ficha é organizada em \textbf{Dados Pessoais}, \textbf{Dados de Contacto}, \textbf{Documentos de Identificação}, \textbf{Dados Fiscais e Bancários}, \textbf{Contacto de Emergência}, \textbf{Dados Contratuais}, \textbf{Dados de Formação} e \textbf{Pedido de Benefícios (em breve)}.
+  \item \textbf{Perfil (ficha)}: a ficha é organizada em \textbf{Dados Pessoais}, \textbf{Dados de Contacto}, \textbf{Documentos de Identificação}, \textbf{Dados Fiscais e Bancários}, \textbf{Contacto de Emergência}, \textbf{Dados Contratuais}, \textbf{Dados de Formação} e \textbf{Pedido de Benefícios}.
   \item \textbf{Perfil (exportação)}: na página de colaboradores deve existir ação global de \textbf{Exportar} com seleção simples do colaborador (pesquisa e filtros) para gerar ficheiro \textbf{Excel} em modelo institucional, organizado por secções (\textbf{Identificação do colaborador}, \textbf{Habilitações literárias}, \textbf{Contacto de Emergência}, \textbf{Dados de contrato e remuneração} e \textbf{Outras informações}); campos não preenchidos na ficha devem ser exportados com célula vazia.
   \item \textbf{Perfil (importação)}: na página de colaboradores deve existir ação global de \textbf{Importar em massa} por ficheiro \textbf{Excel} ou \textbf{CSV} para criação de novos colaboradores com a ficha base; o modelo Excel deve incluir \textbf{dropdowns orientados} para campos de domínio, com seleção de \textbf{equipa principal} e campo de \textbf{subequipa} quando aplicável, e os \textbf{campos de comprovativos} ficam excluídos da importação, sendo preenchidos posteriormente na ficha individual; esta ação é reservada a utilizadores com \textbf{acesso total}.
   \item \textbf{Formações}: atribuição, estado de conclusão e consulta.

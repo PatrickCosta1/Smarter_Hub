@@ -70,6 +70,10 @@ type VacationRequest = {
   };
 };
 
+type RejectionCandidate =
+  | { kind: 'profile'; request: ProfileRequest }
+  | { kind: 'vacation'; request: VacationRequest };
+
 function getDisplayName(user?: { username: string; profile?: { nomeAbreviado?: string; nomeCompleto?: string } | null } | null) {
   const shortName = user?.profile?.nomeAbreviado?.trim();
   if (shortName) {
@@ -122,6 +126,7 @@ export default function RHApprovalsPage() {
   const [isLoadingProfileRequests, setIsLoadingProfileRequests] = useState(true);
   const [isLoadingVacationRequests, setIsLoadingVacationRequests] = useState(true);
   const [selectedProfileRequest, setSelectedProfileRequest] = useState<ProfileRequest | null>(null);
+  const [rejectionCandidate, setRejectionCandidate] = useState<RejectionCandidate | null>(null);
   const [rejectionMode, setRejectionMode] = useState<'none' | 'total' | 'partial'>('none');
   const [rejectedFields, setRejectedFields] = useState<Record<string, string>>({}); // {"fieldName": "observações"}
   const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
@@ -276,12 +281,12 @@ export default function RHApprovalsPage() {
     });
   }
 
-  async function rejectProfileRequest(request: ProfileRequest) {
+  async function rejectProfileRequest(request: ProfileRequest, reason: string) {
     await runAction(`reject-profile-${request.id}`, MICROCOPY.approvals.rejectProfileSuccess(getDisplayName(request.user)), MICROCOPY.approvals.rejectProfileError, async () => {
       await apiRequest(`/profile/requests/${request.id}/reject`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ reason: rejectReason }),
+        body: JSON.stringify({ reason }),
       });
       clearApiCache('/profile/requests');
       setProfileRequests((current) => current.filter((item) => item.id !== request.id));
@@ -328,17 +333,47 @@ export default function RHApprovalsPage() {
     });
   }
 
-  async function rejectVacationRequest(request: VacationRequest) {
+  async function rejectVacationRequest(request: VacationRequest, reason: string) {
     await runAction(`reject-vacation-${request.id}`, MICROCOPY.approvals.rejectVacationSuccess(getDisplayName(request.user)), MICROCOPY.approvals.rejectVacationError, async () => {
       await apiRequest(`/vacations/${request.id}/reject`, {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ reason: rejectReason }),
+        body: JSON.stringify({ reason }),
       });
       clearApiCache('/vacations');
       setVacationRequests((current) => current.filter((item) => item.id !== request.id));
       void refreshNotifications();
     });
+  }
+
+  function openRejectionModal(candidate: RejectionCandidate) {
+    setRejectReason('');
+    setRejectionCandidate(candidate);
+  }
+
+  function closeRejectionModal() {
+    setRejectionCandidate(null);
+    setRejectReason('');
+  }
+
+  async function submitRejection() {
+    if (!rejectionCandidate) {
+      return;
+    }
+
+    const reason = rejectReason.trim();
+    if (!reason) {
+      showToast('error', 'Motivo da rejeição é obrigatório.');
+      return;
+    }
+
+    if (rejectionCandidate.kind === 'profile') {
+      await rejectProfileRequest(rejectionCandidate.request, reason);
+    } else {
+      await rejectVacationRequest(rejectionCandidate.request, reason);
+    }
+
+    closeRejectionModal();
   }
 
   async function markVacationProcessado(request: VacationRequest) {
@@ -457,7 +492,10 @@ export default function RHApprovalsPage() {
                         variant="secondary"
                         isLoading={pendingActionKey === `reject-profile-${request.id}`}
                         disabled={Boolean(pendingActionKey)}
-                        onClick={(event) => { event.stopPropagation(); void rejectProfileRequest(request); }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openRejectionModal({ kind: 'profile', request });
+                        }}
                       >
                         Rejeitar
                       </Button>
@@ -530,7 +568,7 @@ export default function RHApprovalsPage() {
                             variant="secondary"
                             isLoading={pendingActionKey === `reject-vacation-${request.id}`}
                             disabled={Boolean(pendingActionKey)}
-                            onClick={() => void rejectVacationRequest(request)}
+                            onClick={() => openRejectionModal({ kind: 'vacation', request })}
                           >
                             Rejeitar
                           </Button>
@@ -600,7 +638,7 @@ export default function RHApprovalsPage() {
                     size="md"
                     isLoading={pendingActionKey === `reject-profile-${selectedProfileRequest.id}`}
                     disabled={Boolean(pendingActionKey)}
-                    onClick={() => { void rejectProfileRequest(selectedProfileRequest); }}
+                    onClick={() => openRejectionModal({ kind: 'profile', request: selectedProfileRequest })}
                   >
                     Rejeitar tudo
                   </Button>
@@ -759,6 +797,48 @@ export default function RHApprovalsPage() {
                   <span>Escreve observações curtas, específicas e acionáveis. Isso acelera a correção do pedido.</span>
                 </div>
               </aside>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(rejectionCandidate)}
+        title="Rejeitar pedido"
+        onClose={closeRejectionModal}
+        width="min(560px, 92vw)"
+        footer={rejectionCandidate ? (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, width: '100%' }}>
+            <Button type="button" variant="ghost" size="md" onClick={closeRejectionModal}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              isLoading={pendingActionKey === `${rejectionCandidate.kind === 'profile' ? 'reject-profile' : 'reject-vacation'}-${rejectionCandidate.request.id}`}
+              disabled={Boolean(pendingActionKey) || rejectReason.trim().length === 0}
+              onClick={() => { void submitRejection(); }}
+            >
+              Confirmar rejeição
+            </Button>
+          </div>
+        ) : undefined}
+      >
+        {rejectionCandidate && (
+          <div className="notification-detail">
+            <p className="notification-detail__summary">
+              Vais rejeitar o pedido de <strong>{getDisplayName(rejectionCandidate.request.user)}</strong>.
+            </p>
+            <div className="notification-detail__panel">
+              <strong>Motivo da rejeição</strong>
+              <p>Este campo é obrigatório e será enviado ao colaborador.</p>
+              <textarea
+                value={rejectReason}
+                onChange={(event) => setRejectReason(event.target.value)}
+                placeholder="Ex.: conflito de capacidade da equipa no período solicitado"
+                style={{ width: '100%', minHeight: 110, marginTop: 8 }}
+              />
             </div>
           </div>
         )}

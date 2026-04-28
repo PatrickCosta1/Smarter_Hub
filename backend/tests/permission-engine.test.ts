@@ -18,6 +18,7 @@ import { prisma } from '../src/lib/prisma.js';
 import {
   buildUserWhereFromScope,
   canRevokeAccessTotal,
+  clearPermissionEngineCache,
   hasPermission,
   isAccessTotal,
   normalizePermissionRestrictionPayload,
@@ -38,6 +39,7 @@ const prismaMock = prisma as unknown as {
 describe('permission-engine', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearPermissionEngineCache();
   });
 
   it('hasPermission returns true for hasAccessTotal user without querying assignments', async () => {

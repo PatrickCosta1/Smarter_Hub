@@ -218,7 +218,7 @@ describe('Rate limiting for sensitive operations - MÉDIO #3.3', () => {
     it('MESSAGE PT: Rate limit exceeded response message', () => {
       const message = 'Limite de requisições excedido. Tente novamente mais tarde.';
 
-      expect(message).toContain('limite');
+      expect(message).toContain('Limite');
       expect(message).toContain('requisições');
     });
 
@@ -226,7 +226,7 @@ describe('Rate limiting for sensitive operations - MÉDIO #3.3', () => {
       const resetTime = new Date(1682100000 * 1000).toLocaleString();
       const message = `Limite de requisições excedido. Tente novamente às ${resetTime}.`;
 
-      expect(message).toContain('resetTime');
+      expect(message).toContain(resetTime);
     });
   });
 });

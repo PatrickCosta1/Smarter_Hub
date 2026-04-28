@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
-import { apiRequestCached, authHeaders, isAbortError } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, isAbortError } from '../portal/api';
 
 type DistributionItem = {
   label: string;
@@ -34,6 +34,8 @@ type TeamInsights = {
     geography?: string;
     level?: string;
     isActive?: string;
+    periodStart?: string;
+    periodEnd?: string;
   };
   selectedTeamName?: string;
   availableFilters?: {
@@ -54,6 +56,8 @@ type DashboardSummary = {
   teamInsights?: TeamInsights;
 };
 
+type DashboardPeriodPreset = 'all' | 'last12m' | 'last3y' | 'last5y' | 'custom';
+
 type DashboardFilters = {
   search: string;
   teamId: string;
@@ -63,6 +67,31 @@ type DashboardFilters = {
   geography: string;
   level: string;
   isActive: 'all' | 'active' | 'inactive';
+  periodPreset: DashboardPeriodPreset;
+  periodStart: string;
+  periodEnd: string;
+};
+
+type DashboardExportRow = {
+  id: string;
+  nome: string;
+  username: string;
+  email: string;
+  numeroMecanografico: string;
+  role: string;
+  estado: string;
+  equipa: string;
+  nivel: string;
+  funcao: string;
+  genero: string;
+  geografia: string;
+  dataInicioContrato: string;
+};
+
+type DashboardCollaboratorsResponse = {
+  refreshedAt?: string;
+  total: number;
+  rows: DashboardExportRow[];
 };
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
@@ -76,6 +105,9 @@ const DEFAULT_FILTERS: DashboardFilters = {
   geography: '',
   level: '',
   isActive: 'all',
+  periodPreset: 'all',
+  periodStart: '',
+  periodEnd: '',
 };
 
 const EMPTY_CHARACTERIZATION: TeamCharacterization = {
@@ -136,6 +168,76 @@ function formatDeltaPercentPoint(delta: number) {
   return `${sign}${formatDecimal(delta, 1)} p.p.`;
 }
 
+function formatDateForInput(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function createPresetRange(preset: DashboardPeriodPreset) {
+  if (preset === 'all' || preset === 'custom') {
+    return { periodStart: '', periodEnd: '' };
+  }
+
+  const end = new Date();
+  const start = new Date(end);
+
+  if (preset === 'last12m') {
+    start.setFullYear(start.getFullYear() - 1);
+  }
+
+  if (preset === 'last3y') {
+    start.setFullYear(start.getFullYear() - 3);
+  }
+
+  if (preset === 'last5y') {
+    start.setFullYear(start.getFullYear() - 5);
+  }
+
+  return {
+    periodStart: formatDateForInput(start),
+    periodEnd: formatDateForInput(end),
+  };
+}
+
+function buildDashboardQuery(filters: DashboardFilters) {
+  const params = new URLSearchParams();
+
+  if (filters.search.trim()) {
+    params.set('search', filters.search.trim());
+  }
+  if (filters.teamId) {
+    params.set('teamId', filters.teamId);
+  }
+  if (filters.role) {
+    params.set('role', filters.role);
+  }
+  if (filters.gender) {
+    params.set('gender', filters.gender);
+  }
+  if (filters.functionName) {
+    params.set('function', filters.functionName);
+  }
+  if (filters.geography) {
+    params.set('geography', filters.geography);
+  }
+  if (filters.level) {
+    params.set('level', filters.level);
+  }
+  if (filters.isActive !== 'all') {
+    params.set('isActive', filters.isActive);
+  }
+  if (filters.periodStart) {
+    params.set('periodStart', filters.periodStart);
+  }
+  if (filters.periodEnd) {
+    params.set('periodEnd', filters.periodEnd);
+  }
+
+  return params;
+}
+
 function buildDistributionComparison(teamDist: DistributionItem[], companyDist: DistributionItem[]) {
   const teamMap = new Map(teamDist.map((item) => [item.label, item]));
   const companyMap = new Map(companyDist.map((item) => [item.label, item]));
@@ -165,6 +267,7 @@ export default function DashboardPage() {
   const [filters, setFilters] = useState<DashboardFilters>(DEFAULT_FILTERS);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -182,32 +285,7 @@ export default function DashboardPage() {
 
     setError('');
 
-    const params = new URLSearchParams();
-    if (appliedFilters.search.trim()) {
-      params.set('search', appliedFilters.search.trim());
-    }
-    if (appliedFilters.teamId) {
-      params.set('teamId', appliedFilters.teamId);
-    }
-    if (appliedFilters.role) {
-      params.set('role', appliedFilters.role);
-    }
-    if (appliedFilters.gender) {
-      params.set('gender', appliedFilters.gender);
-    }
-    if (appliedFilters.functionName) {
-      params.set('function', appliedFilters.functionName);
-    }
-    if (appliedFilters.geography) {
-      params.set('geography', appliedFilters.geography);
-    }
-    if (appliedFilters.level) {
-      params.set('level', appliedFilters.level);
-    }
-    if (appliedFilters.isActive !== 'all') {
-      params.set('isActive', appliedFilters.isActive);
-    }
-
+    const params = buildDashboardQuery(appliedFilters);
     const suffix = params.toString() ? `?${params.toString()}` : '';
 
     try {
@@ -266,6 +344,80 @@ export default function DashboardPage() {
   const geographyComparison = useMemo(() => buildDistributionComparison(selected.distributions.geography, company.distributions.geography), [company.distributions.geography, selected.distributions.geography]);
   const genderComparison = useMemo(() => buildDistributionComparison(selected.distributions.gender, company.distributions.gender), [company.distributions.gender, selected.distributions.gender]);
   const functionComparison = useMemo(() => buildDistributionComparison(selected.distributions.function, company.distributions.function), [company.distributions.function, selected.distributions.function]);
+
+  function handlePeriodPresetChange(nextPreset: DashboardPeriodPreset) {
+    if (nextPreset === 'custom') {
+      setFilters((current) => ({ ...current, periodPreset: 'custom' }));
+      return;
+    }
+
+    const nextRange = createPresetRange(nextPreset);
+    setFilters((current) => ({
+      ...current,
+      periodPreset: nextPreset,
+      periodStart: nextRange.periodStart,
+      periodEnd: nextRange.periodEnd,
+    }));
+  }
+
+  async function exportFilteredCollaborators() {
+    setIsExporting(true);
+
+    try {
+      const params = buildDashboardQuery(filters);
+      const suffix = params.toString() ? `?${params.toString()}` : '';
+      const payload = await apiRequest<DashboardCollaboratorsResponse>(`/users/dashboard-collaborators${suffix}`, {
+        headers: getAuthHeaders(),
+      });
+
+      const { Workbook } = await import('exceljs');
+      const workbook = new Workbook();
+      const worksheet = workbook.addWorksheet('Colaboradores');
+
+      worksheet.columns = [
+        { header: 'Nome', key: 'nome', width: 28 },
+        { header: 'Username', key: 'username', width: 20 },
+        { header: 'Email', key: 'email', width: 32 },
+        { header: 'Nº mecanográfico', key: 'numeroMecanografico', width: 18 },
+        { header: 'Role', key: 'role', width: 16 },
+        { header: 'Estado', key: 'estado', width: 12 },
+        { header: 'Equipa', key: 'equipa', width: 26 },
+        { header: 'Nível', key: 'nivel', width: 20 },
+        { header: 'Função', key: 'funcao', width: 24 },
+        { header: 'Género', key: 'genero', width: 14 },
+        { header: 'Geografia', key: 'geografia', width: 18 },
+        { header: 'Início contrato', key: 'dataInicioContrato', width: 16 },
+      ];
+
+      payload.rows.forEach((row) => {
+        worksheet.addRow(row);
+      });
+
+      worksheet.getRow(1).font = { bold: true };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+
+      const now = new Date();
+      const dateStamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+      const filename = `dashboard-colaboradores-${dateStamp}.xlsx`;
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : 'Não foi possível exportar o ficheiro Excel.');
+    } finally {
+      setIsExporting(false);
+    }
+  }
 
   return (
     <section className="trainings-shell dashboard-team-shell">
@@ -351,9 +503,45 @@ export default function DashboardPage() {
           </select>
         </label>
 
+        <label>
+          <span>Período</span>
+          <select value={filters.periodPreset} onChange={(event) => handlePeriodPresetChange(event.target.value as DashboardPeriodPreset)}>
+            <option value="all">Sem período</option>
+            <option value="last12m">Últimos 12 meses</option>
+            <option value="last3y">Últimos 3 anos</option>
+            <option value="last5y">Últimos 5 anos</option>
+            <option value="custom">Personalizado</option>
+          </select>
+        </label>
+
+        {filters.periodPreset === 'custom' && (
+          <>
+            <label>
+              <span>Data início</span>
+              <input
+                type="date"
+                value={filters.periodStart}
+                onChange={(event) => setFilters((current) => ({ ...current, periodStart: event.target.value }))}
+              />
+            </label>
+
+            <label>
+              <span>Data fim</span>
+              <input
+                type="date"
+                value={filters.periodEnd}
+                onChange={(event) => setFilters((current) => ({ ...current, periodEnd: event.target.value }))}
+              />
+            </label>
+          </>
+        )}
+
         <div className="dashboard-team-filters__actions">
           <Button type="button" variant="ghost" onClick={() => setFilters(DEFAULT_FILTERS)}>Limpar filtros</Button>
           <Button type="button" variant="secondary" isLoading={isRefreshing} onClick={() => void loadSummary(undefined, true, filters)}>Atualizar</Button>
+          <Button type="button" variant="primary" isLoading={isExporting} onClick={() => void exportFilteredCollaborators()}>
+            Exportar Excel
+          </Button>
         </div>
       </section>
 

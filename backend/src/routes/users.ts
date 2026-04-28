@@ -1157,6 +1157,19 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
   const filterGeography = typeof req.query.geography === 'string' ? req.query.geography.trim() : '';
   const filterLevel = typeof req.query.level === 'string' ? req.query.level.trim() : '';
   const filterIsActive = typeof req.query.isActive === 'string' ? req.query.isActive.trim().toLowerCase() : '';
+  const filterPeriodStart = typeof req.query.periodStart === 'string' ? req.query.periodStart.trim() : '';
+  const filterPeriodEnd = typeof req.query.periodEnd === 'string' ? req.query.periodEnd.trim() : '';
+
+  const periodStartDate = filterPeriodStart ? parseIsoDate(filterPeriodStart) : null;
+  const periodEndDate = filterPeriodEnd ? parseIsoDate(filterPeriodEnd) : null;
+
+  if ((filterPeriodStart && !periodStartDate) || (filterPeriodEnd && !periodEndDate)) {
+    return res.status(400).json({ message: 'Período inválido. Use datas no formato YYYY-MM-DD.' });
+  }
+
+  if (periodStartDate && periodEndDate && periodStartDate > periodEndDate) {
+    return res.status(400).json({ message: 'Período inválido. A data inicial deve ser anterior à data final.' });
+  }
 
   const getDisplayName = (user: typeof collaboratorRows[number]) => (
     user.profile?.nomeAbreviado?.trim()
@@ -1247,22 +1260,43 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
     };
   };
 
+  const periodScopedRows = collaboratorRows.filter((item) => {
+    if (!periodStartDate && !periodEndDate) {
+      return true;
+    }
+
+    const contractStart = parseIsoDate(item.profile?.dataInicioContrato || '');
+    if (!contractStart) {
+      return false;
+    }
+
+    if (periodStartDate && contractStart < periodStartDate) {
+      return false;
+    }
+
+    if (periodEndDate && contractStart > periodEndDate) {
+      return false;
+    }
+
+    return true;
+  });
+
   const teamOptions = Array.from(new Map(
-    collaboratorRows
+    periodScopedRows
       .flatMap((item) => getUserTeams(item))
       .map((team) => [team.id, team]),
   ).values()).sort((a, b) => a.name.localeCompare(b.name));
 
-  const levelOptions = Array.from(new Set(collaboratorRows.map((item) => getHierarchyLevel(item)).filter(Boolean)))
+  const levelOptions = Array.from(new Set(periodScopedRows.map((item) => getHierarchyLevel(item)).filter(Boolean)))
     .sort((a, b) => a.localeCompare(b));
-  const geographyOptions = Array.from(new Set(collaboratorRows.map((item) => getGeography(item)).filter(Boolean)))
+  const geographyOptions = Array.from(new Set(periodScopedRows.map((item) => getGeography(item)).filter(Boolean)))
     .sort((a, b) => a.localeCompare(b));
-  const functionOptions = Array.from(new Set(collaboratorRows.map((item) => getFunction(item)).filter(Boolean)))
+  const functionOptions = Array.from(new Set(periodScopedRows.map((item) => getFunction(item)).filter(Boolean)))
     .sort((a, b) => a.localeCompare(b));
-  const genderOptions = Array.from(new Set(collaboratorRows.map((item) => normalizeGender(item.profile?.genero))))
+  const genderOptions = Array.from(new Set(periodScopedRows.map((item) => normalizeGender(item.profile?.genero))))
     .sort((a, b) => a.localeCompare(b));
 
-  const selectedRows = collaboratorRows.filter((item) => {
+  const selectedRows = periodScopedRows.filter((item) => {
     const teams = getUserTeams(item);
 
     if (filterTeamId && !teams.some((team) => team.id === filterTeamId)) {
@@ -1329,6 +1363,8 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       geography: filterGeography,
       level: filterLevel,
       isActive: filterIsActive,
+      periodStart: filterPeriodStart,
+      periodEnd: filterPeriodEnd,
     },
     selectedTeamName,
     availableFilters: {
@@ -1345,10 +1381,10 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       ],
     },
     selected: buildCharacterization(selectedRows),
-    company: buildCharacterization(collaboratorRows),
+    company: buildCharacterization(periodScopedRows),
   };
   const teamCount = new Set(
-    collaboratorRows
+    periodScopedRows
       .map((item) => item.team?.name?.trim())
       .filter((value): value is string => Boolean(value)),
   ).size;
@@ -1397,15 +1433,15 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
     : 0;
   const historyRows = historyResult.status === 'fulfilled' ? historyResult.value : [];
 
-  const activeUsers = collaboratorRows.filter((user) => user.isActive !== false).length;
-  const inactiveUsers = Math.max(0, collaboratorRows.length - activeUsers);
+  const activeUsers = periodScopedRows.filter((user) => user.isActive !== false).length;
+  const inactiveUsers = Math.max(0, periodScopedRows.length - activeUsers);
 
-  const ageValues = collaboratorRows
+  const ageValues = periodScopedRows
     .map((item) => parseIsoDate(item.profile?.dataNascimento || ''))
     .filter((value): value is Date => value !== null)
     .map((birthDate) => yearsBetween(birthDate));
 
-  const tenureValues = collaboratorRows
+  const tenureValues = periodScopedRows
     .map((item) => parseIsoDate(item.profile?.dataInicioContrato || ''))
     .filter((value): value is Date => value !== null)
     .map((startDate) => yearsBetween(startDate));
@@ -1449,7 +1485,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
     }
   }
 
-  for (const collaborator of collaboratorRows) {
+  for (const collaborator of periodScopedRows) {
     const education = (collaborator.profile?.habilitacoesLiterarias || '').trim() || 'Não informado';
     educationMap.set(education, (educationMap.get(education) || 0) + 1);
 
@@ -1501,7 +1537,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
   return res.json({
     refreshedAt: new Date().toISOString(),
     totals: {
-      collaborators: collaboratorRows.length,
+      collaborators: periodScopedRows.length,
       activeUsers,
       inactiveUsers,
       teams: teamCount,
@@ -1523,6 +1559,232 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
     },
     recentPromotions: promotionEvents.slice(0, 8),
     teamInsights,
+  });
+});
+
+router.get('/users/dashboard-collaborators', requireAuth, async (req, res) => {
+  if (!await hasPermission(req.authUser!.id, 'view_user_list')) {
+    return res.status(403).json({ message: 'Sem permissões para exportar colaboradores.' });
+  }
+
+  const scope = await getPermissionScope(req.authUser!.id, 'view_user_list');
+  if (!scope) {
+    return res.status(403).json({ message: 'Sem permissões para exportar colaboradores.' });
+  }
+
+  const scopeWhere = buildUserWhereFromScope(scope) as Prisma.UserWhereInput | null;
+  const collaboratorWhere: Prisma.UserWhereInput = {
+    role: { in: ['COLABORADOR', 'MANAGER', 'COORDENADOR', 'ADMIN'] },
+    ...(scopeWhere ? { AND: [scopeWhere] } : {}),
+  };
+
+  const filterSearch = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+  const filterTeamId = typeof req.query.teamId === 'string' ? req.query.teamId.trim() : '';
+  const filterRole = typeof req.query.role === 'string' ? req.query.role.trim().toUpperCase() : '';
+  const filterGender = typeof req.query.gender === 'string' ? req.query.gender.trim() : '';
+  const filterFunction = typeof req.query.function === 'string' ? req.query.function.trim() : '';
+  const filterGeography = typeof req.query.geography === 'string' ? req.query.geography.trim() : '';
+  const filterLevel = typeof req.query.level === 'string' ? req.query.level.trim() : '';
+  const filterIsActive = typeof req.query.isActive === 'string' ? req.query.isActive.trim().toLowerCase() : '';
+  const filterPeriodStart = typeof req.query.periodStart === 'string' ? req.query.periodStart.trim() : '';
+  const filterPeriodEnd = typeof req.query.periodEnd === 'string' ? req.query.periodEnd.trim() : '';
+
+  const periodStartDate = filterPeriodStart ? parseIsoDate(filterPeriodStart) : null;
+  const periodEndDate = filterPeriodEnd ? parseIsoDate(filterPeriodEnd) : null;
+
+  if ((filterPeriodStart && !periodStartDate) || (filterPeriodEnd && !periodEndDate)) {
+    return res.status(400).json({ message: 'Período inválido. Use datas no formato YYYY-MM-DD.' });
+  }
+
+  if (periodStartDate && periodEndDate && periodStartDate > periodEndDate) {
+    return res.status(400).json({ message: 'Período inválido. A data inicial deve ser anterior à data final.' });
+  }
+
+  const collaboratorRows = await prisma.user.findMany({
+    where: collaboratorWhere,
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      role: true,
+      isActive: true,
+      team: { select: { id: true, name: true } },
+      teamMemberships: {
+        where: { isActive: true },
+        select: {
+          team: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
+      profile: {
+        select: {
+          nomeAbreviado: true,
+          nomeCompleto: true,
+          numeroMecanografico: true,
+          genero: true,
+          funcao: true,
+          cargo: true,
+          categoriaProfissional: true,
+          localidade: true,
+          workCountry: true,
+          dataInicioContrato: true,
+        },
+      },
+    },
+    orderBy: [{ username: 'asc' }],
+  });
+
+  const getDisplayName = (user: typeof collaboratorRows[number]) => (
+    user.profile?.nomeAbreviado?.trim()
+      || user.profile?.nomeCompleto?.trim()
+      || user.username
+  );
+
+  const getUserTeams = (user: typeof collaboratorRows[number]) => {
+    const map = new Map<string, { id: string; name: string }>();
+
+    if (user.team?.id && user.team?.name) {
+      map.set(user.team.id, { id: user.team.id, name: user.team.name });
+    }
+
+    for (const membership of user.teamMemberships) {
+      if (membership.team?.id && membership.team?.name) {
+        map.set(membership.team.id, { id: membership.team.id, name: membership.team.name });
+      }
+    }
+
+    return Array.from(map.values());
+  };
+
+  const getHierarchyLevel = (user: typeof collaboratorRows[number]) => (
+    user.profile?.cargo?.trim()
+      || user.profile?.categoriaProfissional?.trim()
+      || user.role
+  );
+
+  const getGeography = (user: typeof collaboratorRows[number]) => (
+    user.profile?.localidade?.trim()
+      || user.profile?.workCountry
+      || 'Não informado'
+  );
+
+  const getFunction = (user: typeof collaboratorRows[number]) => (
+    user.profile?.funcao?.trim()
+      || 'Não informado'
+  );
+
+  const periodScopedRows = collaboratorRows.filter((item) => {
+    if (!periodStartDate && !periodEndDate) {
+      return true;
+    }
+
+    const contractStart = parseIsoDate(item.profile?.dataInicioContrato || '');
+    if (!contractStart) {
+      return false;
+    }
+
+    if (periodStartDate && contractStart < periodStartDate) {
+      return false;
+    }
+
+    if (periodEndDate && contractStart > periodEndDate) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const filteredRows = periodScopedRows.filter((item) => {
+    const teams = getUserTeams(item);
+
+    if (filterTeamId && !teams.some((team) => team.id === filterTeamId)) {
+      return false;
+    }
+
+    if (filterRole && item.role !== filterRole) {
+      return false;
+    }
+
+    if (filterGender && normalizeGender(item.profile?.genero) !== filterGender) {
+      return false;
+    }
+
+    if (filterFunction && getFunction(item) !== filterFunction) {
+      return false;
+    }
+
+    if (filterGeography && getGeography(item) !== filterGeography) {
+      return false;
+    }
+
+    if (filterLevel && getHierarchyLevel(item) !== filterLevel) {
+      return false;
+    }
+
+    if (filterIsActive === 'active' && item.isActive === false) {
+      return false;
+    }
+
+    if (filterIsActive === 'inactive' && item.isActive !== false) {
+      return false;
+    }
+
+    if (!filterSearch) {
+      return true;
+    }
+
+    const haystack = [
+      getDisplayName(item),
+      item.username,
+      item.email,
+      teams.map((team) => team.name).join(' '),
+      getHierarchyLevel(item),
+      getFunction(item),
+      getGeography(item),
+      item.profile?.numeroMecanografico || '',
+    ].join(' ').toLowerCase();
+
+    return haystack.includes(filterSearch);
+  });
+
+  const rows = filteredRows
+    .map((item) => ({
+      id: item.id,
+      nome: getDisplayName(item),
+      username: item.username,
+      email: item.email,
+      numeroMecanografico: item.profile?.numeroMecanografico || '',
+      role: item.role,
+      estado: item.isActive === false ? 'Inativo' : 'Ativo',
+      equipa: getUserTeams(item).map((team) => team.name).join(' | ') || 'Sem equipa',
+      nivel: getHierarchyLevel(item),
+      funcao: getFunction(item),
+      genero: normalizeGender(item.profile?.genero),
+      geografia: getGeography(item),
+      dataInicioContrato: item.profile?.dataInicioContrato || '',
+    }))
+    .sort((a, b) => a.nome.localeCompare(b.nome));
+
+  return res.json({
+    refreshedAt: new Date().toISOString(),
+    total: rows.length,
+    appliedFilters: {
+      search: filterSearch,
+      teamId: filterTeamId,
+      role: filterRole,
+      gender: filterGender,
+      function: filterFunction,
+      geography: filterGeography,
+      level: filterLevel,
+      isActive: filterIsActive,
+      periodStart: filterPeriodStart,
+      periodEnd: filterPeriodEnd,
+    },
+    rows,
   });
 });
 
