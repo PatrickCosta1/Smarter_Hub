@@ -1722,6 +1722,15 @@ export default function ProfilePage() {
                 </label>
                 <label>
                   <span>Declaração IRS</span>
+                  <a
+                    href="/mod99-template.pdf"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="profile-file-template-link"
+                    title="Descarregar modelo em branco da Declaração de Remunerações Mod. 99"
+                  >
+                    Descarregar template Mod. 99
+                  </a>
                   <input
                     type="file"
                     accept=".pdf,.jpg,.jpeg"

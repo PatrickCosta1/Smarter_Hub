@@ -14,6 +14,7 @@ import { usersRouter } from "./routes/users.js";
 import { vacationsRouter } from "./routes/vacations.js";
 import { prisma } from './lib/prisma.js';
 import { runCitizenCardExpiryNotificationSweep } from './lib/citizen-card-expiry-notifications.js';
+import { runJanuaryIrsAlertSweep } from './lib/january-irs-alerts.js';
 
 dotenv.config();
 
@@ -95,6 +96,24 @@ async function runCitizenCardExpirySweepSafely() {
 void runCitizenCardExpirySweepSafely();
 setInterval(() => {
   void runCitizenCardExpirySweepSafely();
+}, ONE_DAY_MS);
+
+async function runJanuaryIrsAlertSweepSafely() {
+  try {
+    const result = await runJanuaryIrsAlertSweep(prisma);
+    if (result.skipped) {
+      console.log(`[JANUARY_IRS_SWEEP] skipped: ${result.reason}`);
+    } else {
+      console.log(`[JANUARY_IRS_SWEEP] scanned=${result.scannedUsers} created=${result.createdNotifications}`);
+    }
+  } catch (error) {
+    console.error('[JANUARY_IRS_SWEEP] failed', error);
+  }
+}
+
+void runJanuaryIrsAlertSweepSafely();
+setInterval(() => {
+  void runJanuaryIrsAlertSweepSafely();
 }, ONE_DAY_MS);
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

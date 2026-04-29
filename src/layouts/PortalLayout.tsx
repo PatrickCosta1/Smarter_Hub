@@ -33,7 +33,7 @@ export default function PortalLayout() {
         ? [{ id: 'formacoes', label: 'Formações', path: '/formacoes' }]
         : []),
       ...((can('request_vacation') || can('view_own_vacations') || can('view_all_vacations') || can('manage_vacation_rules'))
-        ? [{ id: 'ferias', label: 'Férias', path: '/ferias' }]
+        ? [{ id: 'ferias', label: 'Férias/Ausências', path: '/ferias' }]
         : []),
     ];
 

@@ -17,7 +17,28 @@ type VacationRequestType = 'VACATION' | 'ABSENCE_MEDICAL' | 'ABSENCE_TRAINING';
 
 type RequestKind = 'VACATION' | 'ABSENCE';
 
-type AbsenceReason = 'MEDICAL' | 'TRAINING' | 'OTHER';
+const ABSENCE_MOTIVOS = [
+  'Não Justificada',
+  'Justificada - Greve',
+  'Justificada - Atividades empresa',
+  'Justificada - Assistência à família',
+  'Justificada - Assuntos escolares',
+  'Justificada - Licença casamento',
+  'Justificada - Consultas médicas',
+  'Justificada - Doença',
+  'Justificada - Formação',
+  'Justificada - Licença parental',
+  'Justificada - Morte de familiar',
+  'Justificada - Trabalho remoto',
+  'Justificada - Feriado local',
+  'Justificada - Compensação de horas',
+  'Justificada - Obrigações legais',
+  'Justificada - Isolamento profilático',
+  'Justificada - Dia aniversário',
+  'Justificada - Tolerância dada pela empresa',
+  'Justificada - Folga',
+] as const;
+type AbsenceMotivo = typeof ABSENCE_MOTIVOS[number];
 type VacationPartialDay = 'FULL' | 'AM' | 'PM';
 
 type VacationRecord = {
@@ -182,8 +203,7 @@ type ConflictRange = {
 
 type VacationDraft = {
   requestKind: RequestKind;
-  absenceReason: AbsenceReason;
-  absenceReasonText: string;
+  absenceReason: AbsenceMotivo | string;
   dataInicio: string;
   dataFim: string;
   observacoes: string;
@@ -239,8 +259,7 @@ type VacationToastState = {
 
 const EMPTY_DRAFT: VacationDraft = {
   requestKind: 'VACATION',
-  absenceReason: 'MEDICAL',
-  absenceReasonText: '',
+  absenceReason: ABSENCE_MOTIVOS[0],
   dataInicio: '',
   dataFim: '',
   observacoes: '',
@@ -345,19 +364,15 @@ function buildValidationErrors(draft: VacationDraft): DraftErrors {
     }
   }
 
-  if (draft.requestKind === 'ABSENCE' && draft.absenceReason === 'MEDICAL') {
+  if (draft.requestKind === 'ABSENCE' && draft.absenceReason === 'Justificada - Doença') {
     const start = toLocalDate(draft.dataInicio);
     const end = toLocalDate(draft.dataFim);
     const diffMs = end.getTime() - start.getTime();
     const days = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
 
     if (Number.isFinite(days) && days > 3) {
-      errors.dataFim = 'Ausência médica SNS24 só pode ir até 3 dias.';
+      errors.dataFim = 'Ausência por doença SNS24 só pode ir até 3 dias.';
     }
-  }
-
-  if (draft.requestKind === 'ABSENCE' && draft.absenceReason === 'OTHER' && !draft.absenceReasonText.trim()) {
-    errors.absenceReasonText = 'Indica o motivo da ausência.';
   }
 
   if (draft.requestKind === 'VACATION' && draft.partialDay !== 'FULL' && draft.dataInicio !== draft.dataFim) {
@@ -393,16 +408,21 @@ function enumerateDates(startText: string, endText: string) {
   return days;
 }
 
-function getVacationTypeLabel(requestType: VacationRequestType) {
+function getVacationTypeLabel(requestType: VacationRequestType, observacoes?: string) {
   if (requestType === 'VACATION') {
     return 'Férias';
   }
 
-  if (requestType === 'ABSENCE_MEDICAL') {
-    return 'Ausência médica';
+  if (observacoes) {
+    const match = observacoes.match(/^Aus\u00eancia: ([^|]+)/);
+    if (match) return match[1].trim();
   }
 
-  return 'Ausência por formação';
+  if (requestType === 'ABSENCE_MEDICAL') {
+    return 'Aus\u00eancia m\u00e9dica';
+  }
+
+  return 'Aus\u00eancia por forma\u00e7\u00e3o';
 }
 
 function getVacationTypeTag(requestType: VacationRequestType) {
@@ -1725,12 +1745,12 @@ export default function VacationsPage() {
 
     const requestType: VacationRequestType = draft.requestKind === 'VACATION'
       ? 'VACATION'
-      : draft.absenceReason === 'MEDICAL'
-        ? 'ABSENCE_MEDICAL'
-        : 'ABSENCE_TRAINING';
+      : draft.absenceReason === 'Justificada - Forma\u00e7\u00e3o'
+        ? 'ABSENCE_TRAINING'
+        : 'ABSENCE_MEDICAL';
 
     const observacoes = [
-      draft.requestKind === 'VACATION' ? 'Férias' : `Ausência: ${draft.absenceReason === 'MEDICAL' ? 'Motivo médico' : draft.absenceReason === 'TRAINING' ? 'Motivo formação' : `Outro - ${draft.absenceReasonText.trim() || 'sem detalhe'}`}`,
+      draft.requestKind === 'VACATION' ? 'F\u00e9rias' : `Aus\u00eancia: ${draft.absenceReason}`,
       draft.observacoes.trim(),
     ].filter(Boolean).join(' | ');
 
@@ -1769,9 +1789,7 @@ export default function VacationsPage() {
       const actionLabel = editingId ? 'Pedido atualizado com sucesso.' : 'Pedido submetido com sucesso.';
       const typeLabel = requestType === 'VACATION'
         ? `Férias${payload.partialDay !== 'FULL' ? ` (${payload.partialDay === 'AM' ? 'meio-dia manhã' : 'meio-dia tarde'})` : ''}`
-        : requestType === 'ABSENCE_MEDICAL'
-          ? 'Ausência médica'
-          : 'Ausência por formação';
+        : `Aus\u00eancia: ${draft.absenceReason}`;
       const periodLabel = `${formatShortDate(payload.dataInicio)} - ${formatShortDate(payload.dataFim)}`;
       const teamLabel = teamContexts.find((item) => item.teamId === payload.contextTeamId)?.teamName || 'Contexto principal automático';
       const detailLines = [
@@ -1837,18 +1855,18 @@ export default function VacationsPage() {
 
   function startEdit(record: VacationRecord) {
     const inferredKind: RequestKind = record.requestType === 'VACATION' ? 'VACATION' : 'ABSENCE';
-    const inferredAbsenceReason: AbsenceReason =
-      record.requestType === 'ABSENCE_MEDICAL'
-        ? 'MEDICAL'
-        : record.requestType === 'ABSENCE_TRAINING'
-          ? 'TRAINING'
-          : 'OTHER';
+    // Try to extract the stored motivo from observacoes (format: "Ausência: <motivo> | ...")
+    const storedMotivoMatch = record.observacoes?.match(/^Aus\u00eancia: ([^|]+)/);
+    const inferredAbsenceReason: string = storedMotivoMatch
+      ? storedMotivoMatch[1].trim()
+      : record.requestType === 'ABSENCE_TRAINING'
+        ? 'Justificada - Formação'
+        : ABSENCE_MOTIVOS[0];
 
     setEditingId(record.id);
     setDraft({
       requestKind: inferredKind,
       absenceReason: inferredAbsenceReason,
-      absenceReasonText: '',
       dataInicio: record.dataInicio,
       dataFim: record.dataFim,
       observacoes: record.observacoes || '',
@@ -2264,7 +2282,7 @@ export default function VacationsPage() {
                   <tbody>
                     {pendingVacationRequests.map((record) => (
                       <tr key={record.id}>
-                        <td className="pending-modal__field">{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</td>
+                        <td className="pending-modal__field">{getVacationTypeLabel(record.requestType, record.observacoes)}{getPartialDayLabel(record.partialDay)}</td>
                         <td>{formatShortDate(record.dataInicio)} - {formatShortDate(record.dataFim)}</td>
                         <td>{calculateDuration(record)}</td>
                         <td>{record.contextTeam?.name || 'Contexto principal'}</td>
@@ -2314,7 +2332,7 @@ export default function VacationsPage() {
                   <tbody>
                     {approvedVacationsReadyForRealization.map((record) => (
                       <tr key={record.id}>
-                        <td className="pending-modal__field">{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</td>
+                        <td className="pending-modal__field">{getVacationTypeLabel(record.requestType, record.observacoes)}{getPartialDayLabel(record.partialDay)}</td>
                         <td>{formatShortDate(record.dataInicio)} - {formatShortDate(record.dataFim)}</td>
                         <td>{calculateDuration(record)}</td>
                         <td>{record.contextTeam?.name || 'Contexto principal'}</td>
@@ -2669,18 +2687,9 @@ export default function VacationsPage() {
                         <label className="cal-booking-bar__field">
                           <span>Motivo</span>
                           <select value={draft.absenceReason} onChange={(e) => handleDraftChange('absenceReason', e.target.value)}>
-                            <option value="MEDICAL">Médico</option>
-                            <option value="TRAINING">Formação</option>
-                            <option value="OTHER">Outro</option>
+                            {ABSENCE_MOTIVOS.map((m) => <option key={m} value={m}>{m}</option>)}
                           </select>
                         </label>
-                        {draft.absenceReason === 'OTHER' && (
-                          <label className="cal-booking-bar__field cal-booking-bar__field--grow">
-                            <span>Detalhe *</span>
-                            <input type="text" value={draft.absenceReasonText} onChange={(e) => handleDraftChange('absenceReasonText', e.target.value)} placeholder="Motivo da ausência" />
-                            {draftErrors.absenceReasonText && <small className="cal-booking-bar__err">{draftErrors.absenceReasonText}</small>}
-                          </label>
-                        )}
                       </>
                     ) : (
                       <label className="cal-booking-bar__field">
@@ -2761,7 +2770,7 @@ export default function VacationsPage() {
                         {sortedRecords.map((record) => (
                           <tr key={record.id} className={conflictRecordIds.has(record.id) ? 'vhist__row--conflict' : ''}>
                             <td>
-                              <span className={`vhist__type vhist__type--${getVacationTypeTag(record.requestType)}`}>{getVacationTypeLabel(record.requestType)}{getPartialDayLabel(record.partialDay)}</span>
+                              <span className={`vhist__type vhist__type--${getVacationTypeTag(record.requestType)}`}>{getVacationTypeLabel(record.requestType, record.observacoes)}{getPartialDayLabel(record.partialDay)}</span>
                               <span className="vhist__meta">{formatDateTime(record.createdAt)}</span>
                             </td>
                             <td className="vhist__period">
@@ -2795,7 +2804,7 @@ export default function VacationsPage() {
                     {sortedRecords.map((record) => (
                       <article key={`m-${record.id}`} className={`vhist__card${conflictRecordIds.has(record.id) ? ' vhist__card--conflict' : ''}`}>
                         <div className="vhist__card-top">
-                          <span className={`vhist__type vhist__type--${getVacationTypeTag(record.requestType)}`}>{getVacationTypeLabel(record.requestType)}</span>
+                          <span className={`vhist__type vhist__type--${getVacationTypeTag(record.requestType)}`}>{getVacationTypeLabel(record.requestType, record.observacoes)}</span>
                           <span className={`vhist__badge vhist__badge--${record.status.toLowerCase()}`}>{formatVacationStatusLabel(record.status)}</span>
                         </div>
                         <div className="vhist__card-row">

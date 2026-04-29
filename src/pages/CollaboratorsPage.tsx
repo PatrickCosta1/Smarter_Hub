@@ -2693,6 +2693,17 @@ export default function CollaboratorsPage() {
       const comprovativoUrl = normalizeFileUrl(String(value || ''));
       return (
         <div className="collaborator-proof-field">
+          {fieldKey === 'declaracaoIrs' && (
+            <a
+              href="/mod99-template.pdf"
+              target="_blank"
+              rel="noreferrer"
+              className="collaborator-proof-link collaborator-proof-link--template"
+              title="Descarregar modelo em branco da Declaração de Remunerações Mod. 99"
+            >
+              Template Mod. 99
+            </a>
+          )}
           <div className="collaborator-proof-field__actions">
             {comprovativoUrl ? (
               <a href={comprovativoUrl} target="_blank" rel="noreferrer" className="collaborator-proof-link">

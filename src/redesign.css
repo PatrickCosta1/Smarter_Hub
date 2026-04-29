@@ -9592,6 +9592,38 @@
   background: #e8f1ff;
 }
 
+.collaborator-proof-link--template {
+  border-color: #b3d4a0;
+  color: #1a5c2a;
+  background: #f0faf0;
+}
+
+.collaborator-proof-link--template:hover {
+  border-color: #7cbd68;
+  background: #e3f7e3;
+}
+
+.profile-file-template-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #1a5c2a;
+  text-decoration: none;
+  border: 1px solid #b3d4a0;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: #f0faf0;
+  width: fit-content;
+  margin-bottom: 4px;
+}
+
+.profile-file-template-link:hover {
+  background: #e3f7e3;
+  border-color: #7cbd68;
+}
+
 .collaborator-kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
