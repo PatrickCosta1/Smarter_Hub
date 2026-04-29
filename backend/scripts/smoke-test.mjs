@@ -28,7 +28,6 @@ const ROUTE_KEYS = [
   'PATCH /notifications/:id/read',
   'PATCH /notifications/read-all',
   'DELETE /notifications/:id',
-  'ALL /receipts',
   'GET /users',
   'GET /users/collaborators',
   'PATCH /users/:id/active',
@@ -905,14 +904,6 @@ async function main() {
       expectedStatuses: [201],
     });
   });
-
-  await runStep('receipts', 'receipts placeholder route', () => requestJson({
-    label: 'receipts placeholder route',
-    path: '/receipts',
-    token: adminToken,
-    expectedStatuses: [410, 501],
-    routeKey: 'ALL /receipts',
-  }));
 
   await runStep('cleanup', 'detach team from temp user', () => requestJson({
     label: 'detach team from temp user',

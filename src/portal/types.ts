@@ -1,6 +1,6 @@
 export type UserRole = 'colaborador' | 'manager' | 'coordenador' | 'admin' | 'convidado';
 
-export type PortalPage = 'home' | 'profile' | 'perfil' | 'notifications' | 'aprovacoes' | 'equipas' | 'formacoes' | 'ferias' | 'recibos' | 'admin' | 'colaboradores';
+export type PortalPage = 'home' | 'profile' | 'perfil' | 'notifications' | 'aprovacoes' | 'equipas' | 'formacoes' | 'ferias' | 'admin' | 'colaboradores';
 
 export type MenuItem = {
   id: string;
@@ -52,6 +52,7 @@ export type ProfileData = {
   iban: string;
   situacaoIrs: string;
   numeroDependentes: string;
+  declaracaoIrs: string;
   irsJovem: string;
   anoPrimeiroDesconto: string;
   primeiroEmprego: boolean;

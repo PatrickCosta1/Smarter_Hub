@@ -5,7 +5,6 @@ export type PermissionCategory =
   | 'VACATIONS'
   | 'TRAININGS'
   | 'PROFILE'
-  | 'RECEIPTS'
   | 'NOTIFICATIONS';
 
 export type PermissionCatalogItem = {
@@ -55,10 +54,6 @@ export const PERMISSION_CATALOG: PermissionCatalogItem[] = [
   { code: 'manage_profile_dropdown_options', label: 'Gerir cargos e funções', description: 'Permite gerir o catálogo de cargos e funções disponível na ficha do colaborador.', category: 'PROFILE', requiresRestrictions: false },
   { code: 'request_profile_change', label: 'Pedir alteração de ficha', description: 'Permite submeter pedidos de alteração de dados.', category: 'PROFILE', requiresRestrictions: false },
   { code: 'approve_profile_change', label: 'Aprovar alterações de ficha', description: 'Permite aprovar pedidos de alteração de dados.', category: 'PROFILE', requiresRestrictions: true },
-
-  { code: 'view_receipts', label: 'Ver recibos', description: 'Permite consultar recibos próprios.', category: 'RECEIPTS', requiresRestrictions: false },
-  { code: 'view_all_receipts', label: 'Ver todos os recibos', description: 'Permite consultar recibos de toda a organização.', category: 'RECEIPTS', requiresRestrictions: false },
-  { code: 'download_receipt', label: 'Descarregar recibos', description: 'Permite descarregar documentos de recibos.', category: 'RECEIPTS', requiresRestrictions: false },
 
   { code: 'view_notifications', label: 'Ver notificações', description: 'Permite consultar notificações do sistema.', category: 'NOTIFICATIONS', requiresRestrictions: false },
   { code: 'manage_notifications', label: 'Gerir notificações', description: 'Permite criar, enviar e gerir notificações.', category: 'NOTIFICATIONS', requiresRestrictions: false },

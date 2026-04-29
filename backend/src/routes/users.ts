@@ -52,6 +52,7 @@ const BULK_IMPORT_PROFILE_FIELD_KEYS = [
   'iban',
   'situacaoIrs',
   'numeroDependentes',
+  'declaracaoIrs',
   'irsJovem',
   'anoPrimeiroDesconto',
   'numeroCartaoContinente',
@@ -128,6 +129,7 @@ const updateAdminUserSchema = z.object({
   iban: z.string().optional(),
   situacaoIrs: z.string().optional(),
   numeroDependentes: z.string().optional(),
+  declaracaoIrs: z.string().optional(),
   irsJovem: z.string().optional(),
   anoPrimeiroDesconto: z.string().optional(),
   primeiroEmprego: z.boolean().optional(),
@@ -503,8 +505,6 @@ const DEFAULT_EMPLOYEE_PERMISSION_CODES = [
   'view_team_vacations',
   'request_training',
   'view_trainings',
-  'view_receipts',
-  'download_receipt',
 ] as const;
 
 const TEAM_LEADER_PERMISSION_CODES = [
@@ -786,6 +786,7 @@ router.get('/users', requireAuth, async (req, res) => {
           iban: true,
           situacaoIrs: true,
           numeroDependentes: true,
+          declaracaoIrs: true,
           irsJovem: true,
           anoPrimeiroDesconto: true,
           primeiroEmprego: true,
@@ -974,6 +975,7 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
             iban: true,
             situacaoIrs: true,
             numeroDependentes: true,
+            declaracaoIrs: true,
             irsJovem: true,
             anoPrimeiroDesconto: true,
             primeiroEmprego: true,
@@ -2766,6 +2768,7 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
     ...(data.iban !== undefined ? { iban: data.iban } : {}),
     ...(data.situacaoIrs !== undefined ? { situacaoIrs: data.situacaoIrs } : {}),
     ...(data.numeroDependentes !== undefined ? { numeroDependentes: data.numeroDependentes } : {}),
+    ...(data.declaracaoIrs !== undefined ? { declaracaoIrs: data.declaracaoIrs } : {}),
     ...(data.irsJovem !== undefined ? { irsJovem: data.irsJovem } : {}),
     ...(data.anoPrimeiroDesconto !== undefined ? { anoPrimeiroDesconto: data.anoPrimeiroDesconto } : {}),
     ...(data.primeiroEmprego !== undefined ? { primeiroEmprego: data.primeiroEmprego } : {}),
@@ -2833,6 +2836,14 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
   }
 
   if (Object.keys(profilePayload).length > 0 || data.localidade !== undefined) {
+    const existingProfileForHistory = await prisma.profile.findUnique({
+      where: { userId },
+      select: { cargo: true },
+    });
+
+    const previousCargo = (existingProfileForHistory?.cargo ?? '').trim();
+    const nextCargo = data.cargo === undefined ? previousCargo : (data.cargo ?? '').trim();
+
     await prisma.profile.upsert({
       where: { userId },
       update: {
@@ -2846,6 +2857,29 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
         localidade: data.localidade ?? '',
       },
     });
+
+    if (data.cargo !== undefined && previousCargo !== nextCargo) {
+      const actorName = req.authUser?.username || 'sistema';
+      await prisma.profileChangeRequest.create({
+        data: {
+          userId,
+          status: 'APPROVED',
+          changesSummary: `Cargo atualizado de "${previousCargo || 'sem cargo'}" para "${nextCargo || 'sem cargo'}" via gestão RH (${actorName}).`,
+          requestedData: {
+            cargo: nextCargo,
+            previousCargo,
+            source: 'ADMIN_DIRECT_UPDATE',
+          },
+          approvedFields: {
+            cargo: nextCargo,
+          },
+          rejectedFields: {},
+          reviewReason: 'Alteração direta aprovada pela gestão de colaboradores.',
+          reviewedById: req.authUser?.id,
+          reviewedAt: new Date(),
+        },
+      });
+    }
   }
 
   // ── Country change side-effects ────────────────────────────────────────────

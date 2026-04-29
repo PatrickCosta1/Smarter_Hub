@@ -1,0 +1,396 @@
+\documentclass[11pt,a4paper,twoside]{article}
+
+% ── Encoding ──────────────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[portuguese]{babel}
+
+% ── Typography ────────────────────────────────────────────────────────────────
+\usepackage{mathpazo}
+\usepackage[scaled=0.90]{helvet}
+\usepackage[activate={true,nocompatibility},final,tracking=true,kerning=true,expansion=false]{microtype}
+
+% ── Layout ────────────────────────────────────────────────────────────────────
+\usepackage[
+  a4paper,
+  top=3.0cm, bottom=3.2cm,
+  inner=2.8cm, outer=2.4cm,
+  headsep=1.0cm,
+  footskip=1.2cm
+]{geometry}
+
+% ── Colors ────────────────────────────────────────────────────────────────────
+\usepackage[table,dvipsnames]{xcolor}
+\definecolor{INK}{HTML}{1A1A2E}
+\definecolor{RULE}{HTML}{1856B8}
+\definecolor{ACCENT}{HTML}{0C2A59}
+\definecolor{MUTED}{HTML}{5C6475}
+\definecolor{ROWSHADE}{HTML}{F4F6FA}
+\definecolor{BOXBG}{HTML}{EEF2FA}
+\definecolor{BOXLINE}{HTML}{1856B8}
+
+% ── Tables ────────────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{makecell}
+\renewcommand{\arraystretch}{1.34}
+\setlength{\tabcolsep}{3.5pt}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+% ── Lists ─────────────────────────────────────────────────────────────────────
+\usepackage{enumitem}
+\setlist{leftmargin=1.5em,itemsep=2pt,topsep=4pt,parsep=0pt}
+\setlist[itemize,1]{label=\textcolor{RULE}{\rule[0.35ex]{4pt}{4pt}}}
+\setlist[itemize,2]{label=\textcolor{MUTED}{\textendash}}
+\setlist[enumerate,1]{label=\textcolor{RULE}{\arabic*.}}
+
+% ── Section Titles ────────────────────────────────────────────────────────────
+\usepackage{titlesec}
+\titleformat{\section}
+  {\sffamily\bfseries\large\color{RULE}}
+  {\thesection}
+  {0.8em}
+  {}
+  [\vspace{1pt}{\color{RULE}\titlerule[0.8pt]}\vspace{4pt}]
+
+\titleformat{\subsection}
+  {\sffamily\bfseries\normalsize\color{ACCENT}}
+  {\thesubsection}
+  {0.7em}
+  {}
+
+\titlespacing*{\section}{0pt}{20pt}{8pt}
+\titlespacing*{\subsection}{0pt}{14pt}{4pt}
+
+% ── Headers / Footers ─────────────────────────────────────────────────────────
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\small\sffamily\color{MUTED}Especificação Funcional - SMARTER HUB}
+\fancyhead[RE,LO]{\small\sffamily\color{MUTED}PROES 2025/2026 - PC2}
+\fancyfoot[C]{\small\sffamily\color{MUTED}\thepage\,/\,\pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\color{RULE!40}\hrule height 0.4pt \vspace{0pt}}
+\renewcommand{\footrulewidth}{0pt}
+
+% ── Boxes / Callouts ──────────────────────────────────────────────────────────
+\usepackage[most]{tcolorbox}
+\tcbuselibrary{skins, breakable}
+
+\newtcolorbox{callout}[1][] {
+  enhanced, breakable,
+  colback=BOXBG, colframe=BOXLINE,
+  boxrule=0pt, leftrule=3pt,
+  arc=0pt, outer arc=0pt,
+  left=10pt, right=10pt, top=7pt, bottom=7pt,
+  fontupper=\small,
+  #1
+}
+
+\newcommand{\tH}[1]{\textbf{\sffamily\small\color{white}#1}}
+\newcommand{\theadrow}{\rowcolor{ACCENT}}
+
+% ── Cover image ──────────────────────────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{eso-pic}
+
+% ── Misc ──────────────────────────────────────────────────────────────────────
+\usepackage{setspace}
+\usepackage{parskip}
+\setlength{\parskip}{5pt}
+\setlength{\parindent}{0pt}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=RULE,
+  urlcolor=RULE,
+  citecolor=RULE,
+  pdftitle={Especificação Funcional SMARTER HUB - PC2},
+  pdfauthor={Patrick Costa}
+}
+
+\begin{document}
+\setstretch{1.17}
+
+\begin{titlepage}
+\thispagestyle{empty}
+\AddToShipoutPictureBG*{%
+  \includegraphics[width=\paperwidth,height=\paperheight]{capa_especificacao.png}%
+}
+\vspace*{\fill}
+\end{titlepage}
+\nopagecolor
+\color{INK}
+
+\tableofcontents
+\newpage
+
+\section{Objetivo, escopo e fronteiras}
+
+\begin{callout}
+\textbf{Objetivo do artefacto.} Consolidar, com nível de entrega académica e operacional, as regras funcionais do SMARTER HUB para o PC2, servindo como referência única para produto, UX, backend e testes.
+\end{callout}
+
+\subsection{Escopo funcional coberto}
+\begin{itemize}
+  \item Identidade e acesso: login local, Microsoft OAuth, sessão, perfil de acesso.
+  \item Estrutura organizacional: equipas, subequipas, chefias, memberships, centros de custo.
+  \item Ficha de colaborador e pedidos de alteração de dados.
+  \item Férias e ausências: pedido, validação, aprovação, versionamento, calendário, exportação.
+  \item Permissões granulares, acesso total e trilho de auditoria.
+  \item Formações, notificações, dashboard e assistente interno contextual.
+\end{itemize}
+
+\subsection{Fora de escopo nesta fase}
+\begin{itemize}
+  \item Decisões de implementação técnica de baixo nível (detalhe de código e infraestrutura).
+  \item Otimizações avançadas sem impacto no comportamento funcional nucleado no PC2.
+  \item Evoluções cosméticas de interface sem alteração de regra, fluxo ou autorização.
+\end{itemize}
+
+\subsection{Princípios mandatórios}
+\begin{itemize}
+  \item \textbf{Autorização antes de ação:} nenhuma operação crítica executa sem permissão efetiva e escopo válido.
+  \item \textbf{Sem histórico perdido:} alterações a pedidos aprovados são realizadas por versionamento.
+  \item \textbf{Sem rasto, sem commit:} decisão crítica exige auditoria persistida.
+  \item \textbf{Regra por país:} políticas PT/BR são validadas antes de submissão e aprovação final.
+  \item \textbf{Operação explicável:} bloqueios devem devolver causa e indicação de desbloqueio.
+\end{itemize}
+
+\section{Modelo de atores e autorização}
+
+\subsection{Perfis funcionais}
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\bfseries}p{2.2cm} >{\small}p{4.1cm} >{\small}p{3.5cm} >{\small}p{3.8cm}}
+\theadrow
+\tH{Perfil} & \tH{Âmbito operacional} & \tH{Nível de decisão} & \tH{Limites estruturais} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{Perfil} & \tH{Âmbito operacional} & \tH{Nível de decisão} & \tH{Limites estruturais} \\
+\midrule
+\endhead
+Colaborador & Operação individual (ficha, pedidos, notificações, formações) & Sem aprovação de terceiros por defeito & Atua no seu contexto e nas permissões que lhe forem atribuídas \\
+Manager & Gestão de equipa e aprovação de primeira linha & Aprova linha direta conforme cadeia ativa & Não atua fora do escopo de equipa autorizado \\
+Coordenador & Supervisão transversal e segunda linha de decisão & Aprova níveis superiores definidos na cadeia & Não substitui admin em governação global \\
+Admin & Governação global de utilizadores, equipas e permissões & Pode atuar por exceção em PT quando aplicável & Deve manter rasto integral das ações críticas \\
+Root Access & Superutilizador técnico-funcional & Último nível de autorização & Uso restrito a governação e manutenção sensível \\
+\bottomrule
+\end{longtable}
+
+\subsection{Regras de aprovação e hierarquia}
+\begin{enumerate}
+  \item Um utilizador pode ter múltiplas memberships e papéis distintos por equipa.
+  \item A aprovação base é efetuada pelos chefes das equipas relevantes do colaborador.
+  \item Em múltiplas equipas, a aprovação é unânime entre aprovadores definidos para o pedido.
+  \item Autoaprovação é sempre proibida.
+  \item Rejeição de um aprovador encerra imediatamente o pedido como rejeitado.
+  \item A lista de aprovadores é congelada no momento de submissão da versão.
+  \item Sem equipa e sem acesso total, o fallback de aprovação é T.People.
+  \item Com acesso total sem equipa, decide o concedente; indisponível, fallback T.People.
+  \item Entre utilizadores com acesso total no mesmo nível hierárquico, não há decisão cruzada.
+\end{enumerate}
+
+\subsection{Matriz de capacidades por domínio}
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\bfseries}p{2.2cm} >{\small}p{4.1cm} >{\small}p{4.2cm} >{\small}p{3.2cm}}
+\theadrow
+\tH{Domínio} & \tH{Visualização} & \tH{Ação operacional} & \tH{Controlo/Auditoria} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{Domínio} & \tH{Visualização} & \tH{Ação operacional} & \tH{Controlo/Auditoria} \\
+\midrule
+\endhead
+Identidade & Conta própria, perfil de acesso, sessão atual & Login, refresh de contexto, logout & Registo de autenticação e falhas \\
+Ficha & Dados pessoais/contratuais conforme escopo & Submeter alterações e comprovativos & Histórico de pedido e motivo \\
+Férias/Ausências & Histórico próprio e de equipa (quando permitido) & Submeter, editar pendente, cancelar, versionar aprovado & Trilha de decisões por etapa \\
+Permissões & Permissões efetivas por utilizador autorizado & Grant/revoke, escopo, acesso total & Audit log de grants/revokes \\
+Equipas & Estrutura e memberships por escopo & CRUD equipas (admin), gestão de membros & Rastreio de alterações estruturais \\
+Formações & Plano próprio e organização (autorizados) & Criar, atribuir, concluir, exportar & Histórico de atribuição/conclusão \\
+Dashboard & KPIs por equipa/organização e período & Filtrar cohort e exportar XLSX & Parâmetros de exportação registados \\
+Notificações & Inbox pessoal e estados de leitura & Ler, limpar e navegar para ação & Integridade e idempotência \\
+\bottomrule
+\end{longtable}
+
+\section{Regras de negócio de férias e ausências}
+
+\subsection{Regras transversais}
+\begin{itemize}
+  \item Pedido inclui tipo, período, contexto de equipa e metadados de validação.
+  \item Conflitos de período com pedidos \texttt{PENDING}/\texttt{APPROVED} bloqueiam submissão.
+  \item Seleção com fim de semana bloqueia tipo \textit{Férias} e força \textit{Ausência}, quando aplicável.
+  \item Pedido aprovado alterado gera nova versão pendente, sem sobrescrever versão anterior.
+  \item Pedidos que atravessam o ano civil devem aparecer em ambos os anos relevantes.
+  \item Meio-dia é suportado com indicação explícita manhã/tarde.
+\end{itemize}
+
+\subsection{Capacidade e calendário}
+\begin{itemize}
+  \item O sistema sinaliza risco quando a equipa se aproxima de ocupação crítica em férias simultâneas.
+  \item A vista \textit{Férias da equipa} apresenta apenas pedidos aprovados.
+  \item Distinção visual entre \textit{Férias} e \textit{Ausência} é obrigatória.
+  \item Calendário inclui legenda de feriados, dias automáticos/extra e fins de semana.
+\end{itemize}
+
+\subsection{Políticas PT}
+\begin{itemize}
+  \item Aviso de conformidade para ausência de bloco de 10 dias úteis consecutivos (não bloqueante).
+  \item Contratação no ano corrente: limite proporcional de 2 dias úteis/mês no 1.º ano (máximo 20).
+  \item Bloqueio quando \texttt{PENDING + APPROVED + novo pedido} excede limite proporcional.
+  \item Lembrete automático de transitados a expirar a 30 de abril (default: 30 dias antes).
+\end{itemize}
+
+\subsection{Políticas BR}
+\begin{itemize}
+  \item Início de férias não permitido à quinta-feira nem à sexta-feira.
+  \item Início não permitido no dia útil imediatamente após feriado nacional.
+  \item Validação do período concessivo com bloqueio por antecedência mínima inferior a 30 dias.
+  \item Alteração/versionamento só com antecedência mínima de 10 dias sobre o início do pedido.
+  \item Estagiário: bloqueado antes de 12 meses; após marco, proporcional de 30 dias/ano (2,5 dias/mês).
+  \item Venda de férias (abono): até 1/3 do direito anual, teto absoluto de 10 dias.
+\end{itemize}
+
+\section{Experiência, vistas e ficheiro de colaborador}
+
+\subsection{Navegação base por permissões}
+\begin{itemize}
+  \item \textbf{Home}: sempre visível.
+  \item \textbf{A Minha Ficha}: autenticados (exceto caso técnico T.People).
+  \item \textbf{Dashboard}: apenas root/access total.
+  \item \textbf{Aprovações}: requer pelo menos uma permissão de aprovação/visão global.
+  \item \textbf{Férias}: requer permissão de pedido/consulta/gestão de regras.
+  \item \textbf{Formações}: requer permissão de consulta/atribuição.
+\end{itemize}
+
+\subsection{Vistas mandatórias para operação}
+\begin{itemize}
+  \item Separador \textit{Férias da equipa} com calendário mensal por colaborador e navegação temporal.
+  \item Dashboard com filtros por período (incluindo presets plurianuais) e exportação XLSX.
+  \item Utilizadores com acesso total podem exportar mapa de férias por intervalo livre.
+\end{itemize}
+
+\subsection{Ficha do colaborador e benefícios}
+\begin{itemize}
+  \item Secções: Dados Pessoais, Contacto, Documentos, Fiscal/Bancário, Emergência, Contratuais, Formação, Benefícios.
+  \item Campo \textit{Número mecanográfico} obrigatório na área contratual.
+  \item Centro de custo preenchido com base na equipa efetiva.
+  \item Para \textit{workCountry = BR}: nomenclaturas locais (CPF, PIS, CTPS, RG, CNH, Título de eleitor, CEP), ocultação de campos não aplicáveis e sem bloco Cartão Continente.
+  \item Voucher NOS: apenas contrato \textit{Sem termo}; cooldown de 2 anos entre pedidos.
+\end{itemize}
+
+\section{Assistente interno, qualidade e auditoria}
+
+\subsection{Assistente interno (chatbot)}
+\begin{itemize}
+  \item Respostas contextualizadas por permissões efetivas e rota atual.
+  \item Prioridade a instruções acionáveis: onde clicar, pré-condição em falta, motivo de bloqueio.
+  \item Em falta de permissão, indica capacidade necessária para desbloqueio.
+  \item Cobertura mínima: autenticação, ficha, benefícios, equipas, colaboradores, permissões, aprovações, férias, formações, dashboard e notificações.
+\end{itemize}
+
+\subsection{Requisitos de qualidade e dados}
+\begin{itemize}
+  \item Integridade referencial entre utilizador, equipa, pedido, aprovação e permissão.
+  \item Estados de pedido consistentes entre vistas e endpoints.
+  \item Auditoria com autor, alvo, ação, timestamp e motivo (quando aplicável).
+  \item Alteração funcional só considerada concluída com atualização desta especificação.
+  \item Releases com evidência mínima de testes unitários, integração e E2E crítico.
+\end{itemize}
+
+\section{Fluxos ponta a ponta de referência}
+
+\subsection{Fluxo A: pedido de férias}
+\begin{enumerate}
+  \item Colaborador submete pedido com período e contexto.
+  \item Sistema valida regras transversais e política PT/BR.
+  \item Sistema calcula aprovadores e congela cadeia.
+  \item Aprovadores decidem por etapa.
+  \item Pedido termina em aprovado, rejeitado, cancelado ou substituído por versão.
+\end{enumerate}
+
+\subsection{Fluxo B: alteração de ficha}
+\begin{enumerate}
+  \item Colaborador submete alteração de dados.
+  \item Sistema cria pedido de alteração em estado pendente.
+  \item Responsável aprova/rejeita com motivo.
+  \item Sistema atualiza dados (se aprovado) e preserva histórico.
+\end{enumerate}
+
+\subsection{Fluxo C: governação de permissões}
+\begin{enumerate}
+  \item Gestor autorizado abre perfil de permissões do alvo.
+  \item Concede/revoga permissão e escopo.
+  \item Sistema regista evento de auditoria.
+  \item Cache/contexto do alvo é reavaliado para refletir novo acesso.
+\end{enumerate}
+
+\subsection{Fluxo D: notificações operacionais}
+\begin{enumerate}
+  \item Evento de negócio gera notificação ao(s) utilizador(es) relevante(s).
+  \item Utilizador consulta lista, marca como lida e/ou remove item.
+  \item Em fluxos acionáveis, notificação navega para o ecrã de decisão.
+\end{enumerate}
+
+\section{Rastreabilidade, riscos e critérios de aceite}
+
+\subsection{Matriz de rastreabilidade}
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\bfseries}p{4.0cm} >{\small}p{4.7cm} >{\small}p{4.8cm}}
+\theadrow
+\tH{Tema pedido no PC2} & \tH{Cobertura nesta especificação} & \tH{Evidência de verificação} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{Tema pedido no PC2} & \tH{Cobertura nesta especificação} & \tH{Evidência de verificação} \\
+\midrule
+\endhead
+Necessidade e problema & Escopo, princípios e regras de negócio & Fluxos definidos e políticas PT/BR explícitas \\
+Contexto e solução & Modelo de atores, capacidades e navegação & Tabelas de domínio e autorização \\
+Qualidade e governação & Requisitos de auditoria e dados & Critérios de aceite objetivos \\
+Planeamento funcional & Definição de pronto e fronteiras de escopo & Itens mandatórios e risco monitorizado \\
+\bottomrule
+\end{longtable}
+
+\subsection{Riscos funcionais monitorizados no PC2}
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\bfseries\centering\arraybackslash}p{0.9cm} >{\small}p{6.2cm} >{\small}p{6.0cm}}
+\theadrow
+\tH{ID} & \tH{Risco} & \tH{Mitigação definida} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{ID} & \tH{Risco} & \tH{Mitigação definida} \\
+\midrule
+\endhead
+R1 & Alteração de regra sem atualização documental & Governação: alteração funcional só conclui com update desta especificação \\
+R2 & Escalada indevida de privilégio em operação sensível & Validação por permissão efetiva, escopo e trilho de auditoria \\
+R3 & Divergência entre hierarquia real e cadeia de aprovação & Revisão de memberships e cadeia congelada por versão \\
+R4 & Regressão em regras PT/BR por alteração de lógica & Critérios de aceite por política e validação de conflitos \\
+R5 & Perda de rastreabilidade de decisão & Obrigatoriedade de motivo, ator e timestamp em decisão crítica \\
+\bottomrule
+\end{longtable}
+
+\subsection{Definição de pronto para entrega PC2}
+\begin{itemize}
+  \item Regras de aprovação e políticas PT/BR descritas sem contradições internas.
+  \item Perfis, domínios e restrições alinhados com comportamento esperado do portal.
+  \item Fluxos críticos mapeados com estados e pontos de auditoria.
+  \item Vistas obrigatórias e restrições de acesso identificadas para UX e QA.
+  \item Documento aprovado como referência oficial para continuidade no PC3.
+\end{itemize}
+
+\subsection{Critérios objetivos de aceitação deste artefacto}
+\begin{itemize}
+  \item \textbf{Completude}: domínios nucleares pedidos no PC2 cobertos sem lacunas estruturais.
+  \item \textbf{Clareza}: regras críticas traduzíveis em comportamento observável de sistema.
+  \item \textbf{Auditabilidade}: decisão de aprovação/revogação justificável por rasto de dados.
+  \item \textbf{Testabilidade}: regras convertíveis em casos unitários, integração e E2E.
+  \item \textbf{Foco}: sem inflação de escopo fora do que é pedido para avaliação de PC2.
+\end{itemize}
+
+\end{document}

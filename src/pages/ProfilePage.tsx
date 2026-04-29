@@ -98,6 +98,7 @@ const profileFieldLabels: Partial<Record<keyof ProfileData, string>> = {
   iban: 'IBAN',
   situacaoIrs: 'Situação IRS',
   numeroDependentes: 'Número de dependentes',
+  declaracaoIrs: 'Declaração IRS',
   irsJovem: 'IRS Jovem',
   anoPrimeiroDesconto: 'Ano do primeiro desconto',
   primeiroEmprego: 'Primeiro emprego',
@@ -469,6 +470,7 @@ function validateProfile(profile: ProfileData, canEditContract: boolean = true):
     'iban',
     'situacaoIrs',
     'numeroDependentes',
+    'declaracaoIrs',
     'irsJovem',
     'anoPrimeiroDesconto',
     'comprovativoCartaoCidadao',
@@ -1674,25 +1676,25 @@ export default function ProfilePage() {
                 </label>
               </>
             )}
-            <label>
-              <span>IBAN</span>
-              <input type="text" value={draftProfile.iban} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('iban', event.target.value)} />
-              {profileErrors.iban && <small>{profileErrors.iban}</small>}
-            </label>
-            <label className="field-span-2">
-              <span>Comprovativo IBAN</span>
-              <input
-                type="file"
-                accept=".pdf,.jpg,.jpeg"
-                disabled={!editingSections.tax}
-                onClick={handleFileInputClick}
-                onChange={(event) => handleFileChange('comprovativoIban', event)}
-              />
-              {renderFileLink(draftProfile.comprovativoIban)}
-              {profileErrors.comprovativoIban && <small>{profileErrors.comprovativoIban}</small>}
-            </label>
             {!isBrProfile && (
               <>
+                <label>
+                  <span>IBAN</span>
+                  <input type="text" value={draftProfile.iban} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('iban', event.target.value)} />
+                  {profileErrors.iban && <small>{profileErrors.iban}</small>}
+                </label>
+                <label>
+                  <span>Comprovativo IBAN</span>
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg"
+                    disabled={!editingSections.tax}
+                    onClick={handleFileInputClick}
+                    onChange={(event) => handleFileChange('comprovativoIban', event)}
+                  />
+                  {renderFileLink(draftProfile.comprovativoIban)}
+                  {profileErrors.comprovativoIban && <small>{profileErrors.comprovativoIban}</small>}
+                </label>
                 <label>
                   <span>Estado civil</span>
                   <select value={draftProfile.estadoCivil} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('estadoCivil', event.target.value)}>
@@ -1703,7 +1705,7 @@ export default function ProfilePage() {
                   </select>
                   {profileErrors.estadoCivil && <small>{profileErrors.estadoCivil}</small>}
                 </label>
-                <label className="field-span-2">
+                <label>
                   <span>Situação IRS</span>
                   <select value={draftProfile.situacaoIrs} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('situacaoIrs', event.target.value)}>
                     <option value="">Selecionar</option>
@@ -1717,6 +1719,18 @@ export default function ProfilePage() {
                   <span>Número de dependentes</span>
                   <input type="number" min="0" value={draftProfile.numeroDependentes} disabled={!editingSections.tax} onChange={(event) => handleProfileChange('numeroDependentes', event.target.value)} />
                   {profileErrors.numeroDependentes && <small>{profileErrors.numeroDependentes}</small>}
+                </label>
+                <label>
+                  <span>Declaração IRS</span>
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg"
+                    disabled={!editingSections.tax}
+                    onClick={handleFileInputClick}
+                    onChange={(event) => handleFileChange('declaracaoIrs', event)}
+                  />
+                  {renderFileLink(draftProfile.declaracaoIrs)}
+                  {profileErrors.declaracaoIrs && <small>{profileErrors.declaracaoIrs}</small>}
                 </label>
                 <label>
                   <span>IRS Jovem</span>

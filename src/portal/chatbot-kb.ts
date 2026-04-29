@@ -145,10 +145,6 @@ function buildAccessSummary(ctx: ChatbotContext): string[] {
     areas.push('Férias');
   }
 
-  if (hasAnyPermission(ctx, ['view_receipts', 'view_all_receipts'])) {
-    areas.push('Recibos');
-  }
-
   return areas;
 }
 
@@ -389,20 +385,6 @@ const FEATURES: FeatureSpec[] = [
     related: ['Como ver formações próprias?', 'Como exportar resultados?'],
   },
   {
-    id: 'receipts',
-    title: 'Recibos',
-    path: '/recibos',
-    keywords: ['recibos', 'vencimento', 'salario', 'salário', 'payslip'],
-    permissionsAny: ['view_receipts', 'view_all_receipts', 'download_receipt'],
-    description: 'Consulta e download de recibos conforme escopo de acesso.',
-    steps: [
-      'Abre Recibos.',
-      'Seleciona o documento pretendido.',
-      'Executa o download do ficheiro.',
-    ],
-    related: ['Porque não vejo o menu Recibos?', 'Posso ver recibos de outros?'],
-  },
-  {
     id: 'dashboard',
     title: 'Dashboard analítica',
     path: '/dashboard',
@@ -583,7 +565,6 @@ export function getInitialSuggestions(ctx: ChatbotContext): string[] {
     'Como aprovo pedidos?',
     'Onde emito voucher NOS?',
     'Como gerir permissões?',
-    'Onde vejo os meus recibos?',
   ];
 
   if (ctx.isRootAccess || ctx.isAccessTotal) {

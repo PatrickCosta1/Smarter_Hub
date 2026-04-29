@@ -6,8 +6,7 @@ export const roleMenus: Record<UserRole, MenuItem[]> = {
     { id: 'profile', label: 'A Minha Ficha', path: '/profile' },
     { id: 'equipas', label: 'Equipas', path: '/equipas' },
     { id: 'formacoes', label: 'Formações', path: '/formacoes' },
-    { id: 'ferias', label: 'Férias', path: '/ferias' },
-    { id: 'recibos', label: 'Recibos', path: '/recibos' }
+    { id: 'ferias', label: 'Férias', path: '/ferias' }
   ],
   coordenador: [
     { id: 'home', label: 'Home', path: '/' },
@@ -35,7 +34,6 @@ export const roleMenus: Record<UserRole, MenuItem[]> = {
     { id: 'aprovacoes', label: 'Aprovações', path: '/aprovacoes' },
     { id: 'formacoes', label: 'Formações', path: '/formacoes' },
     { id: 'ferias', label: 'Férias', path: '/ferias' },
-    { id: 'recibos', label: 'Recibos', path: '/recibos' },
     { id: 'notifications', label: 'Notificações', path: '/notifications' },
   ],
   convidado: [
@@ -121,6 +119,7 @@ export const initialProfileData: ProfileData = {
   iban: '',
   situacaoIrs: '',
   numeroDependentes: '',
+  declaracaoIrs: '',
   irsJovem: '',
   anoPrimeiroDesconto: '',
   primeiroEmprego: false,

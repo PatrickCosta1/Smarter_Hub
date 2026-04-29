@@ -261,6 +261,7 @@ const profileFields = [
   "iban",
   "situacaoIrs",
   "numeroDependentes",
+  "declaracaoIrs",
   "irsJovem",
   "anoPrimeiroDesconto",
   "primeiroEmprego",
@@ -372,6 +373,7 @@ const updateProfileSchema = z.object({
   iban: optionalStringField,
   situacaoIrs: optionalStringField,
   numeroDependentes: optionalStringField,
+  declaracaoIrs: optionalStringField,
   irsJovem: optionalStringField,
   anoPrimeiroDesconto: optionalStringField,
   primeiroEmprego: z.boolean().optional(),
@@ -417,6 +419,7 @@ const updateProfileSchema = z.object({
     requireNonEmpty('iban', 'IBAN');
     requireNonEmpty('situacaoIrs', 'Situação IRS');
     requireNonEmpty('numeroDependentes', 'Número de dependentes');
+    requireNonEmpty('declaracaoIrs', 'Declaração IRS');
     requireNonEmpty('irsJovem', 'IRS Jovem');
     requireNonEmpty('anoPrimeiroDesconto', 'Ano do primeiro desconto');
 
@@ -532,6 +535,7 @@ const friendlyProfileFieldLabels: Partial<Record<(typeof profileFields)[number],
   iban: 'IBAN',
   situacaoIrs: 'Situação IRS',
   numeroDependentes: 'Número de dependentes',
+  declaracaoIrs: 'Declaração IRS',
   irsJovem: 'IRS Jovem',
   anoPrimeiroDesconto: 'Ano do primeiro desconto',
   primeiroEmprego: 'Primeiro emprego',

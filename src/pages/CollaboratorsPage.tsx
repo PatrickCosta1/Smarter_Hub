@@ -13,7 +13,7 @@ import EmptyState from '../components/ui/EmptyState';
 import Toast from '../components/ui/Toast';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
-const PERMISSION_CATEGORIES = ['SYSTEM', 'USERS', 'TEAMS', 'VACATIONS', 'TRAININGS', 'PROFILE', 'RECEIPTS', 'NOTIFICATIONS'] as const;
+const PERMISSION_CATEGORIES = ['SYSTEM', 'USERS', 'TEAMS', 'VACATIONS', 'TRAININGS', 'PROFILE', 'NOTIFICATIONS'] as const;
 type PermissionCategory = typeof PERMISSION_CATEGORIES[number];
 
 type CollaboratorRow = {
@@ -77,6 +77,7 @@ type CollaboratorRow = {
     iban?: string;
     situacaoIrs?: string;
     numeroDependentes?: string;
+    declaracaoIrs?: string;
     irsJovem?: string;
     anoPrimeiroDesconto?: string;
     primeiroEmprego?: boolean;
@@ -151,6 +152,7 @@ type CollaboratorEditDraft = {
   iban: string;
   situacaoIrs: string;
   numeroDependentes: string;
+  declaracaoIrs: string;
   irsJovem: string;
   anoPrimeiroDesconto: string;
   primeiroEmprego: boolean;
@@ -177,7 +179,14 @@ type CollaboratorEditDraft = {
 };
 
 type EditSection = 'identificacao' | 'contactos' | 'fiscal' | 'emergencia' | 'contrato';
+type DetailsFichaSection = 'conta' | EditSection;
 type EditFieldConfig = { key: keyof CollaboratorEditDraft; label: string; section: EditSection };
+type EditSectionMeta = {
+  id: EditSection;
+  title: string;
+  description: string;
+  sectionClassName?: string;
+};
 
 function resolveStatusTone(message: string): 'success' | 'error' | 'info' {
   const normalized = message.toLowerCase();
@@ -227,18 +236,20 @@ const PT_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
   { key: 'matriculaCarro', label: 'Matrícula do carro', section: 'identificacao' },
   { key: 'cartaoCidadao', label: 'Cartão de cidadão', section: 'fiscal' },
   { key: 'validadeCartaoCidadao', label: 'Validade cartão de cidadão', section: 'fiscal' },
+  { key: 'comprovativoCartaoCidadao', label: 'Comprovativo cartão de cidadão', section: 'fiscal' },
   { key: 'nif', label: 'NIF', section: 'fiscal' },
   { key: 'niss', label: 'NISS', section: 'fiscal' },
   { key: 'iban', label: 'IBAN', section: 'fiscal' },
+  { key: 'comprovativoIban', label: 'Comprovativo IBAN', section: 'fiscal' },
+  { key: 'estadoCivil', label: 'Estado civil', section: 'fiscal' },
   { key: 'situacaoIrs', label: 'Situação IRS', section: 'fiscal' },
   { key: 'numeroDependentes', label: 'Número de dependentes', section: 'fiscal' },
+  { key: 'declaracaoIrs', label: 'Declaração IRS', section: 'fiscal' },
   { key: 'irsJovem', label: 'IRS jovem', section: 'fiscal' },
   { key: 'anoPrimeiroDesconto', label: 'Ano do primeiro desconto', section: 'fiscal' },
   { key: 'numeroCartaoContinente', label: 'Cartão Continente', section: 'fiscal' },
   { key: 'voucherNosData', label: 'Voucher NOS data', section: 'fiscal' },
   { key: 'comprovativoMoradaFiscal', label: 'Comprovativo morada fiscal', section: 'fiscal' },
-  { key: 'comprovativoCartaoCidadao', label: 'Comprovativo cartão de cidadão', section: 'fiscal' },
-  { key: 'comprovativoIban', label: 'Comprovativo IBAN', section: 'fiscal' },
   { key: 'comprovativoCartaoContinente', label: 'Comprovativo cartão Continente', section: 'fiscal' },
 ];
 
@@ -276,6 +287,68 @@ const EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
   ...PT_EDIT_PROFILE_FIELDS,
   ...BR_EDIT_PROFILE_FIELDS,
 ];
+
+const EDIT_SECTION_META: EditSectionMeta[] = [
+  {
+    id: 'identificacao',
+    title: 'Identificação',
+    description: 'Dados pessoais e académicos do colaborador.',
+    sectionClassName: 'cm-section--wide',
+  },
+  {
+    id: 'contactos',
+    title: 'Contactos e moradas',
+    description: 'Informação de contacto diário e moradas registadas.',
+  },
+  {
+    id: 'fiscal',
+    title: 'Fiscal e documentos',
+    description: 'Documentação fiscal, bancária e comprovativos obrigatórios.',
+    sectionClassName: 'cm-section--wide',
+  },
+  {
+    id: 'emergencia',
+    title: 'Emergência',
+    description: 'Pessoa de contacto para situações urgentes.',
+  },
+  {
+    id: 'contrato',
+    title: 'Contrato',
+    description: 'Enquadramento contratual, cargo, função e datas relevantes.',
+    sectionClassName: 'cm-section--wide',
+  },
+];
+
+const DETAILS_FICHA_SECTIONS: Array<{ id: DetailsFichaSection; label: string }> = [
+  { id: 'conta', label: 'Conta' },
+  { id: 'identificacao', label: 'Pessoal' },
+  { id: 'contactos', label: 'Contacto' },
+  { id: 'fiscal', label: 'Fiscal' },
+  { id: 'emergencia', label: 'Emergência' },
+  { id: 'contrato', label: 'Contrato' },
+];
+
+function getEditSectionMeta(section: EditSection): EditSectionMeta {
+  return EDIT_SECTION_META.find((item) => item.id === section) ?? {
+    id: section,
+    title: section,
+    description: '',
+  };
+}
+
+function getEditFieldCardClass(fieldKey: keyof CollaboratorEditDraft) {
+  const wideFields = new Set<keyof CollaboratorEditDraft>([
+    'moradaFiscal',
+    'endereco',
+    'comprovativoMoradaFiscal',
+    'comprovativoCartaoCidadao',
+    'comprovativoIban',
+    'comprovativoCartaoContinente',
+    'declaracaoIrs',
+  ]);
+
+  return `cm-field-card${wideFields.has(fieldKey) ? ' is-wide' : ''}`;
+}
 
 function getVisibleEditProfileFields(workCountry: 'PT' | 'BR') {
   return [
@@ -332,6 +405,7 @@ const EMPTY_EDIT_DRAFT: CollaboratorEditDraft = {
   iban: '',
   situacaoIrs: '',
   numeroDependentes: '',
+  declaracaoIrs: '',
   irsJovem: '',
   anoPrimeiroDesconto: '',
   primeiroEmprego: false,
@@ -464,6 +538,7 @@ function buildEditDraftFromRow(item: CollaboratorRow): CollaboratorEditDraft {
     iban: profile.iban || '',
     situacaoIrs: profile.situacaoIrs || '',
     numeroDependentes: profile.numeroDependentes || '',
+    declaracaoIrs: profile.declaracaoIrs || '',
     irsJovem: profile.irsJovem || '',
     anoPrimeiroDesconto: profile.anoPrimeiroDesconto || '',
     primeiroEmprego: Boolean(profile.primeiroEmprego),
@@ -620,6 +695,7 @@ type CollaboratorDetailsCacheEntry = {
   permissionTeams: TeamOption[];
   customCargoOptions: CustomProfileOption[];
   customFuncaoOptions: CustomProfileOption[];
+  profileHistory: ProfileHistoryEntry[];
 };
 
 type TeamOption = {
@@ -675,6 +751,21 @@ type PermissionDraft = {
   notes: string;
 };
 
+type ProfileHistoryEntry = {
+  id: string;
+  userId: string;
+  changesSummary?: string;
+  reviewedAt?: string | null;
+  requestedData?: Record<string, unknown>;
+  reviewedBy?: {
+    username?: string;
+    profile?: {
+      nomeAbreviado?: string;
+      nomeCompleto?: string;
+    } | null;
+  } | null;
+};
+
 const EMPTY_PERMISSION_DRAFT: PermissionDraft = {
   enabled: false,
   restrictedToTeams: '',
@@ -693,6 +784,7 @@ const IMPORT_PROFILE_FIELD_KEYS = EDIT_PROFILE_FIELDS
     && field.key !== 'comprovativoMoradaFiscal'
     && field.key !== 'comprovativoCartaoCidadao'
     && field.key !== 'comprovativoIban'
+    && field.key !== 'declaracaoIrs'
     && field.key !== 'comprovativoCartaoContinente')
   .map((field) => field.key) as Array<Exclude<keyof CollaboratorEditDraft, 'role' | 'teamId' | 'isActive' | 'workCountry' | 'nomeCompleto' | 'primeiroEmprego' | 'recebeAposentadoria' | 'recebeSeguroDesemprego' | 'valeTransporte'>>;
 
@@ -710,6 +802,7 @@ const IMPORT_TEMPLATE_FIELDS: Array<{ key: string; label: string; required?: boo
       && field.key !== 'comprovativoMoradaFiscal'
       && field.key !== 'comprovativoCartaoCidadao'
       && field.key !== 'comprovativoIban'
+      && field.key !== 'declaracaoIrs'
       && field.key !== 'comprovativoCartaoContinente')
     .map((field) => ({
       key: field.key,
@@ -1274,7 +1367,6 @@ function getPermissionCategoryLabel(category: PermissionCategory) {
     case 'VACATIONS': return 'Férias';
     case 'TRAININGS': return 'Formações';
     case 'PROFILE': return 'Perfil';
-    case 'RECEIPTS': return 'Recibos';
     case 'NOTIFICATIONS': return 'Notificações';
     default: return category;
   }
@@ -1361,10 +1453,12 @@ export default function CollaboratorsPage() {
   const [selectedRow, setSelectedRow] = useState<CollaboratorRow | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [detailsTab, setDetailsTab] = useState<'ficha' | 'permissoes' | 'estado'>('ficha');
+  const [detailsFichaSection, setDetailsFichaSection] = useState<DetailsFichaSection>('conta');
   const [permissionCategory, setPermissionCategory] = useState<PermissionCategory>('USERS');
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [selectedUserAccessTotal, setSelectedUserAccessTotal] = useState(false);
   const [selectedPermissions, setSelectedPermissions] = useState<PermissionItem[]>([]);
+  const [profileHistory, setProfileHistory] = useState<ProfileHistoryEntry[]>([]);
   const [permissionDrafts, setPermissionDrafts] = useState<Record<string, PermissionDraft>>({});
   const [savingPermissionId, setSavingPermissionId] = useState<string | null>(null);
   const [isTogglingAccessTotal, setIsTogglingAccessTotal] = useState(false);
@@ -1513,6 +1607,10 @@ export default function CollaboratorsPage() {
   const selectedExportCandidate = useMemo(
     () => exportCandidatesFiltered.find((item) => item.id === selectedExportUserId) || null,
     [exportCandidatesFiltered, selectedExportUserId],
+  );
+  const cargoHistoryEntries = useMemo(
+    () => [...profileHistory].sort((a, b) => new Date(b.reviewedAt || 0).getTime() - new Date(a.reviewedAt || 0).getTime()),
+    [profileHistory],
   );
 
   useEffect(() => {
@@ -1889,7 +1987,8 @@ export default function CollaboratorsPage() {
       addDataRow('Data de início', formatDateForTemplate(profile.dataInicioContrato), 'Data de fim', formatDateForTemplate(profile.dataFimContrato));
       addDataRow('NIF', formatTemplateValue(profile.nif), 'NISS', formatTemplateValue(profile.niss));
       addDataRow('IBAN', formatTemplateValue(profile.iban), 'Situação IRS', formatTemplateValue(profile.situacaoIrs));
-      addDataRow('N.º dependentes', formatTemplateValue(profile.numeroDependentes), 'IRS Jovem', formatTemplateValue(profile.irsJovem));
+      addDataRow('N.º dependentes', formatTemplateValue(profile.numeroDependentes), 'Declaração IRS', formatTemplateValue(profile.declaracaoIrs));
+      addDataRow('IRS Jovem', formatTemplateValue(profile.irsJovem), 'Ano 1.º desconto', formatTemplateValue(profile.anoPrimeiroDesconto));
 
       worksheet.addRow([]);
 
@@ -1899,7 +1998,7 @@ export default function CollaboratorsPage() {
       addDataRow('Morada fiscal', formatTemplateValue(profile.moradaFiscal), 'Morada habitual', formatTemplateValue(profile.endereco));
       addDataRow('Localidade', formatTemplateValue(profile.localidade), 'Código postal', formatTemplateValue(profile.codigoPostal));
       addDataRow('Cartão de cidadão', formatTemplateValue(profile.cartaoCidadao), 'Validade CC', formatDateForTemplate(profile.validadeCartaoCidadao));
-      addDataRow('Matrícula viatura', formatTemplateValue(profile.matriculaCarro), 'Ano 1.º desconto', formatTemplateValue(profile.anoPrimeiroDesconto));
+      addDataRow('Matrícula viatura', formatTemplateValue(profile.matriculaCarro), 'Categoria profissional', formatTemplateValue(profile.categoriaProfissional));
       addDataRow('Cartão Continente', formatTemplateValue(profile.numeroCartaoContinente), 'Data voucher NOS', formatTemplateValue(profile.voucherNosData));
 
       worksheet.eachRow((row) => {
@@ -1995,6 +2094,7 @@ export default function CollaboratorsPage() {
 
     setSelectedRow(item);
     setDetailsTab(initialTab);
+    setDetailsFichaSection('conta');
     setIsDetailsOpen(true);
     setEditDraft(buildEditDraftFromRow(item));
     setPermissionSearch('');
@@ -2008,6 +2108,7 @@ export default function CollaboratorsPage() {
       setPermissionTeams(cached.permissionTeams);
       setCustomCargoOptions(cached.customCargoOptions);
       setCustomFuncaoOptions(cached.customFuncaoOptions);
+      setProfileHistory(cached.profileHistory);
       setPermissionDrafts(Object.fromEntries(cached.selectedPermissions.map((permission) => [permission.id, buildDraftFromAssignment(permission, cached.selectedUserAccessTotal)])));
       setSelectedPermissionId(cached.selectedPermissions[0]?.id ?? null);
       return;
@@ -2020,6 +2121,7 @@ export default function CollaboratorsPage() {
     setPermissionTeams([]);
     setCustomCargoOptions([]);
     setCustomFuncaoOptions([]);
+    setProfileHistory([]);
     setSelectedPermissionId(null);
 
     const controller = new AbortController();
@@ -2046,7 +2148,7 @@ export default function CollaboratorsPage() {
         }
       };
 
-      const [details, permissionTeams, profileOptions] = await Promise.all([
+      const [details, permissionTeams, profileOptions, profileHistoryResponse] = await Promise.all([
         apiRequest<UserPermissionsResponse>(`/users/${item.id}/permissions`, {
           headers: getAuthHeaders(),
           signal: controller.signal,
@@ -2056,6 +2158,10 @@ export default function CollaboratorsPage() {
           cargo?: CustomProfileOption[];
           funcao?: CustomProfileOption[];
         }>('/profile/options', {
+          headers: getAuthHeaders(),
+          signal: controller.signal,
+        }, 8000, true),
+        apiRequestCached<ProfileHistoryEntry[]>('/profile/requests/history?limit=500', {
           headers: getAuthHeaders(),
           signal: controller.signal,
         }, 8000, true),
@@ -2076,6 +2182,15 @@ export default function CollaboratorsPage() {
       setPermissionTeams(permissionTeams);
       setCustomCargoOptions(profileOptions.cargo ?? []);
       setCustomFuncaoOptions(profileOptions.funcao ?? []);
+      const cargoHistory = (profileHistoryResponse || []).filter((entry) => {
+        if (entry.userId !== item.id) {
+          return false;
+        }
+
+        const payload = entry.requestedData || {};
+        return Object.prototype.hasOwnProperty.call(payload, 'cargo');
+      });
+      setProfileHistory(cargoHistory);
       setDetailsCacheByUserId((current) => ({
         ...current,
         [item.id]: {
@@ -2084,6 +2199,7 @@ export default function CollaboratorsPage() {
           permissionTeams,
           customCargoOptions: profileOptions.cargo ?? [],
           customFuncaoOptions: profileOptions.funcao ?? [],
+          profileHistory: cargoHistory,
         },
       }));
     } catch (error) {
@@ -2104,6 +2220,7 @@ export default function CollaboratorsPage() {
     detailsLoadControllerRef.current?.abort();
     detailsLoadControllerRef.current = null;
     setIsDetailsOpen(false);
+    setDetailsFichaSection('conta');
   }
 
   async function openProfileOptionModal(type: 'CARGO' | 'FUNCAO') {
@@ -2228,6 +2345,7 @@ export default function CollaboratorsPage() {
           iban: editDraft.iban,
           situacaoIrs: editDraft.situacaoIrs,
           numeroDependentes: editDraft.numeroDependentes,
+          declaracaoIrs: editDraft.declaracaoIrs,
           irsJovem: editDraft.irsJovem,
           anoPrimeiroDesconto: editDraft.anoPrimeiroDesconto,
           primeiroEmprego: editDraft.primeiroEmprego,
@@ -2388,6 +2506,7 @@ export default function CollaboratorsPage() {
             permissionTeams: cached?.permissionTeams ?? permissionTeams,
             customCargoOptions: cached?.customCargoOptions ?? customCargoOptions,
             customFuncaoOptions: cached?.customFuncaoOptions ?? customFuncaoOptions,
+            profileHistory: cached?.profileHistory ?? profileHistory,
           },
         };
       });
@@ -2434,7 +2553,8 @@ export default function CollaboratorsPage() {
     const isComprovativoField = fieldKey === 'comprovativoMoradaFiscal'
       || fieldKey === 'comprovativoCartaoCidadao'
       || fieldKey === 'comprovativoIban'
-      || fieldKey === 'comprovativoCartaoContinente';
+      || fieldKey === 'comprovativoCartaoContinente'
+      || fieldKey === 'declaracaoIrs';
 
     const value = editDraft[fieldKey];
 
@@ -3294,11 +3414,31 @@ export default function CollaboratorsPage() {
                 )}
               </div>
 
+              <nav className="cm-ficha-subnav" aria-label="Subsecções da ficha do colaborador">
+                {DETAILS_FICHA_SECTIONS.map((section) => (
+                  <button
+                    key={section.id}
+                    type="button"
+                    className={detailsFichaSection === section.id ? 'is-active' : ''}
+                    onClick={() => setDetailsFichaSection(section.id)}
+                  >
+                    {section.label}
+                  </button>
+                ))}
+              </nav>
+
               <div className="cm-edit-body">
-                <article className="cm-section">
-                  <h5 className="cm-section-title">Conta</h5>
+                {detailsFichaSection === 'conta' && (
+                <article className="cm-section cm-section--account">
+                  <div className="cm-section-head">
+                    <div>
+                      <h5 className="cm-section-title">Conta e acesso</h5>
+                      <p>Configuração base do utilizador, autenticação e contexto organizacional.</p>
+                    </div>
+                    <Badge tone="info">Base</Badge>
+                  </div>
                   <div className="collaborator-edit-grid collaborator-edit-grid--top">
-                    <label>
+                    <label className="cm-field-card">
                       <span>Username</span>
                       <input
                         type="text"
@@ -3308,7 +3448,7 @@ export default function CollaboratorsPage() {
                         autoComplete="off"
                       />
                     </label>
-                    <label>
+                    <label className="cm-field-card">
                       <span>Email login</span>
                       <input
                         type="email"
@@ -3318,7 +3458,7 @@ export default function CollaboratorsPage() {
                         autoComplete="off"
                       />
                     </label>
-                    <label>
+                    <label className="cm-field-card">
                       <span>Role</span>
                       <select value={editDraft.role} onChange={(event) => setEditDraft((current) => ({ ...current, role: event.target.value as CollaboratorRow['role'] }))} disabled={!canEditUser}>
                         <option value="COLABORADOR">{formatRoleLabel('COLABORADOR')}</option>
@@ -3327,14 +3467,14 @@ export default function CollaboratorsPage() {
                         <option value="ADMIN">{formatRoleLabel('ADMIN')}</option>
                       </select>
                     </label>
-                    <label>
+                    <label className="cm-field-card">
                       <span>País de trabalho</span>
                       <select value={editDraft.workCountry} onChange={(event) => setEditDraft((current) => ({ ...current, workCountry: event.target.value as 'PT' | 'BR' }))} disabled={!canEditUser}>
                         <option value="PT">Portugal</option>
                         <option value="BR">Brasil</option>
                       </select>
                     </label>
-                    <label>
+                    <label className="cm-field-card">
                       <span>Equipa principal</span>
                       <select value={editDraft.teamId} onChange={(event) => setEditDraft((current) => ({ ...current, teamId: event.target.value }))} disabled={!canEditUser || editDraft.role === 'ADMIN'}>
                         <option value="">Sem equipa</option>
@@ -3343,7 +3483,7 @@ export default function CollaboratorsPage() {
                         ))}
                       </select>
                     </label>
-                    <label>
+                    <label className="cm-field-card">
                       <span>Estado da conta</span>
                       <select value={editDraft.isActive ? 'ACTIVE' : 'INACTIVE'} onChange={(event) => setEditDraft((current) => ({ ...current, isActive: event.target.value === 'ACTIVE' }))} disabled={!canEditUser || selectedRow.username === 't.people'}>
                         <option value="ACTIVE">Ativa</option>
@@ -3360,20 +3500,34 @@ export default function CollaboratorsPage() {
                     </div>
                   )}
                 </article>
+                )}
 
-                {(['identificacao', 'contactos', 'fiscal', 'emergencia', 'contrato'] as EditSection[]).map((section) => (
-                  <article key={section} className="cm-section">
-                    <h5 className="cm-section-title">{section === 'identificacao' ? 'Identificação' : section === 'contactos' ? 'Contactos e moradas' : section === 'fiscal' ? 'Fiscal e documentos' : section === 'emergencia' ? 'Emergência' : 'Contrato'}</h5>
-                    <div className="collaborator-edit-grid">
-                      {getVisibleEditProfileFields(editDraft.workCountry).filter((field) => field.section === section).map((field) => (
-                        <label key={field.key}>
-                          <span>{field.label}</span>
-                          {renderEditFieldControl(field.key)}
-                        </label>
-                      ))}
-                    </div>
-                  </article>
-                ))}
+                {(['identificacao', 'contactos', 'fiscal', 'emergencia', 'contrato'] as EditSection[]).map((section) => {
+                  const sectionMeta = getEditSectionMeta(section);
+
+                  if (detailsFichaSection !== section) {
+                    return null;
+                  }
+
+                  return (
+                    <article key={section} className={`cm-section ${sectionMeta.sectionClassName ?? ''}`.trim()}>
+                      <div className="cm-section-head">
+                        <div>
+                          <h5 className="cm-section-title">{sectionMeta.title}</h5>
+                          <p>{sectionMeta.description}</p>
+                        </div>
+                      </div>
+                      <div className="collaborator-edit-grid">
+                        {getVisibleEditProfileFields(editDraft.workCountry).filter((field) => field.section === section).map((field) => (
+                          <label key={field.key} className={getEditFieldCardClass(field.key)}>
+                            <span>{field.label}</span>
+                            {renderEditFieldControl(field.key)}
+                          </label>
+                        ))}
+                      </div>
+                    </article>
+                  );
+                })}
 
                 {!canEditUser && <p className="cm-no-permission">Sem permissões para editar dados deste colaborador.</p>}
               </div>
@@ -3583,6 +3737,44 @@ export default function CollaboratorsPage() {
                       <Button type="button" variant="ghost" size="sm" isLoading={isTogglingAccessTotal} disabled={isTogglingAccessTotal} onClick={() => void toggleAccessTotalForSelected(false)}>
                         Revogar acesso total
                       </Button>
+                    )}
+                  </div>
+
+                  <div className="cm-history-block">
+                    <h5>Histórico de evolução de cargo</h5>
+                    {cargoHistoryEntries.length === 0 ? (
+                      <p className="cm-history-empty">Sem registos de mudança de cargo até ao momento.</p>
+                    ) : (
+                      <div className="cm-history-list">
+                        {cargoHistoryEntries.map((entry) => {
+                          const reviewedLabel = entry.reviewedAt
+                            ? new Intl.DateTimeFormat('pt-PT', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              }).format(new Date(entry.reviewedAt))
+                            : 'Data indisponível';
+                          const requestedData = entry.requestedData || {};
+                          const nextCargo = String(requestedData.cargo ?? '').trim() || 'Sem cargo';
+                          const previousCargo = String(requestedData.previousCargo ?? '').trim() || 'Sem cargo';
+                          const reviewerName = entry.reviewedBy?.profile?.nomeAbreviado
+                            || entry.reviewedBy?.profile?.nomeCompleto
+                            || entry.reviewedBy?.username
+                            || 'Sistema';
+
+                          return (
+                            <article key={entry.id} className="cm-history-item">
+                              <div>
+                                <strong>{previousCargo} → {nextCargo}</strong>
+                                <p>{entry.changesSummary || 'Alteração de cargo registada.'}</p>
+                              </div>
+                              <small>{reviewedLabel} · por {reviewerName}</small>
+                            </article>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 </>

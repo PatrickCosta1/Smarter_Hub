@@ -35,7 +35,6 @@ export default function PortalLayout() {
       ...((can('request_vacation') || can('view_own_vacations') || can('view_all_vacations') || can('manage_vacation_rules'))
         ? [{ id: 'ferias', label: 'Férias', path: '/ferias' }]
         : []),
-      ...(can('view_receipts') || can('view_all_receipts') ? [{ id: 'recibos', label: 'Recibos', path: '/recibos' }] : []),
     ];
 
     return menu;
@@ -55,6 +54,16 @@ export default function PortalLayout() {
 
     return roleMenus.filter((item) => item.label.toLowerCase().includes(normalized));
   }, [menuQuery, roleMenus]);
+
+  const personalMenu = useMemo(() => {
+    const personalIds = new Set(['home', 'profile', 'equipas', 'formacoes', 'ferias', 'notifications']);
+    return filteredMenu.filter((item) => personalIds.has(item.id));
+  }, [filteredMenu]);
+
+  const managementMenu = useMemo(() => {
+    const managementIds = new Set(['dashboard', 'colaboradores', 'aprovacoes', 'admin']);
+    return filteredMenu.filter((item) => managementIds.has(item.id));
+  }, [filteredMenu]);
 
   const todayLabel = useMemo(
     () => new Intl.DateTimeFormat('pt-PT', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }).format(new Date()),
@@ -181,17 +190,40 @@ export default function PortalLayout() {
           </label>
 
           <nav className="portal-nav" aria-label="Menu principal">
-            {filteredMenu.map((item) => (
-              <NavLink
-                key={item.id}
-                className={({ isActive }) => `portal-nav__link${isActive ? ' is-active' : ''}`}
-                to={item.path}
-                onMouseEnter={() => prefetchRoute(item.path)}
-                onFocus={() => prefetchRoute(item.path)}
-              >
-                {item.label}
-              </NavLink>
-            ))}
+            {personalMenu.length > 0 && (
+              <div className="portal-nav__group">
+                <p className="portal-nav__group-label">Colaborador</p>
+                {personalMenu.map((item) => (
+                  <NavLink
+                    key={item.id}
+                    className={({ isActive }) => `portal-nav__link${isActive ? ' is-active' : ''}`}
+                    to={item.path}
+                    onMouseEnter={() => prefetchRoute(item.path)}
+                    onFocus={() => prefetchRoute(item.path)}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+
+            {managementMenu.length > 0 && (
+              <div className="portal-nav__group">
+                <p className="portal-nav__group-label">Gestão RH</p>
+                {managementMenu.map((item) => (
+                  <NavLink
+                    key={item.id}
+                    className={({ isActive }) => `portal-nav__link${isActive ? ' is-active' : ''}`}
+                    to={item.path}
+                    onMouseEnter={() => prefetchRoute(item.path)}
+                    onFocus={() => prefetchRoute(item.path)}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+
             {filteredMenu.length === 0 && <p className="portal-nav__empty">Sem áreas para essa pesquisa.</p>}
           </nav>
         </aside>

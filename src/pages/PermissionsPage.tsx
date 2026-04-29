@@ -13,7 +13,7 @@ import { useFeedbackToast } from '../portal/useFeedbackToast';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
-const PERMISSION_CATEGORIES = ['SYSTEM', 'USERS', 'TEAMS', 'VACATIONS', 'TRAININGS', 'PROFILE', 'RECEIPTS', 'NOTIFICATIONS'] as const;
+const PERMISSION_CATEGORIES = ['SYSTEM', 'USERS', 'TEAMS', 'VACATIONS', 'TRAININGS', 'PROFILE', 'NOTIFICATIONS'] as const;
 
 type PermissionCategory = typeof PERMISSION_CATEGORIES[number];
 
@@ -134,7 +134,6 @@ function getCategoryLabel(category: PermissionCategory) {
     case 'VACATIONS': return 'Férias';
     case 'TRAININGS': return 'Formações';
     case 'PROFILE': return 'Perfil';
-    case 'RECEIPTS': return 'Recibos';
     case 'NOTIFICATIONS': return 'Notificações';
     default: return category;
   }

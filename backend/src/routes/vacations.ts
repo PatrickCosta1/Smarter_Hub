@@ -365,10 +365,10 @@ async function validateVacationCountryPolicy(params: {
     }
   }
 
-  // Phase 2C: BR Wednesday blocker — férias não podem começar quarta-feira
-  const startDayOfWeek = toLocalDate(params.dataInicio).getDay(); // 0=Sun, 3=Wed, 5=Fri
-  if (startDayOfWeek === 3) {
-    throw new Error('Política BR: a data de início das férias não pode ser à quarta-feira.');
+  // Phase 2C: BR Thursday blocker — férias não podem começar quinta-feira
+  const startDayOfWeek = toLocalDate(params.dataInicio).getDay(); // 0=Sun, 4=Thu, 5=Fri
+  if (startDayOfWeek === 4) {
+    throw new Error('Política BR: a data de início das férias não pode ser à quinta-feira.');
   }
 
   // BR Friday blocker — férias não podem começar sexta-feira

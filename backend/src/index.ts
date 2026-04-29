@@ -9,7 +9,6 @@ import { filesRouter } from "./routes/files.js";
 import { permissionsRouter } from "./routes/permissions.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { profileRouter } from "./routes/profile.js";
-import { receiptsRouter } from "./routes/receipts.js";
 import { trainingsRouter } from "./routes/trainings.js";
 import { usersRouter } from "./routes/users.js";
 import { vacationsRouter } from "./routes/vacations.js";
@@ -80,7 +79,6 @@ app.use("/api", filesRouter);
 app.use("/api", profileRouter);
 app.use("/api", trainingsRouter);
 app.use("/api", vacationsRouter);
-app.use("/api", receiptsRouter);
 app.use("/api", notificationsRouter);
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;

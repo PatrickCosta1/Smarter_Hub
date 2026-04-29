@@ -51,6 +51,7 @@ const profileKeys: Array<keyof ProfileData> = [
   'iban',
   'situacaoIrs',
   'numeroDependentes',
+  'declaracaoIrs',
   'irsJovem',
   'anoPrimeiroDesconto',
   'primeiroEmprego',

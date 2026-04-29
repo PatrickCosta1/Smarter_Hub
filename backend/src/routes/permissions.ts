@@ -49,8 +49,6 @@ const DEFAULT_EMPLOYEE_PERMISSION_CODES = [
   'view_team_vacations',
   'request_training',
   'view_trainings',
-  'view_receipts',
-  'download_receipt',
 ] as const;
 
 export const __permissionsTestables = {

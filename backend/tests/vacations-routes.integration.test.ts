@@ -4,12 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prismaMock, permissionEngineMock } = vi.hoisted(() => ({
   prismaMock: {
+    $transaction: vi.fn(),
     user: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
     userPermission: { findMany: vi.fn() },
     team: { findMany: vi.fn(), findUnique: vi.fn() },
     teamMembership: { findMany: vi.fn() },
     profile: { findUnique: vi.fn() },
-    vacation: { findFirst: vi.fn() },
+    vacation: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), create: vi.fn() },
+    vacationApproval: { updateMany: vi.fn(), create: vi.fn() },
   },
   permissionEngineMock: {
     buildUserWhereFromScope: vi.fn(),
@@ -56,6 +58,7 @@ function buildApp() {
 describe('vacations routes integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    prismaMock.$transaction.mockImplementation(async (callback: (tx: typeof prismaMock) => Promise<unknown>) => callback(prismaMock as never));
     prismaMock.user.findFirst.mockResolvedValue(null);
     prismaMock.user.findUnique.mockResolvedValue(null);
     prismaMock.user.findMany.mockResolvedValue([]);
@@ -63,6 +66,11 @@ describe('vacations routes integration', () => {
     prismaMock.team.findMany.mockResolvedValue([]);
     prismaMock.team.findUnique.mockResolvedValue(null);
     prismaMock.teamMembership.findMany.mockResolvedValue([]);
+    prismaMock.vacation.findMany.mockResolvedValue([]);
+    prismaMock.vacation.update.mockResolvedValue(undefined);
+    prismaMock.vacation.create.mockResolvedValue(undefined);
+    prismaMock.vacationApproval.updateMany.mockResolvedValue({ count: 0 });
+    prismaMock.vacationApproval.create.mockResolvedValue(undefined);
     prismaMock.profile.findUnique.mockResolvedValue({
       workCountry: 'PT',
       nomeCompleto: 'Teste User',
@@ -213,5 +221,83 @@ describe('vacations routes integration', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error).toContain('Não existem aprovadores');
+  });
+
+  it('PUT /api/vacations/:id versions approved request and sends it back for approval', async () => {
+    prismaMock.vacation.findFirst
+      .mockResolvedValueOnce({
+        id: 'v-approved',
+        userId: 'auth-user',
+        status: 'APPROVED',
+        contextTeamId: 'team-1',
+        versionOfId: null,
+        versionNumber: 1,
+        dataInicio: '2026-05-12',
+        contextTeam: { id: 'team-1' },
+      })
+      .mockResolvedValueOnce({ versionNumber: 1 })
+      .mockResolvedValueOnce(null);
+
+    prismaMock.profile.findUnique
+      .mockResolvedValueOnce({ workCountry: 'PT', dataInicioContrato: '2024-01-01', isIntern: false })
+      .mockResolvedValueOnce({ nomeCompleto: 'Teste User', nomeAbreviado: 'Teste User' });
+
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'auth-user',
+      hasAccessTotal: false,
+      accessTotalGrantedById: null,
+      teamId: 'team-1',
+      profile: { workCountry: 'PT' },
+    });
+    prismaMock.team.findMany.mockResolvedValue([{ id: 'team-1', managerId: 'manager-1', parentTeamId: null }]);
+    prismaMock.user.findMany.mockResolvedValue([{ id: 'manager-1', isActive: true }]);
+    prismaMock.team.findUnique.mockResolvedValue({ name: 'Equipa A' });
+    prismaMock.vacation.create.mockResolvedValue({
+      id: 'v-version-2',
+      userId: 'auth-user',
+      contextTeamId: 'team-1',
+      versionOfId: 'v-approved',
+      versionNumber: 2,
+      dataInicio: '2026-05-15',
+      dataFim: '2026-05-18',
+      observacoes: 'Ajuste após aprovação',
+      requestType: 'ABSENCE_TRAINING',
+      partialDay: 'FULL',
+      attachmentLink: '',
+      status: 'PENDING',
+    });
+
+    const app = buildApp();
+    const response = await request(app)
+      .put('/api/vacations/v-approved')
+      .send({
+        dataInicio: '2026-05-15',
+        dataFim: '2026-05-18',
+        observacoes: 'Ajuste após aprovação',
+        requestType: 'ABSENCE_TRAINING',
+        attachmentLink: '',
+        contextTeamId: 'team-1',
+        partialDay: 'FULL',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe('PENDING');
+    expect(response.body.versionOfId).toBe('v-approved');
+    expect(response.body.versionNumber).toBe(2);
+    expect(prismaMock.vacation.update).toHaveBeenCalledWith({
+      where: { id: 'v-approved' },
+      data: {
+        status: 'CANCELLED',
+        reviewReason: 'Pedido substituído por nova versão.',
+      },
+    });
+    expect(prismaMock.vacationApproval.create).toHaveBeenCalledWith({
+      data: {
+        vacationId: 'v-version-2',
+        approverId: 'manager-1',
+        approvalLevel: 1,
+        status: 'PENDING',
+      },
+    });
   });
 });

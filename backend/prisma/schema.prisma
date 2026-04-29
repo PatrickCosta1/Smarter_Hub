@@ -204,6 +204,7 @@ model Profile {
   iban                           String   @default("")
   situacaoIrs                    String   @default("")
   numeroDependentes              String   @default("")
+  declaracaoIrs                  String   @default("")
   irsJovem                       String   @default("")
   anoPrimeiroDesconto            String   @default("")
   primeiroEmprego                Boolean  @default(false)
