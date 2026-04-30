@@ -20,6 +20,11 @@ enum WorkCountry {
   BR
 }
 
+enum BrWorkState {
+  SP
+  RS
+}
+
 enum VacationRequestType {
   VACATION
   ABSENCE_MEDICAL
@@ -30,6 +35,11 @@ enum VacationPartialDay {
   FULL
   AM
   PM
+}
+
+enum HourBankEntryType {
+  CREDIT
+  DEBIT
 }
 
 enum PermissionCategory {
@@ -120,6 +130,8 @@ model User {
   permissionGrantEventsReceived PermissionGrant[] @relation("PermissionGrantTarget")
   vacationBalanceCredits VacationBalanceCredit[] @relation("VacationBalanceCreditTarget")
   vacationBalanceCreditsGranted VacationBalanceCredit[] @relation("VacationBalanceCreditAuthor")
+  hourBankEntries HourBankEntry[] @relation("HourBankEntryTarget")
+  hourBankEntriesCreated HourBankEntry[] @relation("HourBankEntryAuthor")
 
   @@index([accessTotalGrantedById])
 }
@@ -138,6 +150,24 @@ model VacationBalanceCredit {
 
   @@index([userId, year])
   @@index([createdById])
+}
+
+model HourBankEntry {
+  id          String            @id @default(ulid())
+  userId      String
+  type        HourBankEntryType
+  hours       Float
+  reason      String
+  source      String            @default("MANUAL")
+  createdById String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  user        User              @relation("HourBankEntryTarget", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy   User?             @relation("HourBankEntryAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([createdById])
+  @@index([type, createdAt])
 }
 
 model TeamMembership {
@@ -229,6 +259,8 @@ model Profile {
   tipoContrato                   String   @default("")
   regimeHorario                  String   @default("")
   workCountry                    WorkCountry @default(PT)
+  brWorkState                    BrWorkState?
+  hourBankLimitHours             Float    @default(40)
   unjustifiedAbsences            Int      @default(0)
   isIntern                       Boolean  @default(false)
   soldVacationDays               Int      @default(0)
@@ -238,6 +270,7 @@ model Profile {
 
   @@index([userId])
   @@index([workCountry])
+  @@index([workCountry, brWorkState])
 }
 
 model ProfileDropdownOption {

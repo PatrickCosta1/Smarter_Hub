@@ -33,7 +33,10 @@ export default function PortalLayout() {
         ? [{ id: 'formacoes', label: 'Formações', path: '/formacoes' }]
         : []),
       ...((can('request_vacation') || can('view_own_vacations') || can('view_all_vacations') || can('manage_vacation_rules'))
-        ? [{ id: 'ferias', label: 'Férias/Ausências', path: '/ferias' }]
+        ? [{ id: 'ferias', label: 'Férias / Ausências', path: '/ferias' }]
+        : []),
+      ...((can('view_hours_bank') || can('manage_hours_bank') || isRootAccess || isAccessTotal)
+        ? [{ id: 'banco-horas', label: 'Banco de Horas', path: '/banco-horas' }]
         : []),
     ];
 
@@ -61,7 +64,7 @@ export default function PortalLayout() {
   }, [filteredMenu]);
 
   const managementMenu = useMemo(() => {
-    const managementIds = new Set(['dashboard', 'colaboradores', 'aprovacoes', 'admin']);
+    const managementIds = new Set(['dashboard', 'colaboradores', 'aprovacoes', 'banco-horas', 'admin']);
     return filteredMenu.filter((item) => managementIds.has(item.id));
   }, [filteredMenu]);
 
@@ -110,6 +113,9 @@ export default function PortalLayout() {
       case '/ferias':
         void import('../pages/VacationsPage');
         break;
+      case '/banco-horas':
+        void import('../pages/HourBankPage');
+        break;
       case '/profile':
         void import('../pages/ProfilePage');
         break;
@@ -157,6 +163,14 @@ export default function PortalLayout() {
       void Promise.allSettled([
         safePrefetch('/vacations/me', 30000),
         safePrefetch('/vacations/overview', 30000),
+      ]);
+      return;
+    }
+
+    if (path === '/banco-horas') {
+      void Promise.allSettled([
+        safePrefetch('/hours-bank/me', 30000),
+        safePrefetch('/hours-bank/overview?page=1&pageSize=50&workCountry=BR', 30000),
       ]);
     }
   }

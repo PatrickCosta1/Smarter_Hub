@@ -12,9 +12,11 @@ import { profileRouter } from "./routes/profile.js";
 import { trainingsRouter } from "./routes/trainings.js";
 import { usersRouter } from "./routes/users.js";
 import { vacationsRouter } from "./routes/vacations.js";
+import { hourBankRouter } from './routes/hour-bank.js';
 import { prisma } from './lib/prisma.js';
 import { runCitizenCardExpiryNotificationSweep } from './lib/citizen-card-expiry-notifications.js';
 import { runJanuaryIrsAlertSweep } from './lib/january-irs-alerts.js';
+import { runWeeklyHourBankReportSweep } from './lib/hour-bank.js';
 
 dotenv.config();
 
@@ -81,6 +83,7 @@ app.use("/api", profileRouter);
 app.use("/api", trainingsRouter);
 app.use("/api", vacationsRouter);
 app.use("/api", notificationsRouter);
+app.use('/api', hourBankRouter);
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -114,6 +117,24 @@ async function runJanuaryIrsAlertSweepSafely() {
 void runJanuaryIrsAlertSweepSafely();
 setInterval(() => {
   void runJanuaryIrsAlertSweepSafely();
+}, ONE_DAY_MS);
+
+async function runWeeklyHourBankReportSweepSafely() {
+  try {
+    const result = await runWeeklyHourBankReportSweep(prisma);
+    if (result.skipped) {
+      console.log(`[HOUR_BANK_WEEKLY_SWEEP] skipped: ${result.reason}`);
+    } else {
+      console.log(`[HOUR_BANK_WEEKLY_SWEEP] created=${result.createdNotifications}`);
+    }
+  } catch (error) {
+    console.error('[HOUR_BANK_WEEKLY_SWEEP] failed', error);
+  }
+}
+
+void runWeeklyHourBankReportSweepSafely();
+setInterval(() => {
+  void runWeeklyHourBankReportSweepSafely();
 }, ONE_DAY_MS);
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

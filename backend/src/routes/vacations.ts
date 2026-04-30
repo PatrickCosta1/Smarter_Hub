@@ -14,6 +14,16 @@ import {
 import { requireAuth } from '../middleware/auth.js';
 import { notifyUsers } from '../lib/notifications.js';
 import { createRequestTimer } from '../lib/request-timing.js';
+import {
+  appendHourBankEntry,
+  calculateHourBankDebitFromAbsence,
+  getHourBankTotalsByUserId,
+  isFolgaAbsenceForHourBank,
+  notifyHourBankExceedance,
+  resolveAccessTotalRecipientIds,
+  resolveBrHourBankLimit,
+  resolveLeadershipRecipientsForUser,
+} from '../lib/hour-bank.js';
 
 const router = Router();
 
@@ -2086,6 +2096,7 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
       userId: true,
       status: true,
       requestType: true,
+      observacoes: true,
       dataInicio: true,
       dataFim: true,
       contextTeamId: true,
@@ -2093,6 +2104,7 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
       user: {
         select: {
           id: true,
+          username: true,
           hasAccessTotal: true,
           profile: { select: { workCountry: true } },
         },
@@ -2229,7 +2241,49 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
     refreshedVacation.status === 'APPROVED' &&
     refreshedVacation.requestType !== 'VACATION'
   ) {
-    // Sem ajustes automáticos: pedidos sobrepostos são bloqueados na origem.
+    if (isFolgaAbsenceForHourBank(vacation.requestType, vacation.observacoes)) {
+      const debitHours = calculateHourBankDebitFromAbsence(vacation.dataInicio, vacation.dataFim);
+
+      if (debitHours > 0) {
+        const profile = await prisma.profile.findUnique({
+          where: { userId: vacation.userId },
+          select: {
+            workCountry: true,
+            hourBankLimitHours: true,
+          },
+        });
+
+        if ((profile?.workCountry ?? 'PT') === 'BR') {
+          await appendHourBankEntry({
+            prisma,
+            userId: vacation.userId,
+            createdById: req.authUser!.id,
+            type: 'DEBIT',
+            hours: debitHours,
+            reason: `Débito automático por folga aprovada (${vacation.dataInicio} a ${vacation.dataFim}).`,
+            source: 'AUTO_FOLGA_APPROVAL',
+          });
+
+          const totals = await getHourBankTotalsByUserId(prisma, vacation.userId, resolveBrHourBankLimit(profile?.hourBankLimitHours));
+
+          const [leaderIds, accessTotalIds] = await Promise.all([
+            resolveLeadershipRecipientsForUser(prisma, vacation.userId),
+            resolveAccessTotalRecipientIds(prisma),
+          ]);
+
+          await notifyHourBankExceedance({
+            prisma,
+            userId: vacation.userId,
+            username: vacation.user.username,
+            limitHours: totals.limitHours,
+            totalHours: totals.totalHours,
+            exceededByHours: totals.exceededByHours,
+            leaderIds,
+            accessTotalIds,
+          });
+        }
+      }
+    }
   }
 
   return res.json({ success: true });

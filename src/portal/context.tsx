@@ -76,6 +76,7 @@ const profileKeys: Array<keyof ProfileData> = [
   'tipoContrato',
   'regimeHorario',
   'workCountry',
+  'brWorkState',
 ];
 
 function normalizeProfileData(input: unknown): ProfileData {
@@ -87,6 +88,11 @@ function normalizeProfileData(input: unknown): ProfileData {
 
     if (key === 'workCountry') {
       normalized.workCountry = value === 'BR' ? 'BR' : 'PT';
+      return;
+    }
+
+    if (key === 'brWorkState') {
+      normalized.brWorkState = value === 'RS' ? 'RS' : value === 'SP' ? 'SP' : '';
       return;
     }
 

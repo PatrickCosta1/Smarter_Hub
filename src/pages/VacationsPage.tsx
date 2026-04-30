@@ -1745,9 +1745,9 @@ export default function VacationsPage() {
 
     const requestType: VacationRequestType = draft.requestKind === 'VACATION'
       ? 'VACATION'
-      : draft.absenceReason === 'Justificada - Forma\u00e7\u00e3o'
-        ? 'ABSENCE_TRAINING'
-        : 'ABSENCE_MEDICAL';
+      : draft.absenceReason === 'Justificada - Doença'
+        ? 'ABSENCE_MEDICAL'
+        : 'ABSENCE_TRAINING';
 
     const observacoes = [
       draft.requestKind === 'VACATION' ? 'F\u00e9rias' : `Aus\u00eancia: ${draft.absenceReason}`,

@@ -123,6 +123,7 @@ const profileFieldLabels: Partial<Record<keyof ProfileData, string>> = {
   tipoContrato: 'Tipo de contrato',
   regimeHorario: 'Regime horário',
   workCountry: 'País de trabalho',
+  brWorkState: 'Estado de trabalho (BR)',
 };
 
 const consolidatedAddressFields: Array<keyof ProfileData> = ['moradaFiscal', 'endereco'];
@@ -477,6 +478,7 @@ function validateProfile(profile: ProfileData, canEditContract: boolean = true):
   ];
 
   const brRequiredKeys: Array<keyof ProfileData> = [
+    'brWorkState',
     'localNascimentoPais',
     'localNascimentoCidade',
     'cpf',
@@ -942,6 +944,10 @@ export default function ProfilePage() {
         return { ...current, endereco: value };
       }
 
+      if (field === 'workCountry' && value !== 'BR') {
+        return { ...current, workCountry: value as 'PT' | 'BR', brWorkState: '' };
+      }
+
       return { ...current, [field]: value };
     });
 
@@ -1238,6 +1244,7 @@ export default function ProfilePage() {
           <div className="profile-hero__meta">
             <span>{teamName}</span>
             <span>{draftProfile.workCountry || 'PT'}</span>
+            {draftProfile.workCountry === 'BR' && draftProfile.brWorkState && <span>{draftProfile.brWorkState}</span>}
           </div>
         </div>
 
@@ -1407,6 +1414,15 @@ export default function ProfilePage() {
             </label>
             {isBrProfile && (
               <>
+                <label>
+                  <span>Estado de trabalho (BR)</span>
+                  <select value={draftProfile.brWorkState} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('brWorkState', event.target.value)}>
+                    <option value="">Selecionar</option>
+                    <option value="SP">São Paulo (SP)</option>
+                    <option value="RS">Rio Grande do Sul (RS)</option>
+                  </select>
+                  {profileErrors.brWorkState && <small>{profileErrors.brWorkState}</small>}
+                </label>
                 <label>
                   <span>País de nascimento</span>
                   <input type="text" value={draftProfile.localNascimentoPais} disabled={!editingSections.personal} onChange={(event) => handleProfileChange('localNascimentoPais', event.target.value)} />

@@ -18,6 +18,7 @@ import { requireAuth } from '../middleware/auth.js';
 const router = Router();
 const roleSchema = z.enum(['COLABORADOR', 'MANAGER', 'COORDENADOR', 'ADMIN', 'CONVIDADO']);
 const countrySchema = z.enum(['PT', 'BR']);
+const brWorkStateSchema = z.enum(['SP', 'RS']);
 
 const createUserSchema = z.object({
   username: z.string().min(3),
@@ -155,6 +156,7 @@ const updateAdminUserSchema = z.object({
   tipoContrato: z.string().optional(),
   regimeHorario: z.string().optional(),
   workCountry: countrySchema.optional(),
+  brWorkState: brWorkStateSchema.optional(),
   localidade: z.string().optional(),
   isActive: z.boolean().optional(),
 });
@@ -1000,6 +1002,7 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
             tipoContrato: true,
             regimeHorario: true,
             workCountry: true,
+            brWorkState: true,
             localidade: true,
           },
         },
@@ -2727,6 +2730,10 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
     return res.status(400).json({ message: 'Não é permitido desativar a tua própria conta.' });
   }
 
+  const normalizedBrWorkState = data.workCountry === 'PT'
+    ? null
+    : (data.brWorkState ?? undefined);
+
   const profilePayload = {
     ...(data.nomeCompleto !== undefined ? { nomeCompleto: data.nomeCompleto } : {}),
     ...(data.nomeAbreviado !== undefined ? { nomeAbreviado: data.nomeAbreviado } : {}),
@@ -2796,6 +2803,7 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
     ...(data.tipoContrato !== undefined ? { tipoContrato: data.tipoContrato } : {}),
     ...(data.regimeHorario !== undefined ? { regimeHorario: data.regimeHorario } : {}),
     ...(data.workCountry !== undefined ? { workCountry: data.workCountry } : {}),
+    ...(data.workCountry !== undefined || data.brWorkState !== undefined ? { brWorkState: normalizedBrWorkState } : {}),
   };
 
   const updatedUser = await prisma.user.update({

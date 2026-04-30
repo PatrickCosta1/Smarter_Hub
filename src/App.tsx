@@ -16,6 +16,7 @@ const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const RHApprovalsPage = lazy(() => import('./pages/RHApprovalsPage'));
 const TrainingsPage = lazy(() => import('./pages/TrainingsPage'));
 const VacationsPage = lazy(() => import('./pages/VacationsPage'));
+const HourBankPage = lazy(() => import('./pages/HourBankPage'));
 const ManagerTeamsPage = lazy(() => import('./pages/ManagerTeamsPage'));
 const CollaboratorsPage = lazy(() => import('./pages/CollaboratorsPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
@@ -54,6 +55,7 @@ function AppRoutes() {
       void import('./pages/RHApprovalsPage');
       void import('./pages/TrainingsPage');
       void import('./pages/VacationsPage');
+      void import('./pages/HourBankPage');
       void import('./pages/ManagerTeamsPage');
       void import('./pages/CollaboratorsPage');
       void import('./pages/DashboardPage');
@@ -187,6 +189,7 @@ function AppRoutes() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="formacoes" element={<TrainingsPage />} />
           <Route path="ferias" element={<VacationsPage />} />
+          <Route path="banco-horas" element={<HourBankPage />} />
           <Route path="admin" element={<Navigate to="/colaboradores" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

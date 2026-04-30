@@ -255,6 +255,23 @@ Notificações & Inbox pessoal e estados de leitura & Ler, limpar e navegar para
   \item Venda de férias (abono): até 1/3 do direito anual, teto absoluto de 10 dias.
 \end{itemize}
 
+\subsection{Banco de horas (BR)}
+\begin{itemize}
+  \item O banco de horas é aplicável a colaboradores com \texttt{workCountry = BR}.
+  \item Unidade oficial do saldo: \textbf{horas} (não minutos), com precisão de 2 casas decimais.
+  \item Estrutura de saldo por colaborador: \textit{saldo creditado}, \textit{saldo debitado}, \textit{total} e \textit{limite}.
+  \item Lançamentos manuais (crédito/débito) são operados por utilizadores com \textit{acesso total} (ou root), com motivo obrigatório.
+  \item Limite acumulado operacional em BR: \textbf{100h} (controlo automático no cálculo e nos relatórios).
+  \item Campo obrigatório de localização BR na ficha: \texttt{brWorkState} com opções \texttt{SP} e \texttt{RS}.
+  \item Política de fecho por estado: \texttt{RS} semestral (abril/outubro); \texttt{SP} quadrimestral (fevereiro/junho/outubro).
+  \item Folga por compensação: quando ausência com motivo \textit{Justificada - Folga} é aprovada, o sistema debita automaticamente horas no banco.
+  \item Conversão automática para débito de folga: 1 dia aprovado = 8 horas debitadas.
+  \item Excedente é calculado por \( |total| - limite \) quando positivo.
+  \item Excedente gera aviso para o colaborador e para a chefia responsável, com cópia para utilizadores de acesso total.
+  \item O sistema gera relatório semanal automático de banco de horas para acesso total, sem operação manual.
+  \item Chefias podem consultar visão por equipa; RH/acesso total podem consultar globalmente e exportar por equipa/geo.
+\end{itemize}
+
 \section{Experiência, vistas e ficheiro de colaborador}
 
 \subsection{Navegação base por permissões}

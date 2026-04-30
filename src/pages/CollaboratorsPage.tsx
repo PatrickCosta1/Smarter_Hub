@@ -100,6 +100,7 @@ type CollaboratorRow = {
     tipoContrato?: string;
     regimeHorario?: string;
     workCountry?: 'PT' | 'BR';
+    brWorkState?: 'SP' | 'RS';
     localidade?: string;
   } | null;
 };
@@ -109,6 +110,7 @@ type CollaboratorEditDraft = {
   teamId: string;
   isActive: boolean;
   workCountry: 'PT' | 'BR';
+  brWorkState: '' | 'SP' | 'RS';
   nomeCompleto: string;
   nomeAbreviado: string;
   dataNascimento: string;
@@ -254,6 +256,7 @@ const PT_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
 ];
 
 const BR_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
+  { key: 'brWorkState', label: 'Estado de trabalho (BR)', section: 'identificacao' },
   { key: 'localNascimentoPais', label: 'País de nascimento', section: 'identificacao' },
   { key: 'localNascimentoCidade', label: 'Cidade de nascimento', section: 'identificacao' },
   { key: 'nomePai', label: 'Nome do pai', section: 'identificacao' },
@@ -362,6 +365,7 @@ const EMPTY_EDIT_DRAFT: CollaboratorEditDraft = {
   teamId: '',
   isActive: true,
   workCountry: 'PT',
+  brWorkState: '',
   nomeCompleto: '',
   nomeAbreviado: '',
   dataNascimento: '',
@@ -495,6 +499,7 @@ function buildEditDraftFromRow(item: CollaboratorRow): CollaboratorEditDraft {
     teamId: item.teamId || '',
     isActive: item.isActive,
     workCountry: profile.workCountry || 'PT',
+    brWorkState: profile.brWorkState || '',
     nomeCompleto: profile.nomeCompleto || '',
     nomeAbreviado: profile.nomeAbreviado || '',
     dataNascimento: profile.dataNascimento || '',
@@ -2302,6 +2307,7 @@ export default function CollaboratorsPage() {
           teamId: editDraft.role === 'ADMIN' ? null : (editDraft.teamId || null),
           isActive: editDraft.isActive,
           workCountry: editDraft.workCountry,
+          brWorkState: editDraft.workCountry === 'BR' ? (editDraft.brWorkState || undefined) : undefined,
           nomeCompleto: editDraft.nomeCompleto,
           nomeAbreviado: editDraft.nomeAbreviado,
           dataNascimento: editDraft.dataNascimento,
@@ -2585,6 +2591,16 @@ export default function CollaboratorsPage() {
         <select value={String(value || '')} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
           <option value="">Selecionar</option>
           {generoOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      );
+    }
+
+    if (fieldKey === 'brWorkState') {
+      return (
+        <select value={String(value || '')} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
+          <option value="">Selecionar</option>
+          <option value="SP">São Paulo (SP)</option>
+          <option value="RS">Rio Grande do Sul (RS)</option>
         </select>
       );
     }
@@ -3480,7 +3496,15 @@ export default function CollaboratorsPage() {
                     </label>
                     <label className="cm-field-card">
                       <span>País de trabalho</span>
-                      <select value={editDraft.workCountry} onChange={(event) => setEditDraft((current) => ({ ...current, workCountry: event.target.value as 'PT' | 'BR' }))} disabled={!canEditUser}>
+                      <select
+                        value={editDraft.workCountry}
+                        onChange={(event) => setEditDraft((current) => ({
+                          ...current,
+                          workCountry: event.target.value as 'PT' | 'BR',
+                          brWorkState: event.target.value === 'BR' ? current.brWorkState : '',
+                        }))}
+                        disabled={!canEditUser}
+                      >
                         <option value="PT">Portugal</option>
                         <option value="BR">Brasil</option>
                       </select>

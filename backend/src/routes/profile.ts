@@ -288,6 +288,7 @@ const profileFields = [
   "regimeHorario",
   "githubUser",
   "workCountry",
+  "brWorkState",
 ] as const;
 
 function normalizeProfilePayload(payload: unknown) {
@@ -397,6 +398,7 @@ const updateProfileSchema = z.object({
   regimeHorario: optionalStringField,
   githubUser: optionalStringField,
   workCountry: z.enum(['PT', 'BR']).optional(),
+  brWorkState: z.enum(['SP', 'RS']).or(z.literal('')).optional().transform((value) => value || undefined),
 }).superRefine((data, ctx) => {
   const country = data.workCountry === 'BR' ? 'BR' : 'PT';
 
@@ -457,6 +459,7 @@ const updateProfileSchema = z.object({
     requireNonEmpty('localNascimentoCidade', 'Cidade de nascimento');
     requireNonEmpty('nomePai', 'Nome do pai');
     requireNonEmpty('nomeMae', 'Nome da mãe');
+    requireNonEmpty('brWorkState', 'Estado de trabalho (BR)');
 
     if (data.primeiroEmprego == null) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['primeiroEmprego'], message: 'Primeiro emprego é obrigatório.' });
@@ -563,6 +566,7 @@ const friendlyProfileFieldLabels: Partial<Record<(typeof profileFields)[number],
   validadeCartaoCidadao: 'Validade do cartão de cidadão',
   githubUser: 'GitHub',
   workCountry: 'País de trabalho',
+  brWorkState: 'Estado de trabalho (BR)',
 };
 
 async function resolveProfileRequestApproverIds(requesterUserId: string) {
@@ -920,6 +924,9 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
 
     if (!canEditGlobalProfileFields) {
       delete data.workCountry;
+      delete data.brWorkState;
+    } else if ((data.workCountry as string | undefined) !== 'BR') {
+      data.brWorkState = null;
     }
 
     if (mustRequestProfileChange || (req.authUser!.role === 'COLABORADOR' && canRequestProfileChange)) {

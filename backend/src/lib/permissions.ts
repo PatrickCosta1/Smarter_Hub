@@ -40,6 +40,8 @@ export const PERMISSION_CATALOG: PermissionCatalogItem[] = [
   { code: 'approve_vacation', label: 'Aprovar férias', description: 'Permite aprovar pedidos de férias.', category: 'VACATIONS', requiresRestrictions: true },
   { code: 'reject_vacation', label: 'Rejeitar férias', description: 'Permite rejeitar pedidos de férias.', category: 'VACATIONS', requiresRestrictions: true },
   { code: 'manage_vacation_rules', label: 'Gerir regras de férias', description: 'Permite alterar regras e critérios de aprovação.', category: 'VACATIONS', requiresRestrictions: false },
+  { code: 'view_hours_bank', label: 'Ver banco de horas', description: 'Permite consultar saldos e relatórios de banco de horas.', category: 'VACATIONS', requiresRestrictions: true },
+  { code: 'manage_hours_bank', label: 'Gerir banco de horas', description: 'Permite lançar créditos/débitos e ajustar limites do banco de horas.', category: 'VACATIONS', requiresRestrictions: false },
 
   { code: 'request_training', label: 'Pedir formação', description: 'Permite solicitar formações.', category: 'TRAININGS', requiresRestrictions: false },
   { code: 'view_trainings', label: 'Ver formações próprias', description: 'Permite consultar formações do próprio utilizador.', category: 'TRAININGS', requiresRestrictions: false },
