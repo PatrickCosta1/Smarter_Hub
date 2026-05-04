@@ -3,7 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 export const JANUARY_IRS_ALERT_TITLE = 'Verificação de início de ano: agregado familiar e Mod. 99';
 
 const JANUARY_IRS_ALERT_MESSAGE =
-  'É início de ano — confirma se existem alterações ao teu agregado familiar, ' +
+  'É início de ano - confirma se existem alterações ao teu agregado familiar, ' +
   'morada ou situação fiscal. Se existirem alterações, submete a Declaração de ' +
   'Remunerações Mod. 99 o mais breve possível. Acede à tua ficha (separador Fiscal) ' +
   'para carregar o documento.';

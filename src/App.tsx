@@ -17,12 +17,13 @@ const RHApprovalsPage = lazy(() => import('./pages/RHApprovalsPage'));
 const TrainingsPage = lazy(() => import('./pages/TrainingsPage'));
 const VacationsPage = lazy(() => import('./pages/VacationsPage'));
 const HourBankPage = lazy(() => import('./pages/HourBankPage'));
+const CareerPlanPage = lazy(() => import('./pages/CareerPlanPage'));
 const ManagerTeamsPage = lazy(() => import('./pages/ManagerTeamsPage'));
 const CollaboratorsPage = lazy(() => import('./pages/CollaboratorsPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 
 function AppRoutes() {
-  const { isAuthenticated, isLoadingSession, currentUser, hasPermission, isRootAccess, isAccessTotal } = usePortal();
+  const { isAuthenticated, isLoadingSession, isLoadingPortalData, currentUser, hasPermission, isRootAccess, isAccessTotal, profile } = usePortal();
   const isTPeople = currentUser?.username === 't.people';
   const prefetchFingerprintRef = useRef('');
 
@@ -34,6 +35,9 @@ function AppRoutes() {
   const canReviewApprovals = isRootAccess || hasPermission('approve_profile_change') || hasPermission('approve_vacation');
   const canManageTrainings = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
   const canViewOwnTrainings = isRootAccess || hasPermission('view_trainings') || hasPermission('view_all_trainings');
+  const canUseHourBank =
+    (isLoadingPortalData || profile.workCountry === 'BR')
+    && (isRootAccess || isAccessTotal || hasPermission('view_hours_bank') || hasPermission('manage_hours_bank'));
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -56,6 +60,7 @@ function AppRoutes() {
       void import('./pages/TrainingsPage');
       void import('./pages/VacationsPage');
       void import('./pages/HourBankPage');
+      void import('./pages/CareerPlanPage');
       void import('./pages/ManagerTeamsPage');
       void import('./pages/CollaboratorsPage');
       void import('./pages/DashboardPage');
@@ -182,6 +187,7 @@ function AppRoutes() {
           <Route index element={<HomePage />} />
           <Route path="perfil" element={<AccountAccessPage />} />
           <Route path="profile" element={isTPeople ? <Navigate to="/" replace /> : <ProfilePage />} />
+          <Route path="plano-carreira" element={isTPeople ? <Navigate to="/" replace /> : <CareerPlanPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="aprovacoes" element={<RHApprovalsPage />} />
           <Route path="equipas" element={<ManagerTeamsPage />} />
@@ -189,7 +195,7 @@ function AppRoutes() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="formacoes" element={<TrainingsPage />} />
           <Route path="ferias" element={<VacationsPage />} />
-          <Route path="banco-horas" element={<HourBankPage />} />
+          <Route path="banco-horas" element={canUseHourBank ? <HourBankPage /> : <Navigate to="/" replace />} />
           <Route path="admin" element={<Navigate to="/colaboradores" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

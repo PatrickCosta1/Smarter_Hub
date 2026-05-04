@@ -1469,8 +1469,7 @@ button {
 }
 
 .vacations-day--past {
-  opacity: 0.35;
-  cursor: not-allowed !important;
+  opacity: 0.8;
 }
 
 .vacations-shell .trainings-list-head small {
@@ -1513,7 +1512,7 @@ button {
   border: 1px solid #93c5fd;
 }
 
-/* Add row — horizontal inline form */
+/* Add row - horizontal inline form */
 .vacations-company-days-add-row {
   display: flex;
   gap: 10px;

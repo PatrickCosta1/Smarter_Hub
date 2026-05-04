@@ -886,12 +886,12 @@ export default function TrainingsPage() {
                 )}
 
                 <label>
-                  <span>Data início — de</span>
+                  <span>Data início - de</span>
                   <input type="date" value={dataInicioFrom} onChange={(e) => setDataInicioFrom(e.target.value)} />
                 </label>
 
                 <label>
-                  <span>Data início — até</span>
+                  <span>Data início - até</span>
                   <input type="date" value={dataInicioTo} onChange={(e) => setDataInicioTo(e.target.value)} />
                 </label>
 

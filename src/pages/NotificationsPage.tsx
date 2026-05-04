@@ -201,7 +201,7 @@ function buildNotificationDetails(title: string, message: string): NotificationD
         : 'Alguns campos foram aceites, outros recusados.';
     const highlights: string[] = [];
     if (approvedLines.length > 0) highlights.push(`Aceites: ${approvedLines.join(', ')}`);
-    rejectedLines.forEach((r) => highlights.push(`Recusado — ${r}`));
+    rejectedLines.forEach((r) => highlights.push(`Recusado - ${r}`));
     return {
       title: 'Pedido parcialmente rejeitado',
       message: summaryMsg,
@@ -358,6 +358,22 @@ function buildNotificationDetails(title: string, message: string): NotificationD
       icon: '🏆',
       color: 'green',
       action: { label: 'Abrir formações', path: '/formacoes' },
+    };
+  }
+
+  if (normalized.includes('relatório semanal banco de horas')) {
+    const pdfLine = structured.lines.find((line) => /^relatório pdf:/i.test(line));
+    return {
+      title: 'Relatório semanal do banco de horas',
+      message: structured.periodLine || 'Novo relatório semanal disponível.',
+      highlights: [
+        ...structured.lines.filter((line) => /analisados|positivos|negativos|excedente/i.test(line)),
+        ...(pdfLine ? [pdfLine] : []),
+      ],
+      tag: 'Banco de Horas',
+      icon: '🧾',
+      color: 'blue',
+      action: { label: 'Abrir banco de horas', path: '/banco-horas' },
     };
   }
 

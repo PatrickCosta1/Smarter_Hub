@@ -6,6 +6,8 @@ import { prisma } from '../lib/prisma.js';
 import { hasPermission, isAccessTotal } from '../lib/permission-engine.js';
 import {
   appendHourBankEntry,
+  createOrGetWeeklyHourBankReport,
+  filterUserIdsByWorkCountry,
   getHourBankTotalsByUserId,
   getNextClosingDateByPolicy,
   notifyHourBankExceedance,
@@ -112,8 +114,21 @@ async function resolveViewerTeamIds(userId: string) {
   return Array.from(ids);
 }
 
+async function isActorFromBrazil(userId: string) {
+  const profile = await prisma.profile.findUnique({
+    where: { userId },
+    select: { workCountry: true },
+  });
+
+  return (profile?.workCountry ?? 'PT') === 'BR';
+}
+
 router.get('/hours-bank/me', requireAuth, async (req: Request, res: Response) => {
   const userId = req.authUser!.id;
+
+  if (!(await isActorFromBrazil(userId))) {
+    return res.status(403).json({ message: 'Banco de horas disponível apenas para colaboradores RH/gestão do Brasil.' });
+  }
 
   const [profile, entries] = await Promise.all([
     prisma.profile.findUnique({
@@ -162,6 +177,11 @@ router.get('/hours-bank/me', requireAuth, async (req: Request, res: Response) =>
 
 router.get('/hours-bank/overview', requireAuth, async (req: Request, res: Response) => {
   const actorId = req.authUser!.id;
+
+  if (!(await isActorFromBrazil(actorId))) {
+    return res.status(403).json({ message: 'Banco de horas disponível apenas para colaboradores RH/gestão do Brasil.' });
+  }
+
   const canView = await canViewHourBank(actorId, Boolean(req.authUser!.isRootAccess), req.authUser!.role);
 
   if (!canView) {
@@ -288,6 +308,11 @@ router.get('/hours-bank/overview', requireAuth, async (req: Request, res: Respon
 
 router.post('/hours-bank/entries', requireAuth, async (req: Request, res: Response) => {
   const actorId = req.authUser!.id;
+
+  if (!(await isActorFromBrazil(actorId))) {
+    return res.status(403).json({ message: 'Banco de horas disponível apenas para colaboradores RH/gestão do Brasil.' });
+  }
+
   const canManage = await canManageHourBank(actorId, Boolean(req.authUser!.isRootAccess));
 
   if (!canManage) {
@@ -342,6 +367,8 @@ router.post('/hours-bank/entries', requireAuth, async (req: Request, res: Respon
     resolveAccessTotalRecipientIds(prisma),
   ]);
 
+  const leaderIdsBr = await filterUserIdsByWorkCountry(prisma, leaderIds, 'BR');
+
   await notifyHourBankExceedance({
     prisma,
     userId,
@@ -349,7 +376,7 @@ router.post('/hours-bank/entries', requireAuth, async (req: Request, res: Respon
     limitHours: totals.limitHours,
     totalHours: totals.totalHours,
     exceededByHours: totals.exceededByHours,
-    leaderIds,
+    leaderIds: leaderIdsBr,
     accessTotalIds,
   });
 
@@ -361,6 +388,11 @@ router.post('/hours-bank/entries', requireAuth, async (req: Request, res: Respon
 
 router.patch('/hours-bank/limits/:userId', requireAuth, async (req: Request, res: Response) => {
   const actorId = req.authUser!.id;
+
+  if (!(await isActorFromBrazil(actorId))) {
+    return res.status(403).json({ message: 'Banco de horas disponível apenas para colaboradores RH/gestão do Brasil.' });
+  }
+
   const canManage = await canManageHourBank(actorId, Boolean(req.authUser!.isRootAccess));
 
   if (!canManage) {
@@ -405,6 +437,11 @@ router.patch('/hours-bank/limits/:userId', requireAuth, async (req: Request, res
 
 router.get('/hours-bank/export', requireAuth, async (req: Request, res: Response) => {
   const actorId = req.authUser!.id;
+
+  if (!(await isActorFromBrazil(actorId))) {
+    return res.status(403).json({ message: 'Banco de horas disponível apenas para colaboradores RH/gestão do Brasil.' });
+  }
+
   const canView = await canViewHourBank(actorId, Boolean(req.authUser!.isRootAccess), req.authUser!.role);
 
   if (!canView) {
@@ -540,6 +577,70 @@ router.get('/hours-bank/export', requireAuth, async (req: Request, res: Response
 
   await workbook.xlsx.write(res);
   res.end();
+});
+
+router.get('/hours-bank/reports', requireAuth, async (req: Request, res: Response) => {
+  const actorId = req.authUser!.id;
+
+  if (!(await isActorFromBrazil(actorId))) {
+    return res.status(403).json({ message: 'Banco de horas disponível apenas para colaboradores RH/gestão do Brasil.' });
+  }
+
+  const canView = await canViewHourBank(actorId, Boolean(req.authUser!.isRootAccess), req.authUser!.role);
+  if (!canView) {
+    return res.status(403).json({ message: 'Sem permissões para consultar relatórios semanais.' });
+  }
+
+  const reports = await prisma.weeklyHourBankReport.findMany({
+    orderBy: { generatedAt: 'desc' },
+    take: 104,
+    select: {
+      id: true,
+      weekLabel: true,
+      generatedAt: true,
+      periodStart: true,
+      periodEnd: true,
+      totalUsers: true,
+      positiveUsers: true,
+      negativeUsers: true,
+      exceededUsers: true,
+      pdfFileName: true,
+      pdfPublicUrl: true,
+    },
+  });
+
+  return res.json({
+    rows: reports,
+    total: reports.length,
+  });
+});
+
+router.post('/hours-bank/reports/generate-weekly', requireAuth, async (req: Request, res: Response) => {
+  const actorId = req.authUser!.id;
+
+  if (!(await isActorFromBrazil(actorId))) {
+    return res.status(403).json({ message: 'Banco de horas disponível apenas para colaboradores RH/gestão do Brasil.' });
+  }
+
+  const canManage = await canManageHourBank(actorId, Boolean(req.authUser!.isRootAccess));
+  if (!canManage) {
+    return res.status(403).json({ message: 'Sem permissões para gerar relatório semanal.' });
+  }
+
+  const report = await createOrGetWeeklyHourBankReport(prisma, { generatedById: actorId });
+
+  if (!report) {
+    return res.status(400).json({ message: 'Não existem colaboradores BR para gerar relatório semanal.' });
+  }
+
+  return res.json({
+    id: report.id,
+    weekLabel: report.weekLabel,
+    generatedAt: report.generatedAt,
+    periodStart: report.periodStart,
+    periodEnd: report.periodEnd,
+    pdfPublicUrl: report.pdfPublicUrl,
+  });
 });
 
 export { router as hourBankRouter };

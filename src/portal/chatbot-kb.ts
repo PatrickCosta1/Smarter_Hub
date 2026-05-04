@@ -1,5 +1,5 @@
 ﻿// ─────────────────────────────────────────────────────────────────────────────
-// chatbot-kb.ts — Base de conhecimento do assistente Smarter Hub
+// chatbot-kb.ts - Base de conhecimento do assistente Smarter Hub
 // Cobertura: todas as funcionalidades do sistema, contexto por perfil/página
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -178,7 +178,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'profile-access',
-    title: 'Perfil de acesso — email Microsoft e tipo de conta',
+    title: 'Perfil de acesso - email Microsoft e tipo de conta',
     path: '/perfil',
     keywords: ['email microsoft','perfil de acesso','tipo de conta','identificador interno','onde vejo meu email','conta microsoft','login'],
     description: 'Dados de identidade da conta autenticada.',
@@ -191,7 +191,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'profile-edit',
-    title: 'A Minha Ficha — edição de dados pessoais',
+    title: 'A Minha Ficha - edição de dados pessoais',
     path: '/profile',
     keywords: ['minha ficha','editar perfil','dados pessoais','dados de contacto','iban','nif','cpf','campos obrigatorios','alterar dados','nome completo','morada','dados bancarios','ficha pessoal'],
     description: 'Gestão da ficha por secções com validações e fluxo de aprovação.',
@@ -256,7 +256,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'benefits-voucher',
-    title: 'Benefícios — Voucher NOS e Cartão Continente',
+    title: 'Benefícios - Voucher NOS e Cartão Continente',
     path: '/profile',
     keywords: ['voucher nos','emitir voucher','beneficios','benefícios','cartao continente','nos','pedido de beneficios'],
     description: 'Emissão de voucher NOS e gestão de benefícios na ficha.',
@@ -297,7 +297,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'teams-view',
-    title: 'Equipas — consulta de estrutura e membros',
+    title: 'Equipas - consulta de estrutura e membros',
     path: '/equipas',
     keywords: ['equipas','equipa','membros','estrutura de equipas','hierarquia','ver equipa','membros da equipa','a minha equipa'],
     description: 'Consulta de equipas e respetiva composição.',
@@ -310,7 +310,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'teams-manage',
-    title: 'Equipas — gestão e administração',
+    title: 'Equipas - gestão e administração',
     path: '/equipas',
     keywords: ['criar equipa','editar equipa','adicionar membro','remover membro','gerir equipas','lider de equipa','chefia','adicionar a equipa'],
     permissionsAny: ['create_team','edit_team','manage_team_members','assign_team_leader'],
@@ -333,7 +333,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'collaborators',
-    title: 'Colaboradores — lista, detalhe e gestão',
+    title: 'Colaboradores - lista, detalhe e gestão',
     path: '/colaboradores',
     keywords: ['colaboradores','lista utilizadores','gerir utilizadores','editar utilizador','ficha de outro colaborador','ver colaboradores','pesquisar colaborador'],
     permissionsAny: ['view_user_list'],
@@ -361,7 +361,7 @@ const FEATURES: FeatureSpec[] = [
       'Abre **Colaboradores** e localiza o utilizador.',
       'Entra no detalhe.',
       'Alterna entre **Ativo** e **Inativo** na secção de estado.',
-      'Confirma — registo de auditoria e notificação gerados.',
+      'Confirma - registo de auditoria e notificação gerados.',
     ],
     rules: [
       'Utilizadores inativos não conseguem fazer login.',
@@ -396,7 +396,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'approvals',
-    title: 'Aprovações — ficha e férias/ausências',
+    title: 'Aprovações - ficha e férias/ausências',
     path: '/aprovacoes',
     keywords: ['aprovacoes','aprovações','aprovar','rejeitar','pedidos pendentes','motivo de rejeicao','painel de aprovacoes','decidir pedido'],
     permissionsAny: ['approve_profile_change','approve_vacation','reject_vacation','view_all_vacations'],
@@ -435,7 +435,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'vacations',
-    title: 'Férias e ausências — pedido e acompanhamento',
+    title: 'Férias e ausências - pedido e acompanhamento',
     path: '/ferias',
     keywords: ['ferias','férias','ausencia','ausência','pedido de ferias','pedir ferias','marcar ferias','solicitar ferias','dias de ferias','historico ferias','calendario ferias'],
     permissionsAny: ['request_vacation','view_own_vacations','view_all_vacations'],
@@ -468,7 +468,7 @@ const FEATURES: FeatureSpec[] = [
       'Abre **Férias** e localiza o pedido no histórico.',
       'Abre o detalhe do pedido.',
       'Usa **Anular pedido** (disponível para Pendente e Aprovado).',
-      'Confirma — aprovador é notificado.',
+      'Confirma - aprovador é notificado.',
     ],
     rules: [
       'Pedidos com data já iniciada podem não ser canceláveis.',
@@ -478,7 +478,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'vacation-rules',
-    title: 'Regras de férias — configuração e compliance PT/BR',
+    title: 'Regras de férias - configuração e compliance PT/BR',
     path: '/ferias',
     keywords: ['regras ferias','regras de ferias','politica de ferias','compliance ferias','ferias pt','ferias br','dias uteis','dias corridos','antecedencia','janela de pedido','manage vacation rules'],
     permissionsAny: ['manage_vacation_rules','view_all_vacations'],
@@ -496,7 +496,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'trainings-view',
-    title: 'Formações — consulta e histórico pessoal',
+    title: 'Formações - consulta e histórico pessoal',
     path: '/formacoes',
     keywords: ['formacoes','formações','minhas formacoes','cursos','treino','treinamentos','ver formacoes','historico formacoes','certificado','conclusao'],
     permissionsAny: ['view_trainings','view_all_trainings','request_training','assign_training'],
@@ -510,7 +510,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'trainings-manage',
-    title: 'Formações — gestão, catálogo e atribuição',
+    title: 'Formações - gestão, catálogo e atribuição',
     path: '/formacoes',
     keywords: ['atribuir formacao','gestao formacoes','criar formacao','catalogo formacoes','atribuir curso','novo curso','adicionar formacao','gerir formacoes'],
     permissionsAny: ['assign_training','manage_training_catalog','view_all_trainings'],
@@ -529,7 +529,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'dashboard',
-    title: 'Dashboard analítica — KPIs e filtros',
+    title: 'Dashboard analítica - KPIs e filtros',
     path: '/dashboard',
     keywords: ['dashboard','kpi','indicadores','metricas','métricas','filtro periodo','painel','relatorio','estatisticas','analise','graficos'],
     requiresRootOrAccessTotal: true,
@@ -562,7 +562,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'hour-bank-balance',
-    title: 'Banco de Horas — Meu Saldo pessoal',
+    title: 'Banco de Horas - Meu Saldo pessoal',
     path: '/banco-horas',
     keywords: ['banco de horas','meu saldo','saldo de horas','horas creditadas','horas debitadas','saldo atual','minhas horas','total de horas','horas acumuladas','banco horas saldo','consultar horas','ver saldo banco horas'],
     permissionsAny: ['view_hours_bank','manage_hours_bank'],
@@ -586,7 +586,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'hour-bank-overview',
-    title: 'Banco de Horas — Visão RH dos colaboradores',
+    title: 'Banco de Horas - Visão RH dos colaboradores',
     path: '/banco-horas',
     keywords: ['visao rh','visão rh','overview banco horas','todos os colaboradores banco horas','tabela banco horas','colaboradores com excedente','excedente banco horas','monitorizar horas','saldo equipa','filtrar banco horas'],
     permissionsAny: ['view_hours_bank','manage_hours_bank'],
@@ -605,7 +605,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'hour-bank-entries',
-    title: 'Banco de Horas — Criar lançamento (crédito/débito)',
+    title: 'Banco de Horas - Criar lançamento (crédito/débito)',
     path: '/banco-horas',
     keywords: ['lancamento banco horas','lançamento banco horas','creditar horas','debitar horas','adicionar horas','remover horas','registar horas','novo lancamento','criar lancamento','horas credito','horas debito','motivo lancamento','lancar horas'],
     permissionsAny: ['manage_hours_bank'],
@@ -615,7 +615,7 @@ const FEATURES: FeatureSpec[] = [
       'Seleciona o colaborador na lista.',
       'Escolhe tipo: **Crédito** (adiciona) ou **Débito** (remove horas).',
       'Introduz as horas e o motivo.',
-      'Submete — saldo atualizado imediatamente.',
+      'Submete - saldo atualizado imediatamente.',
     ],
     rules: [
       'Motivo do lançamento é obrigatório.',
@@ -630,7 +630,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'hour-bank-limits',
-    title: 'Banco de Horas — Definir limite por colaborador',
+    title: 'Banco de Horas - Definir limite por colaborador',
     path: '/banco-horas',
     keywords: ['limite banco horas','definir limite','alterar limite','configurar limite horas','limite de horas','maximo de horas','limite colaborador','horas maximas'],
     permissionsAny: ['manage_hours_bank'],
@@ -639,7 +639,7 @@ const FEATURES: FeatureSpec[] = [
       'Em **Banco de Horas** → separador **Limites**.',
       'Seleciona o colaborador na lista.',
       'Introduz o novo limite em horas.',
-      'Clica em **Guardar** — aplicado imediatamente.',
+      'Clica em **Guardar** - aplicado imediatamente.',
     ],
     rules: [
       'Limite padrão BR: **100 horas**.',
@@ -650,7 +650,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'hour-bank-export',
-    title: 'Banco de Horas — Exportar relatório Excel',
+    title: 'Banco de Horas - Exportar relatório Excel',
     path: '/banco-horas',
     keywords: ['exportar banco horas','excel banco horas','download banco horas','xlsx banco horas','relatorio banco horas','exportar saldos'],
     permissionsAny: ['manage_hours_bank'],
@@ -664,7 +664,7 @@ const FEATURES: FeatureSpec[] = [
   },
   {
     id: 'hour-bank-br-policy',
-    title: 'Banco de Horas — Estados BR e política de fecho',
+    title: 'Banco de Horas - Estados BR e política de fecho',
     path: '/banco-horas',
     keywords: ['politica de fecho','política de fecho','fecho banco horas','fecho quadrimestral','fecho semestral','fecho anual','proximo fecho','sao paulo','rio grande do sul','estado br','sp','rs','regras br banco horas','estados brasileiros'],
     permissionsAny: ['view_hours_bank','manage_hours_bank'],
@@ -746,7 +746,7 @@ function buildFeatureReply(feature: FeatureSpec, query: string, ctx: ChatbotCont
     const areas = buildAccessSummary(ctx);
     const name = ctx.username ? ` **${ctx.username}**` : '';
     return {
-      text: [`Olá${name}! No teu perfil (**${roleLabel(ctx)}**) tens acesso a:`, '', areas.map((a) => `• ${a}`).join('\n'), '', 'Se alguma área não aparecer, falta permissão — fala com o administrador.'].join('\n'),
+      text: [`Olá${name}! No teu perfil (**${roleLabel(ctx)}**) tens acesso a:`, '', areas.map((a) => `• ${a}`).join('\n'), '', 'Se alguma área não aparecer, falta permissão - fala com o administrador.'].join('\n'),
       suggestions: ['Como peço férias?','Como aprovo pedidos?','Onde está o banco de horas?','Como exporto Excel no dashboard?'],
     };
   }

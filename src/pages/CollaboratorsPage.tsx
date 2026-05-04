@@ -220,7 +220,7 @@ const COMMON_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
   { key: 'endereco', label: 'Morada habitual', section: 'contactos' },
   { key: 'localidade', label: 'Localidade', section: 'contactos' },
   { key: 'codigoPostal', label: 'Código postal / CEP', section: 'contactos' },
-  { key: 'comprovativoMoradaFiscal', label: 'Comprovativo morada fiscal', section: 'contactos' },
+  { key: 'comprovativoMoradaFiscal', label: 'Comprovativo morada fiscal', section: 'fiscal' },
   { key: 'contactoEmergenciaNome', label: 'Nome contacto emergência', section: 'emergencia' },
   { key: 'contactoEmergenciaParentesco', label: 'Parentesco contacto emergência', section: 'emergencia' },
   { key: 'contactoEmergenciaNumero', label: 'Número contacto emergência', section: 'emergencia' },
@@ -243,7 +243,6 @@ const PT_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
   { key: 'niss', label: 'NISS', section: 'fiscal' },
   { key: 'iban', label: 'IBAN', section: 'fiscal' },
   { key: 'comprovativoIban', label: 'Comprovativo IBAN', section: 'fiscal' },
-  { key: 'estadoCivil', label: 'Estado civil', section: 'fiscal' },
   { key: 'situacaoIrs', label: 'Situação IRS', section: 'fiscal' },
   { key: 'numeroDependentes', label: 'Número de dependentes', section: 'fiscal' },
   { key: 'declaracaoIrs', label: 'Declaração IRS', section: 'fiscal' },
@@ -251,7 +250,6 @@ const PT_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
   { key: 'anoPrimeiroDesconto', label: 'Ano do primeiro desconto', section: 'fiscal' },
   { key: 'numeroCartaoContinente', label: 'Cartão Continente', section: 'fiscal' },
   { key: 'voucherNosData', label: 'Voucher NOS data', section: 'fiscal' },
-  { key: 'comprovativoMoradaFiscal', label: 'Comprovativo morada fiscal', section: 'fiscal' },
   { key: 'comprovativoCartaoContinente', label: 'Comprovativo cartão Continente', section: 'fiscal' },
 ];
 
@@ -2303,8 +2301,7 @@ export default function CollaboratorsPage() {
         method: 'PATCH',
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          role: editDraft.role,
-          teamId: editDraft.role === 'ADMIN' ? null : (editDraft.teamId || null),
+          teamId: editDraft.teamId || null,
           isActive: editDraft.isActive,
           workCountry: editDraft.workCountry,
           brWorkState: editDraft.workCountry === 'BR' ? (editDraft.brWorkState || undefined) : undefined,
@@ -2392,7 +2389,7 @@ export default function CollaboratorsPage() {
           cancelled > 0
             ? `${cancelled} pedido(s) de férias/ausências pendente(s) foram cancelados automaticamente.`
             : 'Sem pedidos pendentes para cancelar.',
-          'As equipas foram removidas — reatribui o colaborador à equipa correta.',
+          'As equipas foram removidas - reatribui o colaborador à equipa correta.',
         ];
         setStatus(lines.join(' '));
       } else {
@@ -2658,6 +2655,7 @@ export default function CollaboratorsPage() {
       || fieldKey === 'cnhDataValidade'
       || fieldKey === 'dataInicioContrato'
       || fieldKey === 'dataFimContrato'
+      || fieldKey === 'voucherNosData'
     ) {
       return (
         <input
@@ -3403,7 +3401,7 @@ export default function CollaboratorsPage() {
         width="min(1360px, 97vw)"
         showCloseButton={false}
         footer={
-          <div className="modal-footer-split">
+          <div className="modal-footer-split collaborator-modal-footer">
             <Button type="button" variant="ghost" onClick={closeDetails}>Fechar</Button>
             {detailsTab === 'ficha' && canEditUser && (
               <Button type="button" variant="primary" isLoading={isSavingEditDraft} disabled={isSavingEditDraft} onClick={() => void saveCollaboratorDraft()}>
@@ -3429,7 +3427,6 @@ export default function CollaboratorsPage() {
                   <span>@{selectedRow.username} · {selectedRow.email}</span>
                 </div>
                 <div className="cm-identity-badges">
-                  <Badge tone="info">{formatRoleLabel(selectedRow.role)}</Badge>
                   <Badge tone="neutral">{selectedRow.profile?.workCountry || 'PT'}</Badge>
                   <Badge tone={selectedRow.isActive ? 'success' : 'danger'}>{selectedRow.isActive ? 'Ativo' : 'Inativo'}</Badge>
                 </div>
@@ -3486,15 +3483,6 @@ export default function CollaboratorsPage() {
                       />
                     </label>
                     <label className="cm-field-card">
-                      <span>Role</span>
-                      <select value={editDraft.role} onChange={(event) => setEditDraft((current) => ({ ...current, role: event.target.value as CollaboratorRow['role'] }))} disabled={!canEditUser}>
-                        <option value="COLABORADOR">{formatRoleLabel('COLABORADOR')}</option>
-                        <option value="MANAGER">{formatRoleLabel('MANAGER')}</option>
-                        <option value="COORDENADOR">{formatRoleLabel('COORDENADOR')}</option>
-                        <option value="ADMIN">{formatRoleLabel('ADMIN')}</option>
-                      </select>
-                    </label>
-                    <label className="cm-field-card">
                       <span>País de trabalho</span>
                       <select
                         value={editDraft.workCountry}
@@ -3511,7 +3499,7 @@ export default function CollaboratorsPage() {
                     </label>
                     <label className="cm-field-card">
                       <span>Equipa principal</span>
-                      <select value={editDraft.teamId} onChange={(event) => setEditDraft((current) => ({ ...current, teamId: event.target.value }))} disabled={!canEditUser || editDraft.role === 'ADMIN'}>
+                      <select value={editDraft.teamId} onChange={(event) => setEditDraft((current) => ({ ...current, teamId: event.target.value }))} disabled={!canEditUser}>
                         <option value="">Sem equipa</option>
                         {collaboratorTeamOptions.map((team) => (
                           <option key={team.id} value={team.id}>{team.name}</option>
@@ -4156,8 +4144,8 @@ export default function CollaboratorsPage() {
           </p>
           <p style={{ margin: 0, fontWeight: 600 }}>O que vai acontecer automaticamente:</p>
           <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.9rem' }}>
-            <li>Todos os <strong>pedidos de férias e ausências pendentes</strong> serão cancelados — foram submetidos sob as regras do país anterior.</li>
-            <li>Todas as <strong>equipas atuais</strong> serão removidas — deverá atribuir o colaborador a uma equipa do novo país.</li>
+            <li>Todos os <strong>pedidos de férias e ausências pendentes</strong> serão cancelados - foram submetidos sob as regras do país anterior.</li>
+            <li>Todas as <strong>equipas atuais</strong> serão removidas - deverá atribuir o colaborador a uma equipa do novo país.</li>
             <li>
               Os <strong>dados exclusivos de {pendingCountryChange?.from === 'PT' ? 'Portugal' : 'Brasil'} serão apagados</strong>:{' '}
               {pendingCountryChange?.from === 'PT'
@@ -4165,7 +4153,7 @@ export default function CollaboratorsPage() {
                 : 'CPF, PIS, CTPS, RG, CNH, Título de Eleitor, nome do pai/mãe, informações de benefícios (aposentadoria, seguro-desemprego, vale-transporte).'}
             </li>
             {pendingCountryChange?.to === 'BR' && (
-              <li>O <strong>código postal</strong> será apagado — o formato CEP do Brasil é diferente do código postal português.</li>
+              <li>O <strong>código postal</strong> será apagado - o formato CEP do Brasil é diferente do código postal português.</li>
             )}
           </ul>
           <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>

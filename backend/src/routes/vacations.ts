@@ -17,6 +17,7 @@ import { createRequestTimer } from '../lib/request-timing.js';
 import {
   appendHourBankEntry,
   calculateHourBankDebitFromAbsence,
+  filterUserIdsByWorkCountry,
   getHourBankTotalsByUserId,
   isFolgaAbsenceForHourBank,
   notifyHourBankExceedance,
@@ -340,7 +341,7 @@ async function validateVacationCountryPolicy(params: {
       warnings.push(`Política PT: este pedido tem ${requestedDays} dia(s) útil(eis). Deve existir pelo menos um período anual com 10 dias úteis consecutivos.`);
     }
 
-    // Phase 2B: 1st-year proportional cap — cálculo único do 1.º ano de contrato,
+    // Phase 2B: 1st-year proportional cap - cálculo único do 1.º ano de contrato,
     // sem distribuição mês a mês.
     if (params.dataInicioContrato) {
       const requestYear = toLocalDate(params.dataInicio).getFullYear();
@@ -365,7 +366,7 @@ async function validateVacationCountryPolicy(params: {
     throw new Error('Política BR: férias em meio-dia não são permitidas. Seleciona um período de dia inteiro.');
   }
 
-  // BR Estagiário — só pode tirar férias após 12 meses completos de estágio
+  // BR Estagiário - só pode tirar férias após 12 meses completos de estágio
   if (params.isIntern && params.dataInicioContrato) {
     const contractStart = toLocalDate(params.dataInicioContrato);
     const today = new Date();
@@ -375,18 +376,18 @@ async function validateVacationCountryPolicy(params: {
     }
   }
 
-  // Phase 2C: BR Thursday blocker — férias não podem começar quinta-feira
+  // Phase 2C: BR Thursday blocker - férias não podem começar quinta-feira
   const startDayOfWeek = toLocalDate(params.dataInicio).getDay(); // 0=Sun, 4=Thu, 5=Fri
   if (startDayOfWeek === 4) {
     throw new Error('Política BR: a data de início das férias não pode ser à quinta-feira.');
   }
 
-  // BR Friday blocker — férias não podem começar sexta-feira
+  // BR Friday blocker - férias não podem começar sexta-feira
   if (startDayOfWeek === 5) {
     throw new Error('Política BR: a data de início das férias não pode ser à sexta-feira.');
   }
 
-  // Phase 2C: BR Post-holiday blocker — não pode começar no dia útil imediatamente após feriado
+  // Phase 2C: BR Post-holiday blocker - não pode começar no dia útil imediatamente após feriado
   const startYear = toLocalDate(params.dataInicio).getFullYear();
   const brHolidayDatesForStart = await collectHolidayDates('BR', [startYear, startYear - 1]);
   {
@@ -433,7 +434,7 @@ async function validateVacationCountryPolicy(params: {
     throw new Error('Política BR: ao dividir em 3 períodos, pelo menos um deles deve ter 14 dias ou mais.');
   }
 
-  // BR Concessivo rule — deve marcar férias com pelo menos 30 dias de antecedência
+  // BR Concessivo rule - deve marcar férias com pelo menos 30 dias de antecedência
   if (params.dataInicioContrato) {
     const contractStart = toLocalDate(params.dataInicioContrato);
     const todayConc = new Date();
@@ -1240,7 +1241,7 @@ async function applyAbsenceOverrideVacations(
 
   if (overlapping.length === 0) return;
 
-  // Pre-fetch approval groups for PENDING vacations (outside tx — uses global prisma)
+  // Pre-fetch approval groups for PENDING vacations (outside tx - uses global prisma)
   const approvalGroupsCache = new Map<string, Array<{ level: number; approverIds: string[] }>>();
   for (const vacation of overlapping) {
     if (vacation.status !== 'PENDING') continue;
@@ -2060,6 +2061,12 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
   const filteredPendingByStep: typeof pendingByStep = [];
   for (const request of pendingByStep) {
     const hasMyPendingStep = request.approvals.some((item) => item.approverId === userId && item.status === APPROVAL_PENDING);
+    const isBrRegularCollaborator = request.user.profile?.workCountry === 'BR' && request.user.role === 'COLABORADOR';
+
+    // BR (colaborador normal): o pedido só deve aparecer a cada aprovador quando a etapa dele estiver ativa.
+    if (isBrRegularCollaborator && !req.authUser!.isRootAccess && !hasMyPendingStep) {
+      continue;
+    }
 
     if (actorHasAccessTotal && request.user.hasAccessTotal && !req.authUser!.isRootAccess && !hasMyPendingStep) {
       const canReview = await canReviewAccessTotalHierarchy(userId, request.userId);
@@ -2271,6 +2278,8 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
             resolveAccessTotalRecipientIds(prisma),
           ]);
 
+          const leaderIdsBr = await filterUserIdsByWorkCountry(prisma, leaderIds, 'BR');
+
           await notifyHourBankExceedance({
             prisma,
             userId: vacation.userId,
@@ -2278,7 +2287,7 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
             limitHours: totals.limitHours,
             totalHours: totals.totalHours,
             exceededByHours: totals.exceededByHours,
-            leaderIds,
+            leaderIds: leaderIdsBr,
             accessTotalIds,
           });
         }
@@ -2865,7 +2874,7 @@ router.delete('/vacations/:id', requireAuth, async (req: Request, res: Response)
 });
 
 // ---------------------------------------------------------------------------
-// GET /vacations/export  — Mapa de Férias (XLSX)
+// GET /vacations/export  - Mapa de Férias (XLSX)
 // Accessible to users with isAccessTotal or isRootAccess
 // Query params:
 // - year (optional)

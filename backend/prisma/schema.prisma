@@ -132,8 +132,31 @@ model User {
   vacationBalanceCreditsGranted VacationBalanceCredit[] @relation("VacationBalanceCreditAuthor")
   hourBankEntries HourBankEntry[] @relation("HourBankEntryTarget")
   hourBankEntriesCreated HourBankEntry[] @relation("HourBankEntryAuthor")
+  weeklyHourBankReportsCreated WeeklyHourBankReport[] @relation("WeeklyHourBankReportAuthor")
 
   @@index([accessTotalGrantedById])
+}
+
+model WeeklyHourBankReport {
+  id             String   @id @default(ulid())
+  weekLabel      String   @unique
+  generatedAt    DateTime @default(now())
+  periodStart    String
+  periodEnd      String
+  totalUsers     Int
+  positiveUsers  Int
+  negativeUsers  Int
+  exceededUsers  Int
+  pdfFileName    String
+  pdfLinkPath    String
+  pdfPublicUrl   String
+  generatedById  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  generatedBy    User?    @relation("WeeklyHourBankReportAuthor", fields: [generatedById], references: [id], onDelete: SetNull)
+
+  @@index([generatedAt])
+  @@index([generatedById])
 }
 
 model VacationBalanceCredit {

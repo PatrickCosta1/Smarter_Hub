@@ -116,6 +116,40 @@ describe('vacations routes integration', () => {
     expect(response.body.message).toContain('Sem permissões');
   });
 
+  it('GET /api/vacations/requests hides BR collaborator requests when actor is not in pending step', async () => {
+    permissionEngineMock.hasPermission.mockImplementation(async (_userId: string, code: string) => code === 'view_all_vacations');
+    permissionEngineMock.isAccessTotal.mockResolvedValue(false);
+    permissionEngineMock.getPermissionScope.mockResolvedValue({ isGlobal: true });
+
+    prismaMock.vacation.findMany.mockResolvedValue([
+      {
+        id: 'vac-1',
+        userId: 'employee-1',
+        status: 'PENDING',
+        user: {
+          id: 'employee-1',
+          username: 'colab.br',
+          email: 'colab.br@example.com',
+          role: 'COLABORADOR',
+          hasAccessTotal: false,
+          team: { id: 'team-1', name: 'Equipe BR' },
+          profile: { workCountry: 'BR', nomeAbreviado: 'Colab BR', nomeCompleto: 'Colaborador BR' },
+        },
+        contextTeam: { id: 'team-1', name: 'Equipe BR' },
+        approvals: [
+          { approverId: 'manager-1', approvalLevel: 1, status: 'PENDING' },
+          { approverId: 'auth-user', approvalLevel: 2, status: 'WAITING' },
+        ],
+      },
+    ]);
+
+    const app = buildApp();
+    const response = await request(app).get('/api/vacations/requests');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([]);
+  });
+
   it('POST /api/vacations returns 400 when no approvers are configured', async () => {
     prismaMock.user.findUnique.mockResolvedValue({ id: 'auth-user', teamId: null, hasAccessTotal: false, accessTotalGrantedById: null });
     prismaMock.teamMembership.findMany.mockResolvedValue([]);

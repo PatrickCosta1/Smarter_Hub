@@ -1,4 +1,7 @@
-import type { HourBankEntryType, Prisma, PrismaClient } from '@prisma/client';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { HourBankEntryType, Prisma, PrismaClient, WorkCountry } from '@prisma/client';
+import PDFDocument from 'pdfkit';
 
 import { notifyUsers } from './notifications.js';
 
@@ -20,6 +23,25 @@ export type HourBankTotals = {
   limitHours: number;
   isExceeded: boolean;
   exceededByHours: number;
+};
+
+type WeeklyHourBankTotalsRow = {
+  userId: string;
+  username: string;
+  fullName: string;
+  teamName: string;
+  brWorkState: BrWorkStateCode;
+  total: number;
+  limit: number;
+  exceededBy: number;
+};
+
+type WeeklyHourBankSweepData = {
+  weekLabel: string;
+  periodStart: string;
+  periodEnd: string;
+  totals: WeeklyHourBankTotalsRow[];
+  accessTotalIds: string[];
 };
 
 function normalizeHours(value: number) {
@@ -70,6 +92,256 @@ export function getIsoWeekLabel(inputDate = new Date()) {
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
   const weekNum = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   return `${date.getUTCFullYear()}-S${String(weekNum).padStart(2, '0')}`;
+}
+
+function formatDatePt(inputDate: Date) {
+  return new Intl.DateTimeFormat('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(inputDate);
+}
+
+function getIsoWeekBounds(inputDate = new Date()) {
+  const date = new Date(Date.UTC(inputDate.getUTCFullYear(), inputDate.getUTCMonth(), inputDate.getUTCDate()));
+  const day = date.getUTCDay() || 7;
+  const start = new Date(date);
+  start.setUTCDate(date.getUTCDate() - day + 1);
+  const end = new Date(start);
+  end.setUTCDate(start.getUTCDate() + 6);
+
+  return {
+    periodStart: start.toISOString().slice(0, 10),
+    periodEnd: end.toISOString().slice(0, 10),
+    periodLabel: `${formatDatePt(start)} a ${formatDatePt(end)}`,
+  };
+}
+
+function ensureUploadsReportDirectory() {
+  const reportsDir = path.resolve(process.cwd(), 'uploads', 'hour-bank-reports');
+  fs.mkdirSync(reportsDir, { recursive: true });
+  return reportsDir;
+}
+
+function resolvePublicFileBaseUrl() {
+  const configured = (process.env.PUBLIC_FILES_BASE_URL || '').trim().replace(/\/$/, '');
+  if (configured) {
+    return configured;
+  }
+
+  const port = Number(process.env.PORT ?? 4000);
+  return `http://localhost:${port}`;
+}
+
+function buildWeeklyHourBankPdf(params: {
+  weekLabel: string;
+  periodLabel: string;
+  totals: WeeklyHourBankTotalsRow[];
+}) {
+  const { weekLabel, periodLabel, totals } = params;
+  const positive = totals.filter((item) => item.total > 0).length;
+  const negative = totals.filter((item) => item.total < 0).length;
+  const exceeded = totals.filter((item) => item.exceededBy > 0).length;
+
+  const reportsDir = ensureUploadsReportDirectory();
+  const fileName = `relatorio_banco_horas_${weekLabel}.pdf`;
+  const absolutePath = path.join(reportsDir, fileName);
+
+  const pdf = new PDFDocument({ size: 'A4', margin: 42 });
+  const output = fs.createWriteStream(absolutePath);
+
+  pdf.pipe(output);
+  pdf.fontSize(18).text('Relatório Semanal - Banco de Horas (Brasil)', { align: 'left' });
+  pdf.moveDown(0.4);
+  pdf.fontSize(11).text(`Período: ${periodLabel}`);
+  pdf.fontSize(11).text(`Semana ISO: ${weekLabel}`);
+  pdf.moveDown(0.6);
+
+  pdf.fontSize(11).text(`Total colaboradores BR analisados: ${totals.length}`);
+  pdf.fontSize(11).text(`Saldos positivos: ${positive}`);
+  pdf.fontSize(11).text(`Saldos negativos: ${negative}`);
+  pdf.fontSize(11).text(`Com excedente: ${exceeded}`);
+  pdf.moveDown(0.8);
+
+  pdf.fontSize(10).text('Detalhe por colaborador (Top 100 por maior excedente):');
+  pdf.moveDown(0.3);
+
+  const sorted = [...totals]
+    .sort((a, b) => b.exceededBy - a.exceededBy || b.total - a.total)
+    .slice(0, 100);
+
+  for (const row of sorted) {
+    const line = [
+      `${row.fullName}`,
+      `@${row.username}`,
+      row.teamName,
+      `UF ${row.brWorkState ?? '-'}`,
+      `Saldo ${row.total.toFixed(2)}h`,
+      `Limite ${row.limit.toFixed(2)}h`,
+      `Excedente ${row.exceededBy.toFixed(2)}h`,
+    ].join(' | ');
+
+    if (pdf.y > 760) {
+      pdf.addPage();
+    }
+
+    pdf.fontSize(8.8).text(line, { lineGap: 1.6 });
+  }
+
+  pdf.end();
+
+  return new Promise<{ fileName: string; linkPath: string; publicUrl: string }>((resolve, reject) => {
+    output.on('finish', () => {
+      const linkPath = `/uploads/hour-bank-reports/${fileName}`;
+      const publicUrl = `${resolvePublicFileBaseUrl()}${linkPath}`;
+      resolve({ fileName, linkPath, publicUrl });
+    });
+    output.on('error', reject);
+  });
+}
+
+async function collectWeeklyHourBankSweepData(prisma: PrismaClient, weekDate = new Date()): Promise<WeeklyHourBankSweepData> {
+  const weekLabel = getIsoWeekLabel(weekDate);
+  const { periodStart, periodEnd } = getIsoWeekBounds(weekDate);
+
+  const [users, accessTotalUsers] = await Promise.all([
+    prisma.user.findMany({
+      where: {
+        isActive: true,
+        role: { not: 'CONVIDADO' },
+        profile: { is: { workCountry: 'BR' } },
+      },
+      select: {
+        id: true,
+        username: true,
+        teamId: true,
+        profile: {
+          select: {
+            nomeCompleto: true,
+            nomeAbreviado: true,
+            brWorkState: true,
+            hourBankLimitHours: true,
+          },
+        },
+      },
+    }),
+    prisma.user.findMany({
+      where: {
+        isActive: true,
+        OR: [{ isRootAccess: true }, { hasAccessTotal: true }],
+        profile: { is: { workCountry: 'BR' } },
+      },
+      select: { id: true },
+    }),
+  ]);
+
+  if (users.length === 0) {
+    return {
+      weekLabel,
+      periodStart,
+      periodEnd,
+      totals: [],
+      accessTotalIds: accessTotalUsers.map((item) => item.id),
+    };
+  }
+
+  const userIds = users.map((u) => u.id);
+
+  const [creditAgg, debitAgg, teams] = await Promise.all([
+    prisma.hourBankEntry.groupBy({
+      by: ['userId'],
+      where: {
+        userId: { in: userIds },
+        type: 'CREDIT',
+      },
+      _sum: { hours: true },
+    }),
+    prisma.hourBankEntry.groupBy({
+      by: ['userId'],
+      where: {
+        userId: { in: userIds },
+        type: 'DEBIT',
+      },
+      _sum: { hours: true },
+    }),
+    prisma.team.findMany({
+      where: { id: { in: Array.from(new Set(users.map((u) => u.teamId).filter(Boolean))) as string[] } },
+      select: { id: true, name: true },
+    }),
+  ]);
+
+  const teamById = new Map(teams.map((team) => [team.id, team.name]));
+  const creditedMap = new Map(creditAgg.map((item) => [item.userId, item._sum.hours ?? 0]));
+  const debitedMap = new Map(debitAgg.map((item) => [item.userId, item._sum.hours ?? 0]));
+
+  const totals = users.map((u) => {
+    const credited = normalizeHours(creditedMap.get(u.id) ?? 0);
+    const debited = normalizeHours(debitedMap.get(u.id) ?? 0);
+    const total = normalizeHours(credited - debited);
+    const limit = resolveBrHourBankLimit(u.profile?.hourBankLimitHours);
+    const exceededBy = normalizeHours(Math.max(Math.abs(total) - limit, 0));
+
+    return {
+      userId: u.id,
+      username: u.username,
+      fullName: u.profile?.nomeAbreviado || u.profile?.nomeCompleto || u.username,
+      teamName: (u.teamId ? teamById.get(u.teamId) : null) || 'Sem equipa',
+      brWorkState: u.profile?.brWorkState ?? null,
+      total,
+      limit,
+      exceededBy,
+    };
+  });
+
+  return {
+    weekLabel,
+    periodStart,
+    periodEnd,
+    totals,
+    accessTotalIds: accessTotalUsers.map((item) => item.id),
+  };
+}
+
+export async function createOrGetWeeklyHourBankReport(
+  prisma: PrismaClient,
+  options?: { now?: Date; generatedById?: string | null },
+) {
+  const now = options?.now ?? new Date();
+  const data = await collectWeeklyHourBankSweepData(prisma, now);
+  if (data.totals.length === 0) {
+    return null;
+  }
+
+  const existing = await prisma.weeklyHourBankReport.findUnique({
+    where: { weekLabel: data.weekLabel },
+  });
+  if (existing) {
+    return existing;
+  }
+
+  const bounds = getIsoWeekBounds(now);
+  const pdf = await buildWeeklyHourBankPdf({
+    weekLabel: data.weekLabel,
+    periodLabel: bounds.periodLabel,
+    totals: data.totals,
+  });
+
+  return prisma.weeklyHourBankReport.create({
+    data: {
+      weekLabel: data.weekLabel,
+      periodStart: data.periodStart,
+      periodEnd: data.periodEnd,
+      totalUsers: data.totals.length,
+      positiveUsers: data.totals.filter((item) => item.total > 0).length,
+      negativeUsers: data.totals.filter((item) => item.total < 0).length,
+      exceededUsers: data.totals.filter((item) => item.exceededBy > 0).length,
+      pdfFileName: pdf.fileName,
+      pdfLinkPath: pdf.linkPath,
+      pdfPublicUrl: pdf.publicUrl,
+      generatedById: options?.generatedById ?? null,
+    },
+  });
 }
 
 export function isFolgaAbsenceForHourBank(requestType: 'VACATION' | 'ABSENCE_MEDICAL' | 'ABSENCE_TRAINING', observacoes?: string | null) {
@@ -190,99 +462,33 @@ export async function runWeeklyHourBankReportSweep(prisma: PrismaClient) {
     return { skipped: true, reason: 'not-monday', createdNotifications: 0 };
   }
 
-  const weekLabel = getIsoWeekLabel(now);
+  // O relatório corre às segundas-feiras e deve referenciar a semana ANTERIOR (já concluída)
+  const previousWeekDate = new Date(now);
+  previousWeekDate.setUTCDate(now.getUTCDate() - 7);
+
+  const weekLabel = getIsoWeekLabel(previousWeekDate);
   const reportTitle = `Relatório semanal banco de horas (${weekLabel})`;
   const exceededTitle = `Banco de horas em excedente (${weekLabel})`;
 
-  const [users, accessTotalUsers] = await Promise.all([
-    prisma.user.findMany({
-      where: {
-        isActive: true,
-        role: { not: 'CONVIDADO' },
-        profile: { isNot: null },
-      },
-      select: {
-        id: true,
-        username: true,
-        teamId: true,
-        managedTeams: { select: { id: true, managerId: true, coordinatorId: true } },
-        coordinatedTeams: { select: { id: true, managerId: true, coordinatorId: true } },
-        profile: {
-          select: {
-            workCountry: true,
-            brWorkState: true,
-            hourBankLimitHours: true,
-          },
-        },
-      },
-    }),
-    prisma.user.findMany({
-      where: {
-        isActive: true,
-        OR: [{ isRootAccess: true }, { hasAccessTotal: true }],
-      },
-      select: { id: true },
-    }),
-  ]);
-
-  const brUsers = users.filter((u) => u.profile?.workCountry === 'BR');
-
-  if (brUsers.length === 0) {
+  const collected = await collectWeeklyHourBankSweepData(prisma, previousWeekDate);
+  if (collected.totals.length === 0) {
     return { skipped: false, reason: null, createdNotifications: 0 };
   }
+  const totals = collected.totals;
+  const userIds = totals.map((item) => item.userId);
+  const accessTotalIds = collected.accessTotalIds;
 
-  const userIds = brUsers.map((u) => u.id);
-
-  const [creditAgg, debitAgg] = await Promise.all([
-    prisma.hourBankEntry.groupBy({
-      by: ['userId'],
-      where: {
-        userId: { in: userIds },
-        type: 'CREDIT',
-      },
-      _sum: { hours: true },
-    }),
-    prisma.hourBankEntry.groupBy({
-      by: ['userId'],
-      where: {
-        userId: { in: userIds },
-        type: 'DEBIT',
-      },
-      _sum: { hours: true },
-    }),
+  const [reportRecord, leadershipByUser] = await Promise.all([
+    createOrGetWeeklyHourBankReport(prisma, { now: previousWeekDate }),
+    Promise.all(
+      userIds.map(async (userId) => {
+        const recipients = await resolveLeadershipRecipientsForUser(prisma, userId);
+        return [userId, recipients] as const;
+      }),
+    ),
   ]);
 
-  const creditedMap = new Map(creditAgg.map((item) => [item.userId, item._sum.hours ?? 0]));
-  const debitedMap = new Map(debitAgg.map((item) => [item.userId, item._sum.hours ?? 0]));
-
-  const totals = brUsers.map((u) => {
-    const credited = creditedMap.get(u.id) ?? 0;
-    const debited = debitedMap.get(u.id) ?? 0;
-    const total = normalizeHours(credited - debited);
-    const limit = resolveBrHourBankLimit(u.profile?.hourBankLimitHours);
-    const exceededBy = normalizeHours(Math.max(Math.abs(total) - limit, 0));
-
-    return {
-      userId: u.id,
-      username: u.username,
-      teamId: u.teamId,
-      brWorkState: u.profile?.brWorkState ?? null,
-      total,
-      limit,
-      exceededBy,
-    };
-  });
-
-  const teamIds = Array.from(new Set(totals.map((t) => t.teamId).filter(Boolean))) as string[];
-  const teams = teamIds.length > 0
-    ? await prisma.team.findMany({
-        where: { id: { in: teamIds } },
-        select: { id: true, managerId: true, coordinatorId: true, name: true },
-      })
-    : [];
-
-  const teamById = new Map(teams.map((t) => [t.id, t]));
-  const accessTotalIds = accessTotalUsers.map((u) => u.id);
+  const leadershipMap = new Map(leadershipByUser);
 
   const existingThisWeek = await prisma.notification.findMany({
     where: {
@@ -307,8 +513,9 @@ export async function runWeeklyHourBankReportSweep(prisma: PrismaClient) {
     `Saldos positivos: ${positive}.`,
     `Saldos negativos: ${negative}.`,
     `Com excedente face ao limite: ${exceeded}.`,
+    reportRecord ? `Relatório PDF: ${reportRecord.pdfPublicUrl}` : '',
     'Ação: acompanhar compensações por equipa e regularização de excedentes.',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   const globalRecipients = accessTotalIds.filter((id) => !existingKey.has(`${id}|${reportTitle}`));
   if (globalRecipients.length > 0) {
@@ -336,12 +543,12 @@ export async function runWeeklyHourBankReportSweep(prisma: PrismaClient) {
       createdNotifications += 1;
     }
 
-    const team = row.teamId ? teamById.get(row.teamId) : null;
-    const leadership = [team?.managerId, team?.coordinatorId, ...accessTotalIds]
+    const leadership = [...(leadershipMap.get(row.userId) ?? []), ...accessTotalIds]
       .filter(Boolean)
       .filter((id, index, arr) => arr.indexOf(id) === index) as string[];
 
-    const leaderTargets = leadership.filter((id) => id !== row.userId && !existingKey.has(`${id}|${exceededTitle}`));
+    const leadershipBrOnly = await filterUserIdsByWorkCountry(prisma, leadership, 'BR');
+    const leaderTargets = leadershipBrOnly.filter((id) => id !== row.userId && !existingKey.has(`${id}|${exceededTitle}`));
     if (leaderTargets.length > 0) {
       await notifyUsers(
         prisma,
@@ -404,10 +611,41 @@ export async function resolveAccessTotalRecipientIds(prisma: PrismaClient) {
       isActive: true,
       OR: [{ isRootAccess: true }, { hasAccessTotal: true }],
     },
+    select: {
+      id: true,
+      profile: {
+        select: {
+          workCountry: true,
+        },
+      },
+    },
+  });
+
+  return users
+    .filter((user) => (user.profile?.workCountry ?? 'PT') === 'BR')
+    .map((user) => user.id);
+}
+
+export async function filterUserIdsByWorkCountry(prisma: PrismaClient, userIds: string[], workCountry: WorkCountry) {
+  const unique = Array.from(new Set(userIds.filter(Boolean)));
+  if (unique.length === 0) {
+    return [] as string[];
+  }
+
+  const rows = await prisma.user.findMany({
+    where: {
+      id: { in: unique },
+      isActive: true,
+      profile: {
+        is: {
+          workCountry,
+        },
+      },
+    },
     select: { id: true },
   });
 
-  return users.map((user) => user.id);
+  return rows.map((row) => row.id);
 }
 
 export async function appendHourBankEntry(params: {

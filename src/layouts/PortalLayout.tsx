@@ -9,12 +9,13 @@ import ChatbotWidget from '../components/ChatbotWidget';
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
 export default function PortalLayout() {
-  const { userRole, unreadNotifications, logout, hasPermission, isRootAccess, isAccessTotal, currentUser } = usePortal();
+  const { userRole, unreadNotifications, logout, hasPermission, isRootAccess, isAccessTotal, currentUser, profile } = usePortal();
   const navigate = useNavigate();
   const location = useLocation();
   const [menuQuery, setMenuQuery] = useState('');
   const prefetchedRoutesRef = useRef<Set<string>>(new Set());
   const isTPeople = currentUser?.username === 't.people';
+  const isBrProfile = profile.workCountry === 'BR';
   const canManageTrainings = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
 
   const roleMenus = useMemo(() => {
@@ -24,6 +25,7 @@ export default function PortalLayout() {
       { id: 'home', label: 'Home', path: '/' },
       ...(isRootAccess || isAccessTotal ? [{ id: 'dashboard', label: 'Dashboard', path: '/dashboard' }] : []),
       ...(!isTPeople ? [{ id: 'profile', label: 'A Minha Ficha', path: '/profile' }] : []),
+      ...(!isTPeople ? [{ id: 'plano-carreira', label: 'Plano de Carreira', path: '/plano-carreira' }] : []),
       ...((currentUser?.role ?? '') !== 'CONVIDADO' ? [{ id: 'equipas', label: 'Equipas', path: '/equipas' }] : []),
       ...(can('view_user_list') ? [{ id: 'colaboradores', label: 'Colaboradores', path: '/colaboradores' }] : []),
       ...(can('approve_profile_change') || can('approve_vacation') || can('reject_vacation') || can('view_all_vacations')
@@ -35,13 +37,13 @@ export default function PortalLayout() {
       ...((can('request_vacation') || can('view_own_vacations') || can('view_all_vacations') || can('manage_vacation_rules'))
         ? [{ id: 'ferias', label: 'Férias / Ausências', path: '/ferias' }]
         : []),
-      ...((can('view_hours_bank') || can('manage_hours_bank') || isRootAccess || isAccessTotal)
+      ...((isBrProfile && (can('view_hours_bank') || can('manage_hours_bank') || isRootAccess || isAccessTotal))
         ? [{ id: 'banco-horas', label: 'Banco de Horas', path: '/banco-horas' }]
         : []),
     ];
 
     return menu;
-  }, [currentUser?.role, hasPermission, isAccessTotal, isRootAccess, isTPeople]);
+  }, [currentUser?.role, hasPermission, isAccessTotal, isBrProfile, isRootAccess, isTPeople]);
 
   const currentMenu = useMemo(
     () => roleMenus.find((item) => item.path === location.pathname),
@@ -59,7 +61,7 @@ export default function PortalLayout() {
   }, [menuQuery, roleMenus]);
 
   const personalMenu = useMemo(() => {
-    const personalIds = new Set(['home', 'profile', 'equipas', 'formacoes', 'ferias', 'notifications']);
+    const personalIds = new Set(['home', 'profile', 'plano-carreira', 'equipas', 'formacoes', 'ferias', 'notifications']);
     return filteredMenu.filter((item) => personalIds.has(item.id));
   }, [filteredMenu]);
 
@@ -171,6 +173,7 @@ export default function PortalLayout() {
       void Promise.allSettled([
         safePrefetch('/hours-bank/me', 30000),
         safePrefetch('/hours-bank/overview?page=1&pageSize=50&workCountry=BR', 30000),
+        safePrefetch('/hours-bank/reports', 30000),
       ]);
     }
   }

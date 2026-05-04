@@ -77,7 +77,7 @@ vi.mock('../src/lib/prisma.js', () => ({
 
 vi.mock('../src/lib/permission-engine.js', () => permissionEngineMock);
 
-// Default auth user — ADMIN with full access
+// Default auth user - ADMIN with full access
 const defaultAuthUser = {
   id: 'auth-user',
   username: 'admin',
@@ -144,7 +144,7 @@ describe('users routes integration', () => {
     authConfig.currentUser = defaultAuthUser;
     vi.resetAllMocks();
 
-    // Default permission engine responses — all authorized with global scope
+    // Default permission engine responses - all authorized with global scope
     permissionEngineMock.hasPermission.mockResolvedValue(true);
     permissionEngineMock.getPermissionScope.mockResolvedValue({ isGlobal: true, restrictedToTeams: null });
     permissionEngineMock.buildUserWhereFromScope.mockReturnValue(null);

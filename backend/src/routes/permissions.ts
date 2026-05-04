@@ -153,16 +153,19 @@ router.get('/users/:id/permissions', requireAuth, async (req, res) => {
   const timer = createRequestTimer('GET /users/:id/permissions');
   const targetUserId = String(req.params.id || '');
 
-  const hierarchyCheck = await assertCanManagePermissionTarget(req.authUser!.id, req.authUser!.isRootAccess, targetUserId);
+  const [hierarchyCheck, canManage] = await Promise.all([
+    assertCanManagePermissionTarget(req.authUser!.id, req.authUser!.isRootAccess, targetUserId),
+    canManagePermissions(req.authUser!),
+  ]);
+  timer.mark('check-can-manage');
+
   if (!hierarchyCheck.ok) {
     return res.status(hierarchyCheck.status).json({ message: hierarchyCheck.message });
   }
 
-  const canManage = await canManagePermissions(req.authUser!);
   if (!canManage && req.authUser!.id !== targetUserId) {
     return res.status(403).json({ message: 'Sem permissões para consultar permissões de outros utilizadores.' });
   }
-  timer.mark('check-can-manage');
 
   const [user, permissions, assignments] = await Promise.all([
     prisma.user.findUnique({

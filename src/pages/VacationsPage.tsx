@@ -379,14 +379,6 @@ function buildValidationErrors(draft: VacationDraft): DraftErrors {
     errors.dataFim = 'Pedido de meio-dia deve ter início e fim no mesmo dia.';
   }
 
-  if (draft.dataInicio) {
-    const today = new Date();
-    const todayISO = dayISO(today.getFullYear(), today.getMonth(), today.getDate());
-    if (draft.dataInicio < todayISO) {
-      errors.dataInicio = 'Não é possível fazer pedidos para datas passadas.';
-    }
-  }
-
   return errors;
 }
 
@@ -1931,10 +1923,6 @@ export default function VacationsPage() {
   }
 
   function handleDayClick(iso: string) {
-    const today = new Date();
-    const todayISO = dayISO(today.getFullYear(), today.getMonth(), today.getDate());
-    if (iso < todayISO) return; // block past dates silently
-
     if (draft.requestKind === 'VACATION' && isWeekendIso(iso)) {
       setDraft((current) => ({
         ...current,
@@ -1945,7 +1933,7 @@ export default function VacationsPage() {
     }
 
     if (selectionAnchor === null) {
-      // First click — set anchor and pre-fill single day
+      // First click - set anchor and pre-fill single day
       setSelectionAnchor(iso);
       setHoverDay(iso);
       setDraft((current) => ({ ...current, dataInicio: iso, dataFim: iso }));
@@ -1956,7 +1944,7 @@ export default function VacationsPage() {
         return next;
       });
     } else {
-      // Second click — confirm the range
+      // Second click - confirm the range
       const start = selectionAnchor <= iso ? selectionAnchor : iso;
       const end = selectionAnchor <= iso ? iso : selectionAnchor;
       setDraft((current) => ({ ...current, dataInicio: start, dataFim: end }));
@@ -2097,12 +2085,10 @@ export default function VacationsPage() {
     const rangeClass = !isTPeople ? getDayRangeClass(iso) : '';
     const isAnchorDay = iso === selectionAnchor;
     const isVacationWeekend = !isTPeople && draft.requestKind === 'VACATION' && isWeekendIso(iso);
-    const canClickDay = !isTPeople && !isPastDay;
-    const dayTitle = isPastDay
-      ? 'Data passada'
-      : isVacationWeekend
+    const canClickDay = !isTPeople;
+    const dayTitle = isVacationWeekend
         ? 'Fim de semana: ao clicar, o pedido muda para ausência.'
-        : getDayLabel(iso);
+        : (isPastDay ? `Data passada • ${getDayLabel(iso)}` : getDayLabel(iso));
 
     return (
       <button
@@ -2235,7 +2221,7 @@ export default function VacationsPage() {
           <div className="profile-request-banner__inner">
             <div className="profile-request-banner__content">
               <span className="profile-request-banner__chip">Realização</span>
-              <strong>Férias realizadas — confirmar realização</strong>
+              <strong>Férias realizadas - confirmar realização</strong>
               <span>
                 {approvedVacationsReadyForRealization.length} período(s) de férias já findos à espera de confirmação
               </span>
@@ -2557,7 +2543,7 @@ export default function VacationsPage() {
             {!isTPeople && (
               <span className="vacations-legend-item vacations-legend-item--hint">
                 {selectionAnchor
-                  ? `📅 ${formatShortDate(selectionAnchor)} — clica no dia de fim`
+                  ? `📅 ${formatShortDate(selectionAnchor)} - clica no dia de fim`
                   : draft.dataInicio && draft.dataFim && !selectionAnchor
                     ? `Selecionado: ${formatShortDate(draft.dataInicio)}${draft.dataInicio !== draft.dataFim ? ' → ' + formatShortDate(draft.dataFim) : ''}`
                     : 'Clica num dia para iniciar seleção'}
@@ -2745,7 +2731,7 @@ export default function VacationsPage() {
               {conflictRange && conflictRecordIds.size > 0 && (
                 <div className="vhist__conflict-notice" role="alert">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                  Conflito detetado: {formatShortDate(conflictRange.start)} — {formatShortDate(conflictRange.end)}
+                  Conflito detetado: {formatShortDate(conflictRange.start)} - {formatShortDate(conflictRange.end)}
                 </div>
               )}
 
@@ -2785,14 +2771,14 @@ export default function VacationsPage() {
                             <td>
                               <span className={`vhist__badge vhist__badge--${record.status.toLowerCase()}`}>{formatVacationStatusLabel(record.status)}</span>
                             </td>
-                            <td className="vhist__note">{record.observacoes?.trim() || <span className="vhist__meta">—</span>}</td>
+                            <td className="vhist__note">{record.observacoes?.trim() || <span className="vhist__meta">-</span>}</td>
                             <td className="vhist__actions">
                               {record.status === 'PENDING' || record.status === 'APPROVED' ? (
                                 <>
                                   <button type="button" className="vhist__action-btn" onClick={() => startEdit(record)}>Editar</button>
                                   {record.status === 'PENDING' && <button type="button" className="vhist__action-btn vhist__action-btn--danger" onClick={() => void handleCancelPending(record.id)}>Anular</button>}
                                 </>
-                              ) : <span className="vhist__meta">—</span>}
+                              ) : <span className="vhist__meta">-</span>}
                             </td>
                           </tr>
                         ))}

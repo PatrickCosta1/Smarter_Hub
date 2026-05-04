@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import Button from '../components/ui/Button';
-import Badge from '../components/ui/Badge';
 import { apiRequest, apiRequestCached, authHeaders, isAbortError } from '../portal/api';
 
 type DistributionItem = {
   label: string;
   count: number;
   share: number;
+};
+
+type AvgTenureByFunction = {
+  label: string;
+  avgTenure: number;
+  count: number;
 };
 
 type TeamCharacterization = {
@@ -16,6 +21,9 @@ type TeamCharacterization = {
     tenure: number;
   };
   retentionRate: number;
+  nosVoucherRate: number;
+  continenteCardRate: number;
+  avgTenureByFunction: AvgTenureByFunction[];
   distributions: {
     hierarchy: DistributionItem[];
     geography: DistributionItem[];
@@ -26,9 +34,7 @@ type TeamCharacterization = {
 
 type TeamInsights = {
   appliedFilters?: {
-    search?: string;
     teamId?: string;
-    role?: string;
     gender?: string;
     function?: string;
     geography?: string;
@@ -40,13 +46,13 @@ type TeamInsights = {
   selectedTeamName?: string;
   availableFilters?: {
     teams?: Array<{ id: string; name: string }>;
-    roles?: string[];
     genders?: string[];
     functions?: string[];
     geographies?: string[];
     levels?: string[];
     activeStates?: Array<{ value: string; label: string }>;
   };
+  avgAccessToRequestDays?: number;
   selected: TeamCharacterization;
   company: TeamCharacterization;
 };
@@ -59,9 +65,7 @@ type DashboardSummary = {
 type DashboardPeriodPreset = 'all' | 'last12m' | 'last3y' | 'last5y' | 'custom';
 
 type DashboardFilters = {
-  search: string;
   teamId: string;
-  role: string;
   gender: string;
   functionName: string;
   geography: string;
@@ -94,12 +98,19 @@ type DashboardCollaboratorsResponse = {
   rows: DashboardExportRow[];
 };
 
+type DrillDimension = 'hierarchy' | 'geography' | 'gender' | 'function';
+
+type DrillStep = {
+  dimension: DrillDimension;
+  label: string;
+  previousFilters: DashboardFilters;
+  previousFunctionSearch: string;
+};
+
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
 const DEFAULT_FILTERS: DashboardFilters = {
-  search: '',
   teamId: '',
-  role: '',
   gender: '',
   functionName: '',
   geography: '',
@@ -112,17 +123,29 @@ const DEFAULT_FILTERS: DashboardFilters = {
 
 const EMPTY_CHARACTERIZATION: TeamCharacterization = {
   headcount: 0,
-  averages: {
-    age: 0,
-    tenure: 0,
-  },
+  averages: { age: 0, tenure: 0 },
   retentionRate: 0,
+  nosVoucherRate: 0,
+  continenteCardRate: 0,
+  avgTenureByFunction: [],
   distributions: {
     hierarchy: [],
     geography: [],
     gender: [],
     function: [],
   },
+};
+
+const PIE_COLORS = [
+  '#3b82f6', '#ef4444', '#22c55e', '#a855f7', '#f59e0b',
+  '#14b8a6', '#ec4899', '#64748b', '#0ea5e9', '#84cc16',
+];
+
+const DRILL_DIMENSION_TO_FILTER: Record<DrillDimension, keyof DashboardFilters> = {
+  hierarchy: 'level',
+  geography: 'geography',
+  gender: 'gender',
+  function: 'functionName',
 };
 
 function getAuthHeaders() {
@@ -163,9 +186,9 @@ function parseDelta(selected: number, company: number) {
   return selected - company;
 }
 
-function formatDeltaPercentPoint(delta: number) {
+function formatDeltaSign(delta: number, suffix = ' p.p.') {
   const sign = delta > 0 ? '+' : '';
-  return `${sign}${formatDecimal(delta, 1)} p.p.`;
+  return `${sign}${formatDecimal(delta, 1)}${suffix}`;
 }
 
 function formatDateForInput(date: Date) {
@@ -204,14 +227,8 @@ function createPresetRange(preset: DashboardPeriodPreset) {
 function buildDashboardQuery(filters: DashboardFilters) {
   const params = new URLSearchParams();
 
-  if (filters.search.trim()) {
-    params.set('search', filters.search.trim());
-  }
   if (filters.teamId) {
     params.set('teamId', filters.teamId);
-  }
-  if (filters.role) {
-    params.set('role', filters.role);
   }
   if (filters.gender) {
     params.set('gender', filters.gender);
@@ -238,33 +255,163 @@ function buildDashboardQuery(filters: DashboardFilters) {
   return params;
 }
 
-function buildDistributionComparison(teamDist: DistributionItem[], companyDist: DistributionItem[]) {
-  const teamMap = new Map(teamDist.map((item) => [item.label, item]));
-  const companyMap = new Map(companyDist.map((item) => [item.label, item]));
+// ─── Pie Chart SVG ─────────────────────────────────────────────────────────────
 
-  const labels = Array.from(new Set([...teamMap.keys(), ...companyMap.keys()]));
+function PieChart({
+  data,
+  maxLegend = 8,
+  onSelect,
+  selectedLabel,
+}: {
+  data: DistributionItem[];
+  maxLegend?: number;
+  onSelect?: (label: string) => void;
+  selectedLabel?: string;
+}) {
+  const total = data.reduce((s, d) => s + d.count, 0);
+  if (total === 0 || data.length === 0) {
+    return <div className="ds-pie__empty">Sem dados</div>;
+  }
 
-  return labels
-    .map((label) => {
-      const team = teamMap.get(label);
-      const company = companyMap.get(label);
-      const teamShare = team?.share ?? 0;
-      const companyShare = company?.share ?? 0;
-      return {
-        label,
-        teamCount: team?.count ?? 0,
-        companyCount: company?.count ?? 0,
-        teamShare,
-        companyShare,
-        delta: parseDelta(teamShare, companyShare),
-      };
-    })
-    .sort((a, b) => b.teamCount - a.teamCount || b.companyCount - a.companyCount || a.label.localeCompare(b.label));
+  let currentAngle = -Math.PI / 2;
+  const slices = data.slice(0, 9).map((item, i) => {
+    const angle = (item.count / total) * Math.PI * 2;
+    const startAngle = currentAngle;
+    currentAngle += angle;
+    const x1 = (50 + 42 * Math.cos(startAngle)).toFixed(3);
+    const y1 = (50 + 42 * Math.sin(startAngle)).toFixed(3);
+    const x2 = (50 + 42 * Math.cos(currentAngle)).toFixed(3);
+    const y2 = (50 + 42 * Math.sin(currentAngle)).toFixed(3);
+    const largeArc = angle > Math.PI ? 1 : 0;
+    return {
+      path: `M 50 50 L ${x1} ${y1} A 42 42 0 ${largeArc} 1 ${x2} ${y2} Z`,
+      color: PIE_COLORS[i % PIE_COLORS.length],
+      ...item,
+    };
+  });
+
+  return (
+    <div className="ds-pie-wrap">
+      <svg viewBox="0 0 100 100" className="ds-pie__svg" aria-hidden="true">
+        {slices.map((slice) => (
+          <path
+            key={slice.label}
+            d={slice.path}
+            fill={slice.color}
+            role={onSelect ? 'button' : undefined}
+            tabIndex={onSelect ? 0 : undefined}
+            aria-label={onSelect ? `Filtrar por ${slice.label}` : undefined}
+            className={[
+              onSelect ? 'ds-pie__slice--interactive' : '',
+              selectedLabel && selectedLabel === slice.label ? 'ds-pie__slice--selected' : '',
+            ].filter(Boolean).join(' ')}
+            onClick={onSelect ? () => onSelect(slice.label) : undefined}
+            onKeyDown={onSelect ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onSelect(slice.label);
+              }
+            } : undefined}
+          />
+        ))}
+      </svg>
+      <div className="ds-pie__legend">
+        {data.slice(0, maxLegend).map((item, i) => (
+          <button
+            key={item.label}
+            type="button"
+            className={`ds-pie__legend-row ${selectedLabel && selectedLabel === item.label ? 'ds-pie__legend-row--selected' : ''}`}
+            onClick={onSelect ? () => onSelect(item.label) : undefined}
+            disabled={!onSelect}
+          >
+            <span className="ds-pie__legend-dot" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+            <span className="ds-pie__legend-label" title={item.label}>{item.label}</span>
+            <span className="ds-pie__legend-pct">{formatPercent(item.share, 0)}</span>
+          </button>
+        ))}
+        {data.length > maxLegend && (
+          <div className="ds-pie__legend-row ds-pie__legend-row--more">
+            <span className="ds-pie__legend-dot" style={{ background: '#94a3b8' }} />
+            <span className="ds-pie__legend-label">+{data.length - maxLegend} outros</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── KPI indicator ──────────────────────────────────────────────────────────────
+
+function KpiCard({
+  label,
+  value,
+  companyValue,
+  delta,
+  deltaPositiveIsGood = true,
+  tooltip,
+  unit,
+}: {
+  label: string;
+  value: string;
+  companyValue?: string;
+  delta?: number;
+  deltaPositiveIsGood?: boolean;
+  tooltip?: string;
+  unit?: string;
+}) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const deltaClass = delta === undefined
+    ? ''
+    : delta === 0
+      ? 'ds-kpi__delta--neutral'
+      : (deltaPositiveIsGood ? delta > 0 : delta < 0)
+        ? 'ds-kpi__delta--up'
+        : 'ds-kpi__delta--down';
+
+  return (
+    <article className="ds-kpi-card">
+      <div className="ds-kpi-card__header">
+        <span className="ds-kpi-card__label">{label}</span>
+        {tooltip && (
+          <button
+            type="button"
+            className="ds-kpi-card__info"
+            aria-label="Informação"
+            onMouseEnter={() => setShowTooltip(true)}
+            onMouseLeave={() => setShowTooltip(false)}
+            onFocus={() => setShowTooltip(true)}
+            onBlur={() => setShowTooltip(false)}
+          >
+            ?
+            {showTooltip && <span className="ds-kpi-card__tooltip">{tooltip}</span>}
+          </button>
+        )}
+      </div>
+      <div className="ds-kpi-card__value">
+        {value}
+        {unit && <span className="ds-kpi-card__unit">{unit}</span>}
+      </div>
+      {companyValue && (
+        <div className="ds-kpi-card__company">
+          Empresa: <strong>{companyValue}</strong>
+          {delta !== undefined && (
+            <span className={`ds-kpi__delta ${deltaClass}`}>{formatDeltaSign(delta)}</span>
+          )}
+        </div>
+      )}
+    </article>
+  );
 }
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [filters, setFilters] = useState<DashboardFilters>(DEFAULT_FILTERS);
+  const [functionSearch, setFunctionSearch] = useState('');
+  const [drillPath, setDrillPath] = useState<DrillStep[]>([]);
+  const [drillRows, setDrillRows] = useState<DashboardExportRow[]>([]);
+  const [drillRowsTotal, setDrillRowsTotal] = useState(0);
+  const [isLoadingDrillRows, setIsLoadingDrillRows] = useState(false);
+  const [drillRowsError, setDrillRowsError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -313,37 +460,58 @@ export default function DashboardPage() {
   const selected = insights?.selected ?? EMPTY_CHARACTERIZATION;
   const company = insights?.company ?? EMPTY_CHARACTERIZATION;
 
-  const indicators = useMemo(() => {
-    const ageDelta = parseDelta(selected.averages.age, company.averages.age);
-    const tenureDelta = parseDelta(selected.averages.tenure, company.averages.tenure);
-    const retentionDelta = parseDelta(selected.retentionRate, company.retentionRate);
+  const availableFunctions = insights?.availableFilters?.functions ?? [];
+  const filteredFunctionOptions = functionSearch.trim()
+    ? availableFunctions.filter((fn) => fn.toLowerCase().includes(functionSearch.toLowerCase()))
+    : availableFunctions;
 
-    return [
-      {
-        label: 'Idade média',
-        selectedValue: `${formatDecimal(selected.averages.age, 1)} anos`,
-        companyValue: `${formatDecimal(company.averages.age, 1)} anos`,
-        delta: formatDeltaPercentPoint(ageDelta),
-      },
-      {
-        label: 'Tempo médio na Tlantic',
-        selectedValue: `${formatDecimal(selected.averages.tenure, 1)} anos`,
-        companyValue: `${formatDecimal(company.averages.tenure, 1)} anos`,
-        delta: formatDeltaPercentPoint(tenureDelta),
-      },
-      {
-        label: 'Taxa de retenção',
-        selectedValue: formatPercent(selected.retentionRate, 1),
-        companyValue: formatPercent(company.retentionRate, 1),
-        delta: formatDeltaPercentPoint(retentionDelta),
-      },
-    ];
-  }, [company.averages.age, company.averages.tenure, company.retentionRate, selected.averages.age, selected.averages.tenure, selected.retentionRate]);
-
-  const hierarchyComparison = useMemo(() => buildDistributionComparison(selected.distributions.hierarchy, company.distributions.hierarchy), [company.distributions.hierarchy, selected.distributions.hierarchy]);
-  const geographyComparison = useMemo(() => buildDistributionComparison(selected.distributions.geography, company.distributions.geography), [company.distributions.geography, selected.distributions.geography]);
-  const genderComparison = useMemo(() => buildDistributionComparison(selected.distributions.gender, company.distributions.gender), [company.distributions.gender, selected.distributions.gender]);
-  const functionComparison = useMemo(() => buildDistributionComparison(selected.distributions.function, company.distributions.function), [company.distributions.function, selected.distributions.function]);
+  const kpis = useMemo(() => [
+    {
+      label: 'Idade média',
+      value: `${formatDecimal(selected.averages.age, 1)} anos`,
+      companyValue: `${formatDecimal(company.averages.age, 1)} anos`,
+      delta: parseDelta(selected.averages.age, company.averages.age),
+      deltaPositiveIsGood: false,
+    },
+    {
+      label: 'Tempo médio na Tlantic',
+      value: `${formatDecimal(selected.averages.tenure, 1)} anos`,
+      companyValue: `${formatDecimal(company.averages.tenure, 1)} anos`,
+      delta: parseDelta(selected.averages.tenure, company.averages.tenure),
+      deltaPositiveIsGood: true,
+    },
+    {
+      label: 'Taxa de retenção',
+      value: formatPercent(selected.retentionRate, 1),
+      companyValue: formatPercent(company.retentionRate, 1),
+      delta: parseDelta(selected.retentionRate, company.retentionRate),
+      deltaPositiveIsGood: true,
+      tooltip: 'Calculado com base no rácio de colaboradores ativos vs total (incluindo inativos).',
+    },
+    {
+      label: '% Voucher NOS preenchido',
+      value: formatPercent(selected.nosVoucherRate, 1),
+      companyValue: formatPercent(company.nosVoucherRate, 1),
+      delta: parseDelta(selected.nosVoucherRate, company.nosVoucherRate),
+      deltaPositiveIsGood: true,
+      tooltip: 'Percentagem de colaboradores PT ativos com data do voucher NOS registada no perfil.',
+    },
+    {
+      label: '% Cartão Continente preenchido',
+      value: formatPercent(selected.continenteCardRate, 1),
+      companyValue: formatPercent(company.continenteCardRate, 1),
+      delta: parseDelta(selected.continenteCardRate, company.continenteCardRate),
+      deltaPositiveIsGood: true,
+      tooltip: 'Percentagem de colaboradores ativos com número do cartão Continente registado no perfil.',
+    },
+    {
+      label: 'Tempo médio até 1.º pedido de férias',
+      value: insights?.avgAccessToRequestDays !== undefined
+        ? `${formatDecimal(insights.avgAccessToRequestDays, 0)} dias`
+        : '—',
+      tooltip: 'Média de dias entre a criação da conta e o primeiro pedido de férias submetido.',
+    },
+  ], [selected, company, insights?.avgAccessToRequestDays]);
 
   function handlePeriodPresetChange(nextPreset: DashboardPeriodPreset) {
     if (nextPreset === 'custom') {
@@ -419,129 +587,264 @@ export default function DashboardPage() {
     }
   }
 
+  async function loadDrillThroughRows(activeFilters: DashboardFilters, signal?: AbortSignal) {
+    if (drillPath.length === 0) {
+      setDrillRows([]);
+      setDrillRowsTotal(0);
+      setDrillRowsError('');
+      return;
+    }
+
+    setIsLoadingDrillRows(true);
+    setDrillRowsError('');
+
+    try {
+      const params = buildDashboardQuery(activeFilters);
+      const suffix = params.toString() ? `?${params.toString()}` : '';
+      const payload = await apiRequestCached<DashboardCollaboratorsResponse>(`/users/dashboard-collaborators${suffix}`, {
+        headers: getAuthHeaders(),
+        signal,
+      }, 15000, true, 25000);
+
+      if (!signal?.aborted) {
+        setDrillRows(payload.rows.slice(0, 12));
+        setDrillRowsTotal(payload.total);
+      }
+    } catch (loadError) {
+      if (!isAbortError(loadError) && !signal?.aborted) {
+        setDrillRowsError(loadError instanceof Error ? loadError.message : 'Falha ao carregar detalhe do drill-through.');
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoadingDrillRows(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadDrillThroughRows(filters, controller.signal);
+    return () => controller.abort();
+  }, [filters, drillPath.length]);
+
+  function clearDrillPath() {
+    if (drillPath.length === 0) {
+      return;
+    }
+
+    const firstStep = drillPath[0];
+    setFilters(firstStep.previousFilters);
+    setFunctionSearch(firstStep.previousFunctionSearch);
+    setDrillPath([]);
+  }
+
+  function drillUp() {
+    if (drillPath.length === 0) {
+      return;
+    }
+
+    const lastStep = drillPath[drillPath.length - 1];
+    setFilters(lastStep.previousFilters);
+    setFunctionSearch(lastStep.previousFunctionSearch);
+    setDrillPath((current) => current.slice(0, -1));
+  }
+
+  function applyDrillDown(dimension: DrillDimension, label: string) {
+    const trimmedLabel = label.trim();
+    if (!trimmedLabel) {
+      return;
+    }
+
+    const targetFilter = DRILL_DIMENSION_TO_FILTER[dimension];
+    const currentValue = String(filters[targetFilter] ?? '');
+
+    if (currentValue.toLowerCase() === trimmedLabel.toLowerCase()) {
+      return;
+    }
+
+    setDrillPath((current) => [
+      ...current,
+      {
+        dimension,
+        label: trimmedLabel,
+        previousFilters: filters,
+        previousFunctionSearch: functionSearch,
+      },
+    ]);
+
+    setFilters((current) => ({
+      ...current,
+      [targetFilter]: trimmedLabel,
+    }));
+
+    if (targetFilter === 'functionName') {
+      setFunctionSearch(trimmedLabel);
+    }
+  }
+
+  function updateFiltersManual(updater: (current: DashboardFilters) => DashboardFilters) {
+    setDrillPath([]);
+    setFilters(updater);
+  }
+
+  const hasActiveFilters = Object.entries(filters).some(([key, val]) =>
+    !['periodPreset', 'periodStart', 'periodEnd'].includes(key) && Boolean(val) && val !== 'all',
+  );
+
+  const activeDrillLabel = drillPath.length > 0
+    ? drillPath.map((step, index) => `${index + 1}. ${step.label}`).join(' → ')
+    : '';
+
   return (
     <section className="trainings-shell dashboard-team-shell">
-      
 
-      <section className="dashboard-team-filters">
-        <label>
-          <span>Pesquisa</span>
-          <input
-            type="search"
-            value={filters.search}
-            onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
-            placeholder="Nome, username, email, equipa, função, nível, geografia, nº mecanográfico..."
-          />
-        </label>
+      {/* ─── Filtros ─── */}
+      <section className="ds-filters">
+        <div className="ds-filters__grid">
+          <label className="ds-filters__field">
+            <span>Equipa</span>
+            <select value={filters.teamId} onChange={(event) => updateFiltersManual((current) => ({ ...current, teamId: event.target.value }))}>
+              <option value="">Todas</option>
+              {(insights?.availableFilters?.teams ?? []).map((team) => (
+                <option key={team.id} value={team.id}>{team.name}</option>
+              ))}
+            </select>
+          </label>
 
-        <label>
-          <span>Equipa</span>
-          <select value={filters.teamId} onChange={(event) => setFilters((current) => ({ ...current, teamId: event.target.value }))}>
-            <option value="">Todas</option>
-            {(insights?.availableFilters?.teams ?? []).map((team) => (
-              <option key={team.id} value={team.id}>{team.name}</option>
-            ))}
-          </select>
-        </label>
+          <label className="ds-filters__field">
+            <span>Nível hierárquico</span>
+            <select value={filters.level} onChange={(event) => updateFiltersManual((current) => ({ ...current, level: event.target.value }))}>
+              <option value="">Todos</option>
+              {(insights?.availableFilters?.levels ?? []).map((level) => (
+                <option key={level} value={level}>{level}</option>
+              ))}
+            </select>
+          </label>
 
-        <label>
-          <span>Nível hierárquico</span>
-          <select value={filters.level} onChange={(event) => setFilters((current) => ({ ...current, level: event.target.value }))}>
-            <option value="">Todos</option>
-            {(insights?.availableFilters?.levels ?? []).map((level) => (
-              <option key={level} value={level}>{level}</option>
-            ))}
-          </select>
-        </label>
+          <label className="ds-filters__field">
+            <span>Geografia</span>
+            <select value={filters.geography} onChange={(event) => updateFiltersManual((current) => ({ ...current, geography: event.target.value }))}>
+              <option value="">Todas</option>
+              {(insights?.availableFilters?.geographies ?? []).map((geo) => (
+                <option key={geo} value={geo}>{geo}</option>
+              ))}
+            </select>
+          </label>
 
-        <label>
-          <span>Geografia</span>
-          <select value={filters.geography} onChange={(event) => setFilters((current) => ({ ...current, geography: event.target.value }))}>
-            <option value="">Todas</option>
-            {(insights?.availableFilters?.geographies ?? []).map((geo) => (
-              <option key={geo} value={geo}>{geo}</option>
-            ))}
-          </select>
-        </label>
+          <label className="ds-filters__field">
+            <span>Género</span>
+            <select value={filters.gender} onChange={(event) => updateFiltersManual((current) => ({ ...current, gender: event.target.value }))}>
+              <option value="">Todos</option>
+              {(insights?.availableFilters?.genders ?? []).map((gender) => (
+                <option key={gender} value={gender}>{gender}</option>
+              ))}
+            </select>
+          </label>
 
-        <label>
-          <span>Género</span>
-          <select value={filters.gender} onChange={(event) => setFilters((current) => ({ ...current, gender: event.target.value }))}>
-            <option value="">Todos</option>
-            {(insights?.availableFilters?.genders ?? []).map((gender) => (
-              <option key={gender} value={gender}>{gender}</option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          <span>Função</span>
-          <select value={filters.functionName} onChange={(event) => setFilters((current) => ({ ...current, functionName: event.target.value }))}>
-            <option value="">Todas</option>
-            {(insights?.availableFilters?.functions ?? []).map((fn) => (
-              <option key={fn} value={fn}>{fn}</option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          <span>Role</span>
-          <select value={filters.role} onChange={(event) => setFilters((current) => ({ ...current, role: event.target.value }))}>
-            <option value="">Todas</option>
-            {(insights?.availableFilters?.roles ?? []).map((role) => (
-              <option key={role} value={role}>{role}</option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          <span>Estado</span>
-          <select value={filters.isActive} onChange={(event) => setFilters((current) => ({ ...current, isActive: event.target.value as DashboardFilters['isActive'] }))}>
-            {(insights?.availableFilters?.activeStates ?? []).map((item) => (
-              <option key={item.value} value={item.value}>{item.label}</option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          <span>Período</span>
-          <select value={filters.periodPreset} onChange={(event) => handlePeriodPresetChange(event.target.value as DashboardPeriodPreset)}>
-            <option value="all">Sem período</option>
-            <option value="last12m">Últimos 12 meses</option>
-            <option value="last3y">Últimos 3 anos</option>
-            <option value="last5y">Últimos 5 anos</option>
-            <option value="custom">Personalizado</option>
-          </select>
-        </label>
-
-        {filters.periodPreset === 'custom' && (
-          <>
-            <label>
-              <span>Data início</span>
+          <label className="ds-filters__field ds-filters__field--function">
+            <span>Função</span>
+            <div className="ds-filters__fn-wrap">
               <input
-                type="date"
-                value={filters.periodStart}
-                onChange={(event) => setFilters((current) => ({ ...current, periodStart: event.target.value }))}
+                type="text"
+                list="ds-fn-list"
+                value={functionSearch || filters.functionName}
+                placeholder="Escrever para pesquisar..."
+                onChange={(event) => {
+                  const val = event.target.value;
+                  setFunctionSearch(val);
+                  const exact = availableFunctions.find((fn) => fn.toLowerCase() === val.toLowerCase());
+                  updateFiltersManual((current) => ({ ...current, functionName: exact ?? '' }));
+                }}
+                onBlur={() => {
+                  if (!filters.functionName) {
+                    setFunctionSearch('');
+                  }
+                }}
               />
-            </label>
+              <datalist id="ds-fn-list">
+                {filteredFunctionOptions.map((fn) => (
+                  <option key={fn} value={fn} />
+                ))}
+              </datalist>
+              {filters.functionName && (
+                <button
+                  type="button"
+                  className="ds-filters__fn-clear"
+                  aria-label="Limpar função"
+                  onClick={() => {
+                    updateFiltersManual((current) => ({ ...current, functionName: '' }));
+                    setFunctionSearch('');
+                  }}
+                >×</button>
+              )}
+            </div>
+          </label>
 
-            <label>
-              <span>Data fim</span>
-              <input
-                type="date"
-                value={filters.periodEnd}
-                onChange={(event) => setFilters((current) => ({ ...current, periodEnd: event.target.value }))}
-              />
-            </label>
-          </>
-        )}
+          <label className="ds-filters__field">
+            <span>Estado</span>
+            <select value={filters.isActive} onChange={(event) => updateFiltersManual((current) => ({ ...current, isActive: event.target.value as DashboardFilters['isActive'] }))}>
+              {(insights?.availableFilters?.activeStates ?? [
+                { value: 'all', label: 'Todos' },
+                { value: 'active', label: 'Ativos' },
+                { value: 'inactive', label: 'Inativos' },
+              ]).map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
 
-        <div className="dashboard-team-filters__actions">
-          <Button type="button" variant="ghost" onClick={() => setFilters(DEFAULT_FILTERS)}>Limpar filtros</Button>
-          <Button type="button" variant="secondary" isLoading={isRefreshing} onClick={() => void loadSummary(undefined, true, filters)}>Atualizar</Button>
-          <Button type="button" variant="primary" isLoading={isExporting} onClick={() => void exportFilteredCollaborators()}>
-            Exportar Excel
-          </Button>
+          <label className="ds-filters__field">
+            <span>Período</span>
+            <select value={filters.periodPreset} onChange={(event) => {
+              setDrillPath([]);
+              handlePeriodPresetChange(event.target.value as DashboardPeriodPreset);
+            }}>
+              <option value="all">Sem período</option>
+              <option value="last12m">Últimos 12 meses</option>
+              <option value="last3y">Últimos 3 anos</option>
+              <option value="last5y">Últimos 5 anos</option>
+              <option value="custom">Personalizado</option>
+            </select>
+          </label>
+
+          {filters.periodPreset === 'custom' && (
+            <>
+              <label className="ds-filters__field">
+                <span>Data início</span>
+                <input
+                  type="date"
+                  value={filters.periodStart}
+                  onChange={(event) => updateFiltersManual((current) => ({ ...current, periodStart: event.target.value }))}
+                />
+              </label>
+
+              <label className="ds-filters__field">
+                <span>Data fim</span>
+                <input
+                  type="date"
+                  value={filters.periodEnd}
+                  onChange={(event) => updateFiltersManual((current) => ({ ...current, periodEnd: event.target.value }))}
+                />
+              </label>
+            </>
+          )}
+        </div>
+
+        <div className="ds-filters__actions">
+          <span className="ds-filters__meta">
+            {selected.headcount} colaboradores
+            {hasActiveFilters && ` · ${company.headcount} na empresa`}
+            {summary?.refreshedAt && ` · ${formatDateTime(summary.refreshedAt)}`}
+          </span>
+          <div className="ds-filters__btns">
+            {hasActiveFilters && (
+              <Button type="button" variant="ghost" onClick={() => { setFilters(DEFAULT_FILTERS); setFunctionSearch(''); setDrillPath([]); }}>Limpar filtros</Button>
+            )}
+            <Button type="button" variant="secondary" isLoading={isRefreshing} onClick={() => void loadSummary(undefined, true, filters)}>Atualizar</Button>
+            <Button type="button" variant="primary" isLoading={isExporting} onClick={() => void exportFilteredCollaborators()}>
+              Exportar Excel
+            </Button>
+          </div>
         </div>
       </section>
 
@@ -557,87 +860,164 @@ export default function DashboardPage() {
         </article>
       ) : null}
 
-      <section className="dashboard-team-indicators">
-        {indicators.map((item) => (
-          <article key={item.label} className="dashboard-team-indicator-card">
-            <span>{item.label}</span>
-            <strong>{item.selectedValue}</strong>
-            <small>Empresa: {item.companyValue}</small>
-            <Badge tone="neutral">{item.delta}</Badge>
-          </article>
+      {/* ─── KPI cards ─── */}
+      <section className="ds-kpi-grid">
+        {kpis.map((kpi) => (
+          <KpiCard key={kpi.label} {...kpi} />
         ))}
       </section>
 
+      <section className="ds-drill-toolbar" aria-live="polite">
+        <div className="ds-drill-toolbar__status">
+          <strong>Drill</strong>
+          {drillPath.length > 0 ? (
+            <span>{activeDrillLabel}</span>
+          ) : (
+            <span>Clique numa fatia ou item da legenda para fazer drill-down.</span>
+          )}
+        </div>
+        <div className="ds-drill-toolbar__actions">
+          <Button type="button" variant="ghost" onClick={drillUp} disabled={drillPath.length === 0}>Drill up</Button>
+          <Button type="button" variant="ghost" onClick={clearDrillPath} disabled={drillPath.length === 0}>Roll up</Button>
+          <Button type="button" variant="secondary" onClick={() => void exportFilteredCollaborators()} disabled={drillPath.length === 0}>Drill through (Excel)</Button>
+        </div>
+      </section>
+
+      {/* ─── Gráficos de distribuição ─── */}
       {isLoading && !summary ? (
-        <section className="dashboard-team-distributions">
-          <article className="dashboard-team-distribution-card home-card--loading" />
-          <article className="dashboard-team-distribution-card home-card--loading" />
-          <article className="dashboard-team-distribution-card home-card--loading" />
-          <article className="dashboard-team-distribution-card home-card--loading" />
+        <section className="ds-charts-grid">
+          <article className="ds-chart-card home-card--loading" />
+          <article className="ds-chart-card home-card--loading" />
+          <article className="ds-chart-card home-card--loading" />
+          <article className="ds-chart-card home-card--loading" />
         </section>
       ) : (
-        <section className="dashboard-team-distributions">
-          <article className="dashboard-team-distribution-card">
-            <div className="dashboard-team-distribution-card__head">
-              <h3>Distribuição por nível hierárquico</h3>
-              <small>Equipa vs Empresa</small>
-            </div>
-            <div className="dashboard-team-distribution-table">
-              {hierarchyComparison.slice(0, 12).map((item) => (
-                <div key={`level-${item.label}`} className="dashboard-team-distribution-row">
-                  <span>{item.label}</span>
-                  <small>{formatPercent(item.teamShare, 1)} · Empresa {formatPercent(item.companyShare, 1)} · {formatDeltaPercentPoint(item.delta)}</small>
-                </div>
-              ))}
-            </div>
+        <section className="ds-charts-grid">
+          <article className="ds-chart-card">
+            <h3 className="ds-chart-card__title">Nível hierárquico</h3>
+            <PieChart
+              data={selected.distributions.hierarchy}
+              onSelect={(label) => applyDrillDown('hierarchy', label)}
+              selectedLabel={filters.level || undefined}
+            />
           </article>
 
-          <article className="dashboard-team-distribution-card">
-            <div className="dashboard-team-distribution-card__head">
-              <h3>Distribuição por geografia</h3>
-              <small>Equipa vs Empresa</small>
-            </div>
-            <div className="dashboard-team-distribution-table">
-              {geographyComparison.slice(0, 12).map((item) => (
-                <div key={`geo-${item.label}`} className="dashboard-team-distribution-row">
-                  <span>{item.label}</span>
-                  <small>{formatPercent(item.teamShare, 1)} · Empresa {formatPercent(item.companyShare, 1)} · {formatDeltaPercentPoint(item.delta)}</small>
-                </div>
-              ))}
-            </div>
+          <article className="ds-chart-card">
+            <h3 className="ds-chart-card__title">Geografia</h3>
+            <PieChart
+              data={selected.distributions.geography}
+              onSelect={(label) => applyDrillDown('geography', label)}
+              selectedLabel={filters.geography || undefined}
+            />
           </article>
 
-          <article className="dashboard-team-distribution-card">
-            <div className="dashboard-team-distribution-card__head">
-              <h3>Distribuição por género</h3>
-              <small>Equipa vs Empresa</small>
-            </div>
-            <div className="dashboard-team-distribution-table">
-              {genderComparison.slice(0, 12).map((item) => (
-                <div key={`gender-${item.label}`} className="dashboard-team-distribution-row">
-                  <span>{item.label}</span>
-                  <small>{formatPercent(item.teamShare, 1)} · Empresa {formatPercent(item.companyShare, 1)} · {formatDeltaPercentPoint(item.delta)}</small>
-                </div>
-              ))}
-            </div>
+          <article className="ds-chart-card">
+            <h3 className="ds-chart-card__title">Género</h3>
+            <PieChart
+              data={selected.distributions.gender}
+              onSelect={(label) => applyDrillDown('gender', label)}
+              selectedLabel={filters.gender || undefined}
+            />
           </article>
 
-          <article className="dashboard-team-distribution-card">
-            <div className="dashboard-team-distribution-card__head">
-              <h3>Distribuição por função</h3>
-              <small>Equipa vs Empresa</small>
-            </div>
-            <div className="dashboard-team-distribution-table">
-              {functionComparison.slice(0, 12).map((item) => (
-                <div key={`fn-${item.label}`} className="dashboard-team-distribution-row">
-                  <span>{item.label}</span>
-                  <small>{formatPercent(item.teamShare, 1)} · Empresa {formatPercent(item.companyShare, 1)} · {formatDeltaPercentPoint(item.delta)}</small>
-                </div>
-              ))}
+          <article className="ds-chart-card">
+            <h3 className="ds-chart-card__title">Função</h3>
+            <div className="ds-chart-card__scroll">
+              <PieChart
+                data={selected.distributions.function}
+                maxLegend={12}
+                onSelect={(label) => applyDrillDown('function', label)}
+                selectedLabel={filters.functionName || undefined}
+              />
             </div>
           </article>
         </section>
       )}
+
+      {drillPath.length > 0 && (
+        <section className="ds-drill-through">
+          <div className="ds-drill-through__head">
+            <h3>Drill-through</h3>
+            <span>{drillRowsTotal} colaboradores encontrados</span>
+          </div>
+
+          {isLoadingDrillRows ? (
+            <div className="ds-drill-through__state">A carregar detalhe...</div>
+          ) : drillRowsError ? (
+            <div className="ds-drill-through__state ds-drill-through__state--error">{drillRowsError}</div>
+          ) : drillRows.length === 0 ? (
+            <div className="ds-drill-through__state">Sem resultados para o drill atual.</div>
+          ) : (
+            <div className="ds-drill-through__table-wrap">
+              <table className="ds-drill-through__table">
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Função</th>
+                    <th>Equipa</th>
+                    <th>Geografia</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {drillRows.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.nome || row.username}</td>
+                      <td>{row.funcao || '—'}</td>
+                      <td>{row.equipa || '—'}</td>
+                      <td>{row.geografia || '—'}</td>
+                      <td>{row.estado || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ─── Tempo médio por função ─── */}
+      {selected.avgTenureByFunction.length > 0 && (
+        <section className="ds-tenure-section">
+          <h3 className="ds-tenure-section__title">Tempo médio por função</h3>
+          <div className="ds-tenure-grid">
+            {selected.avgTenureByFunction.map((item) => {
+              const companyItem = company.avgTenureByFunction.find((c) => c.label === item.label);
+              const delta = companyItem ? parseDelta(item.avgTenure, companyItem.avgTenure) : undefined;
+              return (
+                <div key={item.label} className="ds-tenure-row">
+                  <div className="ds-tenure-row__label" title={item.label}>{item.label}</div>
+                  <div className="ds-tenure-row__bar-wrap">
+                    <div
+                      className="ds-tenure-row__bar"
+                      style={{
+                        width: `${Math.min(100, (item.avgTenure / Math.max(...selected.avgTenureByFunction.map((r) => r.avgTenure), 1)) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="ds-tenure-row__value">
+                    {formatDecimal(item.avgTenure, 1)} anos
+                    {delta !== undefined && (
+                      <span className={`ds-kpi__delta ${delta >= 0 ? 'ds-kpi__delta--up' : 'ds-kpi__delta--down'}`}>
+                        {formatDeltaSign(delta)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="ds-tenure-row__count">{item.count} col.</div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ─── Nota comparação com empresa ─── */}
+      {hasActiveFilters && (
+        <p className="ds-compare-note">
+          Os valores de <strong>Empresa</strong> referem-se à totalidade dos colaboradores (sem filtros activos), permitindo comparar a selecção com a média geral da organização.
+        </p>
+      )}
+
     </section>
   );
 }

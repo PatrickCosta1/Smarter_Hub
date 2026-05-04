@@ -271,7 +271,7 @@ describe('vacations rules', () => {
 
   // ─── Phase 2B: PT 1st-year proportional cap ───────────────────────────────
 
-  it('Phase 2B: PT 1st-year proportional cap — blocks if total exceeds earned days', async () => {
+  it('Phase 2B: PT 1st-year proportional cap - blocks if total exceeds earned days', async () => {
     process.env.VACATION_PT_DEADLINE_BYPASS = 'true';
     const contractIso = '2026-11-01';
     const db = {
@@ -297,7 +297,7 @@ describe('vacations rules', () => {
     delete process.env.VACATION_PT_DEADLINE_BYPASS;
   });
 
-  it('Phase 2B: PT 1st-year proportional cap — allows within earned days', async () => {
+  it('Phase 2B: PT 1st-year proportional cap - allows within earned days', async () => {
     process.env.VACATION_PT_DEADLINE_BYPASS = 'true';
     const now = new Date();
     const contractDate = new Date(now.getFullYear(), now.getMonth() - 3, 1); // ~3 completed months => 6 earned days
@@ -346,7 +346,7 @@ describe('vacations rules', () => {
   it('Phase 2C: BR allows vacation starting on Monday', async () => {
     const db = { vacation: { findMany: vi.fn().mockResolvedValue([]) } };
 
-    // 2026-06-01 is a Monday — 14 business days Mon–Fri (two full weeks Mon–Fri)
+    // 2026-06-01 is a Monday - 14 business days Mon–Fri (two full weeks Mon–Fri)
     const result = await __vacationTestables.validateVacationCountryPolicy({
       db: db as never,
       userId: 'u-1',

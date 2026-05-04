@@ -1043,7 +1043,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
   const requestScopeWhere = scopeWhere ? { user: scopeWhere } : {};
   const actorHasAccessTotal = Boolean(req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id));
 
-  const [usersResult, profileRequestsResult, vacationsResult, trainingsResult, historyResult] = await Promise.allSettled([
+  const [usersResult, profileRequestsResult, vacationsResult, trainingsResult, historyResult, firstVacationResult] = await Promise.allSettled([
     prisma.user.findMany({
       where: collaboratorWhere,
       select: {
@@ -1078,8 +1078,11 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
             localidade: true,
             workCountry: true,
             funcao: true,
+            voucherNosData: true,
+            numeroCartaoContinente: true,
           },
         },
+        createdAt: true,
       },
     }),
     prisma.profileChangeRequest.findMany({
@@ -1149,6 +1152,11 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       },
       orderBy: [{ reviewedAt: 'desc' }, { createdAt: 'desc' }],
       take: 120,
+    }),
+    prisma.vacation.groupBy({
+      by: ['userId'],
+      _min: { createdAt: true },
+      where: scopeWhere ? { user: scopeWhere } : {},
     }),
   ]);
 
@@ -1246,8 +1254,45 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       .filter((value): value is Date => value !== null)
       .map((startDate) => yearsBetween(startDate));
 
-    const activeCount = rows.filter((item) => item.isActive !== false).length;
+    const activeRows = rows.filter((item) => item.isActive !== false);
+    const activeCount = activeRows.length;
     const total = rows.length;
+
+    // % voucher NOS (PT only, activos)
+    const ptActiveRows = activeRows.filter((r) => !r.profile?.workCountry || r.profile?.workCountry === 'PT');
+    const nosVoucherRate = ptActiveRows.length > 0
+      ? (ptActiveRows.filter((r) => r.profile?.voucherNosData?.trim()).length / ptActiveRows.length) * 100
+      : 0;
+
+    // % cartão Continente (activos)
+    const continenteCardRate = activeCount > 0
+      ? (activeRows.filter((r) => r.profile?.numeroCartaoContinente?.trim()).length / activeCount) * 100
+      : 0;
+
+    // Tempo médio por função
+    const functionTenureMap = new Map<string, number[]>();
+    for (const row of rows) {
+      const fn = getFunction(row);
+      if (fn === 'Não informado') {
+        continue;
+      }
+
+      const tenure = parseIsoDate(row.profile?.dataInicioContrato || '');
+      if (!tenure) {
+        continue;
+      }
+
+      if (!functionTenureMap.has(fn)) {
+        functionTenureMap.set(fn, []);
+      }
+
+      functionTenureMap.get(fn)!.push(yearsBetween(tenure));
+    }
+
+    const avgTenureByFunction = Array.from(functionTenureMap.entries())
+      .map(([label, values]) => ({ label, avgTenure: average(values), count: values.length }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
 
     return {
       headcount: total,
@@ -1256,6 +1301,9 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
         tenure: average(tenureValues),
       },
       retentionRate: total > 0 ? (activeCount / total) * 100 : 0,
+      nosVoucherRate,
+      continenteCardRate,
+      avgTenureByFunction,
       distributions: {
         hierarchy: buildDistribution(rows, getHierarchyLevel),
         geography: buildDistribution(rows, getGeography),
@@ -1358,6 +1406,23 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
     ? (teamOptions.find((team) => team.id === filterTeamId)?.name || 'Equipa filtrada')
     : 'Todas as equipas';
 
+  // Tempo médio desde a criação da conta até ao primeiro pedido de férias
+  const firstVacationRows = firstVacationResult.status === 'fulfilled' ? firstVacationResult.value : [];
+  const firstVacationByUser = new Map(
+    firstVacationRows.map((row) => [row.userId, row._min.createdAt]),
+  );
+  const accessToRequestDelays: number[] = [];
+  for (const user of collaboratorRows) {
+    const firstVacation = firstVacationByUser.get(user.id);
+    if (firstVacation && user.createdAt) {
+      const days = (firstVacation.getTime() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24);
+      if (days >= 0) {
+        accessToRequestDelays.push(days);
+      }
+    }
+  }
+  const avgAccessToRequestDays = average(accessToRequestDelays);
+
   const teamInsights = {
     appliedFilters: {
       search: filterSearch,
@@ -1387,6 +1452,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
     },
     selected: buildCharacterization(selectedRows),
     company: buildCharacterization(periodScopedRows),
+    avgAccessToRequestDays,
   };
   const teamCount = new Set(
     periodScopedRows
@@ -2896,7 +2962,7 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
   let cancelledVacations = 0;
 
   if (newCountry && newCountry !== previousCountry) {
-    // Cancel all PENDING vacation requests — they were submitted under old country rules
+    // Cancel all PENDING vacation requests - they were submitted under old country rules
     const pendingVacations = await prisma.vacation.findMany({
       where: { userId, status: 'PENDING' },
       select: { id: true, requestType: true, dataInicio: true, dataFim: true },
@@ -2964,7 +3030,7 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
     // Clear the fields belonging to the OLD country (they no longer apply)
     const fieldsToClean = previousCountry === 'PT' ? PT_ONLY_FIELDS : BR_ONLY_FIELDS;
 
-    // Clear codigoPostal when moving to BR — CEP format is different, avoid stale PT postal code
+    // Clear codigoPostal when moving to BR - CEP format is different, avoid stale PT postal code
     const extraClean = newCountry === 'BR' ? { codigoPostal: '' } : {};
 
     await prisma.profile.update({
@@ -2972,7 +3038,7 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
       data: { ...fieldsToClean, ...extraClean },
     });
 
-    // Deactivate all team memberships — teams are country-scoped
+    // Deactivate all team memberships - teams are country-scoped
     await prisma.teamMembership.updateMany({
       where: { userId, isActive: true },
       data: { isActive: false },
@@ -2993,7 +3059,7 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
             ? `${cancelledVacations} pedido(s) de férias/ausências pendente(s) foram cancelados (regras diferentes entre países).`
             : '',
           `Os dados exclusivos de ${countryLabel(previousCountry)} foram removidos da tua ficha.`,
-          `A tua equipa foi removida — o administrador irá reatribuir-te à equipa correta em ${countryLabel(newCountry)}.`,
+          `A tua equipa foi removida - o administrador irá reatribuir-te à equipa correta em ${countryLabel(newCountry)}.`,
           `Ação: completa os dados obrigatórios para ${countryLabel(newCountry)} na tua ficha.`,
         ].filter(Boolean).join('\n'),
       },

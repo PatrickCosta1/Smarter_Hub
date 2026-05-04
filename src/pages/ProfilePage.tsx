@@ -1,5 +1,6 @@
 import { ChangeEvent, MouseEvent, CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   estadoCivilOptions,
   generoOptions,
@@ -580,6 +581,7 @@ function resolveTrainingOrigin(record: ProfileTrainingRecord) {
 
 export default function ProfilePage() {
   const { profile, saveProfile, setProfile, hasPermission, isRootAccess, isAccessTotal, currentUser } = usePortal();
+  const navigate = useNavigate();
 
   const [draftProfile, setDraftProfile] = useState<ProfileData>(profile);
   const [editingSections, setEditingSections] = useState<Record<SectionKey, boolean>>({
@@ -1900,6 +1902,13 @@ export default function ProfilePage() {
                 disabled={!canEditContract || !editingSections.contract}
                 onChange={(value) => handleProfileChange('funcao', value)}
               />
+              <button
+                type="button"
+                className="profile-career-link"
+                onClick={() => navigate('/plano-carreira')}
+              >
+                Ver próximos passos da função
+              </button>
               {profileErrors.funcao && <small>{profileErrors.funcao}</small>}
             </label>
             <label>
@@ -2064,7 +2073,7 @@ export default function ProfilePage() {
                 <small>
                   {voucherNextEligibleDate
                     ? `Próximo pedido disponível em ${formatPtDate(formatLocalDateOnly(voucherNextEligibleDate))}`
-                    : 'Sem pedidos anteriores, podes emitir agora se o contrato for sem termo.'}
+                    : 'Sem pedidos anteriores, podes emitir agora.'}
                 </small>
               </div>
               <Button
@@ -2122,7 +2131,6 @@ export default function ProfilePage() {
         open={isCompletionHelpOpen}
         title="Checklist da ficha"
         onClose={() => setIsCompletionHelpOpen(false)}
-        width="560px"
         footer={(
           <Button type="button" variant="primary" onClick={() => setIsCompletionHelpOpen(false)}>
             Fechar

@@ -55,7 +55,26 @@ type OverviewResponse = {
   pageSize: number;
 };
 
-type Tab = 'meu-saldo' | 'visao-rh' | 'lancamentos' | 'limites';
+type WeeklyReportRow = {
+  id: string;
+  weekLabel: string;
+  generatedAt: string;
+  periodStart: string;
+  periodEnd: string;
+  totalUsers: number;
+  positiveUsers: number;
+  negativeUsers: number;
+  exceededUsers: number;
+  pdfFileName: string;
+  pdfPublicUrl: string;
+};
+
+type WeeklyReportsResponse = {
+  rows: WeeklyReportRow[];
+  total: number;
+};
+
+type Tab = 'meu-saldo' | 'visao-rh' | 'lancamentos' | 'limites' | 'relatorios';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -107,6 +126,8 @@ export default function HourBankPage() {
   const [isSubmittingEntry, setIsSubmittingEntry] = useState(false);
   const [isSubmittingLimit, setIsSubmittingLimit] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  const [reports, setReports] = useState<WeeklyReportRow[]>([]);
+  const [isGeneratingWeeklyReport, setIsGeneratingWeeklyReport] = useState(false);
 
   const canManage = useMemo(
     () => isRootAccess || isAccessTotal || hasPermission('manage_hours_bank'),
@@ -121,6 +142,7 @@ export default function HourBankPage() {
   const tabs: { id: Tab; label: string; icon: string; gated?: boolean }[] = [
     { id: 'meu-saldo', label: 'Meu Saldo', icon: '💰' },
     { id: 'visao-rh', label: 'Visão RH', icon: '📊', gated: !canView },
+    { id: 'relatorios', label: 'Relatórios', icon: '🧾', gated: !canView },
     { id: 'lancamentos', label: 'Lançamentos', icon: '✏️', gated: !canManage },
     { id: 'limites', label: 'Limites', icon: '⚙️', gated: !canManage },
   ];
@@ -155,6 +177,11 @@ export default function HourBankPage() {
           headers: authHeaders(token),
         });
         setOverview(overviewResponse.rows);
+
+        const reportsResponse = await apiRequest<WeeklyReportsResponse>('/hours-bank/reports', {
+          headers: authHeaders(token),
+        });
+        setReports(reportsResponse.rows);
 
         if (!selectedUserId && overviewResponse.rows[0]) {
           setSelectedUserId(overviewResponse.rows[0].userId);
@@ -301,6 +328,37 @@ export default function HourBankPage() {
     }
   }
 
+  async function handleGenerateWeeklyReport() {
+    if (!canManage) {
+      return;
+    }
+
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    if (!token) {
+      return;
+    }
+
+    setIsGeneratingWeeklyReport(true);
+    setStatus('');
+
+    try {
+      await apiRequest('/hours-bank/reports/generate-weekly', {
+        method: 'POST',
+        headers: authHeaders(token),
+      });
+
+      await Promise.all([loadData(), refreshNotifications()]);
+      setStatus('Relatório semanal PDF disponível com sucesso.');
+      setStatusKind('ok');
+      setActiveTab('relatorios');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Falha ao gerar relatório semanal PDF.');
+      setStatusKind('err');
+    } finally {
+      setIsGeneratingWeeklyReport(false);
+    }
+  }
+
   const visibleOverview = useMemo(
     () => (onlyExceeded ? overview.filter((row) => row.isExceeded) : overview),
     [onlyExceeded, overview],
@@ -431,7 +489,7 @@ export default function HourBankPage() {
                           {entry.type === 'CREDIT' ? '+' : '−'}{formatHours(entry.hours)}
                         </span>
                         <div className="hb-history__info">
-                          <strong>{entry.reason || '—'}</strong>
+                          <strong>{entry.reason || '-'}</strong>
                           <span>{formatDateTime(entry.createdAt)}</span>
                         </div>
                         {entry.source && <span className="hb-history__source">{entry.source}</span>}
@@ -531,7 +589,7 @@ export default function HourBankPage() {
                         </div>
                       </td>
                       <td className="hb-muted-cell">{row.team?.name || <span className="hb-muted">Sem equipa</span>}</td>
-                      <td>{row.brWorkState ? <span className="hb-chip hb-chip--state">{row.brWorkState}</span> : <span className="hb-muted">—</span>}</td>
+                      <td>{row.brWorkState ? <span className="hb-chip hb-chip--state">{row.brWorkState}</span> : <span className="hb-muted">-</span>}</td>
                       <td className="hb-table__credit hb-table__td--num">{row.creditedHours > 0 ? '+' : ''}{formatHours(row.creditedHours)}</td>
                       <td className="hb-table__debit hb-table__td--num">{row.debitedHours > 0 ? '−' : ''}{formatHours(row.debitedHours)}</td>
                       <td className="hb-table__td--num hb-table__saldo">
@@ -719,6 +777,69 @@ export default function HourBankPage() {
                   <Button type="submit" variant="secondary" isLoading={isSubmittingLimit}>Guardar</Button>
                 </div>
               </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB: Relatórios */}
+      {activeTab === 'relatorios' && canView && (
+        <div className="hb-tab-content">
+          <div className="hb-form-panel">
+            <div className="hb-form-panel__header">
+              <h2>Relatórios semanais (PDF)</h2>
+              <p>Histórico centralizado de relatórios automáticos do banco de horas no Brasil.</p>
+            </div>
+
+            <div className="hb-toolbar">
+              <div className="hb-toolbar__actions">
+                <Button type="button" variant="secondary" onClick={() => void loadData()}>↺ Atualizar</Button>
+                {canManage && (
+                  <Button
+                    type="button"
+                    variant="primary"
+                    isLoading={isGeneratingWeeklyReport}
+                    onClick={() => void handleGenerateWeeklyReport()}
+                  >
+                    Gerar PDF da semana
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {reports.length === 0 ? (
+              <div className="hb-empty"><p>Ainda não existem relatórios semanais gerados.</p></div>
+            ) : (
+              <div className="hb-table-wrap">
+                <table className="hb-table">
+                  <thead>
+                    <tr>
+                      <th>Semana</th>
+                      <th>Período</th>
+                      <th className="hb-table__th--num">Analisados</th>
+                      <th className="hb-table__th--num">Excedentes</th>
+                      <th>Gerado em</th>
+                      <th>Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reports.map((row) => (
+                      <tr key={row.id}>
+                        <td><strong>{row.weekLabel}</strong></td>
+                        <td>{row.periodStart} a {row.periodEnd}</td>
+                        <td className="hb-table__td--num">{row.totalUsers}</td>
+                        <td className="hb-table__td--num">{row.exceededUsers}</td>
+                        <td>{formatDateTime(row.generatedAt)}</td>
+                        <td>
+                          <a className="career-inline-link" href={row.pdfPublicUrl} target="_blank" rel="noreferrer">
+                            Abrir PDF
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
