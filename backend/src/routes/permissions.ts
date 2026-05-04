@@ -141,6 +141,64 @@ async function assertCanManagePermissionTarget(actorUserId: string, actorIsRoot:
   return { ok: true as const };
 }
 
+async function ensureDefaultEmployeePermissionsForUser(targetUserId: string) {
+  const targetUser = await prisma.user.findUnique({
+    where: { id: targetUserId },
+    select: {
+      id: true,
+      role: true,
+      isRootAccess: true,
+      hasAccessTotal: true,
+    },
+  });
+
+  if (!targetUser || targetUser.role === 'CONVIDADO') {
+    return;
+  }
+
+  // Root/AT já têm privilégios globais; o preset base não é necessário.
+  if (targetUser.isRootAccess || targetUser.hasAccessTotal) {
+    return;
+  }
+
+  const permissions = await prisma.permission.findMany({
+    where: { code: { in: [...DEFAULT_EMPLOYEE_PERMISSION_CODES] } },
+    select: { id: true, code: true },
+  });
+
+  if (permissions.length === 0) {
+    return;
+  }
+
+  const existingAssignments = await prisma.userPermission.findMany({
+    where: {
+      userId: targetUserId,
+      permissionId: { in: permissions.map((permission) => permission.id) },
+    },
+    select: { permissionId: true },
+  });
+
+  const existingPermissionIds = new Set(existingAssignments.map((item) => item.permissionId));
+  const missingPermissions = permissions.filter((permission) => !existingPermissionIds.has(permission.id));
+
+  if (missingPermissions.length === 0) {
+    return;
+  }
+
+  await prisma.userPermission.createMany({
+    data: missingPermissions.map((permission) => ({
+      userId: targetUserId,
+      permissionId: permission.id,
+      isEnabled: true,
+      restrictedToTeams: [],
+      restrictedToCountries: [],
+      restrictedToLevels: [],
+      notes: AUTO_DEFAULT_EMPLOYEE_NOTE,
+    })),
+    skipDuplicates: true,
+  });
+}
+
 router.get('/permissions', requireAuth, async (_req, res) => {
   const permissions = await prisma.permission.findMany({
     orderBy: [{ category: 'asc' }, { label: 'asc' }],
@@ -165,6 +223,10 @@ router.get('/users/:id/permissions', requireAuth, async (req, res) => {
 
   if (!canManage && req.authUser!.id !== targetUserId) {
     return res.status(403).json({ message: 'Sem permissões para consultar permissões de outros utilizadores.' });
+  }
+
+  if (req.authUser!.id === targetUserId) {
+    await ensureDefaultEmployeePermissionsForUser(targetUserId);
   }
 
   const [user, permissions, assignments] = await Promise.all([

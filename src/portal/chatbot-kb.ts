@@ -60,6 +60,10 @@ function roleLabel(ctx: ChatbotContext): string {
   }
 }
 
+function isGlobalOpsUser(ctx: ChatbotContext): boolean {
+  return (ctx.username ?? '').trim().toLowerCase() === 't.people';
+}
+
 // ─── Deteção de intenção ──────────────────────────────────────────────────────
 
 function isGreeting(q: string): boolean {
@@ -101,7 +105,7 @@ function buildAccessSummary(ctx: ChatbotContext): string[] {
   if (hasAnyPermission(ctx, ['approve_profile_change','approve_vacation','reject_vacation','view_all_vacations'])) areas.push('Aprovações');
   if (hasAnyPermission(ctx, ['view_trainings','view_all_trainings','request_training','assign_training'])) areas.push('Formações');
   if (hasAnyPermission(ctx, ['request_vacation','view_own_vacations','view_all_vacations','manage_vacation_rules'])) areas.push('Férias');
-  if (hasAnyPermission(ctx, ['view_hours_bank','manage_hours_bank'])) areas.push('Banco de Horas');
+  if (hasAnyPermission(ctx, ['view_hours_bank','manage_hours_bank']) || isGlobalOpsUser(ctx)) areas.push('Banco de Horas');
   return areas;
 }
 
@@ -111,36 +115,27 @@ export function getInitialSuggestions(ctx: ChatbotContext): string[] {
   const path = ctx.currentPath ?? '';
   const pageSpecific: Record<string, string[]> = {
     '/banco-horas': [
-      'Como vejo o meu saldo de banco de horas?',
       'Como lançar horas para um colaborador?',
-      'Como definir o limite de horas?',
       'O que é a política de fecho quadrimestral?',
-      'Como exportar banco de horas em Excel?',
     ],
     '/ferias': [
       'Como peço férias?',
       'Quais são as regras de férias para BR?',
-      'Como cancelo um pedido de férias?',
-      'Quem aprova os meus pedidos?',
     ],
     '/aprovacoes': [
       'Como aprovo um pedido de férias?',
-      'Posso rejeitar sem motivo?',
       'Como funciona aprovação multi-equipa?',
     ],
     '/colaboradores': [
-      'Como ativo ou desativo um utilizador?',
       'Como gerir permissões de um colaborador?',
       'O que é o Access Total?',
     ],
     '/dashboard': [
       'Como exportar Excel no dashboard?',
-      'Como filtrar por período?',
       'Que KPIs aparecem no dashboard?',
     ],
     '/profile': [
       'Como edito os meus dados pessoais?',
-      'Como faço upload de comprovativos?',
       'Como emito o voucher NOS?',
     ],
     '/formacoes': [
@@ -148,17 +143,14 @@ export function getInitialSuggestions(ctx: ChatbotContext): string[] {
       'Como atribuir formação a um colaborador?',
     ],
   };
-  if (pageSpecific[path]) return pageSpecific[path].slice(0, 6);
+  if (pageSpecific[path]) return pageSpecific[path];
   const base = [
-    'O que posso fazer com o meu perfil?',
     'Como peço férias?',
     'Como aprovo pedidos?',
-    'Como vejo o meu banco de horas?',
-    'Onde emito voucher NOS?',
-    'Como gerir permissões?',
+    'O que posso fazer com o meu perfil?',
   ];
-  if (ctx.isRootAccess || ctx.isAccessTotal) base.push('Como exporto Excel no dashboard?');
-  return base.slice(0, 7);
+  if (isGlobalOpsUser(ctx)) base.push('Sou t.people: como atuar em PT e BR?');
+  return base.slice(0, 3);
 }
 
 // ─── Base de conhecimento ─────────────────────────────────────────────────────
@@ -681,6 +673,40 @@ const FEATURES: FeatureSpec[] = [
       'Sem estado BR configurado: política padrão.',
     ],
     related: ['Como defino o estado BR?','Meu saldo banco de horas','Como alterar limite?'],
+  },
+  {
+    id: 'dashboard-drill-analytics',
+    title: 'Dashboard - Drill-down, drill-up, roll-up e drill-through',
+    path: '/dashboard',
+    keywords: ['drill down','drill-up','drill up','roll up','drill through','aprofundar grafico','detalhar grafico','detalhe dashboard','explorar grafico'],
+    requiresRootOrAccessTotal: true,
+    description: 'Navegação analítica do dashboard para ir do agregado ao detalhe operacional.',
+    steps: [
+      'No gráfico, clica numa fatia para fazer **drill-down** da dimensão atual.',
+      'Usa **Drill up** para subir um nível e **Limpar caminho** para voltar ao topo.',
+      'No painel de detalhe, usa **Drill through** para listar os registos que compõem o indicador.',
+      'Exporta o detalhe com o botão de Excel para análise externa.',
+    ],
+    rules: [
+      'Quando alterares filtros manuais, o caminho de drill é reiniciado para evitar inconsistências.',
+    ],
+    related: ['Como exporto Excel no dashboard?','Que KPIs aparecem no dashboard?'],
+  },
+  {
+    id: 't-people-global-ops',
+    title: 't.people - Operação global PT e BR',
+    keywords: ['t.people','acesso global','pt e br','dois mundos','cross country','multipaís','multi pais','aprovar pt br'],
+    description: 'Fluxo operacional para o utilizador t.people atuar em funcionalidades PT e BR.',
+    steps: [
+      'Usa o menu lateral para alternar entre processos de Férias/Aprovações e Banco de Horas.',
+      'Para férias, o fallback t.people permite cobrir ausência de aprovadores por país.',
+      'Para banco de horas, o acesso de t.people não fica limitado ao país do próprio perfil.',
+      'Mantém filtros por país na UI para segmentar corretamente a operação.',
+    ],
+    rules: [
+      'Operação global não substitui rastreabilidade: cada decisão continua auditada por utilizador e data.',
+    ],
+    related: ['Como aprovar pedidos?','Como filtrar visão RH?','Como gerir permissões?'],
   },
   {
     id: 'login-issues',

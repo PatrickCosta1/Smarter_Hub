@@ -498,6 +498,24 @@ function normalizeGender(value?: string) {
   return 'Outro';
 }
 
+function normalizeContractType(value?: string | null) {
+  return (value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function parseMultiValueQuery(value: unknown) {
+  const rawValues = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+
+  return rawValues
+    .flatMap((entry) => entry.split(','))
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .filter((entry, index, collection) => collection.indexOf(entry) === index);
+}
+
 const DEFAULT_EMPLOYEE_PERMISSION_CODES = [
   'view_profile',
   'request_profile_change',
@@ -1043,7 +1061,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
   const requestScopeWhere = scopeWhere ? { user: scopeWhere } : {};
   const actorHasAccessTotal = Boolean(req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id));
 
-  const [usersResult, profileRequestsResult, vacationsResult, trainingsResult, historyResult, firstVacationResult] = await Promise.allSettled([
+  const [usersResult, profileRequestsResult, vacationsResult, trainingsResult, historyResult] = await Promise.allSettled([
     prisma.user.findMany({
       where: collaboratorWhere,
       select: {
@@ -1070,6 +1088,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
             nomeCompleto: true,
             dataNascimento: true,
             dataInicioContrato: true,
+            tipoContrato: true,
             genero: true,
             habilitacoesLiterarias: true,
             cargo: true,
@@ -1153,11 +1172,6 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       orderBy: [{ reviewedAt: 'desc' }, { createdAt: 'desc' }],
       take: 120,
     }),
-    prisma.vacation.groupBy({
-      by: ['userId'],
-      _min: { createdAt: true },
-      where: scopeWhere ? { user: scopeWhere } : {},
-    }),
   ]);
 
   const collaboratorRows = usersResult.status === 'fulfilled' ? usersResult.value : [];
@@ -1167,6 +1181,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
   const filterRole = typeof req.query.role === 'string' ? req.query.role.trim().toUpperCase() : '';
   const filterGender = typeof req.query.gender === 'string' ? req.query.gender.trim() : '';
   const filterFunction = typeof req.query.function === 'string' ? req.query.function.trim() : '';
+  const filterContractTypes = parseMultiValueQuery(req.query.contractType);
   const filterGeography = typeof req.query.geography === 'string' ? req.query.geography.trim() : '';
   const filterLevel = typeof req.query.level === 'string' ? req.query.level.trim() : '';
   const filterIsActive = typeof req.query.isActive === 'string' ? req.query.isActive.trim().toLowerCase() : '';
@@ -1258,11 +1273,29 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
     const activeCount = activeRows.length;
     const total = rows.length;
 
-    // % voucher NOS (PT only, activos)
-    const ptActiveRows = activeRows.filter((r) => !r.profile?.workCountry || r.profile?.workCountry === 'PT');
-    const nosVoucherRate = ptActiveRows.length > 0
-      ? (ptActiveRows.filter((r) => r.profile?.voucherNosData?.trim()).length / ptActiveRows.length) * 100
+    const eligibleNosVoucherRows = activeRows.filter((row) => {
+      const isPtProfile = !row.profile?.workCountry || row.profile?.workCountry === 'PT';
+      return isPtProfile && normalizeContractType(row.profile?.tipoContrato) === 'sem termo';
+    });
+
+    const requestedNosVoucherRows = eligibleNosVoucherRows.filter((row) => Boolean(row.profile?.voucherNosData?.trim()));
+    const nosVoucherRate = eligibleNosVoucherRows.length > 0
+      ? (requestedNosVoucherRows.length / eligibleNosVoucherRows.length) * 100
       : 0;
+
+    const voucherRequestLeadDays = requestedNosVoucherRows
+      .map((row) => {
+        const contractStart = parseIsoDate(row.profile?.dataInicioContrato || '');
+        const requestDate = parseIsoDate(row.profile?.voucherNosData || '');
+
+        if (!contractStart || !requestDate) {
+          return null;
+        }
+
+        const diffDays = (requestDate.getTime() - contractStart.getTime()) / (1000 * 60 * 60 * 24);
+        return diffDays >= 0 ? diffDays : null;
+      })
+      .filter((value): value is number => typeof value === 'number');
 
     // % cartão Continente (activos)
     const continenteCardRate = activeCount > 0
@@ -1302,6 +1335,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       },
       retentionRate: total > 0 ? (activeCount / total) * 100 : 0,
       nosVoucherRate,
+      avgVoucherRequestLeadDays: voucherRequestLeadDays.length > 0 ? average(voucherRequestLeadDays) : null,
       continenteCardRate,
       avgTenureByFunction,
       distributions: {
@@ -1346,6 +1380,11 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
     .sort((a, b) => a.localeCompare(b));
   const functionOptions = Array.from(new Set(periodScopedRows.map((item) => getFunction(item)).filter(Boolean)))
     .sort((a, b) => a.localeCompare(b));
+  const contractTypeOptions = Array.from(new Set(
+    periodScopedRows
+      .map((item) => item.profile?.tipoContrato?.trim())
+      .filter((value): value is string => Boolean(value)),
+  )).sort((a, b) => a.localeCompare(b));
   const genderOptions = Array.from(new Set(periodScopedRows.map((item) => normalizeGender(item.profile?.genero))))
     .sort((a, b) => a.localeCompare(b));
 
@@ -1365,6 +1404,10 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
     }
 
     if (filterFunction && getFunction(item) !== filterFunction) {
+      return false;
+    }
+
+    if (filterContractTypes.length > 0 && !filterContractTypes.includes(item.profile?.tipoContrato?.trim() || '')) {
       return false;
     }
 
@@ -1406,23 +1449,6 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
     ? (teamOptions.find((team) => team.id === filterTeamId)?.name || 'Equipa filtrada')
     : 'Todas as equipas';
 
-  // Tempo médio desde a criação da conta até ao primeiro pedido de férias
-  const firstVacationRows = firstVacationResult.status === 'fulfilled' ? firstVacationResult.value : [];
-  const firstVacationByUser = new Map(
-    firstVacationRows.map((row) => [row.userId, row._min.createdAt]),
-  );
-  const accessToRequestDelays: number[] = [];
-  for (const user of collaboratorRows) {
-    const firstVacation = firstVacationByUser.get(user.id);
-    if (firstVacation && user.createdAt) {
-      const days = (firstVacation.getTime() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24);
-      if (days >= 0) {
-        accessToRequestDelays.push(days);
-      }
-    }
-  }
-  const avgAccessToRequestDays = average(accessToRequestDelays);
-
   const teamInsights = {
     appliedFilters: {
       search: filterSearch,
@@ -1430,6 +1456,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       role: filterRole,
       gender: filterGender,
       function: filterFunction,
+      contractTypes: filterContractTypes,
       geography: filterGeography,
       level: filterLevel,
       isActive: filterIsActive,
@@ -1442,6 +1469,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       roles: ['COLABORADOR', 'MANAGER', 'COORDENADOR', 'ADMIN'],
       genders: genderOptions,
       functions: functionOptions,
+      contractTypes: contractTypeOptions,
       geographies: geographyOptions,
       levels: levelOptions,
       activeStates: [
@@ -1452,7 +1480,6 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
     },
     selected: buildCharacterization(selectedRows),
     company: buildCharacterization(periodScopedRows),
-    avgAccessToRequestDays,
   };
   const teamCount = new Set(
     periodScopedRows
@@ -1654,6 +1681,7 @@ router.get('/users/dashboard-collaborators', requireAuth, async (req, res) => {
   const filterRole = typeof req.query.role === 'string' ? req.query.role.trim().toUpperCase() : '';
   const filterGender = typeof req.query.gender === 'string' ? req.query.gender.trim() : '';
   const filterFunction = typeof req.query.function === 'string' ? req.query.function.trim() : '';
+  const filterContractTypes = parseMultiValueQuery(req.query.contractType);
   const filterGeography = typeof req.query.geography === 'string' ? req.query.geography.trim() : '';
   const filterLevel = typeof req.query.level === 'string' ? req.query.level.trim() : '';
   const filterIsActive = typeof req.query.isActive === 'string' ? req.query.isActive.trim().toLowerCase() : '';
@@ -1703,6 +1731,7 @@ router.get('/users/dashboard-collaborators', requireAuth, async (req, res) => {
           localidade: true,
           workCountry: true,
           dataInicioContrato: true,
+          tipoContrato: true,
         },
       },
     },
@@ -1785,6 +1814,10 @@ router.get('/users/dashboard-collaborators', requireAuth, async (req, res) => {
     }
 
     if (filterFunction && getFunction(item) !== filterFunction) {
+      return false;
+    }
+
+    if (filterContractTypes.length > 0 && !filterContractTypes.includes(item.profile?.tipoContrato?.trim() || '')) {
       return false;
     }
 

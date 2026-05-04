@@ -90,6 +90,16 @@ function formatDateTime(value: string) {
   }).format(date);
 }
 
+function formatDateOnly(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}
+
 function formatHours(value: number) {
   return `${(Math.round(value * 100) / 100).toFixed(2)}h`;
 }
@@ -139,8 +149,10 @@ export default function HourBankPage() {
     [canManage, currentUser?.role, hasPermission],
   );
 
+  const isTPeople = currentUser?.username === 't.people';
+
   const tabs: { id: Tab; label: string; icon: string; gated?: boolean }[] = [
-    { id: 'meu-saldo', label: 'Meu Saldo', icon: '💰' },
+    ...(!isTPeople ? [{ id: 'meu-saldo' as Tab, label: 'Meu Saldo', icon: '💰' }] : []),
     { id: 'visao-rh', label: 'Visão RH', icon: '📊', gated: !canView },
     { id: 'relatorios', label: 'Relatórios', icon: '🧾', gated: !canView },
     { id: 'lancamentos', label: 'Lançamentos', icon: '✏️', gated: !canManage },
@@ -159,10 +171,12 @@ export default function HourBankPage() {
     setStatus('');
 
     try {
-      const meResponse = await apiRequest<MeResponse>('/hours-bank/me', {
-        headers: authHeaders(token),
-      });
-      setMe(meResponse);
+      if (!isTPeople) {
+        const meResponse = await apiRequest<MeResponse>('/hours-bank/me', {
+          headers: authHeaders(token),
+        });
+        setMe(meResponse);
+      }
 
       if (canView) {
         const params = new URLSearchParams();
@@ -203,6 +217,10 @@ export default function HourBankPage() {
 
     return () => clearTimeout(timeoutId);
   }, [searchDraft]);
+
+  useEffect(() => {
+    if (isTPeople) setActiveTab('visao-rh');
+  }, [isTPeople]);
 
   useEffect(() => {
     void loadData();
@@ -375,6 +393,20 @@ export default function HourBankPage() {
       totalExceededHours,
     };
   }, [overview]);
+
+  const reportsMetrics = useMemo(() => {
+    const totalAnalyzed = reports.reduce((sum, row) => sum + row.totalUsers, 0);
+    const totalExceeded = reports.reduce((sum, row) => sum + row.exceededUsers, 0);
+    const latest = reports[0] ?? null;
+
+    return {
+      totalReports: reports.length,
+      totalAnalyzed,
+      totalExceeded,
+      latestWeekLabel: latest?.weekLabel ?? '-',
+      latestGeneratedAt: latest ? formatDateTime(latest.generatedAt) : '-',
+    };
+  }, [reports]);
 
   useEffect(() => {
     if (visibleOverview.length === 0) { setSelectedUserId(''); return; }
@@ -807,38 +839,78 @@ export default function HourBankPage() {
               </div>
             </div>
 
+            <div className="hb-reports-kpis">
+              <article className="hb-report-kpi hb-report-kpi--slate">
+                <p className="hb-report-kpi__label">Relatórios gerados</p>
+                <p className="hb-report-kpi__value">{reportsMetrics.totalReports}</p>
+              </article>
+              <article className="hb-report-kpi hb-report-kpi--blue">
+                <p className="hb-report-kpi__label">Colaboradores analisados</p>
+                <p className="hb-report-kpi__value">{reportsMetrics.totalAnalyzed}</p>
+              </article>
+              <article className={`hb-report-kpi ${reportsMetrics.totalExceeded > 0 ? 'hb-report-kpi--amber' : 'hb-report-kpi--green'}`}>
+                <p className="hb-report-kpi__label">Excedentes sinalizados</p>
+                <p className="hb-report-kpi__value">{reportsMetrics.totalExceeded}</p>
+              </article>
+              <article className="hb-report-kpi hb-report-kpi--indigo">
+                <p className="hb-report-kpi__label">Última semana</p>
+                <p className="hb-report-kpi__value">{reportsMetrics.latestWeekLabel}</p>
+                <p className="hb-report-kpi__meta">{reportsMetrics.latestGeneratedAt}</p>
+              </article>
+            </div>
+
             {reports.length === 0 ? (
               <div className="hb-empty"><p>Ainda não existem relatórios semanais gerados.</p></div>
             ) : (
-              <div className="hb-table-wrap">
-                <table className="hb-table">
-                  <thead>
-                    <tr>
-                      <th>Semana</th>
-                      <th>Período</th>
-                      <th className="hb-table__th--num">Analisados</th>
-                      <th className="hb-table__th--num">Excedentes</th>
-                      <th>Gerado em</th>
-                      <th>Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {reports.map((row) => (
-                      <tr key={row.id}>
-                        <td><strong>{row.weekLabel}</strong></td>
-                        <td>{row.periodStart} a {row.periodEnd}</td>
-                        <td className="hb-table__td--num">{row.totalUsers}</td>
-                        <td className="hb-table__td--num">{row.exceededUsers}</td>
-                        <td>{formatDateTime(row.generatedAt)}</td>
-                        <td>
-                          <a className="career-inline-link" href={row.pdfPublicUrl} target="_blank" rel="noreferrer">
-                            Abrir PDF
-                          </a>
-                        </td>
+              <div className="hb-table-card">
+                <div className="hb-table-card__header">
+                  <span className="hb-table-card__count">{reports.length} semanas em histórico</span>
+                </div>
+                <div className="hb-table-wrap">
+                  <table className="hb-table hb-reports-table">
+                    <thead>
+                      <tr>
+                        <th>Semana</th>
+                        <th>Período</th>
+                        <th className="hb-table__th--num">Analisados</th>
+                        <th className="hb-table__th--num">Excedentes</th>
+                        <th>Gerado em</th>
+                        <th>Ação</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {reports.map((row) => (
+                        <tr key={row.id}>
+                          <td>
+                            <span className="hb-report-week">{row.weekLabel}</span>
+                          </td>
+                          <td>
+                            <span className="hb-report-period">
+                              {formatDateOnly(row.periodStart)} a {formatDateOnly(row.periodEnd)}
+                            </span>
+                          </td>
+                          <td className="hb-table__td--num">{row.totalUsers}</td>
+                          <td className="hb-table__td--num">
+                            <span className={`hb-report-exceeded${row.exceededUsers > 0 ? ' hb-report-exceeded--warn' : ''}`}>
+                              {row.exceededUsers}
+                            </span>
+                          </td>
+                          <td>{formatDateTime(row.generatedAt)}</td>
+                          <td>
+                            <div className="hb-report-actions">
+                              <a className="hb-report-link" href={row.pdfPublicUrl} target="_blank" rel="noreferrer">
+                                Abrir PDF
+                              </a>
+                              <a className="hb-report-link hb-report-link--ghost" href={row.pdfPublicUrl} target="_blank" rel="noreferrer" download>
+                                Download
+                              </a>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>

@@ -1,21 +1,33 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { roleLabels } from '../portal/data';
 import { usePortal } from '../portal/context';
 import { MenuItem } from '../portal/types';
-import { apiRequestCached, authHeaders } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders } from '../portal/api';
 import ChatbotWidget from '../components/ChatbotWidget';
+import Modal from '../components/ui/Modal';
+import Button from '../components/ui/Button';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
+
+type OccupationalHealthAlertSettingResponse = {
+  enabled: boolean;
+};
 
 export default function PortalLayout() {
   const { userRole, unreadNotifications, logout, hasPermission, isRootAccess, isAccessTotal, currentUser, profile } = usePortal();
   const navigate = useNavigate();
   const location = useLocation();
   const [menuQuery, setMenuQuery] = useState('');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [occupationalHealthAlertsEnabled, setOccupationalHealthAlertsEnabled] = useState(true);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsStatus, setSettingsStatus] = useState('');
   const prefetchedRoutesRef = useRef<Set<string>>(new Set());
   const isTPeople = currentUser?.username === 't.people';
   const isBrProfile = profile.workCountry === 'BR';
+  const canUseHourBankAcrossCountries = isTPeople;
   const canManageTrainings = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
 
   const roleMenus = useMemo(() => {
@@ -37,13 +49,13 @@ export default function PortalLayout() {
       ...((can('request_vacation') || can('view_own_vacations') || can('view_all_vacations') || can('manage_vacation_rules'))
         ? [{ id: 'ferias', label: 'Férias / Ausências', path: '/ferias' }]
         : []),
-      ...((isBrProfile && (can('view_hours_bank') || can('manage_hours_bank') || isRootAccess || isAccessTotal))
+      ...(((isBrProfile || canUseHourBankAcrossCountries) && (can('view_hours_bank') || can('manage_hours_bank') || isRootAccess || isAccessTotal))
         ? [{ id: 'banco-horas', label: 'Banco de Horas', path: '/banco-horas' }]
         : []),
     ];
 
     return menu;
-  }, [currentUser?.role, hasPermission, isAccessTotal, isBrProfile, isRootAccess, isTPeople]);
+  }, [canUseHourBankAcrossCountries, currentUser?.role, hasPermission, isAccessTotal, isBrProfile, isRootAccess, isTPeople]);
 
   const currentMenu = useMemo(
     () => roleMenus.find((item) => item.path === location.pathname),
@@ -90,6 +102,77 @@ export default function PortalLayout() {
   function handleLogout() {
     logout();
     navigate('/login');
+  }
+
+  useEffect(() => {
+    if (!isSettingsOpen || !isAccessTotal) {
+      return;
+    }
+
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    if (!token) {
+      return;
+    }
+
+    let active = true;
+    setIsLoadingSettings(true);
+    setSettingsStatus('');
+
+    void apiRequestCached<OccupationalHealthAlertSettingResponse>('/hours-bank/settings/occupational-health-alert', {
+      headers: authHeaders(token),
+    }, 3000, true)
+      .then((response) => {
+        if (!active) {
+          return;
+        }
+        setOccupationalHealthAlertsEnabled(Boolean(response.enabled));
+      })
+      .catch((error) => {
+        if (!active) {
+          return;
+        }
+        setSettingsStatus(error instanceof Error ? error.message : 'Falha ao carregar definições.');
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoadingSettings(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isAccessTotal, isSettingsOpen]);
+
+  async function handleToggleOccupationalHealthAlerts() {
+    if (!isAccessTotal) {
+      return;
+    }
+
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    if (!token) {
+      return;
+    }
+
+    setIsSavingSettings(true);
+    setSettingsStatus('');
+
+    try {
+      const response = await apiRequest<OccupationalHealthAlertSettingResponse>('/hours-bank/settings/occupational-health-alert', {
+        method: 'PATCH',
+        headers: authHeaders(token),
+        body: JSON.stringify({ enabled: !occupationalHealthAlertsEnabled }),
+      });
+
+      setOccupationalHealthAlertsEnabled(Boolean(response.enabled));
+      setSettingsStatus(response.enabled
+        ? 'Alerta de medicina do trabalho ativado.'
+        : 'Alerta de medicina do trabalho desativado.');
+    } catch (error) {
+      setSettingsStatus(error instanceof Error ? error.message : 'Falha ao guardar definições.');
+    } finally {
+      setIsSavingSettings(false);
+    }
   }
 
   function prefetchRoute(path: string) {
@@ -274,6 +357,17 @@ export default function PortalLayout() {
               >
                 <span aria-hidden="true">👤</span>
               </button>
+              {isAccessTotal && (
+                <button
+                  className={`icon-button icon-button--header${isSettingsOpen ? ' is-active' : ''}`}
+                  type="button"
+                  onClick={() => setIsSettingsOpen(true)}
+                  aria-label="Definições"
+                  title="Definições"
+                >
+                  <span aria-hidden="true">⚙️</span>
+                </button>
+              )}
               <button className="topbar-link" type="button" onClick={handleLogout}>
                 Sair
               </button>
@@ -287,6 +381,41 @@ export default function PortalLayout() {
 
       </section>
     </main>
+    <Modal open={isSettingsOpen} title="Definições" onClose={() => setIsSettingsOpen(false)} width="min(720px, 100%)">
+      <section className="portal-settings-panel">
+        <div className="portal-settings-panel__intro">
+          <p className="portal-settings-panel__eyebrow">Configuração global</p>
+          <h4>Alertas automáticos</h4>
+          <p>
+            Gestão central das automações transversais do portal. Este espaço é exclusivo para utilizadores com Acesso Total.
+          </p>
+        </div>
+
+        <article className="portal-settings-card">
+          <div className="portal-settings-card__body">
+            <p className="portal-settings-card__title">Medicina do trabalho</p>
+            <p className="portal-settings-card__description">
+              BR: alerta semestral. PT: alerta de 2 em 2 anos, ou anual para colaboradores com mais de 50 anos.
+            </p>
+            <p className="portal-settings-card__status">
+              Estado atual: <strong>{occupationalHealthAlertsEnabled ? 'Ativado' : 'Desativado'}</strong>
+            </p>
+            {settingsStatus && <p className="portal-settings-card__feedback">{settingsStatus}</p>}
+          </div>
+
+          <div className="portal-settings-card__actions">
+            <Button
+              type="button"
+              variant={occupationalHealthAlertsEnabled ? 'secondary' : 'primary'}
+              isLoading={isLoadingSettings || isSavingSettings}
+              onClick={() => void handleToggleOccupationalHealthAlerts()}
+            >
+              {occupationalHealthAlertsEnabled ? 'Desativar alerta' : 'Ativar alerta'}
+            </Button>
+          </div>
+        </article>
+      </section>
+    </Modal>
     <ChatbotWidget />
     </>
   );

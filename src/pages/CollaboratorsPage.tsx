@@ -1437,10 +1437,9 @@ export default function CollaboratorsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [query, setQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'ALL' | CollaboratorRow['role']>('ALL');
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ACTIVE');
   const [countryFilter, setCountryFilter] = useState<'ALL' | 'PT' | 'BR'>('ALL');
-  const [sortBy, setSortBy] = useState<'createdAt' | 'updatedAt' | 'username' | 'email' | 'role'>('updatedAt');
+  const [sortBy, setSortBy] = useState<'createdAt' | 'updatedAt' | 'username' | 'email'>('updatedAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
@@ -1532,6 +1531,12 @@ export default function CollaboratorsPage() {
     [rows, currentUser?.id],
   );
   const visibleTotal = Math.max(0, total - (rows.some((item) => item.id === currentUser?.id) ? 1 : 0));
+  const hasCustomFilters = query.trim().length > 0 || activeFilter !== 'ACTIVE' || countryFilter !== 'ALL';
+  const activeFilterTags = [
+    query.trim() ? `Pesquisa: ${query.trim()}` : null,
+    activeFilter === 'ACTIVE' ? null : `Estado: ${activeFilter === 'INACTIVE' ? 'Inativo' : 'Todos'}`,
+    countryFilter === 'ALL' ? null : `País: ${countryFilter === 'PT' ? 'Portugal' : 'Brasil'}`,
+  ].filter(Boolean) as string[];
   const importPreviewRows = useMemo(() => importRows.slice(0, 8), [importRows]);
   const importCreatedCount = useMemo(() => importResults.filter((item) => item.status === 'CREATED').length, [importResults]);
   const importFailedCount = useMemo(() => importResults.filter((item) => item.status === 'FAILED').length, [importResults]);
@@ -1650,7 +1655,7 @@ export default function CollaboratorsPage() {
     return () => {
       controller.abort();
     };
-  }, [canView, page, pageSize, query, roleFilter, activeFilter, countryFilter, sortBy, sortDirection]);
+  }, [canView, page, pageSize, query, activeFilter, countryFilter, sortBy, sortDirection]);
 
   useEffect(() => {
     const syncQueryFromInput = () => {
@@ -1740,9 +1745,6 @@ export default function CollaboratorsPage() {
       if (query.trim()) {
         params.set('q', query.trim());
       }
-      if (roleFilter !== 'ALL') {
-        params.set('role', roleFilter);
-      }
       if (activeFilter !== 'ALL') {
         params.set('active', activeFilter === 'ACTIVE' ? 'true' : 'false');
       }
@@ -1781,9 +1783,6 @@ export default function CollaboratorsPage() {
     if (query.trim()) {
       params.set('q', query.trim());
     }
-    if (roleFilter !== 'ALL') {
-      params.set('role', roleFilter);
-    }
     if (activeFilter !== 'ALL') {
       params.set('active', activeFilter === 'ACTIVE' ? 'true' : 'false');
     }
@@ -1792,6 +1791,15 @@ export default function CollaboratorsPage() {
     }
 
     return params;
+  }
+
+  function clearCollaboratorFilters() {
+    setPage(1);
+    setQuery('');
+    setActiveFilter('ACTIVE');
+    setCountryFilter('ALL');
+    setSortBy('updatedAt');
+    setSortDirection('desc');
   }
 
   async function loadExportCandidates() {
@@ -3213,75 +3221,87 @@ export default function CollaboratorsPage() {
           </div>
         </div>
 
-        <div className="collaborators-filter-grid">
-          <label>
-            <span>Pesquisar</span>
-            <input
-              ref={collaboratorQueryInputRef}
-              type="search"
-              value={query}
-              autoComplete="off"
-              onChange={(event) => { setPage(1); setQuery(event.target.value); }}
-              placeholder="Nome, username, email, cargo, função..."
-            />
-          </label>
+        <div className="collaborators-filter-bar">
+          <div className="collaborators-filter-group collaborators-filter-group--primary">
+            <label className="collaborators-filter-group__search">
+              <span>Pesquisar</span>
+              <input
+                ref={collaboratorQueryInputRef}
+                type="search"
+                value={query}
+                autoComplete="off"
+                onChange={(event) => { setPage(1); setQuery(event.target.value); }}
+                placeholder="Nome, username, email, cargo, função..."
+              />
+            </label>
 
-          <label>
-            <span>Role</span>
-            <select value={roleFilter} onChange={(event) => { setPage(1); setRoleFilter(event.target.value as 'ALL' | CollaboratorRow['role']); }}>
-              <option value="ALL">Todas</option>
-              <option value="COLABORADOR">{formatRoleLabel('COLABORADOR')}</option>
-              <option value="MANAGER">{formatRoleLabel('MANAGER')}</option>
-              <option value="COORDENADOR">{formatRoleLabel('COORDENADOR')}</option>
-              <option value="ADMIN">{formatRoleLabel('ADMIN')}</option>
-            </select>
-          </label>
+            <label>
+              <span>Estado</span>
+              <select value={activeFilter} onChange={(event) => { setPage(1); setActiveFilter(event.target.value as 'ALL' | 'ACTIVE' | 'INACTIVE'); }}>
+                <option value="ACTIVE">Ativo</option>
+                <option value="INACTIVE">Inativo</option>
+                <option value="ALL">Todos</option>
+              </select>
+            </label>
 
-          <label>
-            <span>Estado</span>
-            <select value={activeFilter} onChange={(event) => { setPage(1); setActiveFilter(event.target.value as 'ALL' | 'ACTIVE' | 'INACTIVE'); }}>
-              <option value="ACTIVE">Ativo</option>
-              <option value="INACTIVE">Inativo</option>
-              <option value="ALL">Todos</option>
-            </select>
-          </label>
+            <label>
+              <span>País</span>
+              <select value={countryFilter} onChange={(event) => { setPage(1); setCountryFilter(event.target.value as 'ALL' | 'PT' | 'BR'); }}>
+                <option value="ALL">Todos</option>
+                <option value="PT">Portugal</option>
+                <option value="BR">Brasil</option>
+              </select>
+            </label>
+          </div>
 
-          <label>
-            <span>País</span>
-            <select value={countryFilter} onChange={(event) => { setPage(1); setCountryFilter(event.target.value as 'ALL' | 'PT' | 'BR'); }}>
-              <option value="ALL">Todos</option>
-              <option value="PT">Portugal</option>
-              <option value="BR">Brasil</option>
-            </select>
-          </label>
+          <div className="collaborators-filter-group collaborators-filter-group--sort">
+            <label>
+              <span>Ordenar por</span>
+              <select value={sortBy} onChange={(event) => setSortBy(event.target.value as 'createdAt' | 'updatedAt' | 'username' | 'email')}>
+                <option value="updatedAt">Atualização</option>
+                <option value="createdAt">Criação</option>
+                <option value="username">Username</option>
+                <option value="email">Email</option>
+              </select>
+            </label>
 
-          <label>
-            <span>Ordenar por</span>
-            <select value={sortBy} onChange={(event) => setSortBy(event.target.value as 'createdAt' | 'updatedAt' | 'username' | 'email' | 'role')}>
-              <option value="updatedAt">Atualização</option>
-              <option value="createdAt">Criação</option>
-              <option value="username">Username</option>
-              <option value="email">Email</option>
-              <option value="role">Role</option>
-            </select>
-          </label>
+            <label>
+              <span>Direção</span>
+              <select value={sortDirection} onChange={(event) => setSortDirection(event.target.value as 'asc' | 'desc')}>
+                <option value="desc">↓ Desc</option>
+                <option value="asc">↑ Asc</option>
+              </select>
+            </label>
 
-          <label>
-            <span>Direção</span>
-            <select value={sortDirection} onChange={(event) => setSortDirection(event.target.value as 'asc' | 'desc')}>
-              <option value="desc">Descendente</option>
-              <option value="asc">Ascendente</option>
-            </select>
-          </label>
+            <label>
+              <span>Por página</span>
+              <select value={pageSize} onChange={(event) => { setPage(1); setPageSize(Number(event.target.value)); }}>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </label>
 
-          <label>
-            <span>Tamanho página</span>
-            <select value={pageSize} onChange={(event) => { setPage(1); setPageSize(Number(event.target.value)); }}>
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-            </select>
-          </label>
+            <button
+              type="button"
+              className="collaborators-filter-clear-btn"
+              onClick={clearCollaboratorFilters}
+              disabled={!hasCustomFilters && sortBy === 'updatedAt' && sortDirection === 'desc'}
+            >
+              Limpar filtros
+            </button>
+          </div>
+
+          <div className="collaborators-filter-summary" aria-live="polite">
+            <span className="collaborators-filter-summary__label">Filtros ativos</span>
+            {activeFilterTags.length === 0 ? (
+              <span className="collaborators-filter-summary__chip collaborators-filter-summary__chip--muted">Padrão</span>
+            ) : (
+              activeFilterTags.map((tag) => (
+                <span key={tag} className="collaborators-filter-summary__chip">{tag}</span>
+              ))
+            )}
+          </div>
         </div>
 
         <div className="collaborators-table">

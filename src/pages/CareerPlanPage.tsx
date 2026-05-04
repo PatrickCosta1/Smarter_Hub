@@ -45,7 +45,7 @@ export default function CareerPlanPage() {
         <div className="cp-hero__left">
           <span className="cp-eyebrow">{plan.family.label}</span>
           <h1 className="cp-hero__name">{profile.cargo || 'Nível por definir'}</h1>
-          <p className="cp-hero__sub">{plan.currentStep.level} · {plan.currentStep.title}</p>
+          <p className="cp-hero__sub">{profile.funcao} · {plan.currentStep.title}</p>
           <div className="cp-progress-track" aria-label="Progressão na hierarquia">
             <div className="cp-progress-bar" style={{ width: `${Math.round(((currentLevelIndex + 1) / CAREER_LEVELS.length) * 100)}%` }} />
           </div>
@@ -140,7 +140,7 @@ export default function CareerPlanPage() {
               ))}
             </div>
             <p className="cp-footnote">
-              A progressão é sempre baseada em mérito, potencial e oportunidade interna - em conformidade com o Plano de Carreira oficial.
+              A progressão é sempre baseada em mérito, potencial e oportunidade interna.
             </p>
           </section>
 

@@ -16,6 +16,10 @@ import {
   resolveBrHourBankLimit,
   resolveLeadershipRecipientsForUser,
 } from '../lib/hour-bank.js';
+import {
+  getOccupationalHealthAlertsEnabled,
+  setOccupationalHealthAlertsEnabled,
+} from '../lib/occupational-health-alerts.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
@@ -29,6 +33,10 @@ const createEntrySchema = z.object({
 
 const updateLimitSchema = z.object({
   limitHours: z.number().min(0, 'Limite deve ser >= 0.').max(400, 'Limite acima do permitido.'),
+});
+
+const occupationalHealthAlertSettingSchema = z.object({
+  enabled: z.boolean(),
 });
 
 function normalizeHours(value: number) {
@@ -115,12 +123,26 @@ async function resolveViewerTeamIds(userId: string) {
 }
 
 async function isActorFromBrazil(userId: string) {
-  const profile = await prisma.profile.findUnique({
-    where: { userId },
-    select: { workCountry: true },
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      username: true,
+      profile: {
+        select: { workCountry: true },
+      },
+    },
   });
 
-  return (profile?.workCountry ?? 'PT') === 'BR';
+  if (!user) {
+    return false;
+  }
+
+  const username = (user.username ?? '').trim().toLowerCase();
+  if (username === 't.people') {
+    return true;
+  }
+
+  return (user.profile?.workCountry ?? 'PT') === 'BR';
 }
 
 router.get('/hours-bank/me', requireAuth, async (req: Request, res: Response) => {
@@ -641,6 +663,35 @@ router.post('/hours-bank/reports/generate-weekly', requireAuth, async (req: Requ
     periodEnd: report.periodEnd,
     pdfPublicUrl: report.pdfPublicUrl,
   });
+});
+
+router.get('/hours-bank/settings/occupational-health-alert', requireAuth, async (req: Request, res: Response) => {
+  const actorId = req.authUser!.id;
+  const canManage = await canManageHourBank(actorId, Boolean(req.authUser!.isRootAccess));
+
+  if (!canManage) {
+    return res.status(403).json({ message: 'Sem permissões para consultar configuração de alertas.' });
+  }
+
+  const enabled = await getOccupationalHealthAlertsEnabled(prisma);
+  return res.json({ enabled });
+});
+
+router.patch('/hours-bank/settings/occupational-health-alert', requireAuth, async (req: Request, res: Response) => {
+  const actorId = req.authUser!.id;
+  const canManage = await canManageHourBank(actorId, Boolean(req.authUser!.isRootAccess));
+
+  if (!canManage) {
+    return res.status(403).json({ message: 'Sem permissões para alterar configuração de alertas.' });
+  }
+
+  const parsed = occupationalHealthAlertSettingSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ message: parsed.error.issues[0].message });
+  }
+
+  const enabled = await setOccupationalHealthAlertsEnabled(prisma, parsed.data.enabled);
+  return res.json({ enabled });
 });
 
 export { router as hourBankRouter };

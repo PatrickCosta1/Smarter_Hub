@@ -377,6 +377,18 @@ function buildNotificationDetails(title: string, message: string): NotificationD
     };
   }
 
+  if (normalized.includes('medicina do trabalho') || normalized.includes('consulta de saúde')) {
+    return {
+      title: 'Consulta de medicina do trabalho',
+      message: structured.firstLine || 'Em breve vais receber informações sobre a tua consulta.',
+      highlights: structured.lines.filter((line) => /periodicidade|br|pt|rh/i.test(line)),
+      tag: 'Saúde Ocupacional',
+      icon: '🩺',
+      color: 'blue',
+      action: { label: 'Abrir banco de horas', path: '/banco-horas' },
+    };
+  }
+
   return {
     title: title || 'Atualização interna',
     message: structured.firstLine || message || 'Tem uma nova atualização no portal.',
@@ -865,10 +877,6 @@ export default function NotificationsPage() {
         {notificationToDeleteItem && (
           <div className="notification-detail">
             <p className="notification-detail__summary">Tem a certeza que quer apagar esta notificação?</p>
-            <div className="notification-detail__panel">
-              <strong>{humanizeTechnicalText(notificationToDeleteItem.title)}</strong>
-              <p>{humanizeTechnicalText(notificationToDeleteItem.message)}</p>
-            </div>
           </div>
         )}
       </Modal>

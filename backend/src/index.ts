@@ -17,6 +17,7 @@ import { prisma } from './lib/prisma.js';
 import { runCitizenCardExpiryNotificationSweep } from './lib/citizen-card-expiry-notifications.js';
 import { runJanuaryIrsAlertSweep } from './lib/january-irs-alerts.js';
 import { runWeeklyHourBankReportSweep } from './lib/hour-bank.js';
+import { runOccupationalHealthAlertSweep } from './lib/occupational-health-alerts.js';
 
 dotenv.config();
 
@@ -135,6 +136,24 @@ async function runWeeklyHourBankReportSweepSafely() {
 void runWeeklyHourBankReportSweepSafely();
 setInterval(() => {
   void runWeeklyHourBankReportSweepSafely();
+}, ONE_DAY_MS);
+
+async function runOccupationalHealthAlertSweepSafely() {
+  try {
+    const result = await runOccupationalHealthAlertSweep(prisma);
+    if (result.skipped) {
+      console.log(`[OCCUPATIONAL_HEALTH_SWEEP] skipped: ${result.reason}`);
+    } else {
+      console.log(`[OCCUPATIONAL_HEALTH_SWEEP] scanned=${result.scannedUsers} created=${result.createdNotifications}`);
+    }
+  } catch (error) {
+    console.error('[OCCUPATIONAL_HEALTH_SWEEP] failed', error);
+  }
+}
+
+void runOccupationalHealthAlertSweepSafely();
+setInterval(() => {
+  void runOccupationalHealthAlertSweepSafely();
 }, ONE_DAY_MS);
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

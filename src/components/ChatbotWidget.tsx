@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { usePortal } from '../portal/context';
 import { getInitialSuggestions, resolveAssistantReply } from '../portal/chatbot-kb';
 
@@ -12,16 +12,89 @@ type Message = {
   timestamp: Date;
 };
 
+type ShortcutAction = {
+  label: string;
+  path: string;
+};
+
+type ReplyMode = 'concise' | 'detailed';
+
 let _msgId = 0;
 function nextId() {
   return ++_msgId;
+}
+
+const CHATBOT_HISTORY_KEY = 'smarter_hub_chatbot_history_v2';
+const CHATBOT_HISTORY_LIMIT = 60;
+const CHATBOT_MODE_KEY = 'smarter_hub_chatbot_mode_v1';
+
+function normalize(value: string): string {
+  return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+function uniqueSuggestions(values: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const item of values) {
+    const key = item.trim().toLowerCase();
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(item);
+  }
+
+  return out;
+}
+
+function sameSuggestions(a: string[], b: string[]) {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function formatTime(d: Date): string {
   return d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
 }
 
+function resolveDayPeriod(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) {
+    return 'Bom dia';
+  }
+  if (hour < 19) {
+    return 'Boa tarde';
+  }
+  return 'Boa noite';
+}
+
+function readablePath(pathname: string): string {
+  const map: Record<string, string> = {
+    '/': 'Home',
+    '/dashboard': 'Dashboard',
+    '/colaboradores': 'Colaboradores',
+    '/aprovacoes': 'Aprovações',
+    '/ferias': 'Férias / Ausências',
+    '/banco-horas': 'Banco de Horas',
+    '/equipas': 'Equipas',
+    '/formacoes': 'Formações',
+    '/profile': 'A Minha Ficha',
+  };
+
+  return map[pathname] ?? pathname;
+}
+
 export default function ChatbotWidget() {
+  const navigate = useNavigate();
   const { isRootAccess, isAccessTotal, userRole, hasPermission, currentUser } = usePortal();
   const location = useLocation();
   const ctx = {
@@ -40,27 +113,285 @@ export default function ChatbotWidget() {
   const [followupSuggestions, setFollowupSuggestions] = useState<string[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [replyMode, setReplyMode] = useState<ReplyMode>('detailed');
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const suggestions = getInitialSuggestions(ctx);
+  const suggestions = useMemo(
+    () => getInitialSuggestions(ctx),
+    [currentUser?.username, hasPermission, isAccessTotal, isRootAccess, location.pathname, userRole],
+  );
+
+  const isTPeople = (ctx.username ?? '').toLowerCase() === 't.people';
+
+  const shortcutActions = useMemo<ShortcutAction[]>(() => {
+    const items: ShortcutAction[] = [{ label: 'Abrir Férias / Ausências', path: '/ferias' }];
+
+    if (ctx.isRootAccess || ctx.isAccessTotal) {
+      items.push({ label: 'Abrir Dashboard', path: '/dashboard' });
+    }
+
+    if (ctx.hasPermission('view_user_list')) {
+      items.push({ label: 'Abrir Colaboradores', path: '/colaboradores' });
+    }
+
+    if (ctx.hasPermission('approve_profile_change') || ctx.hasPermission('approve_vacation') || ctx.hasPermission('reject_vacation') || ctx.hasPermission('view_all_vacations')) {
+      items.push({ label: 'Abrir Aprovações', path: '/aprovacoes' });
+    }
+
+    if (isTPeople || ctx.hasPermission('view_hours_bank') || ctx.hasPermission('manage_hours_bank') || ctx.isRootAccess || ctx.isAccessTotal) {
+      items.push({ label: 'Abrir Banco de Horas', path: '/banco-horas' });
+    }
+
+    return items;
+  }, [hasPermission, isTPeople, isAccessTotal, isRootAccess]);
+
+  const turboSuggestions = useMemo(
+    () => uniqueSuggestions([
+      ...shortcutActions.map((item) => item.label),
+      '/atalhos',
+      '/limpar',
+      '/resumo',
+      '/copiar',
+      replyMode === 'detailed' ? '/modo curto' : '/modo detalhado',
+    ]),
+    [replyMode, shortcutActions],
+  );
+
+  const dayPeriod = resolveDayPeriod();
+  const currentArea = readablePath(location.pathname);
 
   const GREETING = ctx.username
-    ? `Olá, **${ctx.username}**! Sou o assistente do Smarter Hub. Respondo com base no teu acesso e na página onde estás.`
-    : 'Olá! Sou o assistente do Smarter Hub. Respondo com base no teu acesso e na página onde estás.';
+    ? `${dayPeriod}, **${ctx.username}**! Sou o assistente do Smarter Hub. Estou contigo na área **${currentArea}**.`
+    : `${dayPeriod}! Sou o assistente do Smarter Hub. Estou contigo na área **${currentArea}**.`;
+
+  function mergeSuggestions(base: string[], extra: string[]) {
+    return uniqueSuggestions([...base, ...extra]).slice(0, 10);
+  }
+
+  function persistMessages(nextMessages: Message[]) {
+    try {
+      const serializable = nextMessages.slice(-CHATBOT_HISTORY_LIMIT).map((msg) => ({
+        ...msg,
+        timestamp: msg.timestamp.toISOString(),
+      }));
+      localStorage.setItem(CHATBOT_HISTORY_KEY, JSON.stringify(serializable));
+    } catch {
+      // Ignore storage errors (quota/blocked storage)
+    }
+  }
+
+  function restoreMessages(): Message[] {
+    try {
+      const raw = localStorage.getItem(CHATBOT_HISTORY_KEY);
+      if (!raw) {
+        return [];
+      }
+
+      const parsed = JSON.parse(raw) as Array<{ id: number; role: MessageRole; text: string; timestamp: string }>;
+      const restored = parsed
+        .filter((item) => item && (item.role === 'user' || item.role === 'bot') && typeof item.text === 'string')
+        .slice(-CHATBOT_HISTORY_LIMIT)
+        .map((item) => ({
+          id: item.id,
+          role: item.role,
+          text: item.text,
+          timestamp: new Date(item.timestamp),
+        }));
+
+      const maxId = restored.reduce((max, item) => (item.id > max ? item.id : max), 0);
+      if (maxId > _msgId) {
+        _msgId = maxId;
+      }
+
+      return restored;
+    } catch {
+      return [];
+    }
+  }
+
+  function appendBotMessage(text: string, nextSuggestions?: string[]) {
+    const botMsg: Message = { id: nextId(), role: 'bot', text, timestamp: new Date() };
+    setMessages((prev) => {
+      const next = [...prev, botMsg];
+      persistMessages(next);
+      return next;
+    });
+    if (nextSuggestions) {
+      setFollowupSuggestions(nextSuggestions);
+    }
+    if (!open) {
+      setUnreadCount((count) => count + 1);
+    }
+  }
+
+  function clearConversation() {
+    const initialMessage: Message = { id: nextId(), role: 'bot', text: GREETING, timestamp: new Date() };
+    setMessages([initialMessage]);
+    setFollowupSuggestions(mergeSuggestions(suggestions, turboSuggestions));
+    setInitialised(true);
+    persistMessages([initialMessage]);
+  }
+
+  function openByShortcut(text: string): boolean {
+    const normalized = normalize(text);
+    const action = shortcutActions.find((item) => normalize(item.label) === normalized);
+    if (!action) {
+      return false;
+    }
+
+    navigate(action.path);
+    appendBotMessage(`A abrir **${action.label.replace('Abrir ', '')}**.`, mergeSuggestions(getInitialSuggestions({ ...ctx, currentPath: action.path }), turboSuggestions));
+    return true;
+  }
+
+  async function copyLastBotReply() {
+    const lastBot = [...messages].reverse().find((msg) => msg.role === 'bot');
+    if (!lastBot?.text) {
+      appendBotMessage('Ainda não tenho resposta para copiar.', turboSuggestions);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(lastBot.text);
+      appendBotMessage('Última resposta copiada para a área de transferência.', turboSuggestions);
+    } catch {
+      appendBotMessage('Não foi possível copiar automaticamente. Tenta novamente com permissões de clipboard ativas.', turboSuggestions);
+    }
+  }
+
+  function handleCommand(raw: string): boolean {
+    const command = normalize(raw);
+
+    if (command === '/limpar') {
+      clearConversation();
+      return true;
+    }
+
+    if (command === '/atalhos') {
+      const lines = ['Atalhos disponíveis:'];
+      for (const action of shortcutActions) {
+        lines.push(`• ${action.label}`);
+      }
+      lines.push('• /resumo');
+      lines.push('• /copiar');
+      lines.push('• /limpar');
+      lines.push('• /modo curto');
+      lines.push('• /modo detalhado');
+      appendBotMessage(lines.join('\n'), mergeSuggestions(suggestions, turboSuggestions));
+      return true;
+    }
+
+    if (command === '/resumo') {
+      const lastUserPrompts = messages
+        .filter((item) => item.role === 'user')
+        .slice(-3)
+        .map((item, index) => `${index + 1}. ${item.text}`);
+
+      appendBotMessage(
+        lastUserPrompts.length > 0
+          ? ['Resumo rápido dos teus últimos tópicos:', ...lastUserPrompts].join('\n')
+          : 'Ainda não há perguntas suficientes para resumir. Envia uma questão e volto a resumir.',
+        mergeSuggestions(suggestions, turboSuggestions),
+      );
+      return true;
+    }
+
+    if (command === '/copiar') {
+      void copyLastBotReply();
+      return true;
+    }
+
+    if (command === '/modo curto') {
+      setReplyMode('concise');
+      try {
+        localStorage.setItem(CHATBOT_MODE_KEY, 'concise');
+      } catch {
+        // Ignore storage issues
+      }
+      appendBotMessage('Modo de resposta alterado para **curto**.', mergeSuggestions(suggestions, turboSuggestions));
+      return true;
+    }
+
+    if (command === '/modo detalhado') {
+      setReplyMode('detailed');
+      try {
+        localStorage.setItem(CHATBOT_MODE_KEY, 'detailed');
+      } catch {
+        // Ignore storage issues
+      }
+      appendBotMessage('Modo de resposta alterado para **detalhado**.', mergeSuggestions(suggestions, turboSuggestions));
+      return true;
+    }
+
+    return false;
+  }
+
+  function personalizeReplyText(baseText: string): string {
+    if (replyMode === 'concise') {
+      const lines = baseText.split('\n').filter((line) => line.trim().length > 0);
+      return lines.slice(0, 4).join('\n');
+    }
+
+    const hints = [
+      '',
+      '**Contexto ativo:**',
+      `• Área atual: ${currentArea}`,
+      `• Modo: ${replyMode === 'detailed' ? 'Detalhado' : 'Curto'}`,
+      '• Comandos rápidos: /atalhos, /resumo, /copiar, /limpar',
+    ];
+
+    return `${baseText}${hints.join('\n')}`;
+  }
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(CHATBOT_MODE_KEY);
+      if (stored === 'concise' || stored === 'detailed') {
+        setReplyMode(stored);
+      }
+    } catch {
+      // Ignore storage issues
+    }
+  }, []);
 
   useEffect(() => {
     if (open && !initialised) {
-      setMessages([{ id: nextId(), role: 'bot', text: GREETING, timestamp: new Date() }]);
-      setFollowupSuggestions(suggestions);
+      const restored = restoreMessages();
+
+      if (restored.length > 0) {
+        setMessages(restored);
+      } else {
+        const initialMessage: Message = { id: nextId(), role: 'bot', text: GREETING, timestamp: new Date() };
+        setMessages([initialMessage]);
+        persistMessages([initialMessage]);
+      }
+
+      setFollowupSuggestions(mergeSuggestions(suggestions, turboSuggestions));
       setInitialised(true);
       setUnreadCount(0);
     }
     if (open) {
       setUnreadCount(0);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [GREETING, initialised, open, suggestions, turboSuggestions]);
+
+  useEffect(() => {
+    if (!initialised) {
+      return;
+    }
+
+    persistMessages(messages);
+  }, [initialised, messages]);
+
+  useEffect(() => {
+    if (!open || !initialised || isTyping) {
+      return;
+    }
+
+    const nextSuggestions = mergeSuggestions(getInitialSuggestions(ctx), turboSuggestions);
+    setFollowupSuggestions((prev) => (sameSuggestions(prev, nextSuggestions) ? prev : nextSuggestions));
+  }, [currentUser?.username, hasPermission, initialised, isAccessTotal, isRootAccess, isTyping, location.pathname, open, turboSuggestions, userRole]);
 
   useEffect(() => {
     if (open) {
@@ -79,17 +410,29 @@ export default function ChatbotWidget() {
   }
 
   function handleClear() {
-    setMessages([{ id: nextId(), role: 'bot', text: GREETING, timestamp: new Date() }]);
-    setFollowupSuggestions(suggestions);
-    setInitialised(true);
+    clearConversation();
   }
 
   function sendMessage(text: string) {
     const trimmed = text.trim();
     if (!trimmed) return;
 
+    if (openByShortcut(trimmed)) {
+      setInput('');
+      return;
+    }
+
+    if (handleCommand(trimmed)) {
+      setInput('');
+      return;
+    }
+
     const userMsg: Message = { id: nextId(), role: 'user', text: trimmed, timestamp: new Date() };
-    setMessages((prev) => [...prev, userMsg]);
+    setMessages((prev) => {
+      const next = [...prev, userMsg];
+      persistMessages(next);
+      return next;
+    });
     setInput('');
     setFollowupSuggestions([]);
     setIsTyping(true);
@@ -97,10 +440,20 @@ export default function ChatbotWidget() {
     const delay = 150 + Math.random() * 200;
     setTimeout(() => {
       const reply = resolveAssistantReply(trimmed, ctx);
-      const botMsg: Message = { id: nextId(), role: 'bot', text: reply.text, timestamp: new Date() };
+      const botMsg: Message = {
+        id: nextId(),
+        role: 'bot',
+        text: personalizeReplyText(reply.text),
+        timestamp: new Date(),
+      };
       setIsTyping(false);
-      setMessages((prev) => [...prev, botMsg]);
-      setFollowupSuggestions(reply.suggestions.length > 0 ? reply.suggestions : suggestions);
+      setMessages((prev) => {
+        const next = [...prev, botMsg];
+        persistMessages(next);
+        return next;
+      });
+      const resolvedSuggestions = reply.suggestions.length > 0 ? reply.suggestions : getInitialSuggestions(ctx);
+      setFollowupSuggestions(mergeSuggestions(resolvedSuggestions, turboSuggestions));
       if (!open) setUnreadCount((c) => c + 1);
     }, delay);
   }
@@ -181,7 +534,12 @@ export default function ChatbotWidget() {
             }}
           >
             <span className="chatbot-header__icon" aria-hidden="true">💬</span>
-            <span className="chatbot-header__title" style={{ flex: 1 }}>Assistente Smarter Hub</span>
+            <span className="chatbot-header__title" style={{ flex: 1 }}>
+              Assistente Smarter Hub
+              <small style={{ display: 'block', fontSize: 11, opacity: 0.88 }}>
+                {replyMode === 'detailed' ? 'Modo detalhado' : 'Modo curto'} • {currentArea}
+              </small>
+            </span>
             <button
               type="button"
               onClick={handleClear}
@@ -305,7 +663,11 @@ export default function ChatbotWidget() {
                     key={s}
                     type="button"
                     className="chatbot-suggestion"
-                    onClick={() => sendMessage(s)}
+                    onClick={() => {
+                      if (!openByShortcut(s)) {
+                        sendMessage(s);
+                      }
+                    }}
                   >
                     {s}
                   </button>

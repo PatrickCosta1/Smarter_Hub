@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Button from '../components/ui/Button';
 import { apiRequest, apiRequestCached, authHeaders, isAbortError } from '../portal/api';
+import { tipoContratoOptions } from '../portal/data';
 
 type DistributionItem = {
   label: string;
@@ -22,6 +23,7 @@ type TeamCharacterization = {
   };
   retentionRate: number;
   nosVoucherRate: number;
+  avgVoucherRequestLeadDays: number | null;
   continenteCardRate: number;
   avgTenureByFunction: AvgTenureByFunction[];
   distributions: {
@@ -37,6 +39,7 @@ type TeamInsights = {
     teamId?: string;
     gender?: string;
     function?: string;
+    contractTypes?: string[];
     geography?: string;
     level?: string;
     isActive?: string;
@@ -48,11 +51,11 @@ type TeamInsights = {
     teams?: Array<{ id: string; name: string }>;
     genders?: string[];
     functions?: string[];
+    contractTypes?: string[];
     geographies?: string[];
     levels?: string[];
     activeStates?: Array<{ value: string; label: string }>;
   };
-  avgAccessToRequestDays?: number;
   selected: TeamCharacterization;
   company: TeamCharacterization;
 };
@@ -68,6 +71,7 @@ type DashboardFilters = {
   teamId: string;
   gender: string;
   functionName: string;
+  contractTypes: string[];
   geography: string;
   level: string;
   isActive: 'all' | 'active' | 'inactive';
@@ -113,6 +117,7 @@ const DEFAULT_FILTERS: DashboardFilters = {
   teamId: '',
   gender: '',
   functionName: '',
+  contractTypes: [],
   geography: '',
   level: '',
   isActive: 'all',
@@ -121,11 +126,24 @@ const DEFAULT_FILTERS: DashboardFilters = {
   periodEnd: '',
 };
 
+function normalizeDashboardFilters(input?: Partial<DashboardFilters> | null): DashboardFilters {
+  const base = input || {};
+
+  return {
+    ...DEFAULT_FILTERS,
+    ...base,
+    contractTypes: Array.isArray(base.contractTypes)
+      ? base.contractTypes.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [],
+  };
+}
+
 const EMPTY_CHARACTERIZATION: TeamCharacterization = {
   headcount: 0,
   averages: { age: 0, tenure: 0 },
   retentionRate: 0,
   nosVoucherRate: 0,
+  avgVoucherRequestLeadDays: null,
   continenteCardRate: 0,
   avgTenureByFunction: [],
   distributions: {
@@ -225,31 +243,35 @@ function createPresetRange(preset: DashboardPeriodPreset) {
 }
 
 function buildDashboardQuery(filters: DashboardFilters) {
+  const normalizedFilters = normalizeDashboardFilters(filters);
   const params = new URLSearchParams();
 
-  if (filters.teamId) {
-    params.set('teamId', filters.teamId);
+  if (normalizedFilters.teamId) {
+    params.set('teamId', normalizedFilters.teamId);
   }
-  if (filters.gender) {
-    params.set('gender', filters.gender);
+  if (normalizedFilters.gender) {
+    params.set('gender', normalizedFilters.gender);
   }
-  if (filters.functionName) {
-    params.set('function', filters.functionName);
+  if (normalizedFilters.functionName) {
+    params.set('function', normalizedFilters.functionName);
   }
-  if (filters.geography) {
-    params.set('geography', filters.geography);
+  if (normalizedFilters.contractTypes.length > 0) {
+    normalizedFilters.contractTypes.forEach((contractType) => params.append('contractType', contractType));
   }
-  if (filters.level) {
-    params.set('level', filters.level);
+  if (normalizedFilters.geography) {
+    params.set('geography', normalizedFilters.geography);
   }
-  if (filters.isActive !== 'all') {
-    params.set('isActive', filters.isActive);
+  if (normalizedFilters.level) {
+    params.set('level', normalizedFilters.level);
   }
-  if (filters.periodStart) {
-    params.set('periodStart', filters.periodStart);
+  if (normalizedFilters.isActive !== 'all') {
+    params.set('isActive', normalizedFilters.isActive);
   }
-  if (filters.periodEnd) {
-    params.set('periodEnd', filters.periodEnd);
+  if (normalizedFilters.periodStart) {
+    params.set('periodStart', normalizedFilters.periodStart);
+  }
+  if (normalizedFilters.periodEnd) {
+    params.set('periodEnd', normalizedFilters.periodEnd);
   }
 
   return params;
@@ -407,6 +429,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [filters, setFilters] = useState<DashboardFilters>(DEFAULT_FILTERS);
   const [functionSearch, setFunctionSearch] = useState('');
+  const [isContractDropdownOpen, setIsContractDropdownOpen] = useState(false);
   const [drillPath, setDrillPath] = useState<DrillStep[]>([]);
   const [drillRows, setDrillRows] = useState<DashboardExportRow[]>([]);
   const [drillRowsTotal, setDrillRowsTotal] = useState(0);
@@ -416,6 +439,26 @@ export default function DashboardPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState('');
+  const contractDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isContractDropdownOpen) {
+      return;
+    }
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!contractDropdownRef.current) {
+        return;
+      }
+
+      if (event.target instanceof Node && !contractDropdownRef.current.contains(event.target)) {
+        setIsContractDropdownOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handleOutsideClick);
+    return () => window.removeEventListener('mousedown', handleOutsideClick);
+  }, [isContractDropdownOpen]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -461,6 +504,7 @@ export default function DashboardPage() {
   const company = insights?.company ?? EMPTY_CHARACTERIZATION;
 
   const availableFunctions = insights?.availableFilters?.functions ?? [];
+  const availableContractTypes = tipoContratoOptions;
   const filteredFunctionOptions = functionSearch.trim()
     ? availableFunctions.filter((fn) => fn.toLowerCase().includes(functionSearch.toLowerCase()))
     : availableFunctions;
@@ -489,12 +533,26 @@ export default function DashboardPage() {
       tooltip: 'Calculado com base no rácio de colaboradores ativos vs total (incluindo inativos).',
     },
     {
-      label: '% Voucher NOS preenchido',
+      label: '% elegíveis que pediram voucher NOS',
       value: formatPercent(selected.nosVoucherRate, 1),
       companyValue: formatPercent(company.nosVoucherRate, 1),
       delta: parseDelta(selected.nosVoucherRate, company.nosVoucherRate),
       deltaPositiveIsGood: true,
-      tooltip: 'Percentagem de colaboradores PT ativos com data do voucher NOS registada no perfil.',
+      tooltip: 'Percentagem de colaboradores elegíveis ao voucher NOS que já o pediram.',
+    },
+    {
+      label: 'Tempo médio até pedir voucher NOS',
+      value: selected.avgVoucherRequestLeadDays !== null
+        ? `${formatDecimal(selected.avgVoucherRequestLeadDays, 0)} dias`
+        : '-',
+      companyValue: company.avgVoucherRequestLeadDays !== null
+        ? `${formatDecimal(company.avgVoucherRequestLeadDays, 0)} dias`
+        : '-',
+      delta: selected.avgVoucherRequestLeadDays !== null && company.avgVoucherRequestLeadDays !== null
+        ? parseDelta(selected.avgVoucherRequestLeadDays, company.avgVoucherRequestLeadDays)
+        : undefined,
+      deltaPositiveIsGood: false,
+      tooltip: 'Tempo médio entre o início de contrato e o pedido do voucher NOS, apenas para colaboradores elegíveis que já o pediram.',
     },
     {
       label: '% Cartão Continente preenchido',
@@ -504,14 +562,7 @@ export default function DashboardPage() {
       deltaPositiveIsGood: true,
       tooltip: 'Percentagem de colaboradores ativos com número do cartão Continente registado no perfil.',
     },
-    {
-      label: 'Tempo médio até 1.º pedido de férias',
-      value: insights?.avgAccessToRequestDays !== undefined
-        ? `${formatDecimal(insights.avgAccessToRequestDays, 0)} dias`
-        : '—',
-      tooltip: 'Média de dias entre a criação da conta e o primeiro pedido de férias submetido.',
-    },
-  ], [selected, company, insights?.avgAccessToRequestDays]);
+  ], [selected, company]);
 
   function handlePeriodPresetChange(nextPreset: DashboardPeriodPreset) {
     if (nextPreset === 'custom') {
@@ -633,7 +684,7 @@ export default function DashboardPage() {
     }
 
     const firstStep = drillPath[0];
-    setFilters(firstStep.previousFilters);
+    setFilters(normalizeDashboardFilters(firstStep.previousFilters));
     setFunctionSearch(firstStep.previousFunctionSearch);
     setDrillPath([]);
   }
@@ -644,7 +695,7 @@ export default function DashboardPage() {
     }
 
     const lastStep = drillPath[drillPath.length - 1];
-    setFilters(lastStep.previousFilters);
+    setFilters(normalizeDashboardFilters(lastStep.previousFilters));
     setFunctionSearch(lastStep.previousFunctionSearch);
     setDrillPath((current) => current.slice(0, -1));
   }
@@ -684,12 +735,13 @@ export default function DashboardPage() {
 
   function updateFiltersManual(updater: (current: DashboardFilters) => DashboardFilters) {
     setDrillPath([]);
-    setFilters(updater);
+    setFilters((current) => normalizeDashboardFilters(updater(current)));
   }
 
-  const hasActiveFilters = Object.entries(filters).some(([key, val]) =>
-    !['periodPreset', 'periodStart', 'periodEnd'].includes(key) && Boolean(val) && val !== 'all',
-  );
+  const hasActiveFilters = Object.entries(filters).some(([key, val]) => (
+    !['periodPreset', 'periodStart', 'periodEnd'].includes(key)
+    && (Array.isArray(val) ? val.length > 0 : Boolean(val) && val !== 'all')
+  ));
 
   const activeDrillLabel = drillPath.length > 0
     ? drillPath.map((step, index) => `${index + 1}. ${step.label}`).join(' → ')
@@ -779,6 +831,61 @@ export default function DashboardPage() {
               )}
             </div>
           </label>
+
+          <div className="ds-filters__field ds-filters__field--contract" ref={contractDropdownRef}>
+            <span>Tipo de contrato</span>
+            <button
+              type="button"
+              className="ds-contract-filter__trigger"
+              onClick={() => setIsContractDropdownOpen((current) => !current)}
+              aria-expanded={isContractDropdownOpen}
+              aria-haspopup="listbox"
+            >
+              <span className="ds-contract-filter__trigger-label">Tipo de contrato</span>
+              <span className="ds-contract-filter__trigger-value">
+                {filters.contractTypes.length > 0
+                  ? `${filters.contractTypes.length} selecionado${filters.contractTypes.length > 1 ? 's' : ''}`
+                  : 'Todos'}
+              </span>
+              <span className="ds-contract-filter__trigger-caret" aria-hidden="true">▾</span>
+            </button>
+            {isContractDropdownOpen && (
+              <div className="ds-contract-filter__menu" role="listbox" aria-multiselectable="true">
+                <div className="ds-contract-filter__toolbar">
+                  <button
+                    type="button"
+                    className="ds-contract-filter__clear"
+                    onClick={() => updateFiltersManual((current) => ({ ...current, contractTypes: [] }))}
+                    disabled={filters.contractTypes.length === 0}
+                  >
+                    Limpar
+                  </button>
+                </div>
+                {availableContractTypes.length === 0 && (
+                  <p className="ds-contract-filter__empty">Sem tipos de contrato disponíveis.</p>
+                )}
+                {availableContractTypes.map((contractType) => {
+                  const isChecked = filters.contractTypes.includes(contractType);
+
+                  return (
+                    <label key={contractType} className="ds-contract-filter__option">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(event) => updateFiltersManual((current) => ({
+                          ...current,
+                          contractTypes: event.target.checked
+                            ? [...current.contractTypes, contractType]
+                            : current.contractTypes.filter((item) => item !== contractType),
+                        }))}
+                      />
+                      <span>{contractType}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           <label className="ds-filters__field">
             <span>Estado</span>
@@ -963,10 +1070,10 @@ export default function DashboardPage() {
                   {drillRows.map((row) => (
                     <tr key={row.id}>
                       <td>{row.nome || row.username}</td>
-                      <td>{row.funcao || '—'}</td>
-                      <td>{row.equipa || '—'}</td>
-                      <td>{row.geografia || '—'}</td>
-                      <td>{row.estado || '—'}</td>
+                      <td>{row.funcao || '-'}</td>
+                      <td>{row.equipa || '-'}</td>
+                      <td>{row.geografia || '-'}</td>
+                      <td>{row.estado || '-'}</td>
                     </tr>
                   ))}
                 </tbody>

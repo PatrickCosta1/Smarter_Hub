@@ -278,7 +278,7 @@ export default function HomePage() {
         </div>
       )}
 
-      <section className="home-grid">
+      {/* <section className="home-grid">
         {isLoadingMetrics ? (
           <>
             {[0, 1, 2].map((i) => (
@@ -357,7 +357,7 @@ export default function HomePage() {
             </Card>
           </>
         )}
-      </section>
+      </section> */}
     </>
   );
 }

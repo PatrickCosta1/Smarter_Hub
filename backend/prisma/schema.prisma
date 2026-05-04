@@ -313,6 +313,14 @@ model ProfileDropdownOption {
   @@index([createdById])
 }
 
+model SystemSetting {
+  key       String   @id
+  boolValue Boolean?
+  textValue String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Notification {
   id        String   @id @default(ulid())
   userId    String

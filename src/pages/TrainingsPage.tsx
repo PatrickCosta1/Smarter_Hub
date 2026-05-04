@@ -753,45 +753,7 @@ export default function TrainingsPage() {
 
   return (
     <section className="trainings-shell">
-      <section className="trainings-hero trainings-hero--scoped" aria-label="Resumo das formações visíveis">
-        <div className="trainings-hero__intro">
-          <span className="trainings-hero__eyebrow">Formações</span>
-          <h2>{scopeConfig.title}</h2>
-          <p>{scopeConfig.description}</p>
-          <div className="trainings-scope-switch" role="tablist" aria-label="Âmbitos de visibilidade das formações">
-            {availableScopes.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`trainings-scope-switch__item${scope === item.id ? ' is-active' : ''}`}
-                onClick={() => setScope(item.id)}
-                aria-pressed={scope === item.id}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="trainings-hours-summary trainings-hours-summary--hero">
-          <article>
-            <span>Âmbito</span>
-            <strong>{scopeConfig.summaryLabel}</strong>
-          </article>
-          <article>
-            <span>Ativas</span>
-            <strong>{assignedCount}</strong>
-          </article>
-          <article>
-            <span>Concluídas</span>
-            <strong>{completedCount}</strong>
-          </article>
-          <article>
-            <span>Horas</span>
-            <strong>{formatHours(totalHours)} h</strong>
-          </article>
-        </div>
-      </section>
+      
 
       <section className="trainings-list-card">
         <div className="trainings-list-head trainings-list-head--filters">
@@ -800,8 +762,8 @@ export default function TrainingsPage() {
               <h3>{scopeConfig.title}</h3>
               <small>
                 {visibleRecords.length === records.length
-                  ? `${records.length} formação${records.length !== 1 ? 'ões' : ''}`
-                  : `${visibleRecords.length} de ${records.length} formação${records.length !== 1 ? 'ões' : ''}`}
+                  ? `${records.length} formação${records.length !== 1 ? '(ões)' : ''}`
+                  : `${visibleRecords.length} de ${records.length} formação${records.length !== 1 ? '(ões)' : ''}`}
                 {activeFilterCount > 0 && <span className="trainings-filter-active-badge">{activeFilterCount} filtro{activeFilterCount !== 1 ? 's' : ''} ativo{activeFilterCount !== 1 ? 's' : ''}</span>}
               </small>
             </div>

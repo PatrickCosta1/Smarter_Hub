@@ -5,6 +5,8 @@ import PDFDocument from 'pdfkit';
 
 import { notifyUsers } from './notifications.js';
 
+type PdfDoc = InstanceType<typeof PDFDocument>;
+
 export const HOURS_BANK_HOURS_PER_DAY = 8;
 export const BR_HOUR_BANK_DEFAULT_LIMIT_HOURS = 100;
 
@@ -134,6 +136,105 @@ function resolvePublicFileBaseUrl() {
   return `http://localhost:${port}`;
 }
 
+function resolveLogoAbsolutePath() {
+  const candidates = [
+    path.resolve(process.cwd(), 'public', 'logo.png'),
+    path.resolve(process.cwd(), '..', 'public', 'logo.png'),
+  ];
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+}
+
+function drawRoundedRect(pdf: PdfDoc, x: number, y: number, width: number, height: number, radius = 10) {
+  pdf.roundedRect(x, y, width, height, radius);
+}
+
+function drawStatsCard(params: {
+  pdf: PdfDoc;
+  x: number;
+  y: number;
+  width: number;
+  label: string;
+  value: string;
+  accentColor: string;
+}) {
+  const { pdf, x, y, width, label, value, accentColor } = params;
+
+  pdf.save();
+  pdf.fillColor('#ffffff');
+  drawRoundedRect(pdf, x, y, width, 62, 10);
+  pdf.fill();
+
+  pdf.strokeColor('#d5e4f6').lineWidth(1);
+  drawRoundedRect(pdf, x, y, width, 62, 10);
+  pdf.stroke();
+
+  pdf.fillColor(accentColor);
+  pdf.roundedRect(x, y, width, 5, 3).fill();
+
+  pdf.fillColor('#597090').fontSize(8.2).font('Helvetica-Bold').text(label, x + 10, y + 14, {
+    width: width - 20,
+  });
+  pdf.fillColor('#17365f').fontSize(16).font('Helvetica-Bold').text(value, x + 10, y + 30, {
+    width: width - 20,
+  });
+  pdf.restore();
+}
+
+function drawTableHeader(pdf: PdfDoc, y: number, pageWidth: number, margin: number) {
+  const tableWidth = pageWidth - margin * 2;
+  pdf.save();
+  pdf.fillColor('#e9f0fb');
+  drawRoundedRect(pdf, margin, y, tableWidth, 24, 6);
+  pdf.fill();
+
+  pdf.fillColor('#355376').fontSize(8).font('Helvetica-Bold');
+  pdf.text('Colaborador', margin + 8, y + 8, { width: 150, lineBreak: false });
+  pdf.text('Equipa', margin + 162, y + 8, { width: 94, lineBreak: false });
+  pdf.text('UF', margin + 260, y + 8, { width: 30, align: 'center', lineBreak: false });
+  pdf.text('Saldo', margin + 292, y + 8, { width: 64, align: 'right', lineBreak: false });
+  pdf.text('Limite', margin + 360, y + 8, { width: 64, align: 'right', lineBreak: false });
+  pdf.text('Excedente', margin + 428, y + 8, { width: 86, align: 'right', lineBreak: false });
+  pdf.restore();
+}
+
+function drawPageHeader(params: {
+  pdf: PdfDoc;
+  margin: number;
+  weekLabel: string;
+  periodLabel: string;
+  generatedAtLabel: string;
+}) {
+  const { pdf, margin, weekLabel, periodLabel, generatedAtLabel } = params;
+  const pageWidth = pdf.page.width;
+  const contentWidth = pageWidth - margin * 2;
+
+  pdf.save();
+  pdf.fillColor('#0f3a72');
+  drawRoundedRect(pdf, margin, margin - 6, contentWidth, 92, 16);
+  pdf.fill();
+
+  const logoPath = resolveLogoAbsolutePath();
+  if (logoPath) {
+    try {
+      pdf.image(logoPath, margin + 16, margin + 10, { width: 108, fit: [108, 36] });
+    } catch {
+      // Se falhar o carregamento da imagem, continua com o layout textual.
+    }
+  }
+
+  pdf.fillColor('#ffffff').font('Helvetica-Bold').fontSize(16).text('Relatório Semanal · Banco de Horas (BR)', margin + 140, margin + 14, {
+    width: contentWidth - 150,
+    align: 'left',
+  });
+  pdf.font('Helvetica').fontSize(10).fillColor('#dbe8ff').text(`Semana ISO: ${weekLabel}`, margin + 140, margin + 38, {
+    width: contentWidth - 150,
+  });
+  pdf.text(`Período: ${periodLabel}`, margin + 140, margin + 53, { width: contentWidth - 150 });
+  pdf.text(`Gerado em: ${generatedAtLabel}`, margin + 140, margin + 68, { width: contentWidth - 150 });
+  pdf.restore();
+}
+
 function buildWeeklyHourBankPdf(params: {
   weekLabel: string;
   periodLabel: string;
@@ -143,51 +244,131 @@ function buildWeeklyHourBankPdf(params: {
   const positive = totals.filter((item) => item.total > 0).length;
   const negative = totals.filter((item) => item.total < 0).length;
   const exceeded = totals.filter((item) => item.exceededBy > 0).length;
+  const generatedAtLabel = new Intl.DateTimeFormat('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date());
 
   const reportsDir = ensureUploadsReportDirectory();
   const fileName = `relatorio_banco_horas_${weekLabel}.pdf`;
   const absolutePath = path.join(reportsDir, fileName);
 
-  const pdf = new PDFDocument({ size: 'A4', margin: 42 });
+  const pdf = new PDFDocument({ size: 'A4', margin: 40 });
   const output = fs.createWriteStream(absolutePath);
 
   pdf.pipe(output);
-  pdf.fontSize(18).text('Relatório Semanal - Banco de Horas (Brasil)', { align: 'left' });
-  pdf.moveDown(0.4);
-  pdf.fontSize(11).text(`Período: ${periodLabel}`);
-  pdf.fontSize(11).text(`Semana ISO: ${weekLabel}`);
-  pdf.moveDown(0.6);
+  const margin = 40;
+  const pageWidth = pdf.page.width;
+  const contentWidth = pageWidth - margin * 2;
 
-  pdf.fontSize(11).text(`Total colaboradores BR analisados: ${totals.length}`);
-  pdf.fontSize(11).text(`Saldos positivos: ${positive}`);
-  pdf.fontSize(11).text(`Saldos negativos: ${negative}`);
-  pdf.fontSize(11).text(`Com excedente: ${exceeded}`);
-  pdf.moveDown(0.8);
+  drawPageHeader({
+    pdf,
+    margin,
+    weekLabel,
+    periodLabel,
+    generatedAtLabel,
+  });
 
-  pdf.fontSize(10).text('Detalhe por colaborador (Top 100 por maior excedente):');
-  pdf.moveDown(0.3);
+  const cardGap = 10;
+  const cardWidth = (contentWidth - cardGap * 3) / 4;
+  const cardsY = margin + 100;
+  drawStatsCard({
+    pdf,
+    x: margin,
+    y: cardsY,
+    width: cardWidth,
+    label: 'Colaboradores analisados',
+    value: String(totals.length),
+    accentColor: '#3b82f6',
+  });
+  drawStatsCard({
+    pdf,
+    x: margin + cardWidth + cardGap,
+    y: cardsY,
+    width: cardWidth,
+    label: 'Saldos positivos',
+    value: String(positive),
+    accentColor: '#22c55e',
+  });
+  drawStatsCard({
+    pdf,
+    x: margin + (cardWidth + cardGap) * 2,
+    y: cardsY,
+    width: cardWidth,
+    label: 'Saldos negativos',
+    value: String(negative),
+    accentColor: '#f59e0b',
+  });
+  drawStatsCard({
+    pdf,
+    x: margin + (cardWidth + cardGap) * 3,
+    y: cardsY,
+    width: cardWidth,
+    label: 'Com excedente',
+    value: String(exceeded),
+    accentColor: exceeded > 0 ? '#ef4444' : '#22c55e',
+  });
+
+  pdf.fillColor('#4d6788').font('Helvetica').fontSize(9).text(
+    'Top 100 colaboradores por maior excedente. Fonte: registos acumulados de banco de horas BR.',
+    margin,
+    cardsY + 72,
+    { width: contentWidth },
+  );
 
   const sorted = [...totals]
     .sort((a, b) => b.exceededBy - a.exceededBy || b.total - a.total)
     .slice(0, 100);
 
-  for (const row of sorted) {
-    const line = [
-      `${row.fullName}`,
-      `@${row.username}`,
-      row.teamName,
-      `UF ${row.brWorkState ?? '-'}`,
-      `Saldo ${row.total.toFixed(2)}h`,
-      `Limite ${row.limit.toFixed(2)}h`,
-      `Excedente ${row.exceededBy.toFixed(2)}h`,
-    ].join(' | ');
+  let y = cardsY + 98;
+  drawTableHeader(pdf, y, pageWidth, margin);
+  y += 30;
 
-    if (pdf.y > 760) {
+  pdf.font('Helvetica').fontSize(8.5);
+
+  for (let index = 0; index < sorted.length; index += 1) {
+    const row = sorted[index]!;
+
+    if (y > pdf.page.height - 62) {
       pdf.addPage();
+      drawPageHeader({ pdf, margin, weekLabel, periodLabel, generatedAtLabel });
+      y = margin + 104;
+      drawTableHeader(pdf, y, pageWidth, margin);
+      y += 30;
     }
 
-    pdf.fontSize(8.8).text(line, { lineGap: 1.6 });
+    if (index % 2 === 0) {
+      pdf.save();
+      pdf.fillColor('#f8fbff');
+      drawRoundedRect(pdf, margin, y - 4, contentWidth, 20, 4);
+      pdf.fill();
+      pdf.restore();
+    }
+
+    const exceededText = `${row.exceededBy.toFixed(2)}h`;
+    const balanceText = `${row.total.toFixed(2)}h`;
+    const limitText = `${row.limit.toFixed(2)}h`;
+
+    pdf.fillColor('#17365f').font('Helvetica-Bold').text(row.fullName, margin + 8, y, { width: 150, lineBreak: false });
+    pdf.fillColor('#647d9d').font('Helvetica').text(row.teamName, margin + 162, y, { width: 94, lineBreak: false });
+    pdf.fillColor('#264e80').text(row.brWorkState ?? '-', margin + 260, y, { width: 30, align: 'center', lineBreak: false });
+    pdf.fillColor('#17365f').text(balanceText, margin + 292, y, { width: 64, align: 'right', lineBreak: false });
+    pdf.fillColor('#17365f').text(limitText, margin + 360, y, { width: 64, align: 'right', lineBreak: false });
+    pdf.fillColor(row.exceededBy > 0 ? '#c0262d' : '#1f7a3d').font('Helvetica-Bold').text(exceededText, margin + 428, y, { width: 86, align: 'right', lineBreak: false });
+
+    y += 20;
   }
+
+  pdf.save();
+  const footerText = `Smarter Hub · Banco de Horas BR · ${weekLabel}`;
+  pdf.fillColor('#7b93b1').font('Helvetica').fontSize(8).text(footerText, margin, pdf.page.height - 24, {
+    width: contentWidth,
+    align: 'center',
+  });
+  pdf.restore();
 
   pdf.end();
 

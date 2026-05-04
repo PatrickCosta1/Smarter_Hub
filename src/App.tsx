@@ -35,8 +35,9 @@ function AppRoutes() {
   const canReviewApprovals = isRootAccess || hasPermission('approve_profile_change') || hasPermission('approve_vacation');
   const canManageTrainings = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
   const canViewOwnTrainings = isRootAccess || hasPermission('view_trainings') || hasPermission('view_all_trainings');
+  const canUseHourBankAcrossCountries = isTPeople;
   const canUseHourBank =
-    (isLoadingPortalData || profile.workCountry === 'BR')
+    (isLoadingPortalData || profile.workCountry === 'BR' || canUseHourBankAcrossCountries)
     && (isRootAccess || isAccessTotal || hasPermission('view_hours_bank') || hasPermission('manage_hours_bank'));
 
   useEffect(() => {

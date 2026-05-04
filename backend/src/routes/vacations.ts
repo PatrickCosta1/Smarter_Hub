@@ -929,9 +929,23 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
         id: { not: userId },
         isActive: true,
         OR: [{ isRootAccess: true }, { hasAccessTotal: true }],
-        profile: {
-          workCountry: requesterCountry,
-        },
+        AND: [
+          {
+            OR: [
+              {
+                profile: {
+                  workCountry: requesterCountry,
+                },
+              },
+              {
+                username: {
+                  equals: 't.people',
+                  mode: 'insensitive',
+                },
+              },
+            ],
+          },
+        ],
       },
       select: {
         id: true,
@@ -961,9 +975,6 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
         username: {
           equals: 't.people',
           mode: 'insensitive',
-        },
-        profile: {
-          workCountry: requesterCountry,
         },
       },
       select: { id: true },
@@ -1048,9 +1059,19 @@ async function resolveApprovalGroups(userId: string, contextTeamId: string | nul
         code: 'approve_vacation',
       },
       user: {
-        profile: {
-          workCountry: requesterCountry,
-        },
+        OR: [
+          {
+            profile: {
+              workCountry: requesterCountry,
+            },
+          },
+          {
+            username: {
+              equals: 't.people',
+              mode: 'insensitive',
+            },
+          },
+        ],
       },
     },
     select: {
