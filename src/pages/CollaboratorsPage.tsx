@@ -1481,7 +1481,7 @@ export default function CollaboratorsPage() {
   const [isSavingProfileOption, setIsSavingProfileOption] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
-  const [newUserDraft, setNewUserDraft] = useState({ fullName: '', username: '', email: '', workCountry: 'PT' as 'PT' | 'BR' });
+  const [newUserDraft, setNewUserDraft] = useState({ fullName: '', personalEmail: '', workCountry: 'PT' as 'PT' | 'BR', brWorkState: '' as '' | 'SP' | 'RS' });
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isParsingImportFile, setIsParsingImportFile] = useState(false);
   const [isImportingUsers, setIsImportingUsers] = useState(false);
@@ -1714,16 +1714,13 @@ export default function CollaboratorsPage() {
   }, []);
 
   useEffect(() => {
-    const parts = newUserDraft.fullName.trim().split(/\s+/).filter((p) => p.length > 0);
-    const firstName = parts[0] || '';
-    const lastName = parts[parts.length - 1] || '';
-    setNewUserDraft((current) => ({
-      ...current,
-      username: buildAutoUsername(firstName, lastName),
-      email: buildAutoEmailFromName(firstName, lastName),
-    }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newUserDraft.fullName]);
+    if (newUserDraft.workCountry !== 'BR' && newUserDraft.brWorkState) {
+      setNewUserDraft((current) => ({
+        ...current,
+        brWorkState: '',
+      }));
+    }
+  }, [newUserDraft.brWorkState, newUserDraft.workCountry]);
 
   useEffect(() => {
     if (!selectedRow) {
@@ -3115,42 +3112,42 @@ export default function CollaboratorsPage() {
   }
 
   function openCreateModal() {
-    setNewUserDraft({ fullName: '', username: '', email: '', workCountry: 'PT' });
+    setNewUserDraft({ fullName: '', personalEmail: '', workCountry: 'PT', brWorkState: '' });
     setIsCreateModalOpen(true);
   }
 
   function closeCreateModal() {
     setIsCreateModalOpen(false);
-    setNewUserDraft({ fullName: '', username: '', email: '', workCountry: 'PT' });
+    setNewUserDraft({ fullName: '', personalEmail: '', workCountry: 'PT', brWorkState: '' });
   }
 
   async function createUser() {
-    const parts = newUserDraft.fullName.trim().split(/\s+/).filter((p) => p.length > 0);
-    const firstName = parts[0] || '';
-    const lastName = parts[parts.length - 1] || '';
-    const fullName = `${firstName} ${lastName}`.trim();
-    const username = newUserDraft.username.trim().toLowerCase();
-    const email = newUserDraft.email.trim().toLowerCase();
+    const fullName = newUserDraft.fullName.trim().replace(/\s+/g, ' ');
+    const personalEmail = newUserDraft.personalEmail.trim().toLowerCase();
     const workCountry = newUserDraft.workCountry;
+    const brWorkState = workCountry === 'BR' ? newUserDraft.brWorkState : undefined;
 
-    if (!firstName || !lastName || !username || !email) {
-      setStatus('Preenche nome completo, username e email.');
+    if (!fullName || !personalEmail) {
+      setStatus('Preenche nome completo e email pessoal.');
+      return;
+    }
+
+    if (workCountry === 'BR' && !brWorkState) {
+      setStatus('Seleciona o estado de trabalho para admissões no Brasil.');
       return;
     }
 
     setIsCreatingUser(true);
     try {
-      await apiRequest<{ id: string; username: string; email: string }>('/users', {
+      await apiRequest<{ id: string; fullName: string; personalEmail: string }>('/users/admissions', {
         method: 'POST',
         headers: getAuthHeaders(),
-        body: JSON.stringify({ fullName, username, email, role: 'COLABORADOR', workCountry }),
+        body: JSON.stringify({ fullName, personalEmail, workCountry, brWorkState }),
       });
-      clearApiCache('/users/collaborators');
       closeCreateModal();
-      setStatus('Novo utilizador criado com sucesso.');
-      void loadCollaborators();
+      setStatus('Pedido de admissão criado. O convite foi enviado para o email pessoal do colaborador.');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Falha ao criar utilizador.');
+      setStatus(error instanceof Error ? error.message : 'Falha ao iniciar o pedido de admissão.');
     } finally {
       setIsCreatingUser(false);
     }
@@ -3210,7 +3207,7 @@ export default function CollaboratorsPage() {
         <div className="people-page-header">
           <div className="people-page-header__actions">
             {canCreateUser && (
-              <Button type="button" variant="primary" onClick={openCreateModal}>+ Novo utilizador</Button>
+              <Button type="button" variant="primary" onClick={openCreateModal}>+ Novo colaborador</Button>
             )}
             {canCreateUser && (
               <Button type="button" variant="secondary" onClick={openImportModal}>Importar em massa</Button>
@@ -4185,13 +4182,13 @@ export default function CollaboratorsPage() {
       {canCreateUser && (
         <Modal
           open={isCreateModalOpen}
-          title="Novo utilizador"
+          title="Novo colaborador"
           onClose={closeCreateModal}
           width="min(700px, 94vw)"
           footer={
             <div className="modal-footer-split">
               <Button type="button" variant="ghost" onClick={closeCreateModal} disabled={isCreatingUser}>Cancelar</Button>
-              <Button type="button" variant="primary" isLoading={isCreatingUser} onClick={() => void createUser()}>Criar utilizador</Button>
+              <Button type="button" variant="primary" isLoading={isCreatingUser} onClick={() => void createUser()}>Enviar convite</Button>
             </div>
           }
         >
@@ -4206,29 +4203,18 @@ export default function CollaboratorsPage() {
                 autoComplete="off"
                 disabled={isCreatingUser}
               />
-              <small>O username e email são derivados automaticamente.</small>
             </label>
             <label>
-              <span>Username</span>
-              <input
-                type="text"
-                value={newUserDraft.username}
-                onChange={(e) => setNewUserDraft((c) => ({ ...c, username: e.target.value }))}
-                placeholder="ana.rodrigues"
-                autoComplete="off"
-                disabled={isCreatingUser}
-              />
-            </label>
-            <label>
-              <span>Email</span>
+              <span>Email pessoal</span>
               <input
                 type="email"
-                value={newUserDraft.email}
-                onChange={(e) => setNewUserDraft((c) => ({ ...c, email: e.target.value }))}
-                placeholder="ana.rodrigues@tlantic.com"
+                value={newUserDraft.personalEmail}
+                onChange={(e) => setNewUserDraft((c) => ({ ...c, personalEmail: e.target.value }))}
+                placeholder="ana@email.com"
                 autoComplete="off"
                 disabled={isCreatingUser}
               />
+              <small>Será enviado um link único e seguro para preencher a ficha de admissão.</small>
             </label>
             <label>
               <span>País de trabalho</span>
@@ -4241,6 +4227,20 @@ export default function CollaboratorsPage() {
                 <option value="BR">Brasil</option>
               </select>
             </label>
+            {newUserDraft.workCountry === 'BR' ? (
+              <label>
+                <span>Estado de trabalho</span>
+                <select
+                  value={newUserDraft.brWorkState}
+                  onChange={(e) => setNewUserDraft((c) => ({ ...c, brWorkState: e.target.value as '' | 'SP' | 'RS' }))}
+                  disabled={isCreatingUser}
+                >
+                  <option value="">Selecionar</option>
+                  <option value="SP">São Paulo</option>
+                  <option value="RS">Rio Grande do Sul</option>
+                </select>
+              </label>
+            ) : null}
           </form>
         </Modal>
       )}

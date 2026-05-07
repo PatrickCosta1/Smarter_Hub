@@ -37,6 +37,7 @@ const vacationSchema = z
     attachmentLink: z.string().default(''),
     contextTeamId: z.string().optional(),
     partialDay: z.enum(['FULL', 'AM', 'PM']).default('FULL'),
+    targetUserId: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.dataInicio > data.dataFim) {
@@ -285,20 +286,21 @@ async function validateVacationCountryPolicy(params: {
     return [] as string[];
   }
 
+  const year = toLocalDate(params.dataInicio).getFullYear();
+
   // PT 30/04 deadline blocker (with test bypass for April)
   if (params.country === 'PT') {
     const today = new Date();
     const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const deadline = '2026-04-30';
+    const deadline = `${today.getFullYear()}-04-30`;
     const currentMonth = today.getMonth() + 1; // 1-12
     const bypassDeadline = process.env.VACATION_PT_DEADLINE_BYPASS === 'true' || currentMonth === 4;
 
-    if (todayIso > deadline && !bypassDeadline) {
+    if (year === today.getFullYear() && todayIso > deadline && !bypassDeadline) {
       throw new Error('Política PT: já não é possível submeter férias para este ano após 30 de abril.');
     }
   }
 
-  const year = toLocalDate(params.dataInicio).getFullYear();
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
 
@@ -1817,7 +1819,7 @@ router.get('/vacations/calendar', requireAuth, async (req: Request, res: Respons
 
 router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = req.authUser!.id;
+    const actorUserId = req.authUser!.id;
     const validation = vacationSchema.safeParse(req.body);
 
     if (!validation.success) {
@@ -1825,10 +1827,45 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
     }
 
     const data = validation.data;
-    const contextTeamId = await resolveContextTeamId(userId, data.contextTeamId);
+    const actorIsFullAccess = await isAccessTotal(actorUserId);
+
+    let targetUserId = actorUserId;
+    let directApproveByAccessTotal = false;
+    const requestedTargetUserId = typeof data.targetUserId === 'string' ? data.targetUserId.trim() : '';
+
+    if (requestedTargetUserId && requestedTargetUserId !== actorUserId) {
+      if (!req.authUser!.isRootAccess && !actorIsFullAccess) {
+        return res.status(403).json({ error: 'Só utilizadores com acesso total podem registar pedidos para outros colaboradores.' });
+      }
+
+      const targetUser = await prisma.user.findUnique({
+        where: { id: requestedTargetUserId },
+        select: {
+          id: true,
+          isActive: true,
+          hasAccessTotal: true,
+        },
+      });
+
+      if (!targetUser || !targetUser.isActive) {
+        return res.status(404).json({ error: 'Colaborador alvo não encontrado ou inativo.' });
+      }
+
+      if (targetUser.hasAccessTotal && !req.authUser!.isRootAccess) {
+        const canReview = await canReviewAccessTotalHierarchy(actorUserId, targetUser.id);
+        if (!canReview) {
+          return res.status(403).json({ error: 'Não podes registar pedidos para utilizadores acima de ti na hierarquia de acesso total.' });
+        }
+      }
+
+      targetUserId = targetUser.id;
+      directApproveByAccessTotal = true;
+    }
+
+    const contextTeamId = await resolveContextTeamId(targetUserId, data.contextTeamId);
 
     const profile = await prisma.profile.findUnique({
-      where: { userId },
+      where: { userId: targetUserId },
       select: { workCountry: true, nomeCompleto: true, nomeAbreviado: true, dataInicioContrato: true, isIntern: true },
     });
     const country = profile?.workCountry ?? 'PT';
@@ -1840,8 +1877,8 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
       country,
     });
 
-    const approvalGroups = await resolveApprovalGroups(userId, contextTeamId);
-    if (approvalGroups.length === 0) {
+    const approvalGroups = directApproveByAccessTotal ? [] : await resolveApprovalGroups(targetUserId, contextTeamId);
+    if (!directApproveByAccessTotal && approvalGroups.length === 0) {
       return res.status(400).json({ error: 'Não existem aprovadores configurados para esta equipa.' });
     }
 
@@ -1849,14 +1886,14 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
     const vacation = await prisma.$transaction(async (tx) => {
       await enforceNoRequestOverlap({
         db: tx,
-        userId,
+        userId: targetUserId,
         dataInicio: data.dataInicio,
         dataFim: data.dataFim,
       });
 
       policyWarnings = await validateVacationCountryPolicy({
         db: tx,
-        userId,
+        userId: targetUserId,
         country,
         requestType: data.requestType,
         dataInicio: data.dataInicio,
@@ -1873,7 +1910,7 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
 
       const created = await tx.vacation.create({
         data: {
-          userId,
+          userId: targetUserId,
           contextTeamId,
           dataInicio: data.dataInicio,
           dataFim: data.dataFim,
@@ -1881,28 +1918,48 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
           requestType: data.requestType,
           partialDay: data.partialDay,
           attachmentLink: data.attachmentLink,
-          status: 'PENDING',
+          status: directApproveByAccessTotal ? 'APPROVED' : 'PENDING',
+          reviewedById: directApproveByAccessTotal ? actorUserId : null,
+          reviewedAt: directApproveByAccessTotal ? new Date() : null,
+          ...(directApproveByAccessTotal
+            ? {
+                reviewReason: 'Registo direto por utilizador com acesso total.',
+                approvedByRole: 'ACCESS_TOTAL',
+              }
+            : {}),
           versionNumber: 1,
         },
       });
 
-      for (const group of approvalGroups) {
-        for (const approverId of group.approverIds) {
-          await tx.vacationApproval.create({
-            data: {
-              vacationId: created.id,
-              approverId,
-              approvalLevel: group.level,
-              status: group.level === approvalGroups[0].level ? APPROVAL_PENDING : APPROVAL_WAITING,
-            },
-          });
+      if (!directApproveByAccessTotal) {
+        for (const group of approvalGroups) {
+          for (const approverId of group.approverIds) {
+            await tx.vacationApproval.create({
+              data: {
+                vacationId: created.id,
+                approverId,
+                approvalLevel: group.level,
+                status: group.level === approvalGroups[0].level ? APPROVAL_PENDING : APPROVAL_WAITING,
+              },
+            });
+          }
         }
       }
 
       return created;
     });
 
-    if (approvalGroups.length > 0) {
+    if (directApproveByAccessTotal && data.requestType !== 'VACATION') {
+      await applyAbsenceOverrideVacations(prisma, {
+        id: vacation.id,
+        userId: targetUserId,
+        dataInicio: data.dataInicio,
+        dataFim: data.dataFim,
+        contextTeamId,
+      });
+    }
+
+    if (!directApproveByAccessTotal && approvalGroups.length > 0) {
       const requesterName = String(profile?.nomeAbreviado ?? '').trim()
         || String(profile?.nomeCompleto ?? '').trim()
         || 'Colaborador';
@@ -1924,9 +1981,24 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
       );
     }
 
+    if (directApproveByAccessTotal && targetUserId !== actorUserId) {
+      await prisma.notification.create({
+        data: {
+          userId: targetUserId,
+          title: data.requestType === 'VACATION' ? 'Férias registadas diretamente' : 'Ausência registada diretamente',
+          message: [
+            `Foi registado um pedido de ${describeVacationRequestType(data.requestType)} por utilizador com acesso total.`,
+            `Período: ${formatIsoDatePt(data.dataInicio)} até ${formatIsoDatePt(data.dataFim)}.`,
+            'Estado: aprovado diretamente (sem fluxo de aprovação).',
+          ].join('\n'),
+        },
+      });
+    }
+
     res.status(201).json({
       ...vacation,
       warnings: policyWarnings,
+      bypassedApproval: directApproveByAccessTotal,
     });
   } catch (error) {
     console.error('[POST /vacations]', error);
@@ -2269,6 +2341,13 @@ router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Res
     refreshedVacation.status === 'APPROVED' &&
     refreshedVacation.requestType !== 'VACATION'
   ) {
+    await applyAbsenceOverrideVacations(prisma, {
+      id: refreshedVacation.id,
+      userId: refreshedVacation.userId,
+      dataInicio: refreshedVacation.dataInicio,
+      dataFim: refreshedVacation.dataFim,
+    });
+
     if (isFolgaAbsenceForHourBank(vacation.requestType, vacation.observacoes)) {
       const debitHours = calculateHourBankDebitFromAbsence(vacation.dataInicio, vacation.dataFim);
 

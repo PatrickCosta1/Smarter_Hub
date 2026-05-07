@@ -184,6 +184,20 @@ type TeamSpecialCalendarPayload = {
 
 type TeamCalendarPerson = TeamVacationMember & { isTeamLeader?: boolean };
 
+type VacationSubmitResponse = {
+  warnings?: string[];
+  bypassedApproval?: boolean;
+};
+
+type VacationCandidateUser = {
+  id: string;
+  username: string;
+  profile?: {
+    nomeAbreviado?: string;
+    nomeCompleto?: string;
+  } | null;
+};
+
 type CompanyExtraDay = {
   date: string;
   label: string;
@@ -214,7 +228,7 @@ type VacationDraft = {
 
 type DraftErrors = Partial<Record<keyof VacationDraft, string>>;
 
-type Subtab = 'overview' | 'calendar' | 'team-vacations' | 'company-days' | 'export';
+type Subtab = 'overview' | 'calendar' | 'team-vacations' | 'direct-assign' | 'company-days' | 'export';
 
 type ExportTeam = {
   id: string;
@@ -258,6 +272,17 @@ type VacationToastState = {
 };
 
 const EMPTY_DRAFT: VacationDraft = {
+  requestKind: 'VACATION',
+  absenceReason: ABSENCE_MOTIVOS[0],
+  dataInicio: '',
+  dataFim: '',
+  observacoes: '',
+  attachmentLink: '',
+  contextTeamId: '',
+  partialDay: 'FULL',
+};
+
+const EMPTY_DIRECT_ASSIGN_DRAFT: VacationDraft = {
   requestKind: 'VACATION',
   absenceReason: ABSENCE_MOTIVOS[0],
   dataInicio: '',
@@ -525,6 +550,14 @@ function getProfileDisplayName(input: {
   return fullName || input.username;
 }
 
+function normalizeSearchText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
 function formatTeamPerson(member: TeamVacationMember) {
   return getProfileDisplayName({ username: member.username, profile: member.profile });
 }
@@ -533,10 +566,13 @@ export default function VacationsPage() {
   const { profile, hasPermission, isRootAccess, isAccessTotal, refreshNotifications, currentUser } = usePortal();
   const isTPeople = currentUser?.username === 't.people';
   const canExport = isAccessTotal || isRootAccess;
+  const canBookForOthers = isAccessTotal || isRootAccess;
 
   const [activeTab, setActiveTab] = useState<Subtab>('overview');
   const [draft, setDraft] = useState<VacationDraft>(EMPTY_DRAFT);
   const [draftErrors, setDraftErrors] = useState<DraftErrors>({});
+  const [directAssignDraft, setDirectAssignDraft] = useState<VacationDraft>(EMPTY_DIRECT_ASSIGN_DRAFT);
+  const [directAssignErrors, setDirectAssignErrors] = useState<DraftErrors>({});
   const [records, setRecords] = useState<VacationRecord[]>([]);
   const [overview, setOverview] = useState<VacationOverview | null>(null);
   const [calendarData, setCalendarData] = useState<CalendarPayload | null>(null);
@@ -570,6 +606,10 @@ export default function VacationsPage() {
   const [teamVacationSearchQuery, setTeamVacationSearchQuery] = useState('');
   const [teamSpecialCalendar, setTeamSpecialCalendar] = useState<TeamSpecialCalendarPayload | null>(null);
   const [isLoadingTeamSpecialCalendar, setIsLoadingTeamSpecialCalendar] = useState(false);
+  const [vacationTargetCandidates, setVacationTargetCandidates] = useState<VacationCandidateUser[]>([]);
+  const [vacationTargetSearch, setVacationTargetSearch] = useState('');
+  const [selectedVacationTargetUserId, setSelectedVacationTargetUserId] = useState('');
+  const [isLoadingVacationTargets, setIsLoadingVacationTargets] = useState(false);
   const [companyExtraDays, setCompanyExtraDays] = useState<CompanyExtraDay[]>([]);
   const [companyExtraDayMonth, setCompanyExtraDayMonth] = useState('12');
   const [companyExtraDayDay, setCompanyExtraDayDay] = useState('25');
@@ -723,8 +763,43 @@ export default function VacationsPage() {
     return map;
   }, [calendarData]);
 
+  const partialVacationDays = useMemo(() => {
+    const map = new Map<string, 'AM' | 'PM' | 'FULL'>();
+
+    for (const request of calendarData?.requests ?? []) {
+      if (request.requestType !== 'VACATION') {
+        continue;
+      }
+
+      if (request.status !== 'APPROVED' && request.status !== 'PENDING') {
+        continue;
+      }
+
+      if (!request.partialDay || request.partialDay === 'FULL') {
+        continue;
+      }
+
+      if (request.dataInicio !== request.dataFim) {
+        continue;
+      }
+
+      const existing = map.get(request.dataInicio);
+      if (!existing) {
+        map.set(request.dataInicio, request.partialDay);
+        continue;
+      }
+
+      if (existing !== request.partialDay) {
+        map.set(request.dataInicio, 'FULL');
+      }
+    }
+
+    return map;
+  }, [calendarData]);
+
   const canManageVacationRules = isRootAccess || hasPermission('manage_vacation_rules');
-  const canAccessTeamVacationTab = !isTPeople && (currentUser?.role ?? '') !== 'CONVIDADO';
+  const canViewTeamVacations = isRootAccess || isAccessTotal || hasPermission('view_team_vacations') || hasPermission('view_all_vacations');
+  const canAccessTeamVacationTab = !isTPeople && (currentUser?.role ?? '') !== 'CONVIDADO' && canViewTeamVacations;
 
   const teamVacationYear = teamVacationsMonthCursor.getFullYear();
   const teamVacationMonthIndex = teamVacationsMonthCursor.getMonth();
@@ -846,6 +921,27 @@ export default function VacationsPage() {
     ].join(' ').toLowerCase().includes(normalizedQuery));
   }, [teamCalendarMembers, teamVacationSearchQuery]);
 
+  const selectedVacationTarget = useMemo(
+    () => vacationTargetCandidates.find((item) => item.id === selectedVacationTargetUserId) ?? null,
+    [selectedVacationTargetUserId, vacationTargetCandidates],
+  );
+
+  const visibleVacationTargetCandidates = useMemo(() => {
+    const query = normalizeSearchText(vacationTargetSearch);
+    const base = vacationTargetCandidates.filter((item) => item.id !== currentUser?.id);
+
+    if (!query) {
+      return base.slice(0, 10);
+    }
+
+    return base
+      .filter((item) => {
+        const name = getProfileDisplayName({ username: item.username, profile: item.profile });
+        return normalizeSearchText(`${name} ${item.username}`).includes(query);
+      })
+      .slice(0, 12);
+  }, [currentUser?.id, vacationTargetCandidates, vacationTargetSearch]);
+
   const memberColorMap = useMemo(() => {
     const map = new Map<string, string>();
     for (let index = 0; index < filteredTeamCalendarMembers.length; index += 1) {
@@ -875,10 +971,11 @@ export default function VacationsPage() {
     if (!isTPeople) tabs.push('overview', 'calendar');
     if (isTPeople) tabs.push('calendar');
     if (canAccessTeamVacationTab && teamContexts.length > 0) tabs.push('team-vacations');
+    if (canBookForOthers && !isTPeople) tabs.push('direct-assign');
     if (canManageVacationRules) tabs.push('company-days');
     if (canExport) tabs.push('export');
     return tabs;
-  }, [canAccessTeamVacationTab, canManageVacationRules, canExport, isTPeople, teamContexts.length]);
+  }, [canAccessTeamVacationTab, canBookForOthers, canManageVacationRules, canExport, isTPeople, teamContexts.length]);
 
   useEffect(() => {
     if (!allowedTabs.includes(activeTab)) {
@@ -1068,6 +1165,30 @@ export default function VacationsPage() {
   }, [activeTab, canExport, exportTeamId, exportCollaboratorSearch]);
 
   useEffect(() => {
+    if (!canBookForOthers) {
+      setVacationTargetCandidates([]);
+      setVacationTargetSearch('');
+      setSelectedVacationTargetUserId('');
+      return;
+    }
+
+    if (currentUser?.id && !selectedVacationTargetUserId) {
+      const firstCandidate = vacationTargetCandidates.find((item) => item.id !== currentUser.id)?.id
+        || vacationTargetCandidates[0]?.id
+        || currentUser.id;
+      setSelectedVacationTargetUserId(firstCandidate);
+    }
+
+    const timeout = window.setTimeout(() => {
+      void loadVacationTargetCandidates(vacationTargetSearch);
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [canBookForOthers, currentUser?.id, selectedVacationTargetUserId, vacationTargetCandidates, vacationTargetSearch]);
+
+  useEffect(() => {
     if (activeTab !== 'calendar' || cacheRef.current.calendarLoadedYear === calendarYear) {
       return;
     }
@@ -1254,6 +1375,48 @@ export default function VacationsPage() {
       if (!signal?.aborted) {
         setIsLoadingTeamSpecialCalendar(false);
       }
+    }
+  }
+
+  async function loadVacationTargetCandidates(search: string) {
+    if (!canBookForOthers) {
+      return;
+    }
+
+    try {
+      setIsLoadingVacationTargets(true);
+      const query = search.trim();
+      const path = query
+        ? `/users?limit=80&q=${encodeURIComponent(query)}`
+        : '/users?limit=80';
+      const users = await apiRequestCached<VacationCandidateUser[]>(path, {
+        headers: getAuthHeaders(),
+      }, 25000);
+      const normalized = Array.isArray(users)
+        ? users.filter((item) => typeof item?.id === 'string' && item.id.length > 0)
+        : [];
+      setVacationTargetCandidates(normalized);
+
+      setSelectedVacationTargetUserId((current) => {
+        if (current && normalized.some((item) => item.id === current)) {
+          return current;
+        }
+
+        const firstNonSelf = normalized.find((item) => item.id !== currentUser?.id)?.id;
+        if (firstNonSelf) {
+          return firstNonSelf;
+        }
+
+        if (currentUser?.id && normalized.some((item) => item.id === currentUser.id)) {
+          return currentUser.id;
+        }
+
+        return normalized[0]?.id || current;
+      });
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Falha ao carregar colaboradores para marcação direta.');
+    } finally {
+      setIsLoadingVacationTargets(false);
     }
   }
 
@@ -1611,6 +1774,10 @@ export default function VacationsPage() {
           ...current,
           contextTeamId: current.contextTeamId || data.find((item) => item.isPrimary)?.teamId || data[0]?.teamId || '',
         }));
+        setDirectAssignDraft((current) => ({
+          ...current,
+          contextTeamId: current.contextTeamId || data.find((item) => item.isPrimary)?.teamId || data[0]?.teamId || '',
+        }));
       }
     } catch (error) {
       if (!isAbortError(error) && !signal?.aborted) {
@@ -1674,6 +1841,19 @@ export default function VacationsPage() {
     setSubmissionNotice(null);
   }
 
+  function handleDirectAssignDraftChange(field: keyof VacationDraft, value: string) {
+    setDirectAssignDraft((current) => ({ ...current, [field]: value }));
+    setDirectAssignErrors((current) => {
+      if (!current[field]) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  }
+
   function handleRequestKindChange(value: RequestKind) {
     if (value === 'VACATION' && hasWeekendInRange(draft.dataInicio, draft.dataFim)) {
       showToast('info', 'Intervalos com fim de semana só podem ser submetidos como ausência.');
@@ -1687,6 +1867,109 @@ export default function VacationsPage() {
       partialDay: value === 'VACATION' ? current.partialDay : 'FULL',
     }));
     setSubmissionNotice(null);
+  }
+
+  function handleDirectAssignRequestKindChange(value: RequestKind) {
+    setDirectAssignDraft((current) => ({
+      ...current,
+      requestKind: value,
+      partialDay: value === 'VACATION' ? current.partialDay : 'FULL',
+    }));
+  }
+
+  async function handleDirectAssignSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!canBookForOthers) {
+      showToast('error', 'Sem permissões para marcação direta.');
+      return;
+    }
+
+    const errors = buildValidationErrors(directAssignDraft);
+    if (Object.keys(errors).length > 0) {
+      setDirectAssignErrors(errors);
+      showToast('error', 'Corrige os campos obrigatórios antes de submeter.');
+      return;
+    }
+
+    if (!selectedVacationTargetUserId) {
+      showToast('error', 'Seleciona um colaborador para marcação direta.');
+      return;
+    }
+
+    if (selectedVacationTargetUserId === currentUser?.id) {
+      showToast('warning', 'Esta aba é destinada à marcação para outros colaboradores.');
+      return;
+    }
+
+    const requestType: VacationRequestType = directAssignDraft.requestKind === 'VACATION'
+      ? 'VACATION'
+      : directAssignDraft.absenceReason === 'Justificada - Doença'
+        ? 'ABSENCE_MEDICAL'
+        : 'ABSENCE_TRAINING';
+
+    const observacoes = [
+      directAssignDraft.requestKind === 'VACATION' ? 'Férias' : `Ausência: ${directAssignDraft.absenceReason}`,
+      directAssignDraft.observacoes.trim(),
+    ].filter(Boolean).join(' | ');
+
+    const payload = {
+      dataInicio: directAssignDraft.dataInicio,
+      dataFim: directAssignDraft.dataFim,
+      observacoes,
+      requestType,
+      attachmentLink: directAssignDraft.attachmentLink,
+      contextTeamId: directAssignDraft.contextTeamId || teamContexts.find((item) => item.isPrimary)?.teamId || teamContexts[0]?.teamId || undefined,
+      partialDay: requestType === 'VACATION' ? directAssignDraft.partialDay : 'FULL',
+      targetUserId: selectedVacationTargetUserId,
+    };
+
+    try {
+      setIsSubmitting(true);
+      const result = await apiRequest<VacationSubmitResponse>('/vacations', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload),
+      });
+
+      clearApiCache('/vacations');
+      clearApiCache('/vacations/me');
+      clearApiCache('/users/dashboard-summary');
+      void loadMine();
+      if (activeTab === 'overview') {
+        void loadOverview();
+      }
+      if (activeTab === 'calendar') {
+        cacheRef.current.calendarLoadedYear = undefined;
+        void loadCalendar(calendarYear);
+      }
+      void refreshNotifications();
+
+      const selectedTarget = vacationTargetCandidates.find((item) => item.id === selectedVacationTargetUserId);
+      const selectedTargetLabel = selectedTarget
+        ? getProfileDisplayName({ username: selectedTarget.username, profile: selectedTarget.profile })
+        : 'Colaborador';
+
+      showToast('success', result?.bypassedApproval ? 'Pedido registado e aprovado diretamente.' : 'Pedido enviado.', {
+        title: 'Atribuição imediata concluída',
+        details: [
+          `Colaborador: ${selectedTargetLabel}`,
+          `Período: ${formatShortDate(payload.dataInicio)} - ${formatShortDate(payload.dataFim)}`,
+          `Tipo: ${requestType === 'VACATION' ? 'Férias' : 'Ausência'}`,
+        ],
+        persist: true,
+      });
+
+      setDirectAssignDraft((current) => ({
+        ...EMPTY_DIRECT_ASSIGN_DRAFT,
+        contextTeamId: current.contextTeamId || teamContexts.find((item) => item.isPrimary)?.teamId || teamContexts[0]?.teamId || '',
+      }));
+      setDirectAssignErrors({});
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Falha ao criar marcação direta.', { persist: true });
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   async function handleAttachmentChange(event: ChangeEvent<HTMLInputElement>) {
@@ -1758,7 +2041,7 @@ export default function VacationsPage() {
 
     try {
       setIsSubmitting(true);
-      const result = await apiRequest<{ warnings?: string[] }>(editingId ? `/vacations/${editingId}` : '/vacations', {
+      const result = await apiRequest<VacationSubmitResponse>(editingId ? `/vacations/${editingId}` : '/vacations', {
         method: editingId ? 'PUT' : 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),
@@ -1778,7 +2061,11 @@ export default function VacationsPage() {
       void refreshNotifications();
       resetForm();
       setConflictRange(null);
-      const actionLabel = editingId ? 'Pedido atualizado com sucesso.' : 'Pedido submetido com sucesso.';
+      const actionLabel = editingId
+        ? 'Pedido atualizado com sucesso.'
+        : result?.bypassedApproval
+          ? 'Pedido registado e aprovado diretamente.'
+          : 'Pedido submetido com sucesso.';
       const typeLabel = requestType === 'VACATION'
         ? `Férias${payload.partialDay !== 'FULL' ? ` (${payload.partialDay === 'AM' ? 'meio-dia manhã' : 'meio-dia tarde'})` : ''}`
         : `Aus\u00eancia: ${draft.absenceReason}`;
@@ -1813,7 +2100,9 @@ export default function VacationsPage() {
           highlight: {
             tone: 'info',
             label: 'Próximo passo',
-            message: 'Os aprovadores da cadeia da equipa vão receber o pedido nas aprovações e nas notificações.',
+            message: result?.bypassedApproval
+              ? 'Pedido registado por acesso total sem necessidade de aprovação intermédia.'
+              : 'Os aprovadores da cadeia da equipa vão receber o pedido nas aprovações e nas notificações.',
           },
           persist: true,
         });
@@ -2086,18 +2375,34 @@ export default function VacationsPage() {
     const isAnchorDay = iso === selectionAnchor;
     const isVacationWeekend = !isTPeople && draft.requestKind === 'VACATION' && isWeekendIso(iso);
     const canClickDay = !isTPeople;
+    const dayKind = getDayKind(iso);
+    const partialMarker = partialVacationDays.get(iso);
+    const hasHalfDayFill = (dayKind === 'approved' || dayKind === 'pending') && (partialMarker === 'AM' || partialMarker === 'PM');
+    const halfFillColor = dayKind === 'approved' ? '#d6f4e1' : '#ffe6ac';
+    const halfFillStyle = hasHalfDayFill
+      ? {
+          background: partialMarker === 'AM'
+            ? `linear-gradient(to bottom, ${halfFillColor} 0 50%, #ffffff 50% 100%)`
+            : `linear-gradient(to bottom, #ffffff 0 50%, ${halfFillColor} 50% 100%)`,
+        }
+      : undefined;
     const dayTitle = isVacationWeekend
         ? 'Fim de semana: ao clicar, o pedido muda para ausência.'
         : (isPastDay ? `Data passada • ${getDayLabel(iso)}` : getDayLabel(iso));
+
+    const dayTitleWithPartial = hasHalfDayFill
+      ? `${dayTitle}${dayTitle ? ' • ' : ''}${partialMarker === 'AM' ? 'Meio-dia manhã' : 'Meio-dia tarde'}`
+      : dayTitle;
 
     return (
       <button
         type="button"
         key={key}
-        className={`vacations-day vacations-day--${getDayKind(iso)}${rangeClass}${isAnchorDay ? ' cal-day-anchor' : ''}${isPastDay ? ' vacations-day--past' : ''}`}
-        title={dayTitle}
+        className={`vacations-day vacations-day--${dayKind}${rangeClass}${isAnchorDay ? ' cal-day-anchor' : ''}${isPastDay ? ' vacations-day--past' : ''}${hasHalfDayFill ? ` vacations-day--half-${(partialMarker as 'AM' | 'PM').toLowerCase()}` : ''}`}
+        title={dayTitleWithPartial}
         onClick={() => canClickDay && handleDayClick(iso)}
         onMouseEnter={() => !isTPeople && handleDayMouseEnter(iso)}
+        style={halfFillStyle}
       >
         {day}
       </button>
@@ -2118,6 +2423,8 @@ export default function VacationsPage() {
         <div className="team-vac-calendar-legend" aria-label="Legenda de dias especiais">
           <span className="team-vac-calendar-legend__item"><i className="is-vacation" />Férias aprovadas</span>
           <span className="team-vac-calendar-legend__item"><i className="is-absence" />Ausência aprovada</span>
+          <span className="team-vac-calendar-legend__item"><i className="is-half-am" />Meio-dia manhã</span>
+          <span className="team-vac-calendar-legend__item"><i className="is-half-pm" />Meio-dia tarde</span>
           <span className="team-vac-calendar-legend__item"><i className="is-holiday" />Feriado</span>
           <span className="team-vac-calendar-legend__item"><i className="is-extra" />Dia automático</span>
           <span className="team-vac-calendar-legend__item"><i className="is-weekend" />Fim de semana</span>
@@ -2157,6 +2464,20 @@ export default function VacationsPage() {
                 {teamVacationMonthDays.map((day) => {
                   const event = dayMap.get(day.iso);
                   const isAbsence = event && event.requestType !== 'VACATION';
+                  const isHalfVacationAm = Boolean(
+                    event
+                    && event.requestType === 'VACATION'
+                    && event.partialDay === 'AM'
+                    && event.dataInicio === day.iso
+                    && event.dataFim === day.iso,
+                  );
+                  const isHalfVacationPm = Boolean(
+                    event
+                    && event.requestType === 'VACATION'
+                    && event.partialDay === 'PM'
+                    && event.dataInicio === day.iso
+                    && event.dataFim === day.iso,
+                  );
                   const isHoliday = teamHolidaySet.has(day.iso);
                   const isExtraDay = teamExtraDaySet.has(day.iso);
 
@@ -2166,7 +2487,7 @@ export default function VacationsPage() {
                   if (day.isWeekend || teamWeekendSet.has(day.iso)) specialLabels.push('Fim de semana');
 
                   const titleParts = [
-                    event ? `${getVacationTypeLabel(event.requestType)} aprovada · ${formatShortDate(event.dataInicio)} até ${formatShortDate(event.dataFim)}` : null,
+                    event ? `${getVacationTypeLabel(event.requestType)} aprovada${getPartialDayLabel(event.partialDay)} · ${formatShortDate(event.dataInicio)} até ${formatShortDate(event.dataFim)}` : null,
                     specialLabels.length > 0 ? specialLabels.join(' · ') : null,
                     day.iso,
                   ].filter(Boolean);
@@ -2175,11 +2496,11 @@ export default function VacationsPage() {
                   return (
                     <div
                       key={`${member.id}-${day.iso}`}
-                      className={`team-vac-calendar-grid__day-cell${day.isWeekend ? ' is-weekend' : ''}${event ? ' has-event' : ''}${isAbsence ? ' is-absence' : ''}${isHoliday ? ' is-holiday' : ''}${isExtraDay ? ' is-extra-day' : ''}`}
+                      className={`team-vac-calendar-grid__day-cell${day.isWeekend ? ' is-weekend' : ''}${event ? ' has-event' : ''}${isAbsence ? ' is-absence' : ''}${isHalfVacationAm ? ' is-half-am' : ''}${isHalfVacationPm ? ' is-half-pm' : ''}${isHoliday ? ' is-holiday' : ''}${isExtraDay ? ' is-extra-day' : ''}`}
                       style={event ? ({ '--member-color': memberColor } as CSSProperties) : undefined}
                       title={title}
                     >
-                      {event && <span className="team-vac-calendar-grid__event-pill" />}
+                      {event && <span className={`team-vac-calendar-grid__event-pill${isHalfVacationAm ? ' team-vac-calendar-grid__event-pill--half-am' : ''}${isHalfVacationPm ? ' team-vac-calendar-grid__event-pill--half-pm' : ''}`} />}
                       {!event && isHoliday && <span className="team-vac-calendar-grid__special-pill">F</span>}
                       {!event && !isHoliday && isExtraDay && <span className="team-vac-calendar-grid__special-pill">A</span>}
                     </div>
@@ -2400,6 +2721,9 @@ export default function VacationsPage() {
         {allowedTabs.includes('export') && (
           <button type="button" className={activeTab === 'export' ? 'is-active' : ''} onClick={() => setActiveTab('export')}>Mapa de Férias</button>
         )}
+        {allowedTabs.includes('direct-assign') && (
+          <button type="button" className={activeTab === 'direct-assign' ? 'is-active' : ''} onClick={() => setActiveTab('direct-assign')}>Atribuição imediata</button>
+        )}
       </nav>
 
       {activeTab === 'overview' && !isTPeople && (
@@ -2456,11 +2780,6 @@ export default function VacationsPage() {
                   <span>Pedidos pendentes</span>
                   <strong>{pendingVacationRequests.length} {pendingVacationRequests.length === 1 ? 'pedido' : 'pedidos'}</strong>
                   <small>Férias à espera de aprovação.</small>
-                </article>
-                <article>
-                  <span>Dias dados pela empresa</span>
-                  <strong>{companyExtraDays.length}</strong>
-                  <small></small>
                 </article>
               </div>
 
@@ -2881,6 +3200,118 @@ export default function VacationsPage() {
           )}
 
           {filteredTeamCalendarMembers.length > 0 && renderTeamVacationCalendar(filteredTeamCalendarMembers)}
+        </section>
+      )}
+
+      {activeTab === 'direct-assign' && canBookForOthers && !isTPeople && (
+        <section className="trainings-list-card vacations-direct-card">
+          <div className="trainings-list-head">
+            <div>
+              <h3>Atribuição imediata de férias / ausências</h3>
+              <p className="vacations-company-days-subtitle">Pesquisa dinâmica, seleção com um clique e submissão sem aprovação intermédia.</p>
+            </div>
+          </div>
+
+          <form className="vacations-export-form vacations-direct-form" onSubmit={handleDirectAssignSubmit} noValidate>
+            <div className="vacations-direct-picker vacations-direct-field--full">
+              <label className="vacations-export-form__field vacations-export-collaborators__search">
+                <span>Colaborador</span>
+                <input
+                  type="search"
+                  value={vacationTargetSearch}
+                  onChange={(e) => setVacationTargetSearch(e.target.value)}
+                  placeholder="Escreve para pesquisar por nome ou username"
+                  autoComplete="off"
+                />
+              </label>
+
+              <div className="vacations-direct-picker__meta" aria-live="polite">
+                {selectedVacationTarget
+                  ? `Selecionado: ${getProfileDisplayName({ username: selectedVacationTarget.username, profile: selectedVacationTarget.profile })}`
+                  : 'Seleciona um colaborador na lista abaixo'}
+              </div>
+
+              <div className="vacations-direct-picker__list" role="listbox" aria-label="Resultados da pesquisa de colaboradores">
+                {isLoadingVacationTargets ? (
+                  <p>A procurar colaboradores...</p>
+                ) : visibleVacationTargetCandidates.length === 0 ? (
+                  <p>Sem resultados para a pesquisa atual.</p>
+                ) : (
+                  visibleVacationTargetCandidates.map((candidate) => {
+                    const isSelected = candidate.id === selectedVacationTargetUserId;
+                    const label = getProfileDisplayName({ username: candidate.username, profile: candidate.profile });
+                    return (
+                      <button
+                        key={candidate.id}
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        className={`vacations-direct-picker__item${isSelected ? ' is-selected' : ''}`}
+                        onClick={() => setSelectedVacationTargetUserId(candidate.id)}
+                      >
+                        <strong>{label}</strong>
+                        <small>@{candidate.username}</small>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <label className="vacations-export-form__field">
+              <span>Tipo</span>
+              <select value={directAssignDraft.requestKind} onChange={(e) => handleDirectAssignRequestKindChange(e.target.value as RequestKind)}>
+                <option value="VACATION">Férias</option>
+                <option value="ABSENCE">Ausência</option>
+              </select>
+            </label>
+
+            {directAssignDraft.requestKind === 'ABSENCE' ? (
+              <label className="vacations-export-form__field">
+                <span>Motivo</span>
+                <select value={directAssignDraft.absenceReason} onChange={(e) => handleDirectAssignDraftChange('absenceReason', e.target.value)}>
+                  {ABSENCE_MOTIVOS.map((motivo) => <option key={motivo} value={motivo}>{motivo}</option>)}
+                </select>
+              </label>
+            ) : (
+              <label className="vacations-export-form__field">
+                <span>Duração</span>
+                <select value={directAssignDraft.partialDay} onChange={(e) => handleDirectAssignDraftChange('partialDay', e.target.value)}>
+                  <option value="FULL">Dia completo</option>
+                  <option value="AM">Meio-dia manhã</option>
+                  <option value="PM">Meio-dia tarde</option>
+                </select>
+              </label>
+            )}
+
+            <label className="vacations-export-form__field">
+              <span>Data início</span>
+              <input type="date" value={directAssignDraft.dataInicio} onChange={(e) => handleDirectAssignDraftChange('dataInicio', e.target.value)} />
+            </label>
+
+            <label className="vacations-export-form__field">
+              <span>Data fim</span>
+              <input type="date" value={directAssignDraft.dataFim} onChange={(e) => handleDirectAssignDraftChange('dataFim', e.target.value)} />
+            </label>
+
+            <label className="vacations-export-form__field vacations-direct-field--full">
+              <span>Observações</span>
+              <input
+                type="text"
+                value={directAssignDraft.observacoes}
+                onChange={(e) => handleDirectAssignDraftChange('observacoes', e.target.value)}
+                placeholder="Opcional"
+              />
+            </label>
+
+            {(directAssignErrors.dataInicio || directAssignErrors.dataFim) && (
+              <small className="cal-booking-bar__err">{directAssignErrors.dataInicio || directAssignErrors.dataFim}</small>
+            )}
+
+            <div className="vacations-direct-action-row">
+              <Button type="submit" variant="primary" isLoading={isSubmitting}>Registar marcação direta</Button>
+            </div>
+          </form>
         </section>
       )}
 

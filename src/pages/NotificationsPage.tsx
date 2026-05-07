@@ -389,6 +389,32 @@ function buildNotificationDetails(title: string, message: string): NotificationD
     };
   }
 
+  if (normalized.includes('novo pedido de admissão') || normalized.includes('submeteu a ficha de admissão')) {
+    const countryLine = structured.lines.find((l) => /^país:/i.test(l)) ?? '';
+    const emailLine = structured.lines.find((l) => /^email pessoal:/i.test(l)) ?? '';
+    return {
+      title: 'Nova ficha de admissão',
+      message: structured.firstLine || 'Um colaborador submeteu a ficha para revisão.',
+      highlights: [countryLine, emailLine].filter(Boolean),
+      tag: 'Admissões',
+      icon: '🧑‍💼',
+      color: 'blue',
+      action: { label: 'Ver admissões', path: '/admissoes' },
+    };
+  }
+
+  if (normalized.includes('admissão pronta para contrato') || (normalized.includes('dados pessoais') && normalized.includes('foram aprovados'))) {
+    return {
+      title: 'Admissão pronta para contrato',
+      message: structured.firstLine || 'Os dados pessoais foram aprovados. Preenche o contrato para criar o utilizador.',
+      highlights: [structured.lines.find((l) => /passo seguinte/i.test(l)) ?? ''].filter(Boolean),
+      tag: 'Admissões',
+      icon: '📝',
+      color: 'purple',
+      action: { label: 'Ver admissões', path: '/admissoes' },
+    };
+  }
+
   return {
     title: title || 'Atualização interna',
     message: structured.firstLine || message || 'Tem uma nova atualização no portal.',

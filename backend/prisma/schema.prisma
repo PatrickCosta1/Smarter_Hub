@@ -122,6 +122,9 @@ model User {
   reviewedProfileChangeRequests ProfileChangeRequest[] @relation("ProfileChangeRequestReviewer")
   createdProfileOptions ProfileDropdownOption[] @relation("ProfileOptionAuthor")
   createdVacationCompanyDays VacationCompanyExtraDay[] @relation("VacationCompanyExtraDayAuthor")
+  invitedEmployeeAdmissions EmployeeAdmission[] @relation("EmployeeAdmissionInviter")
+  reviewedEmployeeAdmissions EmployeeAdmission[] @relation("EmployeeAdmissionReviewer")
+  completedEmployeeAdmissions EmployeeAdmission[] @relation("EmployeeAdmissionCompleter")
   permissionAssignments UserPermission[] @relation("PermissionTargetUser")
   permissionAssignmentsGranted UserPermission[] @relation("PermissionGrantAuthor")
   accessTotalGrantedBy User?  @relation("AccessTotalGrantAuthor", fields: [accessTotalGrantedById], references: [id], onDelete: SetNull)
@@ -447,6 +450,41 @@ model ProfileChangeRequest {
   @@index([status, createdAt])
   @@index([status, reviewedAt])
   @@index([reviewedById])
+}
+
+model EmployeeAdmission {
+  id                 String      @id @default(ulid())
+  fullName           String
+  personalEmail      String
+  workCountry        WorkCountry
+  brWorkState        BrWorkState?
+  status             String      @default("INVITED")
+  personalData       Json        @default("{}")
+  contractData       Json        @default("{}")
+  companyEmail       String      @default("")
+  companyUsername    String      @default("")
+  reviewReason       String      @default("")
+  submissionTokenHash String     @unique
+  tokenExpiresAt     DateTime
+  lastInvitationSentAt DateTime?
+  submittedAt        DateTime?
+  reviewedAt         DateTime?
+  completedAt        DateTime?
+  invitedById        String
+  reviewedById       String?
+  completedById      String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  invitedBy          User        @relation("EmployeeAdmissionInviter", fields: [invitedById], references: [id], onDelete: Cascade)
+  reviewedBy         User?       @relation("EmployeeAdmissionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  completedBy        User?       @relation("EmployeeAdmissionCompleter", fields: [completedById], references: [id], onDelete: SetNull)
+
+  @@index([personalEmail, status])
+  @@index([status, createdAt])
+  @@index([workCountry, status])
+  @@index([invitedById])
+  @@index([reviewedById])
+  @@index([completedById])
 }
 
 model Permission {

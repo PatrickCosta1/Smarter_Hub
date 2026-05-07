@@ -3,6 +3,18 @@ import path from 'node:path';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { prismaMock } = vi.hoisted(() => ({
+  prismaMock: {
+    employeeAdmission: {
+      findUnique: vi.fn(),
+    },
+  },
+}));
+
+vi.mock('../src/lib/prisma.js', () => ({
+  prisma: prismaMock,
+}));
+
 vi.mock('../src/middleware/auth.js', () => ({
   requireAuth: (req: express.Request, _res: express.Response, next: express.NextFunction) => {
     req.authUser = {
@@ -29,6 +41,11 @@ function buildApp() {
 describe('files routes integration', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    prismaMock.employeeAdmission.findUnique.mockResolvedValue({
+      id: 'adm-1',
+      status: 'INVITED',
+      tokenExpiresAt: new Date('2099-01-01T00:00:00.000Z'),
+    });
   });
 
   afterEach(() => {
@@ -131,6 +148,36 @@ describe('files routes integration', () => {
           process.env.PUBLIC_FILES_BASE_URL = originalEnv;
         }
       }
+    });
+  });
+
+  describe('POST /api/files/admissions/:token/upload', () => {
+    it('returns 403 when admission token is invalid', async () => {
+      prismaMock.employeeAdmission.findUnique.mockResolvedValue(null);
+      const app = buildApp();
+
+      const response = await request(app)
+        .post('/api/files/admissions/invalid-token/upload')
+        .attach('file', Buffer.from('conteudo'), {
+          filename: 'doc.txt',
+          contentType: 'text/plain',
+        });
+
+      expect(response.status).toBe(403);
+    });
+
+    it('returns 201 when token is valid', async () => {
+      const app = buildApp();
+
+      const response = await request(app)
+        .post('/api/files/admissions/valid-token/upload')
+        .attach('file', Buffer.from('conteudo'), {
+          filename: 'doc.txt',
+          contentType: 'text/plain',
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.linkPath).toMatch(/^\/uploads\//);
     });
   });
 });

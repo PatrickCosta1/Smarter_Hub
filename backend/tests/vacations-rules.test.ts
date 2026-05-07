@@ -180,6 +180,7 @@ describe('vacations rules', () => {
   });
 
   it('PT policy returns warning for vacation request shorter than 10 days when no mandatory block exists yet', async () => {
+    process.env.VACATION_PT_DEADLINE_BYPASS = 'true';
     const db = {
       vacation: {
         findMany: vi.fn().mockResolvedValue([]),
@@ -198,9 +199,11 @@ describe('vacations rules', () => {
 
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain('Política PT');
+    delete process.env.VACATION_PT_DEADLINE_BYPASS;
   });
 
   it('PT policy accepts request when there is already a 10-day block in the year', async () => {
+    process.env.VACATION_PT_DEADLINE_BYPASS = 'true';
     const db = {
       vacation: {
         findMany: vi.fn().mockResolvedValue([
@@ -220,6 +223,7 @@ describe('vacations rules', () => {
         partialDay: 'FULL',
       }),
     ).resolves.toEqual([]);
+    delete process.env.VACATION_PT_DEADLINE_BYPASS;
   });
 
   it('BR policy rejects when resulting split exceeds 3 periods', async () => {
@@ -322,6 +326,62 @@ describe('vacations rules', () => {
 
     expect(Array.isArray(result)).toBe(true);
     delete process.env.VACATION_PT_DEADLINE_BYPASS;
+  });
+
+  it('PT 30/04 blocker applies to current year after deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-05-07T12:00:00.000Z'));
+      delete process.env.VACATION_PT_DEADLINE_BYPASS;
+
+      const db = {
+        vacation: {
+          findMany: vi.fn().mockResolvedValue([]),
+        },
+      };
+
+      await expect(
+        __vacationTestables.validateVacationCountryPolicy({
+          db: db as never,
+          userId: 'u-1',
+          country: 'PT',
+          requestType: 'VACATION',
+          dataInicio: '2026-05-07',
+          dataFim: '2026-05-07',
+          partialDay: 'AM',
+        }),
+      ).rejects.toThrow('após 30 de abril');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('PT 30/04 blocker does not block next year requests', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-05-07T12:00:00.000Z'));
+      delete process.env.VACATION_PT_DEADLINE_BYPASS;
+
+      const db = {
+        vacation: {
+          findMany: vi.fn().mockResolvedValue([]),
+        },
+      };
+
+      const result = await __vacationTestables.validateVacationCountryPolicy({
+        db: db as never,
+        userId: 'u-1',
+        country: 'PT',
+        requestType: 'VACATION',
+        dataInicio: '2027-05-07',
+        dataFim: '2027-05-07',
+        partialDay: 'AM',
+      });
+
+      expect(Array.isArray(result)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // ─── Phase 2C: BR Wednesday blocker ───────────────────────────────────────

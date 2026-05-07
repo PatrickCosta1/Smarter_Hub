@@ -70,6 +70,30 @@ type VacationRequest = {
   };
 };
 
+type AdmissionRequest = {
+  id: string;
+  fullName: string;
+  personalEmail: string;
+  workCountry: 'PT' | 'BR';
+  brWorkState?: string | null;
+  status: 'SUBMITTED' | 'APPROVED_PENDING_CONTRACT' | 'CHANGES_REQUESTED' | 'INVITED' | 'COMPLETED';
+  reviewReason?: string | null;
+  createdAt: string;
+  submittedAt?: string | null;
+  reviewedAt?: string | null;
+  tokenExpiresAt: string;
+  personalData?: Record<string, string> | null;
+  invitedBy?: {
+    id: string;
+    username: string;
+    email: string;
+    profile?: {
+      nomeAbreviado?: string;
+      nomeCompleto?: string;
+    } | null;
+  } | null;
+};
+
 type RejectionCandidate =
   | { kind: 'profile'; request: ProfileRequest }
   | { kind: 'vacation'; request: VacationRequest };
@@ -117,15 +141,32 @@ function renderApprovalFieldValue(field: string, value: string) {
 export default function RHApprovalsPage() {
   const { hasPermission, isRootAccess, refreshNotifications } = usePortal();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<'profiles' | 'vacations'>(() => (
-    searchParams.get('tab') === 'vacations' ? 'vacations' : 'profiles'
-  ));
+  const [activeTab, setActiveTab] = useState<'profiles' | 'vacations' | 'admissions'>(() => {
+    const tab = searchParams.get('tab');
+    return tab === 'vacations' || tab === 'admissions' ? tab : 'profiles';
+  });
   const [profileRequests, setProfileRequests] = useState<ProfileRequest[]>([]);
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([]);
+  const [admissionRequests, setAdmissionRequests] = useState<AdmissionRequest[]>([]);
   const [rejectReason, setRejectReason] = useState('');
   const [isLoadingProfileRequests, setIsLoadingProfileRequests] = useState(true);
   const [isLoadingVacationRequests, setIsLoadingVacationRequests] = useState(true);
+  const [isLoadingAdmissionRequests, setIsLoadingAdmissionRequests] = useState(true);
   const [selectedProfileRequest, setSelectedProfileRequest] = useState<ProfileRequest | null>(null);
+  const [selectedAdmissionRequest, setSelectedAdmissionRequest] = useState<AdmissionRequest | null>(null);
+  const [admissionCorrectionReason, setAdmissionCorrectionReason] = useState('');
+  const [contractDraft, setContractDraft] = useState({
+    companyEmail: '',
+    companyUsername: '',
+    cargo: '',
+    categoriaProfissional: '',
+    numeroMecanografico: '',
+    funcao: '',
+    dataInicioContrato: '',
+    dataFimContrato: '',
+    tipoContrato: '',
+    regimeHorario: '',
+  });
   const [rejectionCandidate, setRejectionCandidate] = useState<RejectionCandidate | null>(null);
   const [rejectionMode, setRejectionMode] = useState<'none' | 'total' | 'partial'>('none');
   const [rejectedFields, setRejectedFields] = useState<Record<string, string>>({}); // {"fieldName": "observações"}
@@ -136,10 +177,11 @@ export default function RHApprovalsPage() {
     visible: false,
   });
 
-  const requestCount = useMemo(() => profileRequests.length + vacationRequests.length, [profileRequests.length, vacationRequests.length]);
-  const isLoadingData = isLoadingProfileRequests || isLoadingVacationRequests;
+  const requestCount = useMemo(() => profileRequests.length + vacationRequests.length + admissionRequests.length, [admissionRequests.length, profileRequests.length, vacationRequests.length]);
+  const isLoadingData = isLoadingProfileRequests || isLoadingVacationRequests || isLoadingAdmissionRequests;
   const canReviewProfiles = isRootAccess || hasPermission('approve_profile_change');
   const canReviewVacations = isRootAccess || hasPermission('approve_vacation') || hasPermission('reject_vacation') || hasPermission('view_all_vacations');
+  const canReviewAdmissions = canReviewProfiles;
 
   useEffect(() => {
     if (activeTab === 'profiles' && !canReviewProfiles && canReviewVacations) {
@@ -149,10 +191,19 @@ export default function RHApprovalsPage() {
 
     if (activeTab === 'vacations' && !canReviewVacations && canReviewProfiles) {
       setActiveTab('profiles');
+      return;
     }
-  }, [activeTab, canReviewProfiles, canReviewVacations]);
 
-  function handleTabChange(nextTab: 'profiles' | 'vacations') {
+    if (activeTab === 'admissions' && !canReviewAdmissions) {
+      if (canReviewProfiles) {
+        setActiveTab('profiles');
+      } else if (canReviewVacations) {
+        setActiveTab('vacations');
+      }
+    }
+  }, [activeTab, canReviewAdmissions, canReviewProfiles, canReviewVacations]);
+
+  function handleTabChange(nextTab: 'profiles' | 'vacations' | 'admissions') {
     if (nextTab === activeTab) {
       return;
     }
@@ -166,7 +217,7 @@ export default function RHApprovalsPage() {
   }
 
   useEffect(() => {
-    if (!canReviewProfiles && !canReviewVacations) {
+    if (!canReviewProfiles && !canReviewVacations && !canReviewAdmissions) {
       return;
     }
 
@@ -174,9 +225,10 @@ export default function RHApprovalsPage() {
 
     void loadProfileRequests(controller.signal);
     void loadVacationRequests(controller.signal);
+    void loadAdmissionRequests(controller.signal);
 
     return () => controller.abort();
-  }, [canReviewProfiles, canReviewVacations]);
+  }, [canReviewAdmissions, canReviewProfiles, canReviewVacations]);
 
   useEffect(() => {
     if (!toast.visible) {
@@ -252,11 +304,34 @@ export default function RHApprovalsPage() {
     }
   }
 
+  async function loadAdmissionRequests(signal?: AbortSignal) {
+    setIsLoadingAdmissionRequests(true);
+    try {
+      if (!canReviewAdmissions) {
+        setAdmissionRequests([]);
+        return;
+      }
+
+      const admissions = await apiRequestCached<AdmissionRequest[]>('/users/admissions/review', { headers: getAuthHeaders(), signal }, 30000);
+      setAdmissionRequests(admissions);
+    } catch (error) {
+      if (isAbortError(error) || signal?.aborted) {
+        return;
+      }
+
+      showToast('error', resolveErrorMessage(error, 'Erro ao carregar pedidos de admissão.'));
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoadingAdmissionRequests(false);
+      }
+    }
+  }
+
   const selectedProfileChangeDetails = selectedProfileRequest?.changeDetails ?? [];
   const selectedRejectedFieldEntries = Object.entries(rejectedFields);
   const partialRejectionReady = selectedRejectedFieldEntries.length > 0 && selectedRejectedFieldEntries.every(([, note]) => note.trim().length > 0);
 
-  if (!canReviewProfiles && !canReviewVacations) {
+  if (!canReviewProfiles && !canReviewVacations && !canReviewAdmissions) {
     return (
       <section className="trainings-shell">
         <article className="trainings-list-card">
@@ -346,6 +421,85 @@ export default function RHApprovalsPage() {
     });
   }
 
+  async function requestAdmissionCorrection(request: AdmissionRequest, reason: string) {
+    await runAction(`correct-admission-${request.id}`, 'Pedido devolvido para correção.', 'Erro ao devolver pedido para correção.', async () => {
+      await apiRequest(`/users/admissions/${request.id}/request-correction`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ reason }),
+      });
+      clearApiCache('/users/admissions/review');
+      setAdmissionRequests((current) => current.filter((item) => item.id !== request.id));
+      setSelectedAdmissionRequest(null);
+      setAdmissionCorrectionReason('');
+      void refreshNotifications();
+    });
+  }
+
+  async function approveAdmissionPersonalData(request: AdmissionRequest) {
+    await runAction(`approve-admission-${request.id}`, 'Dados pessoais aprovados.', 'Erro ao aprovar dados pessoais.', async () => {
+      await apiRequest(`/users/admissions/${request.id}/approve-personal`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+      clearApiCache('/users/admissions/review');
+      setAdmissionRequests((current) => current.map((item) => (
+        item.id === request.id ? { ...item, status: 'APPROVED_PENDING_CONTRACT' } : item
+      )));
+      setSelectedAdmissionRequest((current) => (current?.id === request.id ? { ...current, status: 'APPROVED_PENDING_CONTRACT' } : current));
+      void refreshNotifications();
+    });
+  }
+
+  async function completeAdmission(request: AdmissionRequest) {
+    await runAction(`complete-admission-${request.id}`, 'Colaborador criado com sucesso.', 'Erro ao concluir a admissão.', async () => {
+      await apiRequest(`/users/admissions/${request.id}/complete`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(contractDraft),
+      });
+      clearApiCache('/users/admissions/review');
+      clearApiCache('/users/collaborators');
+      setAdmissionRequests((current) => current.filter((item) => item.id !== request.id));
+      setSelectedAdmissionRequest(null);
+      setContractDraft({
+        companyEmail: '',
+        companyUsername: '',
+        cargo: '',
+        categoriaProfissional: '',
+        numeroMecanografico: '',
+        funcao: '',
+        dataInicioContrato: '',
+        dataFimContrato: '',
+        tipoContrato: '',
+        regimeHorario: '',
+      });
+      void refreshNotifications();
+    });
+  }
+
+  function openAdmissionDetails(request: AdmissionRequest) {
+    setSelectedAdmissionRequest(request);
+    setAdmissionCorrectionReason(request.reviewReason || '');
+    setContractDraft({
+      companyEmail: '',
+      companyUsername: '',
+      cargo: '',
+      categoriaProfissional: '',
+      numeroMecanografico: '',
+      funcao: '',
+      dataInicioContrato: '',
+      dataFimContrato: '',
+      tipoContrato: '',
+      regimeHorario: '',
+    });
+  }
+
+  function closeAdmissionDetails() {
+    setSelectedAdmissionRequest(null);
+    setAdmissionCorrectionReason('');
+  }
+
   function openRejectionModal(candidate: RejectionCandidate) {
     setRejectReason('');
     setRejectionCandidate(candidate);
@@ -426,6 +580,11 @@ export default function RHApprovalsPage() {
         {canReviewProfiles && (
           <button type="button" className={activeTab === 'profiles' ? 'is-active' : ''} onClick={() => handleTabChange('profiles')}>
             Alterações de ficha ({isLoadingProfileRequests ? '...' : profileRequests.length})
+          </button>
+        )}
+        {canReviewAdmissions && (
+          <button type="button" className={activeTab === 'admissions' ? 'is-active' : ''} onClick={() => handleTabChange('admissions')}>
+            Admissões ({isLoadingAdmissionRequests ? '...' : admissionRequests.length})
           </button>
         )}
         {canReviewVacations && (
@@ -602,6 +761,60 @@ export default function RHApprovalsPage() {
                   </article>
                 );
               })
+            )}
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'admissions' && canReviewAdmissions && (
+        <section className="trainings-list-card">
+          <div className="trainings-list-head">
+            <h3>Pedidos de admissão</h3>
+          </div>
+
+          <div className="rh-request-list">
+            {isLoadingAdmissionRequests ? (
+              Array.from({ length: 3 }).map((_, index) => (
+                <article key={index} className="trainings-mobile-card">
+                  <Skeleton lines={2} />
+                  <Skeleton lines={2} />
+                </article>
+              ))
+            ) : admissionRequests.length === 0 ? (
+              <article className="trainings-mobile-card">Sem pedidos de admissão pendentes.</article>
+            ) : (
+              admissionRequests.map((request) => (
+                <article key={request.id} className="trainings-mobile-card rh-profile-card" onClick={() => openAdmissionDetails(request)}>
+                  <header>
+                    <div className="rh-profile-card__top">
+                      <h4>{request.fullName}</h4>
+                      <Badge tone={request.status === 'APPROVED_PENDING_CONTRACT' ? 'success' : 'warning'}>
+                        {request.status === 'APPROVED_PENDING_CONTRACT' ? 'Aguarda contrato' : 'Submetido'}
+                      </Badge>
+                    </div>
+                    <div className="rh-profile-card__meta">
+                      <span>{request.personalEmail}</span>
+                      <span>{request.workCountry}{request.brWorkState ? ` · ${request.brWorkState}` : ''}</span>
+                    </div>
+                  </header>
+                  <p>Submetido em {formatShortDate(request.submittedAt || request.createdAt)}</p>
+                  <div className="trainings-row-actions">
+                    <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); openAdmissionDetails(request); }}>Ver detalhe</Button>
+                    {request.status === 'SUBMITTED' ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="primary"
+                        isLoading={pendingActionKey === `approve-admission-${request.id}`}
+                        disabled={Boolean(pendingActionKey)}
+                        onClick={(event) => { event.stopPropagation(); void approveAdmissionPersonalData(request); }}
+                      >
+                        Aprovar dados
+                      </Button>
+                    ) : null}
+                  </div>
+                </article>
+              ))
             )}
           </div>
         </section>
@@ -800,6 +1013,151 @@ export default function RHApprovalsPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={Boolean(selectedAdmissionRequest)}
+        title="Detalhe do pedido de admissão"
+        onClose={closeAdmissionDetails}
+        width="min(1100px, 96vw)"
+        footer={selectedAdmissionRequest ? (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: 12 }}>
+            <div style={{ color: 'var(--hub-text-3)', fontSize: '0.9rem' }}>
+              {selectedAdmissionRequest.fullName} · {selectedAdmissionRequest.personalEmail}
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Button type="button" variant="ghost" size="md" onClick={closeAdmissionDetails}>Fechar</Button>
+              {selectedAdmissionRequest.status === 'SUBMITTED' ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="md"
+                    isLoading={pendingActionKey === `correct-admission-${selectedAdmissionRequest.id}`}
+                    disabled={Boolean(pendingActionKey) || admissionCorrectionReason.trim().length === 0}
+                    onClick={() => { void requestAdmissionCorrection(selectedAdmissionRequest, admissionCorrectionReason.trim()); }}
+                  >
+                    Devolver para correção
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="md"
+                    isLoading={pendingActionKey === `approve-admission-${selectedAdmissionRequest.id}`}
+                    disabled={Boolean(pendingActionKey)}
+                    onClick={() => { void approveAdmissionPersonalData(selectedAdmissionRequest); }}
+                  >
+                    Aprovar dados pessoais
+                  </Button>
+                </>
+              ) : null}
+              {selectedAdmissionRequest.status === 'APPROVED_PENDING_CONTRACT' ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="md"
+                  isLoading={pendingActionKey === `complete-admission-${selectedAdmissionRequest.id}`}
+                  disabled={Boolean(pendingActionKey) || !contractDraft.companyEmail.trim() || !contractDraft.companyUsername.trim() || !contractDraft.dataInicioContrato.trim() || !contractDraft.tipoContrato.trim()}
+                  onClick={() => { void completeAdmission(selectedAdmissionRequest); }}
+                >
+                  Concluir admissão
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        ) : undefined}
+      >
+        {selectedAdmissionRequest ? (
+          <div className="approval-profile-modal">
+            <div className="approval-profile-modal__partial-layout">
+              <div className="approval-profile-modal__partial-list">
+                <article className="approval-profile-modal__item">
+                  <h4>Resumo</h4>
+                  <div>
+                    <div><span>Nome</span><strong>{selectedAdmissionRequest.fullName}</strong></div>
+                    <div><span>Email pessoal</span><strong>{selectedAdmissionRequest.personalEmail}</strong></div>
+                    <div><span>País</span><strong>{selectedAdmissionRequest.workCountry}{selectedAdmissionRequest.brWorkState ? ` · ${selectedAdmissionRequest.brWorkState}` : ''}</strong></div>
+                    <div><span>Submissão</span><strong>{formatShortDate(selectedAdmissionRequest.submittedAt || selectedAdmissionRequest.createdAt)}</strong></div>
+                  </div>
+                </article>
+
+                {Object.entries(selectedAdmissionRequest.personalData || {}).map(([field, value]) => (
+                  <article key={field} className="approval-profile-modal__item">
+                    <h4>{field}</h4>
+                    <div>
+                      <div>
+                        <span>Valor</span>
+                        <strong>{renderApprovalFieldValue(field, String(value || ''))}</strong>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              <aside className="approval-profile-modal__partial-summary">
+                {selectedAdmissionRequest.status === 'SUBMITTED' ? (
+                  <>
+                    <h4>Devolver para correção</h4>
+                    <p>O RH só visualiza estes dados. Se houver problema documental ou incoerência, devolve com observações.</p>
+                    <textarea
+                      value={admissionCorrectionReason}
+                      onChange={(event) => setAdmissionCorrectionReason(event.target.value)}
+                      placeholder="Ex.: falta comprovativo válido / documento ilegível / campo obrigatório em falta"
+                      style={{ width: '100%', minHeight: 140 }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <h4>Dados contratuais</h4>
+                    <p>Depois da aprovação dos dados pessoais, completa aqui os dados de contrato e credenciais internas.</p>
+                    <div className="trainings-form">
+                      <label>
+                        <span>Email da empresa</span>
+                        <input value={contractDraft.companyEmail} onChange={(event) => setContractDraft((current) => ({ ...current, companyEmail: event.target.value }))} />
+                      </label>
+                      <label>
+                        <span>Username</span>
+                        <input value={contractDraft.companyUsername} onChange={(event) => setContractDraft((current) => ({ ...current, companyUsername: event.target.value }))} />
+                      </label>
+                      <label>
+                        <span>Cargo</span>
+                        <input value={contractDraft.cargo} onChange={(event) => setContractDraft((current) => ({ ...current, cargo: event.target.value }))} />
+                      </label>
+                      <label>
+                        <span>Função</span>
+                        <input value={contractDraft.funcao} onChange={(event) => setContractDraft((current) => ({ ...current, funcao: event.target.value }))} />
+                      </label>
+                      <label>
+                        <span>Categoria profissional</span>
+                        <input value={contractDraft.categoriaProfissional} onChange={(event) => setContractDraft((current) => ({ ...current, categoriaProfissional: event.target.value }))} />
+                      </label>
+                      <label>
+                        <span>N.º mecanográfico</span>
+                        <input value={contractDraft.numeroMecanografico} onChange={(event) => setContractDraft((current) => ({ ...current, numeroMecanografico: event.target.value }))} />
+                      </label>
+                      <label>
+                        <span>Data início contrato</span>
+                        <input type="date" value={contractDraft.dataInicioContrato} onChange={(event) => setContractDraft((current) => ({ ...current, dataInicioContrato: event.target.value }))} />
+                      </label>
+                      <label>
+                        <span>Data fim contrato</span>
+                        <input type="date" value={contractDraft.dataFimContrato} onChange={(event) => setContractDraft((current) => ({ ...current, dataFimContrato: event.target.value }))} />
+                      </label>
+                      <label>
+                        <span>Tipo de contrato</span>
+                        <input value={contractDraft.tipoContrato} onChange={(event) => setContractDraft((current) => ({ ...current, tipoContrato: event.target.value }))} />
+                      </label>
+                      <label>
+                        <span>Regime horário</span>
+                        <input value={contractDraft.regimeHorario} onChange={(event) => setContractDraft((current) => ({ ...current, regimeHorario: event.target.value }))} />
+                      </label>
+                    </div>
+                  </>
+                )}
+              </aside>
+            </div>
+          </div>
+        ) : null}
       </Modal>
 
       <Modal

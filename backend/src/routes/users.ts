@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
@@ -13,6 +13,8 @@ import {
   hasPermission,
   isAccessTotal,
 } from '../lib/permission-engine.js';
+import { notifyUsers } from '../lib/notifications.js';
+import { sendTransactionalEmail } from '../lib/email.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
@@ -27,6 +29,46 @@ const createUserSchema = z.object({
   role: roleSchema.optional(),
   teamId: z.string().optional(),
   workCountry: countrySchema.optional(),
+});
+
+const employeeAdmissionStatusValues = [
+  'INVITED',
+  'SUBMITTED',
+  'CHANGES_REQUESTED',
+  'APPROVED_PENDING_CONTRACT',
+  'COMPLETED',
+  'EXPIRED',
+  'CANCELLED',
+] as const;
+
+type EmployeeAdmissionStatus = typeof employeeAdmissionStatusValues[number];
+
+const employeeAdmissionCreateSchema = z.object({
+  fullName: z.string().min(2, 'Nome completo é obrigatório.'),
+  personalEmail: z.string().email('Email pessoal inválido.'),
+  workCountry: countrySchema,
+  brWorkState: brWorkStateSchema.optional().nullable(),
+}).superRefine((data, ctx) => {
+  if (data.workCountry === 'BR' && !data.brWorkState) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['brWorkState'], message: 'Seleciona o estado de trabalho no Brasil.' });
+  }
+});
+
+const employeeAdmissionContractSchema = z.object({
+  companyEmail: z.string().email('Email da empresa inválido.'),
+  companyUsername: z.string().min(3, 'Username é obrigatório.'),
+  cargo: z.string().min(1, 'Cargo é obrigatório.'),
+  categoriaProfissional: z.string().optional().default(''),
+  numeroMecanografico: z.string().optional().default(''),
+  funcao: z.string().min(1, 'Função é obrigatória.'),
+  dataInicioContrato: z.string().min(1, 'Data início contrato é obrigatória.'),
+  dataFimContrato: z.string().optional().default(''),
+  tipoContrato: z.string().min(1, 'Tipo de contrato é obrigatório.'),
+  regimeHorario: z.string().min(1, 'Regime horário é obrigatório.'),
+});
+
+const employeeAdmissionCorrectionSchema = z.object({
+  reason: z.string().trim().min(5, 'Indica nas observações o que está mal.'),
 });
 
 const BULK_IMPORT_PROFILE_FIELD_KEYS = [
@@ -334,6 +376,329 @@ function buildTodayIsoDate() {
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 }
 
+const EMPLOYEE_ADMISSION_PUBLIC_FIELDS = [
+  'nomeCompleto',
+  'nomeAbreviado',
+  'dataNascimento',
+  'genero',
+  'estadoCivil',
+  'habilitacoesLiterarias',
+  'curso',
+  'faculdade',
+  'nacionalidade',
+  'emailPessoal',
+  'telemovel',
+  'githubUser',
+  'moradaFiscal',
+  'endereco',
+  'localidade',
+  'codigoPostal',
+  'matriculaCarro',
+  'localNascimentoPais',
+  'localNascimentoCidade',
+  'nomePai',
+  'nomeMae',
+  'cartaoCidadao',
+  'validadeCartaoCidadao',
+  'nif',
+  'cpf',
+  'pis',
+  'ctps',
+  'ctpsSerie',
+  'ctpsDataExpedicao',
+  'rg',
+  'rgOrgaoEmissor',
+  'rgDataExpedicao',
+  'cnh',
+  'cnhCategoria',
+  'cnhDataValidade',
+  'tituloEleitor',
+  'zonaEleitoral',
+  'secaoEleitoral',
+  'certificadoReservista',
+  'niss',
+  'iban',
+  'situacaoIrs',
+  'numeroDependentes',
+  'declaracaoIrs',
+  'irsJovem',
+  'anoPrimeiroDesconto',
+  'primeiroEmprego',
+  'recebeAposentadoria',
+  'recebeSeguroDesemprego',
+  'valeTransporte',
+  'numeroCartaoContinente',
+  'voucherNosData',
+  'comprovativoMoradaFiscal',
+  'comprovativoCartaoCidadao',
+  'comprovativoIban',
+  'comprovativoCartaoContinente',
+  'contactoEmergenciaNome',
+  'contactoEmergenciaParentesco',
+  'contactoEmergenciaNumero',
+  'workCountry',
+  'brWorkState',
+] as const;
+
+type EmployeeAdmissionPublicField = typeof EMPLOYEE_ADMISSION_PUBLIC_FIELDS[number];
+
+type EmployeeAdmissionPersonalData = Partial<Record<EmployeeAdmissionPublicField, string | boolean>>;
+
+function normalizeBooleanField(value: unknown) {
+  return value === true || value === 'true' || value === '1';
+}
+
+function hashAdmissionToken(token: string) {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function buildAdmissionToken() {
+  return randomBytes(32).toString('hex');
+}
+
+function buildFrontendAdmissionUrl(token: string) {
+  const configuredBase = String(process.env.FRONTEND_URL ?? '').split(',').map((item) => item.trim()).find(Boolean) || 'http://localhost:5173';
+  return `${configuredBase.replace(/\/$/, '')}/admissao/${token}`;
+}
+
+function getAdmissionExpiryDate() {
+  const expiry = new Date();
+  expiry.setDate(expiry.getDate() + 7);
+  return expiry;
+}
+
+function buildEmptyAdmissionPersonalData(input: {
+  fullName: string;
+  personalEmail: string;
+  workCountry: 'PT' | 'BR';
+  brWorkState?: 'SP' | 'RS' | null;
+}): EmployeeAdmissionPersonalData {
+  return {
+    nomeCompleto: input.fullName,
+    nomeAbreviado: input.fullName,
+    emailPessoal: input.personalEmail,
+    workCountry: input.workCountry,
+    brWorkState: input.workCountry === 'BR' ? (input.brWorkState ?? '') : '',
+  };
+}
+
+function normalizeEmployeeAdmissionPersonalData(
+  payload: unknown,
+  invitation: { fullName: string; personalEmail: string; workCountry: 'PT' | 'BR'; brWorkState?: 'SP' | 'RS' | null },
+) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Payload inválido.');
+  }
+
+  const source = payload as Record<string, unknown>;
+  const normalized: EmployeeAdmissionPersonalData = buildEmptyAdmissionPersonalData(invitation);
+
+  for (const field of EMPLOYEE_ADMISSION_PUBLIC_FIELDS) {
+    if (!(field in source)) {
+      continue;
+    }
+
+    if (field === 'primeiroEmprego' || field === 'recebeAposentadoria' || field === 'recebeSeguroDesemprego' || field === 'valeTransporte') {
+      normalized[field] = normalizeBooleanField(source[field]);
+      continue;
+    }
+
+    normalized[field] = source[field] == null ? '' : String(source[field]);
+  }
+
+  normalized.nomeCompleto = normalizeTextField(String(normalized.nomeCompleto ?? invitation.fullName)) || invitation.fullName;
+  normalized.emailPessoal = normalizeTextField(String(normalized.emailPessoal ?? invitation.personalEmail)).toLowerCase() || invitation.personalEmail;
+  normalized.workCountry = invitation.workCountry;
+  normalized.brWorkState = invitation.workCountry === 'BR' ? normalizeTextField(String(normalized.brWorkState ?? invitation.brWorkState ?? '')) : '';
+
+  return normalized;
+}
+
+function validateEmployeeAdmissionPersonalData(data: EmployeeAdmissionPersonalData, country: 'PT' | 'BR') {
+  const errors: string[] = [];
+
+  if (!normalizeTextField(String(data.nomeCompleto ?? ''))) errors.push('Nome completo é obrigatório.');
+  if (!normalizeTextField(String(data.nomeAbreviado ?? ''))) errors.push('Nome abreviado é obrigatório.');
+  if (!normalizeTextField(String(data.dataNascimento ?? ''))) errors.push('Data de nascimento é obrigatória.');
+  if (!normalizeTextField(String(data.genero ?? ''))) errors.push('Género é obrigatório.');
+  if (!normalizeTextField(String(data.estadoCivil ?? ''))) errors.push('Estado civil é obrigatório.');
+  if (!normalizeTextField(String(data.habilitacoesLiterarias ?? ''))) errors.push('Habilitações literárias são obrigatórias.');
+  if (!normalizeTextField(String(data.emailPessoal ?? '')) || !z.string().email().safeParse(String(data.emailPessoal ?? '')).success) errors.push('Email pessoal inválido.');
+  if (!normalizeTextField(String(data.telemovel ?? ''))) errors.push('Telemóvel é obrigatório.');
+  if (!normalizeTextField(String(data.moradaFiscal ?? ''))) errors.push('Morada fiscal é obrigatória.');
+  if (!normalizeTextField(String(data.endereco ?? ''))) errors.push('Morada habitual é obrigatória.');
+  if (!normalizeTextField(String(data.localidade ?? ''))) errors.push('Localidade é obrigatória.');
+  if (!normalizeTextField(String(data.codigoPostal ?? ''))) errors.push(country === 'BR' ? 'CEP é obrigatório.' : 'Código postal é obrigatório.');
+  if (!normalizeTextField(String(data.contactoEmergenciaNome ?? ''))) errors.push('Nome do contacto de emergência é obrigatório.');
+  if (!normalizeTextField(String(data.contactoEmergenciaParentesco ?? ''))) errors.push('Parentesco do contacto de emergência é obrigatório.');
+  if (!normalizeTextField(String(data.contactoEmergenciaNumero ?? ''))) errors.push('Número do contacto de emergência é obrigatório.');
+  if (country === 'BR' && !normalizeTextField(String(data.brWorkState ?? ''))) errors.push('Estado de trabalho no Brasil é obrigatório.');
+
+  return errors;
+}
+
+async function resolveAdmissionByTokenOrThrow(token: string) {
+  const tokenHash = hashAdmissionToken(token);
+  const admission = await prisma.employeeAdmission.findUnique({
+    where: { submissionTokenHash: tokenHash },
+  });
+
+  if (!admission) {
+    throw new Error('Convite não encontrado.');
+  }
+
+  if (admission.status === 'COMPLETED' || admission.status === 'CANCELLED') {
+    throw new Error('Este convite já não está disponível.');
+  }
+
+  if (admission.tokenExpiresAt < new Date()) {
+    throw new Error('Este convite expirou.');
+  }
+
+  return admission;
+}
+
+async function resolveAdmissionReviewersByCountry(workCountry: 'PT' | 'BR') {
+  const reviewers = await prisma.user.findMany({
+    where: {
+      isActive: true,
+      AND: [
+        {
+          OR: [
+            { isRootAccess: true },
+            {
+              permissionAssignments: {
+                some: {
+                  isEnabled: true,
+                  permission: { code: 'approve_profile_change' },
+                },
+              },
+            },
+          ],
+        },
+        {
+          OR: [
+            { isRootAccess: true },
+            { profile: { is: { workCountry } } },
+          ],
+        },
+      ],
+    },
+    select: { id: true },
+  });
+
+  return Array.from(new Set(reviewers.map((item) => item.id)));
+}
+
+async function sendAdmissionInviteEmail(params: {
+  personalEmail: string;
+  fullName: string;
+  invitationLink: string;
+  reviewReason?: string;
+}) {
+  const isCorrection = Boolean(params.reviewReason);
+  const subject = isCorrection
+    ? 'Smarter Hub · pedido devolvido para correção'
+    : 'Smarter Hub · convite para completar admissão';
+
+  const headerColor = isCorrection ? '#b45309' : '#1a56db';
+  const headerGradient = isCorrection
+    ? 'linear-gradient(135deg,#b45309,#92400e)'
+    : 'linear-gradient(135deg,#1a56db,#0e3f9e)';
+  const badgeLabel = isCorrection ? 'Correção solicitada' : 'Convite de admissão';
+  const bodyTitle = isCorrection ? 'Pedido devolvido para correção' : 'Bem-vindo(a) ao Smarter Hub!';
+  const bodyText = isCorrection
+    ? `O teu processo de admissão foi devolvido para correção. Por favor, revê e atualiza os teus dados com base nas observações do RH.`
+    : `Foi iniciado o teu processo de admissão na empresa. Usa o link abaixo para preencher a tua ficha pessoal.`;
+
+  const reviewBlock = isCorrection && params.reviewReason
+    ? `<div style="background:#fffbeb;border:1px solid #fcd34d;border-left:4px solid #f59e0b;border-radius:8px;padding:16px 20px;margin:0 0 28px;">
+        <p style="margin:0 0 4px;font-weight:700;color:#92400e;font-size:14px;">Motivo da devolução:</p>
+        <p style="margin:0;color:#78350f;font-size:14px;line-height:1.6;">${params.reviewReason}</p>
+      </div>`
+    : '';
+
+  const html = `<!DOCTYPE html>
+<html lang="pt">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#eef2f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#eef2f7;padding:48px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.10);">
+
+        <!-- HEADER -->
+        <tr><td style="background:${headerGradient};padding:40px 40px 32px;text-align:center;">
+          <div style="display:inline-block;background:rgba(255,255,255,0.15);border-radius:8px;padding:6px 16px;margin-bottom:16px;">
+            <span style="color:rgba(255,255,255,0.9);font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">${badgeLabel}</span>
+          </div>
+          <h1 style="margin:0 0 6px;color:#ffffff;font-size:32px;font-weight:800;letter-spacing:-1px;">Smarter Hub</h1>
+          <p style="margin:0;color:rgba(255,255,255,0.75);font-size:14px;">Portal de Recursos Humanos · Tlantic</p>
+        </td></tr>
+
+        <!-- BODY -->
+        <tr><td style="padding:40px 40px 32px;">
+          <h2 style="margin:0 0 8px;color:#111827;font-size:22px;font-weight:700;">${bodyTitle}</h2>
+          <p style="margin:0 0 8px;color:#6b7280;font-size:15px;">Olá <strong style="color:#111827;">${params.fullName}</strong>,</p>
+          <p style="margin:0 0 28px;color:#4b5563;font-size:15px;line-height:1.7;">${bodyText}</p>
+
+          ${reviewBlock}
+
+          <!-- CTA BUTTON -->
+          <div style="text-align:center;margin:0 0 32px;">
+            <a href="${params.invitationLink}"
+               style="display:inline-block;background:${headerColor};color:#ffffff;text-decoration:none;padding:15px 36px;border-radius:10px;font-size:16px;font-weight:700;letter-spacing:0.2px;box-shadow:0 4px 12px rgba(26,86,219,0.35);">
+              ${isCorrection ? 'Corrigir a minha ficha' : 'Preencher ficha de admissão'} →
+            </a>
+          </div>
+
+          <!-- LINK FALLBACK -->
+          <div style="background:#f9fafb;border-radius:10px;padding:16px 20px;margin-bottom:28px;">
+            <p style="margin:0 0 6px;color:#9ca3af;font-size:12px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;">Ou copia o link diretamente</p>
+            <p style="margin:0;word-break:break-all;color:${headerColor};font-size:13px;font-family:monospace;">${params.invitationLink}</p>
+          </div>
+
+          <!-- EXPIRY NOTE -->
+          <div style="display:flex;align-items:flex-start;gap:12px;background:#f0f9ff;border-radius:10px;padding:16px 20px;border:1px solid #bae6fd;">
+            <span style="font-size:20px;flex-shrink:0;">⏱</span>
+            <p style="margin:0;color:#0369a1;font-size:14px;line-height:1.6;">Este link é <strong>pessoal e intransmissível</strong> e expira em <strong>7 dias</strong>. Caso expire, contacta o departamento de RH para receberes um novo convite.</p>
+          </div>
+        </td></tr>
+
+        <!-- DIVIDER -->
+        <tr><td style="padding:0 40px;"><hr style="border:none;border-top:1px solid #e5e7eb;margin:0;"></td></tr>
+
+        <!-- FOOTER -->
+        <tr><td style="padding:24px 40px;">
+          <p style="margin:0 0 4px;color:#9ca3af;font-size:12px;text-align:center;">Este email foi gerado automaticamente pelo sistema <strong>Smarter Hub</strong>.</p>
+          <p style="margin:0;color:#d1d5db;font-size:12px;text-align:center;">Por favor, não responda a este email.</p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  const textFallback = [
+    `Olá ${params.fullName},`,
+    '',
+    bodyText,
+    ...(params.reviewReason ? ['', `Motivo: ${params.reviewReason}`] : []),
+    '',
+    'Link:',
+    params.invitationLink,
+    '',
+    'Este link expira em 7 dias.',
+  ].join('\n');
+
+  await sendTransactionalEmail({
+    to: params.personalEmail,
+    subject,
+    text: textFallback,
+    html,
+  });
+}
+
 function sanitizeBulkImportProfile(profile?: Record<string, string>) {
   const sanitized: Partial<Record<BulkImportProfileFieldKey, string>> = {};
 
@@ -352,14 +717,14 @@ async function createManagedUser(params: {
   role?: z.infer<typeof roleSchema>;
   teamId?: string | null;
   workCountry?: z.infer<typeof countrySchema>;
-  profile?: Partial<Record<BulkImportProfileFieldKey, string>>;
+  profile?: Partial<Record<string, unknown>>;
 }) {
   const passwordHash = await bcrypt.hash('pola123', 10);
   const fullName = normalizeTextField(params.fullName).replace(/\s+/g, ' ');
   const profile = params.profile ?? {};
   const workCountry = params.workCountry ?? 'PT';
-  const shortName = normalizeTextField(profile.nomeAbreviado) || fullName;
-  const dataInicioContrato = normalizeTextField(profile.dataInicioContrato) || buildTodayIsoDate();
+  const shortName = normalizeTextField(String(profile.nomeAbreviado ?? '')) || fullName;
+  const dataInicioContrato = normalizeTextField(String(profile.dataInicioContrato ?? '')) || buildTodayIsoDate();
   const user = await prisma.user.create({
     data: {
       username: normalizeTextField(params.username).toLowerCase(),
@@ -383,43 +748,75 @@ async function createManagedUser(params: {
         create: {
           nomeCompleto: fullName,
           nomeAbreviado: shortName,
-          dataNascimento: normalizeTextField(profile.dataNascimento),
-          genero: normalizeTextField(profile.genero),
-          estadoCivil: normalizeTextField(profile.estadoCivil),
-          habilitacoesLiterarias: normalizeTextField(profile.habilitacoesLiterarias),
-          curso: normalizeTextField(profile.curso),
-          faculdade: normalizeTextField(profile.faculdade),
-          nacionalidade: normalizeTextField(profile.nacionalidade),
-          emailPessoal: normalizeTextField(profile.emailPessoal) || normalizeTextField(params.email).toLowerCase(),
-          telemovel: normalizeTextField(profile.telemovel),
-          githubUser: normalizeTextField(profile.githubUser),
-          moradaFiscal: normalizeTextField(profile.moradaFiscal),
-          endereco: normalizeTextField(profile.endereco),
-          localidade: normalizeTextField(profile.localidade),
-          codigoPostal: normalizeTextField(profile.codigoPostal),
-          matriculaCarro: normalizeTextField(profile.matriculaCarro),
-          cartaoCidadao: normalizeTextField(profile.cartaoCidadao),
-          validadeCartaoCidadao: normalizeTextField(profile.validadeCartaoCidadao),
-          nif: normalizeTextField(profile.nif),
-          niss: normalizeTextField(profile.niss),
-          iban: normalizeTextField(profile.iban),
-          situacaoIrs: normalizeTextField(profile.situacaoIrs),
-          numeroDependentes: normalizeTextField(profile.numeroDependentes),
-          irsJovem: normalizeTextField(profile.irsJovem),
-          anoPrimeiroDesconto: normalizeTextField(profile.anoPrimeiroDesconto),
-          numeroCartaoContinente: normalizeTextField(profile.numeroCartaoContinente),
-          voucherNosData: normalizeTextField(profile.voucherNosData),
-          contactoEmergenciaNome: normalizeTextField(profile.contactoEmergenciaNome),
-          contactoEmergenciaParentesco: normalizeTextField(profile.contactoEmergenciaParentesco),
-          contactoEmergenciaNumero: normalizeTextField(profile.contactoEmergenciaNumero),
-          cargo: normalizeTextField(profile.cargo),
-          categoriaProfissional: normalizeTextField(profile.categoriaProfissional),
-          funcao: normalizeTextField(profile.funcao),
+          dataNascimento: normalizeTextField(String(profile.dataNascimento ?? '')),
+          genero: normalizeTextField(String(profile.genero ?? '')),
+          estadoCivil: normalizeTextField(String(profile.estadoCivil ?? '')),
+          habilitacoesLiterarias: normalizeTextField(String(profile.habilitacoesLiterarias ?? '')),
+          curso: normalizeTextField(String(profile.curso ?? '')),
+          faculdade: normalizeTextField(String(profile.faculdade ?? '')),
+          nacionalidade: normalizeTextField(String(profile.nacionalidade ?? '')),
+          emailPessoal: normalizeTextField(String(profile.emailPessoal ?? '')) || normalizeTextField(params.email).toLowerCase(),
+          telemovel: normalizeTextField(String(profile.telemovel ?? '')),
+          githubUser: normalizeTextField(String(profile.githubUser ?? '')),
+          moradaFiscal: normalizeTextField(String(profile.moradaFiscal ?? '')),
+          endereco: normalizeTextField(String(profile.endereco ?? '')),
+          localidade: normalizeTextField(String(profile.localidade ?? '')),
+          codigoPostal: normalizeTextField(String(profile.codigoPostal ?? '')),
+          matriculaCarro: normalizeTextField(String(profile.matriculaCarro ?? '')),
+          localNascimentoPais: normalizeTextField(String(profile.localNascimentoPais ?? '')),
+          localNascimentoCidade: normalizeTextField(String(profile.localNascimentoCidade ?? '')),
+          nomePai: normalizeTextField(String(profile.nomePai ?? '')),
+          nomeMae: normalizeTextField(String(profile.nomeMae ?? '')),
+          cartaoCidadao: normalizeTextField(String(profile.cartaoCidadao ?? '')),
+          validadeCartaoCidadao: normalizeTextField(String(profile.validadeCartaoCidadao ?? '')),
+          nif: normalizeTextField(String(profile.nif ?? '')),
+          cpf: normalizeTextField(String(profile.cpf ?? '')),
+          pis: normalizeTextField(String(profile.pis ?? '')),
+          ctps: normalizeTextField(String(profile.ctps ?? '')),
+          ctpsSerie: normalizeTextField(String(profile.ctpsSerie ?? '')),
+          ctpsDataExpedicao: normalizeTextField(String(profile.ctpsDataExpedicao ?? '')),
+          rg: normalizeTextField(String(profile.rg ?? '')),
+          rgOrgaoEmissor: normalizeTextField(String(profile.rgOrgaoEmissor ?? '')),
+          rgDataExpedicao: normalizeTextField(String(profile.rgDataExpedicao ?? '')),
+          cnh: normalizeTextField(String(profile.cnh ?? '')),
+          cnhCategoria: normalizeTextField(String(profile.cnhCategoria ?? '')),
+          cnhDataValidade: normalizeTextField(String(profile.cnhDataValidade ?? '')),
+          tituloEleitor: normalizeTextField(String(profile.tituloEleitor ?? '')),
+          zonaEleitoral: normalizeTextField(String(profile.zonaEleitoral ?? '')),
+          secaoEleitoral: normalizeTextField(String(profile.secaoEleitoral ?? '')),
+          certificadoReservista: normalizeTextField(String(profile.certificadoReservista ?? '')),
+          niss: normalizeTextField(String(profile.niss ?? '')),
+          iban: normalizeTextField(String(profile.iban ?? '')),
+          situacaoIrs: normalizeTextField(String(profile.situacaoIrs ?? '')),
+          numeroDependentes: normalizeTextField(String(profile.numeroDependentes ?? '')),
+          declaracaoIrs: normalizeTextField(String(profile.declaracaoIrs ?? '')),
+          irsJovem: normalizeTextField(String(profile.irsJovem ?? '')),
+          anoPrimeiroDesconto: normalizeTextField(String(profile.anoPrimeiroDesconto ?? '')),
+          primeiroEmprego: normalizeBooleanField(profile.primeiroEmprego),
+          recebeAposentadoria: normalizeBooleanField(profile.recebeAposentadoria),
+          recebeSeguroDesemprego: normalizeBooleanField(profile.recebeSeguroDesemprego),
+          valeTransporte: normalizeBooleanField(profile.valeTransporte),
+          numeroCartaoContinente: normalizeTextField(String(profile.numeroCartaoContinente ?? '')),
+          voucherNosData: normalizeTextField(String(profile.voucherNosData ?? '')),
+          comprovativoMoradaFiscal: normalizeTextField(String(profile.comprovativoMoradaFiscal ?? '')),
+          comprovativoCartaoCidadao: normalizeTextField(String(profile.comprovativoCartaoCidadao ?? '')),
+          comprovativoIban: normalizeTextField(String(profile.comprovativoIban ?? '')),
+          comprovativoCartaoContinente: normalizeTextField(String(profile.comprovativoCartaoContinente ?? '')),
+          contactoEmergenciaNome: normalizeTextField(String(profile.contactoEmergenciaNome ?? '')),
+          contactoEmergenciaParentesco: normalizeTextField(String(profile.contactoEmergenciaParentesco ?? '')),
+          contactoEmergenciaNumero: normalizeTextField(String(profile.contactoEmergenciaNumero ?? '')),
+          cargo: normalizeTextField(String(profile.cargo ?? '')),
+          categoriaProfissional: normalizeTextField(String(profile.categoriaProfissional ?? '')),
+          numeroMecanografico: normalizeTextField(String(profile.numeroMecanografico ?? '')),
+          funcao: normalizeTextField(String(profile.funcao ?? '')),
           dataInicioContrato,
-          dataFimContrato: normalizeTextField(profile.dataFimContrato),
-          tipoContrato: normalizeTextField(profile.tipoContrato),
-          regimeHorario: normalizeTextField(profile.regimeHorario),
+          dataFimContrato: normalizeTextField(String(profile.dataFimContrato ?? '')),
+          tipoContrato: normalizeTextField(String(profile.tipoContrato ?? '')),
+          regimeHorario: normalizeTextField(String(profile.regimeHorario ?? '')),
           workCountry,
+          brWorkState: workCountry === 'BR'
+            ? ((normalizeTextField(String(profile.brWorkState ?? '')) || null) as 'SP' | 'RS' | null)
+            : null,
         },
       },
     },
@@ -659,8 +1056,9 @@ function parseBooleanQuery(value: unknown) {
 }
 
 async function resolveTeamScopeForUser(userId: string, isRootAccess: boolean) {
-  const [scope, isFullAccess, user] = await Promise.all([
+  const [teamsScope, vacationsScope, isFullAccess, user] = await Promise.all([
     getPermissionScope(userId, 'view_teams'),
+    getPermissionScope(userId, 'view_team_vacations'),
     isAccessTotal(userId),
     prisma.user.findUnique({
       where: { id: userId },
@@ -674,8 +1072,10 @@ async function resolveTeamScopeForUser(userId: string, isRootAccess: boolean) {
     }),
   ]);
 
-  const hasTeamViewPermission = Boolean(scope);
-  const restrictedTeamsForView = scope?.restrictedToTeams ?? null;
+  const hasTeamViewPermission = Boolean(teamsScope);
+  const hasVacationTeamViewPermission = Boolean(vacationsScope);
+  const restrictedTeamsForTeamView = teamsScope?.restrictedToTeams ?? null;
+  const restrictedTeamsForVacationView = vacationsScope?.restrictedToTeams ?? null;
 
   const ownTeamIds = new Set<string>();
   if (user?.teamId) {
@@ -685,14 +1085,22 @@ async function resolveTeamScopeForUser(userId: string, isRootAccess: boolean) {
     ownTeamIds.add(membership.teamId);
   }
 
-  const canViewGlobally = isRootAccess || isFullAccess || (hasTeamViewPermission && restrictedTeamsForView === null);
+  const canViewGlobally = isRootAccess
+    || isFullAccess
+    || (hasTeamViewPermission && restrictedTeamsForTeamView === null)
+    || (hasVacationTeamViewPermission && restrictedTeamsForVacationView === null);
   if (canViewGlobally) {
     return { isGlobal: true, teamIds: [] as string[] };
   }
 
   const allowed = new Set<string>([...ownTeamIds]);
-  if (hasTeamViewPermission && restrictedTeamsForView && restrictedTeamsForView.length > 0) {
-    for (const teamId of restrictedTeamsForView) {
+  if (hasTeamViewPermission && restrictedTeamsForTeamView && restrictedTeamsForTeamView.length > 0) {
+    for (const teamId of restrictedTeamsForTeamView) {
+      allowed.add(teamId);
+    }
+  }
+  if (hasVacationTeamViewPermission && restrictedTeamsForVacationView && restrictedTeamsForVacationView.length > 0) {
+    for (const teamId of restrictedTeamsForVacationView) {
       allowed.add(teamId);
     }
   }
@@ -3270,6 +3678,378 @@ router.patch('/admin/users/:id/memberships', requireAuth, async (req, res) => {
   });
 
   return res.json({ success: true });
+});
+
+router.post('/users/admissions', requireAuth, async (req, res, next) => {
+  try {
+    const actorHasAccess = req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id);
+    if (!actorHasAccess) {
+      return res.status(403).json({ message: 'Sem permissões para iniciar admissões.' });
+    }
+
+    const data = employeeAdmissionCreateSchema.parse(req.body);
+    const personalEmail = normalizeTextField(data.personalEmail).toLowerCase();
+    const workCountry = data.workCountry;
+    const brWorkState = workCountry === 'BR' ? (data.brWorkState ?? null) : null;
+
+    const existingActiveAdmission = await prisma.employeeAdmission.findFirst({
+      where: {
+        personalEmail,
+        status: { in: ['INVITED', 'SUBMITTED', 'CHANGES_REQUESTED', 'APPROVED_PENDING_CONTRACT'] },
+      },
+      select: { id: true },
+    });
+
+    if (existingActiveAdmission) {
+      return res.status(409).json({ message: 'Já existe um processo de admissão ativo para este email pessoal.' });
+    }
+
+    const token = buildAdmissionToken();
+    const invitationLink = buildFrontendAdmissionUrl(token);
+    const admission = await prisma.employeeAdmission.create({
+      data: {
+        fullName: normalizeTextField(data.fullName).replace(/\s+/g, ' '),
+        personalEmail,
+        workCountry,
+        brWorkState,
+        personalData: buildEmptyAdmissionPersonalData({
+          fullName: normalizeTextField(data.fullName).replace(/\s+/g, ' '),
+          personalEmail,
+          workCountry,
+          brWorkState,
+        }) as Prisma.InputJsonValue,
+        submissionTokenHash: hashAdmissionToken(token),
+        tokenExpiresAt: getAdmissionExpiryDate(),
+        lastInvitationSentAt: new Date(),
+        invitedById: req.authUser!.id,
+      },
+      select: {
+        id: true,
+        fullName: true,
+        personalEmail: true,
+        workCountry: true,
+        brWorkState: true,
+        status: true,
+        tokenExpiresAt: true,
+      },
+    });
+
+    await sendAdmissionInviteEmail({
+      personalEmail,
+      fullName: admission.fullName,
+      invitationLink,
+    });
+
+    return res.status(201).json({
+      ...admission,
+      invitationLinkPreview: process.env.NODE_ENV === 'production' ? undefined : invitationLink,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/users/admissions/public/:token', async (req, res) => {
+  try {
+    const admission = await resolveAdmissionByTokenOrThrow(String(req.params.token));
+
+    return res.json({
+      id: admission.id,
+      fullName: admission.fullName,
+      personalEmail: admission.personalEmail,
+      workCountry: admission.workCountry,
+      brWorkState: admission.brWorkState,
+      status: admission.status,
+      reviewReason: admission.reviewReason,
+      tokenExpiresAt: admission.tokenExpiresAt,
+      personalData: admission.personalData,
+    });
+  } catch (error) {
+    return res.status(404).json({ message: error instanceof Error ? error.message : 'Convite não encontrado.' });
+  }
+});
+
+router.post('/users/admissions/public/:token/submit', async (req, res, next) => {
+  try {
+    const admission = await resolveAdmissionByTokenOrThrow(String(req.params.token));
+    if (admission.status === 'APPROVED_PENDING_CONTRACT') {
+      return res.status(409).json({ message: 'Este pedido já foi aprovado e está a aguardar conclusão contratual.' });
+    }
+
+    const normalized = normalizeEmployeeAdmissionPersonalData(req.body, {
+      fullName: admission.fullName,
+      personalEmail: admission.personalEmail,
+      workCountry: admission.workCountry,
+      brWorkState: admission.brWorkState,
+    });
+    const validationErrors = validateEmployeeAdmissionPersonalData(normalized, admission.workCountry);
+    if (validationErrors.length > 0) {
+      return res.status(400).json({ message: validationErrors[0] });
+    }
+
+    await prisma.employeeAdmission.update({
+      where: { id: admission.id },
+      data: {
+        personalData: normalized as Prisma.InputJsonValue,
+        status: 'SUBMITTED',
+        reviewReason: '',
+        submittedAt: new Date(),
+        reviewedAt: null,
+        reviewedById: null,
+      },
+    });
+
+    const reviewerIds = await resolveAdmissionReviewersByCountry(admission.workCountry);
+    await notifyUsers(prisma, reviewerIds, 'Novo pedido de admissão', [
+      `${admission.fullName} submeteu a ficha de admissão e está pronto para revisão.`,
+      `País: ${admission.workCountry === 'BR' ? 'Brasil' : 'Portugal'}${admission.brWorkState ? ` (${admission.brWorkState})` : ''}`,
+      `Email pessoal: ${admission.personalEmail}`,
+      `ação: Abrir admissões|/admissoes`,
+    ].join('\n'));
+
+    return res.json({ success: true, message: 'Ficha submetida para revisão RH.' });
+  } catch (error) {
+    if (error instanceof Error && /Convite|expirou|disponível/.test(error.message)) {
+      return res.status(404).json({ message: error.message });
+    }
+    return next(error);
+  }
+});
+
+router.get('/users/admissions/review', requireAuth, async (req, res) => {
+  const canReview = req.authUser!.isRootAccess || await hasPermission(req.authUser!.id, 'approve_profile_change');
+  if (!canReview) {
+    return res.status(403).json({ message: 'Sem permissões para consultar admissões.' });
+  }
+
+  const actorProfile = await prisma.profile.findUnique({ where: { userId: req.authUser!.id }, select: { workCountry: true } });
+  const rows = await prisma.employeeAdmission.findMany({
+    where: {
+      status: { in: ['SUBMITTED', 'APPROVED_PENDING_CONTRACT'] },
+      ...(req.authUser!.isRootAccess ? {} : { workCountry: actorProfile?.workCountry ?? 'PT' }),
+    },
+    orderBy: [{ status: 'asc' }, { submittedAt: 'desc' }, { createdAt: 'desc' }],
+    include: {
+      invitedBy: { select: { id: true, username: true, email: true, profile: { select: { nomeAbreviado: true, nomeCompleto: true } } } },
+      reviewedBy: { select: { id: true, username: true, email: true, profile: { select: { nomeAbreviado: true, nomeCompleto: true } } } },
+    },
+  });
+
+  return res.json(rows);
+});
+
+router.post('/users/admissions/:id/request-correction', requireAuth, async (req, res, next) => {
+  try {
+    const canReview = req.authUser!.isRootAccess || await hasPermission(req.authUser!.id, 'approve_profile_change');
+    if (!canReview) {
+      return res.status(403).json({ message: 'Sem permissões para devolver admissões.' });
+    }
+
+    const payload = employeeAdmissionCorrectionSchema.parse(req.body);
+    const admission = await prisma.employeeAdmission.findUnique({ where: { id: String(req.params.id) } });
+    if (!admission) {
+      return res.status(404).json({ message: 'Pedido de admissão não encontrado.' });
+    }
+
+    const token = buildAdmissionToken();
+    const invitationLink = buildFrontendAdmissionUrl(token);
+    await prisma.employeeAdmission.update({
+      where: { id: admission.id },
+      data: {
+        status: 'CHANGES_REQUESTED',
+        reviewReason: payload.reason,
+        reviewedAt: new Date(),
+        reviewedById: req.authUser!.id,
+        submissionTokenHash: hashAdmissionToken(token),
+        tokenExpiresAt: getAdmissionExpiryDate(),
+        lastInvitationSentAt: new Date(),
+      },
+    });
+
+    await sendAdmissionInviteEmail({
+      personalEmail: admission.personalEmail,
+      fullName: admission.fullName,
+      invitationLink,
+      reviewReason: payload.reason,
+    });
+
+    return res.json({ success: true });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/users/admissions/:id/approve-personal', requireAuth, async (req, res, next) => {
+  try {
+    const canReview = req.authUser!.isRootAccess || await hasPermission(req.authUser!.id, 'approve_profile_change');
+    if (!canReview) {
+      return res.status(403).json({ message: 'Sem permissões para aprovar admissões.' });
+    }
+
+    const admission = await prisma.employeeAdmission.findUnique({ where: { id: String(req.params.id) } });
+    if (!admission) {
+      return res.status(404).json({ message: 'Pedido de admissão não encontrado.' });
+    }
+
+    if (admission.status !== 'SUBMITTED') {
+      return res.status(409).json({ message: 'Este pedido não está pronto para aprovação dos dados pessoais.' });
+    }
+
+    await prisma.employeeAdmission.update({
+      where: { id: admission.id },
+      data: {
+        status: 'APPROVED_PENDING_CONTRACT',
+        reviewReason: '',
+        reviewedAt: new Date(),
+        reviewedById: req.authUser!.id,
+      },
+    });
+
+    await notifyUsers(prisma, [req.authUser!.id], 'Admissão pronta para contrato', [
+      `Os dados pessoais de ${admission.fullName} foram aprovados.`,
+      'Passo seguinte: preencher dados contratuais e criar o utilizador.',
+      `ação: Abrir admissões|/admissoes`,
+    ].join('\n'));
+    return res.json({ success: true });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/users/admissions/:id/complete', requireAuth, async (req, res, next) => {
+  try {
+    const canReview = req.authUser!.isRootAccess || await hasPermission(req.authUser!.id, 'approve_profile_change');
+    if (!canReview) {
+      return res.status(403).json({ message: 'Sem permissões para concluir admissões.' });
+    }
+
+    const admission = await prisma.employeeAdmission.findUnique({ where: { id: String(req.params.id) } });
+    if (!admission) {
+      return res.status(404).json({ message: 'Pedido de admissão não encontrado.' });
+    }
+
+    if (admission.status !== 'APPROVED_PENDING_CONTRACT') {
+      return res.status(409).json({ message: 'Os dados pessoais ainda não foram aprovados para este pedido.' });
+    }
+
+    const contract = employeeAdmissionContractSchema.parse(req.body);
+    const createdUser = await createManagedUser({
+      actorUserId: req.authUser!.id,
+      username: contract.companyUsername,
+      email: contract.companyEmail,
+      fullName: admission.fullName,
+      role: 'COLABORADOR',
+      workCountry: admission.workCountry,
+      profile: {
+        ...((admission.personalData as Record<string, unknown>) ?? {}),
+        cargo: contract.cargo,
+        categoriaProfissional: contract.categoriaProfissional,
+        numeroMecanografico: contract.numeroMecanografico,
+        funcao: contract.funcao,
+        dataInicioContrato: contract.dataInicioContrato,
+        dataFimContrato: contract.dataFimContrato,
+        tipoContrato: contract.tipoContrato,
+        regimeHorario: contract.regimeHorario,
+        workCountry: admission.workCountry,
+        brWorkState: admission.brWorkState,
+      },
+    });
+
+    await prisma.employeeAdmission.update({
+      where: { id: admission.id },
+      data: {
+        status: 'COMPLETED',
+        companyEmail: contract.companyEmail.trim().toLowerCase(),
+        companyUsername: contract.companyUsername.trim().toLowerCase(),
+        contractData: contract as unknown as Prisma.InputJsonValue,
+        completedAt: new Date(),
+        completedById: req.authUser!.id,
+      },
+    });
+
+    await sendTransactionalEmail({
+      to: admission.personalEmail,
+      subject: 'Smarter Hub · admissão concluída',
+      text: [
+        `Olá ${admission.fullName},`,
+        '',
+        'O teu processo de admissão foi concluído com sucesso.',
+        `Username criado: ${contract.companyUsername.trim().toLowerCase()}`,
+        `Email da empresa: ${contract.companyEmail.trim().toLowerCase()}`,
+        '',
+        'A password inicial definida é pola123.',
+      ].join('\n'),
+    });
+
+    return res.status(201).json(createdUser);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+// ── LIST ALL ADMISSIONS (for RH / admin review page) ──────────────────────────
+router.get('/users/admissions/list', requireAuth, async (req, res) => {
+  const canView = req.authUser!.isRootAccess || await hasPermission(req.authUser!.id, 'approve_profile_change');
+  if (!canView) {
+    return res.status(403).json({ message: 'Sem permissões para consultar admissões.' });
+  }
+
+  const actorProfile = await prisma.profile.findUnique({ where: { userId: req.authUser!.id }, select: { workCountry: true } });
+  const countryFilter = req.authUser!.isRootAccess ? {} : { workCountry: actorProfile?.workCountry ?? 'PT' };
+
+  const statusFilter = typeof req.query.status === 'string' && req.query.status
+    ? { status: req.query.status }
+    : {};
+
+  const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10));
+  const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? '50'), 10)));
+
+  const where = { ...countryFilter, ...statusFilter };
+
+  const [total, rows] = await Promise.all([
+    prisma.employeeAdmission.count({ where }),
+    prisma.employeeAdmission.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: {
+        invitedBy: { select: { id: true, username: true, profile: { select: { nomeAbreviado: true } } } },
+        reviewedBy: { select: { id: true, username: true, profile: { select: { nomeAbreviado: true } } } },
+        completedBy: { select: { id: true, username: true, profile: { select: { nomeAbreviado: true } } } },
+      },
+    }),
+  ]);
+
+  return res.json({ total, page, pageSize, rows });
+});
+
+// ── GET SINGLE ADMISSION DETAIL ──────────────────────────────────────────────
+router.get('/users/admissions/:id', requireAuth, async (req, res) => {
+  const canView = req.authUser!.isRootAccess || await hasPermission(req.authUser!.id, 'approve_profile_change');
+  if (!canView) {
+    return res.status(403).json({ message: 'Sem permissões para consultar admissões.' });
+  }
+
+  const admission = await prisma.employeeAdmission.findUnique({
+    where: { id: String(req.params.id) },
+    include: {
+      invitedBy: { select: { id: true, username: true, profile: { select: { nomeAbreviado: true } } } },
+      reviewedBy: { select: { id: true, username: true, profile: { select: { nomeAbreviado: true } } } },
+      completedBy: { select: { id: true, username: true, profile: { select: { nomeAbreviado: true } } } },
+    },
+  });
+
+  if (!admission) {
+    return res.status(404).json({ message: 'Admissão não encontrada.' });
+  }
+
+  const actorProfile = await prisma.profile.findUnique({ where: { userId: req.authUser!.id }, select: { workCountry: true } });
+  if (!req.authUser!.isRootAccess && admission.workCountry !== actorProfile?.workCountry) {
+    return res.status(403).json({ message: 'Sem permissões para consultar esta admissão.' });
+  }
+
+  return res.json(admission);
 });
 
 router.post('/users', requireAuth, async (req, res, next) => {

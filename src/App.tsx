@@ -21,6 +21,8 @@ const CareerPlanPage = lazy(() => import('./pages/CareerPlanPage'));
 const ManagerTeamsPage = lazy(() => import('./pages/ManagerTeamsPage'));
 const CollaboratorsPage = lazy(() => import('./pages/CollaboratorsPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const EmployeeAdmissionPage = lazy(() => import('./pages/EmployeeAdmissionPage'));
+const AdmissionsPage = lazy(() => import('./pages/AdmissionsPage'));
 
 function AppRoutes() {
   const { isAuthenticated, isLoadingSession, isLoadingPortalData, currentUser, hasPermission, isRootAccess, isAccessTotal, profile } = usePortal();
@@ -31,7 +33,7 @@ function AppRoutes() {
   const canViewTeams = !isTPeople && (currentUser?.role ?? '') !== 'CONVIDADO';
   const canEditUser = isRootAccess || hasPermission('edit_user');
   const canManagePermissions = isRootAccess || hasPermission('manage_permissions');
-  const canViewVacations = isRootAccess || hasPermission('request_vacation') || hasPermission('view_own_vacations') || hasPermission('view_all_vacations');
+  const canViewVacations = isRootAccess || hasPermission('request_vacation') || hasPermission('view_own_vacations') || hasPermission('view_team_vacations') || hasPermission('view_all_vacations');
   const canReviewApprovals = isRootAccess || hasPermission('approve_profile_change') || hasPermission('approve_vacation');
   const canManageTrainings = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
   const canViewOwnTrainings = isRootAccess || hasPermission('view_trainings') || hasPermission('view_all_trainings');
@@ -175,6 +177,7 @@ function AppRoutes() {
     return (
       <Suspense fallback={<LoadingScreen />}>
         <Routes>
+          <Route path="/admissao/:token" element={<EmployeeAdmissionPage />} />
           <Route path="*" element={<LoginView />} />
         </Routes>
       </Suspense>
@@ -191,6 +194,7 @@ function AppRoutes() {
           <Route path="plano-carreira" element={isTPeople ? <Navigate to="/" replace /> : <CareerPlanPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="aprovacoes" element={<RHApprovalsPage />} />
+          <Route path="admissoes" element={<AdmissionsPage />} />
           <Route path="equipas" element={<ManagerTeamsPage />} />
           <Route path="colaboradores" element={<CollaboratorsPage />} />
           <Route path="dashboard" element={<DashboardPage />} />

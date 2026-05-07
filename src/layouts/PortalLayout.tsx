@@ -43,10 +43,13 @@ export default function PortalLayout() {
       ...(can('approve_profile_change') || can('approve_vacation') || can('reject_vacation') || can('view_all_vacations')
         ? [{ id: 'aprovacoes', label: 'Aprovações', path: '/aprovacoes' }]
         : []),
+      ...(can('approve_profile_change') || isRootAccess || isAccessTotal
+        ? [{ id: 'admissoes', label: 'Admissões', path: '/admissoes' }]
+        : []),
       ...(can('view_trainings') || can('view_all_trainings') || can('request_training') || can('assign_training')
         ? [{ id: 'formacoes', label: 'Formações', path: '/formacoes' }]
         : []),
-      ...((can('request_vacation') || can('view_own_vacations') || can('view_all_vacations') || can('manage_vacation_rules'))
+      ...((can('request_vacation') || can('view_own_vacations') || can('view_team_vacations') || can('view_all_vacations') || can('manage_vacation_rules'))
         ? [{ id: 'ferias', label: 'Férias / Ausências', path: '/ferias' }]
         : []),
       ...(((isBrProfile || canUseHourBankAcrossCountries) && (can('view_hours_bank') || can('manage_hours_bank') || isRootAccess || isAccessTotal))
@@ -78,7 +81,7 @@ export default function PortalLayout() {
   }, [filteredMenu]);
 
   const managementMenu = useMemo(() => {
-    const managementIds = new Set(['dashboard', 'colaboradores', 'aprovacoes', 'banco-horas', 'admin']);
+    const managementIds = new Set(['dashboard', 'colaboradores', 'aprovacoes', 'admissoes', 'banco-horas', 'admin']);
     return filteredMenu.filter((item) => managementIds.has(item.id));
   }, [filteredMenu]);
 

@@ -8228,6 +8228,16 @@
   border-color: #4b82d7;
 }
 
+.team-vac-calendar-legend__item i.is-half-am {
+  background: linear-gradient(180deg, #70a4f2 0 50%, #e9f1ff 50% 100%);
+  border-color: #4e83cf;
+}
+
+.team-vac-calendar-legend__item i.is-half-pm {
+  background: linear-gradient(180deg, #e9f1ff 0 50%, #70a4f2 50% 100%);
+  border-color: #4e83cf;
+}
+
 .team-vac-calendar-legend__item i.is-holiday {
   background: #f7dfdf;
   border-color: #dfb6b6;
@@ -8391,6 +8401,22 @@
   border-radius: 6px;
   background: var(--member-color);
   opacity: 0.86;
+}
+
+.team-vac-calendar-grid__event-pill--half-am {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--member-color) 96%, #ffffff) 0 50%,
+    rgba(255, 255, 255, 0.88) 50% 100%
+  );
+}
+
+.team-vac-calendar-grid__event-pill--half-pm {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.88) 0 50%,
+    color-mix(in srgb, var(--member-color) 96%, #ffffff) 50% 100%
+  );
 }
 
 .team-vac-calendar-grid__special-pill {
