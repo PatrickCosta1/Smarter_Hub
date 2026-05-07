@@ -8,7 +8,7 @@ import './redesign.css';
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename="/smarter-hub">
       <App />
     </BrowserRouter>
   </React.StrictMode>,
