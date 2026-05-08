@@ -23,6 +23,7 @@ const CollaboratorsPage = lazy(() => import('./pages/CollaboratorsPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const EmployeeAdmissionPage = lazy(() => import('./pages/EmployeeAdmissionPage'));
 const AdmissionsPage = lazy(() => import('./pages/AdmissionsPage'));
+const WellbeingPage = lazy(() => import('./pages/WellbeingPage'));
 
 function AppRoutes() {
   const { isAuthenticated, isLoadingSession, isLoadingPortalData, currentUser, hasPermission, isRootAccess, isAccessTotal, profile } = usePortal();
@@ -67,6 +68,7 @@ function AppRoutes() {
       void import('./pages/ManagerTeamsPage');
       void import('./pages/CollaboratorsPage');
       void import('./pages/DashboardPage');
+      void import('./pages/WellbeingPage');
     };
 
     const token = window.localStorage.getItem(STORAGE_TOKEN_KEY) || '';
@@ -197,6 +199,7 @@ function AppRoutes() {
           <Route path="admissoes" element={<AdmissionsPage />} />
           <Route path="equipas" element={<ManagerTeamsPage />} />
           <Route path="colaboradores" element={<CollaboratorsPage />} />
+          <Route path="saude-bem-estar" element={<WellbeingPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="formacoes" element={<TrainingsPage />} />
           <Route path="ferias" element={<VacationsPage />} />

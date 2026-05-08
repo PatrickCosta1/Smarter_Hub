@@ -25,6 +25,14 @@ enum BrWorkState {
   RS
 }
 
+enum VacationCompanyExtraScope {
+  ALL
+  PT
+  BR
+  BR_SP
+  BR_RS
+}
+
 enum VacationRequestType {
   VACATION
   ABSENCE_MEDICAL
@@ -417,7 +425,7 @@ model VacationApproval {
 
 model VacationCompanyExtraDay {
   id          String      @id @default(ulid())
-  country     WorkCountry
+  scope       VacationCompanyExtraScope @default(PT)
   date        String
   label       String      @default("Dia dado pela empresa")
   createdById String?
@@ -425,8 +433,8 @@ model VacationCompanyExtraDay {
   updatedAt   DateTime    @updatedAt
   createdBy   User?       @relation("VacationCompanyExtraDayAuthor", fields: [createdById], references: [id], onDelete: SetNull)
 
-  @@unique([country, date])
-  @@index([country, date])
+  @@unique([scope, date])
+  @@index([scope, date])
   @@index([createdById])
 }
 

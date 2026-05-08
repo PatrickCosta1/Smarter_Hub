@@ -203,8 +203,10 @@ type CompanyExtraDay = {
   label: string;
 };
 
+type CompanyExtraScope = 'ALL' | 'PT' | 'BR' | 'BR_SP' | 'BR_RS';
+
 type CompanyExtraDaysPayload = {
-  country: 'PT' | 'BR';
+  scope: CompanyExtraScope;
   year?: number;
   source?: 'configured' | 'legacy';
   days: CompanyExtraDay[];
@@ -362,6 +364,79 @@ function toIsoDate(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function resolveDefaultCompanyExtraScope(profile: { workCountry?: 'PT' | 'BR'; brWorkState?: string }) : CompanyExtraScope {
+  if (profile.workCountry === 'BR') {
+    if (profile.brWorkState === 'SP') {
+      return 'BR_SP';
+    }
+    if (profile.brWorkState === 'RS') {
+      return 'BR_RS';
+    }
+    return 'BR';
+  }
+
+  return 'PT';
+}
+
+function mapScopeToCountryAndState(scope: CompanyExtraScope) {
+  if (scope === 'ALL') {
+    return { country: 'ALL' as const, brState: 'ALL' as const };
+  }
+
+  if (scope === 'PT') {
+    return { country: 'PT' as const, brState: 'ALL' as const };
+  }
+
+  if (scope === 'BR_SP') {
+    return { country: 'BR' as const, brState: 'SP' as const };
+  }
+
+  if (scope === 'BR_RS') {
+    return { country: 'BR' as const, brState: 'RS' as const };
+  }
+
+  return { country: 'BR' as const, brState: 'ALL' as const };
+}
+
+function mapCountryAndStateToScope(country: 'ALL' | 'PT' | 'BR', brState: 'ALL' | 'SP' | 'RS'): CompanyExtraScope {
+  if (country === 'ALL') {
+    return 'ALL';
+  }
+
+  if (country === 'PT') {
+    return 'PT';
+  }
+
+  if (brState === 'SP') {
+    return 'BR_SP';
+  }
+
+  if (brState === 'RS') {
+    return 'BR_RS';
+  }
+
+  return 'BR';
+}
+
+function isPastDateForCurrentYear(mmdd: string, year: number) {
+  const today = new Date();
+  if (year !== today.getFullYear()) {
+    return false;
+  }
+
+  const [monthRaw, dayRaw] = mmdd.split('-');
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  if (!Number.isInteger(month) || !Number.isInteger(day)) {
+    return false;
+  }
+
+  const candidate = new Date(year, month - 1, day);
+  candidate.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return candidate < today;
 }
 
 function buildValidationErrors(draft: VacationDraft): DraftErrors {
@@ -615,13 +690,18 @@ export default function VacationsPage() {
   const [companyExtraDayDay, setCompanyExtraDayDay] = useState('25');
   const [companyExtraDayLabel, setCompanyExtraDayLabel] = useState('Dia dado pela empresa');
   const [companyExtraYear, setCompanyExtraYear] = useState(new Date().getFullYear());
+  const [companyExtraScope, setCompanyExtraScope] = useState<CompanyExtraScope>(() => resolveDefaultCompanyExtraScope(profile));
+  const [companyExtraScopeCountry, setCompanyExtraScopeCountry] = useState<'ALL' | 'PT' | 'BR'>(() => mapScopeToCountryAndState(resolveDefaultCompanyExtraScope(profile)).country);
+  const [companyExtraScopeBrState, setCompanyExtraScopeBrState] = useState<'ALL' | 'SP' | 'RS'>(() => mapScopeToCountryAndState(resolveDefaultCompanyExtraScope(profile)).brState);
   const [isLoadingCompanyExtraDays, setIsLoadingCompanyExtraDays] = useState(false);
+  const [isRefreshingCompanyExtraDays, setIsRefreshingCompanyExtraDays] = useState(false);
   const [isSavingCompanyExtraDays, setIsSavingCompanyExtraDays] = useState(false);
-  const [companyExtraDaysSource, setCompanyExtraDaysSource] = useState<'configured' | 'legacy'>('legacy');
+
   const [companyExtraDaysError, setCompanyExtraDaysError] = useState('');
+  const [hasLoadedCompanyExtraDays, setHasLoadedCompanyExtraDays] = useState(false);
   // Modal state para selecionar "este ano ou próximo ano?" ao adicionar dias automáticos
   const [isAddCompanyExtraDayModalOpen, setIsAddCompanyExtraDayModalOpen] = useState(false);
-  const [companyExtraDayModalYear, setCompanyExtraDayModalYear] = useState<number | null>(null);
+  const [companyExtraDayCanApplyCurrentYear, setCompanyExtraDayCanApplyCurrentYear] = useState(true);
   const [exportYear, setExportYear] = useState(new Date().getFullYear());
   const [exportRangeMode, setExportRangeMode] = useState<'year' | 'custom'>('year');
   const [exportStartDate, setExportStartDate] = useState(`${new Date().getFullYear()}-01-01`);
@@ -635,6 +715,7 @@ export default function VacationsPage() {
   const [isExportCollaboratorsOpen, setIsExportCollaboratorsOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportTeams, setExportTeams] = useState<ExportTeam[]>([]);
+  const companyExtraDaysRequestIdRef = useRef(0);
   const [exportTeamsLoaded, setExportTeamsLoaded] = useState(false);
   const [assignFilterTeamId, setAssignFilterTeamId] = useState('');
   const [assignSearch, setAssignSearch] = useState('');
@@ -691,6 +772,26 @@ export default function VacationsPage() {
       return dataFimDate < today; // Only show completed vacations
     });
   }, [approvedVacationRequests]);
+
+  const companyExtraScopeSummary = useMemo(() => {
+    if (companyExtraScope === 'ALL') {
+      return 'Todos os colaboradores';
+    }
+
+    if (companyExtraScope === 'PT') {
+      return 'Apenas Portugal';
+    }
+
+    if (companyExtraScope === 'BR') {
+      return 'Apenas Brasil';
+    }
+
+    if (companyExtraScope === 'BR_SP') {
+      return 'Apenas Brasil · São Paulo';
+    }
+
+    return 'Apenas Brasil · Rio Grande do Sul';
+  }, [companyExtraScope]);
 
   const conflictRecordIds = useMemo(() => {
     if (!conflictRange) {
@@ -1128,8 +1229,16 @@ export default function VacationsPage() {
     }
 
     const requestedYear = activeTab === 'overview' ? new Date().getFullYear() : companyExtraYear;
-    void loadCompanyExtraDays(requestedYear);
-  }, [activeTab, canManageVacationRules, companyExtraYear]);
+    void loadCompanyExtraDays(requestedYear, companyExtraScope);
+  }, [activeTab, canManageVacationRules, companyExtraYear, companyExtraScope]);
+
+  useEffect(() => {
+    const defaultScope = resolveDefaultCompanyExtraScope(profile);
+    setCompanyExtraScope(defaultScope);
+    const mapped = mapScopeToCountryAndState(defaultScope);
+    setCompanyExtraScopeCountry(mapped.country);
+    setCompanyExtraScopeBrState(mapped.brState);
+  }, [profile.workCountry, profile.brWorkState]);
 
   useEffect(() => {
     if (activeTab !== 'export' || !canExport) return;
@@ -1420,19 +1529,44 @@ export default function VacationsPage() {
     }
   }
 
-  async function loadCompanyExtraDays(year: number = companyExtraYear) {
+  async function loadCompanyExtraDays(year: number = companyExtraYear, scope: CompanyExtraScope = companyExtraScope) {
+    const requestId = ++companyExtraDaysRequestIdRef.current;
+    const shouldUseInitialLoading = !hasLoadedCompanyExtraDays;
+
     try {
-      setIsLoadingCompanyExtraDays(true);
+      if (shouldUseInitialLoading) {
+        setIsLoadingCompanyExtraDays(true);
+      } else {
+        setIsRefreshingCompanyExtraDays(true);
+      }
       setCompanyExtraDaysError('');
-      const payload = await apiRequest<CompanyExtraDaysPayload>(`/vacations/company-extra-days?year=${year}`, {
+      const payload = await apiRequest<CompanyExtraDaysPayload>(`/vacations/company-extra-days?year=${year}&scope=${scope}`, {
         headers: getAuthHeaders(),
       });
+
+      if (requestId !== companyExtraDaysRequestIdRef.current) {
+        return;
+      }
+
       setCompanyExtraDays(payload.days ?? []);
-      setCompanyExtraDaysSource(payload.source ?? 'legacy');
+      setHasLoadedCompanyExtraDays(true);
+      if (payload.scope) {
+        setCompanyExtraScope(payload.scope);
+        const mapped = mapScopeToCountryAndState(payload.scope);
+        setCompanyExtraScopeCountry(mapped.country);
+        setCompanyExtraScopeBrState(mapped.brState);
+      }
     } catch (error) {
+      if (requestId !== companyExtraDaysRequestIdRef.current) {
+        return;
+      }
       setCompanyExtraDaysError(error instanceof Error ? error.message : 'Falha ao carregar dias automáticos da empresa.');
     } finally {
+      if (requestId !== companyExtraDaysRequestIdRef.current) {
+        return;
+      }
       setIsLoadingCompanyExtraDays(false);
+      setIsRefreshingCompanyExtraDays(false);
     }
   }
 
@@ -1443,8 +1577,10 @@ export default function VacationsPage() {
       showToast('error', 'Seleciona um mês e um dia para adicionar.');
       return;
     }
+    const mmdd = `${String(monthNum).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+    const canApplyCurrentYear = !isPastDateForCurrentYear(mmdd, new Date().getFullYear());
+    setCompanyExtraDayCanApplyCurrentYear(canApplyCurrentYear);
     // Abrir modal em vez de adicionar diretamente
-    setCompanyExtraDayModalYear(null);
     setIsAddCompanyExtraDayModalOpen(true);
   }
 
@@ -1464,7 +1600,7 @@ export default function VacationsPage() {
     setCompanyExtraDayLabel('Dia dado pela empresa');
     setIsAddCompanyExtraDayModalOpen(false);
     setCompanyExtraYear(selectedYear);
-    await saveCompanyExtraDays(updated);
+    await saveCompanyExtraDays(updated, selectedYear);
   }
 
   async function removeCompanyExtraDay(date: string) {
@@ -1665,7 +1801,7 @@ export default function VacationsPage() {
     }
   }
 
-  async function saveCompanyExtraDays(days: CompanyExtraDay[]) {
+  async function saveCompanyExtraDays(days: CompanyExtraDay[], targetYear: number = companyExtraYear) {
     try {
       setIsSavingCompanyExtraDays(true);
       setCompanyExtraDaysError('');
@@ -1676,20 +1812,22 @@ export default function VacationsPage() {
         method: 'PUT',
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          country: profile.workCountry,
-          year: companyExtraYear,
+          scope: companyExtraScope,
+          year: targetYear,
           days: normalizedDays,
         }),
       });
 
       setCompanyExtraDays(payload.days ?? []);
-      setCompanyExtraDaysSource(payload.source ?? 'configured');
+      if (payload.year) {
+        setCompanyExtraYear(payload.year);
+      }
       clearApiCache('/vacations/calendar');
       clearApiCache('/vacations/overview');
       if (activeTab === 'overview' && !isTPeople) {
         void loadOverview();
       }
-      if (activeTab === 'calendar' && calendarYear === companyExtraYear) {
+      if (activeTab === 'calendar' && calendarYear === targetYear) {
         cacheRef.current.calendarLoadedYear = undefined;
         void loadCalendar(calendarYear);
       }
@@ -2684,6 +2822,7 @@ export default function VacationsPage() {
               <button
                 type="button"
                 className="add-company-extra-day-modal__option"
+                disabled={!companyExtraDayCanApplyCurrentYear}
                 onClick={() => void confirmAddCompanyExtraDay(new Date().getFullYear())}
               >
                 <span className="add-company-extra-day-modal__option-label">Já neste ano</span>
@@ -2698,6 +2837,11 @@ export default function VacationsPage() {
                 <span className="add-company-extra-day-modal__option-year">{new Date().getFullYear() + 1}</span>
               </button>
             </div>
+            {!companyExtraDayCanApplyCurrentYear && (
+              <p className="add-company-extra-day-modal__description">
+                Esta data já passou no ano atual. Só é possível aplicar no próximo ano.
+              </p>
+            )}
             <div className="add-company-extra-day-modal__footer">
               <button type="button" className="add-company-extra-day-modal__cancel" onClick={() => setIsAddCompanyExtraDayModalOpen(false)}>Cancelar</button>
             </div>
@@ -3320,7 +3464,7 @@ export default function VacationsPage() {
           <div className="vauto__header">
             <div>
               <h3 className="vauto__title">Dias automáticos</h3>
-              <p className="vauto__sub">Dias extra dados pela empresa · visíveis no calendário de todos</p>
+              <p className="vauto__sub">Define dias por ano e abrangência regional (todos, país ou estado BR)</p>
             </div>
             <div className="vauto__header-right">
               <div className="vauto__year-nav" aria-label="Ano">
@@ -3328,16 +3472,66 @@ export default function VacationsPage() {
                 <span className="vauto__year-label">{companyExtraYear}</span>
                 <button type="button" className="vauto__year-btn" onClick={() => { setCompanyExtraYear((y) => y + 1); }} aria-label="Próximo ano">›</button>
               </div>
-              {companyExtraDaysSource === 'legacy' && <span className="vauto__src-tag vauto__src-tag--legacy">Padrão antigo</span>}
-              {companyExtraDaysSource === 'configured' && <span className="vauto__src-tag vauto__src-tag--ok">Configurado</span>}
+
             </div>
           </div>
 
-          {isLoadingCompanyExtraDays ? (
+          <div className="vauto__guide">
+            <div className="vauto__guide-card">
+              <strong>Como usar</strong>
+              <span>1. Escolhe o ano.</span>
+              <span>2. Define a abrangência: Todos, Portugal, Brasil ou um estado específico.</span>
+              <span>3. Seleciona a data e escreve a observação do motivo.</span>
+              <span>4. Adiciona o dia. Se a data já passou este ano, o sistema só deixa aplicar ao próximo.</span>
+            </div>
+            <div className="vauto__guide-card vauto__guide-card--accent">
+              <strong>Configuração atual</strong>
+              <span><b>Ano:</b> {companyExtraYear}</span>
+              <span><b>Abrangência:</b> {companyExtraScopeSummary}</span>
+
+              {isRefreshingCompanyExtraDays && <span className="vauto__refresh">A atualizar lista sem interromper o ecrã…</span>}
+            </div>
+          </div>
+
+          {isLoadingCompanyExtraDays && !hasLoadedCompanyExtraDays ? (
             <div className="vauto__loading">A carregar…</div>
           ) : (
             <>
               <div className="vauto__form">
+                <label className="vauto__field">
+                  <span>País / Abrangência</span>
+                  <select
+                    value={companyExtraScopeCountry}
+                    onChange={(e) => {
+                      const country = e.target.value as 'ALL' | 'PT' | 'BR';
+                      const nextState = country === 'BR' ? companyExtraScopeBrState : 'ALL';
+                      setCompanyExtraScopeCountry(country);
+                      setCompanyExtraScopeBrState(nextState);
+                      setCompanyExtraScope(mapCountryAndStateToScope(country, nextState));
+                    }}
+                  >
+                    <option value="ALL">Todos</option>
+                    <option value="PT">Portugal</option>
+                    <option value="BR">Brasil</option>
+                  </select>
+                </label>
+                {companyExtraScopeCountry === 'BR' && (
+                  <label className="vauto__field">
+                    <span>Estado (Brasil)</span>
+                    <select
+                      value={companyExtraScopeBrState}
+                      onChange={(e) => {
+                        const state = e.target.value as 'ALL' | 'SP' | 'RS';
+                        setCompanyExtraScopeBrState(state);
+                        setCompanyExtraScope(mapCountryAndStateToScope('BR', state));
+                      }}
+                    >
+                      <option value="ALL">Todos os estados</option>
+                      <option value="SP">São Paulo</option>
+                      <option value="RS">Rio Grande do Sul</option>
+                    </select>
+                  </label>
+                )}
                 <label className="vauto__field">
                   <span>Mês</span>
                   <select value={companyExtraDayMonth} onChange={(e) => setCompanyExtraDayMonth(e.target.value)}>
@@ -3364,7 +3558,7 @@ export default function VacationsPage() {
                   </select>
                 </label>
                 <label className="vauto__field vauto__field--grow">
-                  <span>Descrição</span>
+                  <span>Observação</span>
                   <input
                     type="text"
                     value={companyExtraDayLabel}
@@ -3389,7 +3583,7 @@ export default function VacationsPage() {
 
               {companyExtraDays.length === 0 ? (
                 <div className="vauto__empty">
-                  <p>Nenhum dia configurado para {companyExtraYear}.</p>
+                  <p>Nenhum dia configurado para {companyExtraYear} nesta abrangência.</p>
                   <span>Usa o formulário acima para adicionar o primeiro.</span>
                 </div>
               ) : (

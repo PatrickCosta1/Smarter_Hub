@@ -40,6 +40,7 @@ export default function PortalLayout() {
       ...(!isTPeople ? [{ id: 'plano-carreira', label: 'Plano de Carreira', path: '/plano-carreira' }] : []),
       ...((currentUser?.role ?? '') !== 'CONVIDADO' ? [{ id: 'equipas', label: 'Equipas', path: '/equipas' }] : []),
       ...(can('view_user_list') ? [{ id: 'colaboradores', label: 'Colaboradores', path: '/colaboradores' }] : []),
+      ...((currentUser?.role ?? '') !== 'CONVIDADO' ? [{ id: 'saude-bem-estar', label: 'Saúde e bem-estar', path: '/saude-bem-estar' }] : []),
       ...(can('approve_profile_change') || can('approve_vacation') || can('reject_vacation') || can('view_all_vacations')
         ? [{ id: 'aprovacoes', label: 'Aprovações', path: '/aprovacoes' }]
         : []),
@@ -76,7 +77,7 @@ export default function PortalLayout() {
   }, [menuQuery, roleMenus]);
 
   const personalMenu = useMemo(() => {
-    const personalIds = new Set(['home', 'profile', 'plano-carreira', 'equipas', 'formacoes', 'ferias', 'notifications']);
+    const personalIds = new Set(['home', 'profile', 'plano-carreira', 'equipas', 'formacoes', 'ferias', 'saude-bem-estar', 'notifications']);
     return filteredMenu.filter((item) => personalIds.has(item.id));
   }, [filteredMenu]);
 
@@ -201,6 +202,9 @@ export default function PortalLayout() {
       case '/ferias':
         void import('../pages/VacationsPage');
         break;
+      case '/saude-bem-estar':
+        void import('../pages/WellbeingPage');
+        break;
       case '/banco-horas':
         void import('../pages/HourBankPage');
         break;
@@ -252,6 +256,11 @@ export default function PortalLayout() {
         safePrefetch('/vacations/me', 30000),
         safePrefetch('/vacations/overview', 30000),
       ]);
+      return;
+    }
+
+    if (path === '/saude-bem-estar') {
+      void safePrefetch('/wellbeing/content', 30000);
       return;
     }
 

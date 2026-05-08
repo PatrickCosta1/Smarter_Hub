@@ -13,6 +13,7 @@ import { trainingsRouter } from "./routes/trainings.js";
 import { usersRouter } from "./routes/users.js";
 import { vacationsRouter } from "./routes/vacations.js";
 import { hourBankRouter } from './routes/hour-bank.js';
+import { wellbeingRouter } from './routes/wellbeing.js';
 import { prisma } from './lib/prisma.js';
 import { runCitizenCardExpiryNotificationSweep } from './lib/citizen-card-expiry-notifications.js';
 import { runJanuaryIrsAlertSweep } from './lib/january-irs-alerts.js';
@@ -85,6 +86,7 @@ app.use("/api", trainingsRouter);
 app.use("/api", vacationsRouter);
 app.use("/api", notificationsRouter);
 app.use('/api', hourBankRouter);
+app.use('/api', wellbeingRouter);
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 

@@ -598,18 +598,18 @@ async function sendAdmissionInviteEmail(params: {
 }) {
   const isCorrection = Boolean(params.reviewReason);
   const subject = isCorrection
-    ? 'Smarter Hub · pedido devolvido para correção'
-    : 'Smarter Hub · convite para completar admissão';
+    ? 'Tlantic · atualização necessária no formulário de admissão'
+    : 'Bem-vindo à Tlantic · completa o teu formulário de admissão';
 
   const headerColor = isCorrection ? '#b45309' : '#1a56db';
   const headerGradient = isCorrection
     ? 'linear-gradient(135deg,#b45309,#92400e)'
     : 'linear-gradient(135deg,#1a56db,#0e3f9e)';
   const badgeLabel = isCorrection ? 'Correção solicitada' : 'Convite de admissão';
-  const bodyTitle = isCorrection ? 'Pedido devolvido para correção' : 'Bem-vindo(a) ao Smarter Hub!';
+  const bodyTitle = isCorrection ? 'Atualização necessária no teu formulário' : 'Bem-vindo(a) à Tlantic';
   const bodyText = isCorrection
-    ? `O teu processo de admissão foi devolvido para correção. Por favor, revê e atualiza os teus dados com base nas observações do RH.`
-    : `Foi iniciado o teu processo de admissão na empresa. Usa o link abaixo para preencher a tua ficha pessoal.`;
+    ? 'O teu processo de admissão foi devolvido para correção. Revê os dados submetidos e atualiza o formulário de acordo com as observações da equipa de RH.'
+    : 'O teu processo de admissão na Tlantic foi iniciado. Usa o link abaixo para preencher o formulário com os teus dados pessoais e profissionais.';
 
   const reviewBlock = isCorrection && params.reviewReason
     ? `<div style="background:#fffbeb;border:1px solid #fcd34d;border-left:4px solid #f59e0b;border-radius:8px;padding:16px 20px;margin:0 0 28px;">
@@ -631,8 +631,8 @@ async function sendAdmissionInviteEmail(params: {
           <div style="display:inline-block;background:rgba(255,255,255,0.15);border-radius:8px;padding:6px 16px;margin-bottom:16px;">
             <span style="color:rgba(255,255,255,0.9);font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">${badgeLabel}</span>
           </div>
-          <h1 style="margin:0 0 6px;color:#ffffff;font-size:32px;font-weight:800;letter-spacing:-1px;">Smarter Hub</h1>
-          <p style="margin:0;color:rgba(255,255,255,0.75);font-size:14px;">Portal de Recursos Humanos · Tlantic</p>
+          <h1 style="margin:0 0 6px;color:#ffffff;font-size:32px;font-weight:800;letter-spacing:-1px;">Tlantic</h1>
+          <p style="margin:0;color:rgba(255,255,255,0.75);font-size:14px;">Smarter Hub · Portal de Recursos Humanos</p>
         </td></tr>
 
         <!-- BODY -->
@@ -660,7 +660,7 @@ async function sendAdmissionInviteEmail(params: {
           <!-- EXPIRY NOTE -->
           <div style="display:flex;align-items:flex-start;gap:12px;background:#f0f9ff;border-radius:10px;padding:16px 20px;border:1px solid #bae6fd;">
             <span style="font-size:20px;flex-shrink:0;">⏱</span>
-            <p style="margin:0;color:#0369a1;font-size:14px;line-height:1.6;">Este link é <strong>pessoal e intransmissível</strong> e expira em <strong>7 dias</strong>. Caso expire, contacta o departamento de RH para receberes um novo convite.</p>
+            <p style="margin:0;color:#0369a1;font-size:14px;line-height:1.6;">Este link é <strong>pessoal e intransmissível</strong> e expira em <strong>7 dias</strong>. Se o prazo expirar, responde a este processo junto da equipa de RH para receberes um novo convite.</p>
           </div>
         </td></tr>
 
@@ -669,8 +669,8 @@ async function sendAdmissionInviteEmail(params: {
 
         <!-- FOOTER -->
         <tr><td style="padding:24px 40px;">
-          <p style="margin:0 0 4px;color:#9ca3af;font-size:12px;text-align:center;">Este email foi gerado automaticamente pelo sistema <strong>Smarter Hub</strong>.</p>
-          <p style="margin:0;color:#d1d5db;font-size:12px;text-align:center;">Por favor, não responda a este email.</p>
+          <p style="margin:0 0 4px;color:#9ca3af;font-size:12px;text-align:center;">Este email foi enviado automaticamente por <strong>Tlantic · Smarter Hub</strong>.</p>
+          <p style="margin:0;color:#d1d5db;font-size:12px;text-align:center;">Em caso de dúvida, contacta a equipa de RH.</p>
         </td></tr>
 
       </table>
@@ -681,6 +681,10 @@ async function sendAdmissionInviteEmail(params: {
 
   const textFallback = [
     `Olá ${params.fullName},`,
+    '',
+    isCorrection
+      ? 'Foi solicitada uma atualização no teu formulário de admissão da Tlantic.'
+      : 'Bem-vindo(a) à Tlantic. O teu processo de admissão foi iniciado.',
     '',
     bodyText,
     ...(params.reviewReason ? ['', `Motivo: ${params.reviewReason}`] : []),
@@ -1705,6 +1709,51 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       })
       .filter((value): value is number => typeof value === 'number');
 
+    const voucherRequestLeadDetails = eligibleNosVoucherRows
+      .map((row) => {
+        const contractStart = parseIsoDate(row.profile?.dataInicioContrato || '');
+        const requestDate = parseIsoDate(row.profile?.voucherNosData || '');
+        const teamName = getUserTeams(row).map((team) => team.name).join(', ');
+        const displayName = getDisplayName(row);
+
+        let leadDays: number | null = null;
+        let daysSinceStart: number | null = null;
+
+        if (contractStart) {
+          const referenceDate = requestDate ?? new Date();
+          const diffDays = Math.floor((referenceDate.getTime() - contractStart.getTime()) / (1000 * 60 * 60 * 24));
+          if (diffDays >= 0) {
+            if (requestDate) {
+              leadDays = diffDays;
+            } else {
+              daysSinceStart = diffDays;
+            }
+          }
+        }
+
+        return {
+          id: row.id,
+          name: displayName,
+          teamName: teamName || 'Sem equipa',
+          contractStart: row.profile?.dataInicioContrato || null,
+          requestDate: row.profile?.voucherNosData?.trim() || null,
+          leadDays,
+          daysSinceStart,
+          hasRequested: Boolean(requestDate),
+        };
+      })
+      .sort((a, b) => {
+        if (a.hasRequested !== b.hasRequested) {
+          return a.hasRequested ? -1 : 1;
+        }
+
+        if (a.hasRequested) {
+          return (a.leadDays ?? Number.MAX_SAFE_INTEGER) - (b.leadDays ?? Number.MAX_SAFE_INTEGER);
+        }
+
+        return a.name.localeCompare(b.name);
+      });
+
     // % cartão Continente (activos)
     const continenteCardRate = activeCount > 0
       ? (activeRows.filter((r) => r.profile?.numeroCartaoContinente?.trim()).length / activeCount) * 100
@@ -1744,6 +1793,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       retentionRate: total > 0 ? (activeCount / total) * 100 : 0,
       nosVoucherRate,
       avgVoucherRequestLeadDays: voucherRequestLeadDays.length > 0 ? average(voucherRequestLeadDays) : null,
+      voucherRequestLeadDetails,
       continenteCardRate,
       avgTenureByFunction,
       distributions: {

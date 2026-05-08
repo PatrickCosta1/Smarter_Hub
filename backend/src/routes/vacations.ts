@@ -124,8 +124,11 @@ const companyExtraDayItemSchema = z.object({
   label: z.string().trim().min(1).max(120).optional(),
 });
 
+const companyExtraScopeValues = ['ALL', 'PT', 'BR', 'BR_SP', 'BR_RS'] as const;
+type CompanyExtraScope = typeof companyExtraScopeValues[number];
+
 const updateCompanyExtraDaysSchema = z.object({
-  country: z.enum(['PT', 'BR']).optional(),
+  scope: z.enum(companyExtraScopeValues).optional(),
   year: z.number().int().min(2000).max(2100).optional(),
   days: z.array(companyExtraDayItemSchema).max(40),
 });
@@ -569,47 +572,147 @@ function buildLegacyCompanyExtraDays(params: {
   return Array.from(new Set(extras));
 }
 
+function resolveCompanyExtraScopeFromCountryAndState(params: {
+  country: 'PT' | 'BR';
+  brWorkState?: 'SP' | 'RS' | null;
+}): CompanyExtraScope {
+  if (params.country === 'PT') {
+    return 'PT';
+  }
+
+  if (params.brWorkState === 'SP') {
+    return 'BR_SP';
+  }
+
+  if (params.brWorkState === 'RS') {
+    return 'BR_RS';
+  }
+
+  return 'BR';
+}
+
+function resolveApplicableCompanyExtraScopes(params: {
+  country: 'PT' | 'BR';
+  brWorkState?: 'SP' | 'RS' | null;
+}) {
+  const directScope = resolveCompanyExtraScopeFromCountryAndState(params);
+
+  if (directScope === 'PT') {
+    return ['ALL', 'PT'] as CompanyExtraScope[];
+  }
+
+  if (directScope === 'BR_SP') {
+    return ['ALL', 'BR', 'BR_SP'] as CompanyExtraScope[];
+  }
+
+  if (directScope === 'BR_RS') {
+    return ['ALL', 'BR', 'BR_RS'] as CompanyExtraScope[];
+  }
+
+  return ['ALL', 'BR'] as CompanyExtraScope[];
+}
+
+function isPastDateInCurrentYear(mmdd: string, year: number) {
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  if (year !== currentYear) {
+    return false;
+  }
+
+  const [monthRaw, dayRaw] = mmdd.split('-');
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  if (!Number.isInteger(month) || !Number.isInteger(day)) {
+    return false;
+  }
+
+  const candidate = new Date(year, month - 1, day);
+  candidate.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return candidate < today;
+}
+
 async function resolveConfiguredCompanyExtraDays(params: {
   year: number;
   country: 'PT' | 'BR';
+  brWorkState?: 'SP' | 'RS' | null;
   localidade?: string | null;
 }) {
+  const currentYear = new Date().getFullYear();
+  const allowLegacyFallback = params.year <= currentYear;
+  const applicableScopes = resolveApplicableCompanyExtraScopes({
+    country: params.country,
+    brWorkState: params.brWorkState,
+  });
+
   const dbDays = await prisma.vacationCompanyExtraDay.findMany({
-    where: { country: params.country },
+    where: {
+      scope: {
+        in: applicableScopes,
+      },
+    },
     orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
-    select: { date: true, label: true },
+    select: { date: true, label: true, scope: true },
   });
 
   const yearPrefix = `${params.year}-`;
   const scopedDays = dbDays.filter((item) => isIsoDate(item.date) && item.date.startsWith(yearPrefix));
   const legacyConfiguredDays = dbDays.filter((item) => /^\d{2}-\d{2}$/.test(item.date));
 
+  const scopePriority = (scope: CompanyExtraScope) => {
+    if (scope === 'BR_SP' || scope === 'BR_RS') {
+      return 3;
+    }
+    if (scope === 'PT' || scope === 'BR') {
+      return 2;
+    }
+    return 1;
+  };
+
+  const uniqueDaysMap = new Map<string, { label: string; priority: number }>();
+  const registerDay = (date: string, label: string, scope: CompanyExtraScope) => {
+    const current = uniqueDaysMap.get(date);
+    const priority = scopePriority(scope);
+    if (!current || priority >= current.priority) {
+      uniqueDaysMap.set(date, { label, priority });
+    }
+  };
+
   if (scopedDays.length > 0) {
+    for (const item of scopedDays) {
+      registerDay(item.date, item.label || 'Dia dado pela empresa', item.scope);
+    }
+
     return {
       source: 'configured' as const,
-      days: scopedDays.map((item) => ({
-        date: item.date,
-        label: item.label || 'Dia dado pela empresa',
-      })),
+      days: Array.from(uniqueDaysMap.entries()).map(([date, value]) => ({ date, label: value.label })),
     };
   }
 
   if (legacyConfiguredDays.length > 0) {
+    for (const item of legacyConfiguredDays) {
+      registerDay(`${params.year}-${item.date}`, item.label || 'Dia dado pela empresa', item.scope);
+    }
+
     return {
       source: 'configured' as const,
-      days: legacyConfiguredDays.map((item) => ({
-        date: `${params.year}-${item.date}`,
-        label: item.label || 'Dia dado pela empresa',
+      days: Array.from(uniqueDaysMap.entries()).map(([date, value]) => ({ date, label: value.label })),
+    };
+  }
+
+  if (allowLegacyFallback) {
+    return {
+      source: 'legacy' as const,
+      days: buildLegacyCompanyExtraDays({ year: params.year, localidade: params.localidade }).map((date) => ({
+        date,
+        label: 'Dia dado pela empresa',
       })),
     };
   }
 
   return {
-    source: 'legacy' as const,
-    days: buildLegacyCompanyExtraDays({ year: params.year, localidade: params.localidade }).map((date) => ({
-      date,
-      label: 'Dia dado pela empresa',
-    })),
+    source: 'configured' as const,
+    days: [],
   };
 }
 
@@ -1528,18 +1631,28 @@ router.get('/vacations/company-extra-days', requireAuth, async (req: Request, re
 
     const userProfile = await prisma.profile.findUnique({
       where: { userId: req.authUser!.id },
-      select: { workCountry: true },
+      select: { workCountry: true, brWorkState: true },
     });
-    const country = (typeof req.query.country === 'string' && (req.query.country === 'PT' || req.query.country === 'BR'))
-      ? req.query.country
-      : (userProfile?.workCountry ?? 'PT');
+
+    const defaultScope = resolveCompanyExtraScopeFromCountryAndState({
+      country: userProfile?.workCountry === 'BR' ? 'BR' : 'PT',
+      brWorkState: userProfile?.brWorkState ?? null,
+    });
+
+    const rawScope = typeof req.query.scope === 'string' ? req.query.scope : '';
+    const scope = companyExtraScopeValues.includes(rawScope as CompanyExtraScope)
+      ? (rawScope as CompanyExtraScope)
+      : defaultScope;
+
     const requestedYear = Number(req.query.year);
     const year = Number.isInteger(requestedYear) && requestedYear >= 2000 && requestedYear <= 2100
       ? requestedYear
       : new Date().getFullYear();
+    const currentYear = new Date().getFullYear();
+    const allowLegacyFallback = year <= currentYear;
 
     const dbDays = await prisma.vacationCompanyExtraDay.findMany({
-      where: { country },
+      where: { scope },
       orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
       select: { date: true, label: true },
     });
@@ -1552,17 +1665,24 @@ router.get('/vacations/company-extra-days', requireAuth, async (req: Request, re
       .filter((item) => /^\d{2}-\d{2}$/.test(item.date))
       .map((item) => ({ date: item.date, label: item.label || 'Dia dado pela empresa' }));
 
-    const source = scopedDays.length > 0 || legacyConfiguredDays.length > 0 ? 'configured' : 'legacy';
+    const scopeUsesLegacyFallback = allowLegacyFallback;
+    const source = scopedDays.length > 0 || legacyConfiguredDays.length > 0
+      ? 'configured'
+      : scopeUsesLegacyFallback
+        ? 'legacy'
+        : 'configured';
     const days = scopedDays.length > 0
       ? scopedDays
       : legacyConfiguredDays.length > 0
         ? legacyConfiguredDays
-        : buildLegacyCompanyExtraDays({ year, localidade: null }).map((fullDate) => ({
-            date: fullDate.slice(5),
-            label: 'Dia dado pela empresa',
-          }));
+        : scopeUsesLegacyFallback
+          ? buildLegacyCompanyExtraDays({ year, localidade: null }).map((fullDate) => ({
+              date: fullDate.slice(5),
+              label: 'Dia dado pela empresa',
+            }))
+          : [];
 
-    return res.json({ country, year, source, days });
+    return res.json({ scope, year, source, days });
   } catch (error) {
     console.error('[GET /vacations/company-extra-days]', error);
     return res.status(500).json({ error: 'Falha ao carregar dias automáticos da empresa.' });
@@ -1579,9 +1699,15 @@ router.put('/vacations/company-extra-days', requireAuth, async (req: Request, re
     const payload = updateCompanyExtraDaysSchema.parse(req.body);
     const userProfile = await prisma.profile.findUnique({
       where: { userId: req.authUser!.id },
-      select: { workCountry: true },
+      select: { workCountry: true, brWorkState: true },
     });
-    const country = payload.country ?? userProfile?.workCountry ?? 'PT';
+
+    const defaultScope = resolveCompanyExtraScopeFromCountryAndState({
+      country: userProfile?.workCountry === 'BR' ? 'BR' : 'PT',
+      brWorkState: userProfile?.brWorkState ?? null,
+    });
+
+    const scope = payload.scope ?? defaultScope;
     const year = payload.year ?? new Date().getFullYear();
 
     const seen = new Set<string>();
@@ -1598,14 +1724,24 @@ router.put('/vacations/company-extra-days', requireAuth, async (req: Request, re
 
     const yearPrefix = `${year}-`;
 
+    const pastDatesInCurrentYear = uniqueDays
+      .map((item) => item.date)
+      .filter((date) => isPastDateInCurrentYear(date, year));
+
+    if (pastDatesInCurrentYear.length > 0) {
+      return res.status(400).json({
+        message: 'Para o ano atual, só é possível configurar dias automáticos a partir de hoje. Seleciona o próximo ano para datas passadas.',
+      });
+    }
+
     await prisma.$transaction(async (tx) => {
       // Replace only this year's scoped config, preserving other years and legacy records.
-      await tx.vacationCompanyExtraDay.deleteMany({ where: { country, date: { startsWith: yearPrefix } } });
+      await tx.vacationCompanyExtraDay.deleteMany({ where: { scope, date: { startsWith: yearPrefix } } });
 
       if (uniqueDays.length > 0) {
         await tx.vacationCompanyExtraDay.createMany({
           data: uniqueDays.map((item) => ({
-            country,
+            scope,
             date: `${yearPrefix}${item.date}`,
             label: item.label,
             createdById: req.authUser!.id,
@@ -1614,7 +1750,7 @@ router.put('/vacations/company-extra-days', requireAuth, async (req: Request, re
       }
     });
 
-    return res.json({ country, year, source: 'configured', days: uniqueDays });
+    return res.json({ scope, year, source: 'configured', days: uniqueDays });
   } catch (error) {
     console.error('[PUT /vacations/company-extra-days]', error);
     if (error instanceof z.ZodError) {
@@ -1643,6 +1779,7 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
     const companyExtraDays = await resolveConfiguredCompanyExtraDays({
       year: currentYear,
       country,
+      brWorkState: profile?.brWorkState ?? null,
       localidade: profile?.localidade,
     });
 
@@ -1764,6 +1901,7 @@ router.get('/vacations/calendar', requireAuth, async (req: Request, res: Respons
     const companyExtraDays = await resolveConfiguredCompanyExtraDays({
       year,
       country,
+      brWorkState: profile?.brWorkState ?? null,
       localidade: profile?.localidade,
     });
 

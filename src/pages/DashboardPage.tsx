@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Button from '../components/ui/Button';
 import { apiRequest, apiRequestCached, authHeaders, isAbortError } from '../portal/api';
 import { tipoContratoOptions } from '../portal/data';
@@ -15,6 +15,17 @@ type AvgTenureByFunction = {
   count: number;
 };
 
+type VoucherRequestLeadDetail = {
+  id: string;
+  name: string;
+  teamName: string;
+  contractStart: string | null;
+  requestDate: string | null;
+  leadDays: number | null;
+  daysSinceStart: number | null;
+  hasRequested: boolean;
+};
+
 type TeamCharacterization = {
   headcount: number;
   averages: {
@@ -24,6 +35,7 @@ type TeamCharacterization = {
   retentionRate: number;
   nosVoucherRate: number;
   avgVoucherRequestLeadDays: number | null;
+  voucherRequestLeadDetails: VoucherRequestLeadDetail[];
   continenteCardRate: number;
   avgTenureByFunction: AvgTenureByFunction[];
   distributions: {
@@ -144,6 +156,7 @@ const EMPTY_CHARACTERIZATION: TeamCharacterization = {
   retentionRate: 0,
   nosVoucherRate: 0,
   avgVoucherRequestLeadDays: null,
+  voucherRequestLeadDetails: [],
   continenteCardRate: 0,
   avgTenureByFunction: [],
   distributions: {
@@ -197,6 +210,23 @@ function formatDateTime(value?: string) {
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
+  }).format(date);
+}
+
+function formatDateOnly(value?: string | null) {
+  if (!value) {
+    return '-';
+  }
+
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('pt-PT', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
   }).format(date);
 }
 
@@ -284,12 +314,17 @@ function PieChart({
   maxLegend = 8,
   onSelect,
   selectedLabel,
+  title,
+  comparisonData,
 }: {
   data: DistributionItem[];
   maxLegend?: number;
   onSelect?: (label: string) => void;
   selectedLabel?: string;
+  title: string;
+  comparisonData?: DistributionItem[];
 }) {
+  const [hoveredLabel, setHoveredLabel] = useState<string | null>(null);
   const total = data.reduce((s, d) => s + d.count, 0);
   if (total === 0 || data.length === 0) {
     return <div className="ds-pie__empty">Sem dados</div>;
@@ -312,8 +347,16 @@ function PieChart({
     };
   });
 
+  const hoveredItem = hoveredLabel
+    ? data.find((item) => item.label === hoveredLabel) ?? null
+    : null;
+  const comparisonItem = hoveredItem && comparisonData
+    ? comparisonData.find((item) => item.label === hoveredItem.label) ?? null
+    : null;
+
   return (
     <div className="ds-pie-wrap">
+      <div className="ds-pie__visual">
       <svg viewBox="0 0 100 100" className="ds-pie__svg" aria-hidden="true">
         {slices.map((slice) => (
           <path
@@ -325,8 +368,13 @@ function PieChart({
             aria-label={onSelect ? `Filtrar por ${slice.label}` : undefined}
             className={[
               onSelect ? 'ds-pie__slice--interactive' : '',
+              hoveredLabel && hoveredLabel === slice.label ? 'ds-pie__slice--hovered' : '',
               selectedLabel && selectedLabel === slice.label ? 'ds-pie__slice--selected' : '',
             ].filter(Boolean).join(' ')}
+            onMouseEnter={() => setHoveredLabel(slice.label)}
+            onMouseLeave={() => setHoveredLabel((current) => (current === slice.label ? null : current))}
+            onFocus={() => setHoveredLabel(slice.label)}
+            onBlur={() => setHoveredLabel((current) => (current === slice.label ? null : current))}
             onClick={onSelect ? () => onSelect(slice.label) : undefined}
             onKeyDown={onSelect ? (event) => {
               if (event.key === 'Enter' || event.key === ' ') {
@@ -337,6 +385,18 @@ function PieChart({
           />
         ))}
       </svg>
+      {hoveredItem && (
+        <div className="ds-pie__tooltip" role="status" aria-live="polite">
+          <strong>{hoveredItem.label}</strong>
+          <span>{hoveredItem.count} colaborador(es) · {formatPercent(hoveredItem.share, 1)} da seleção</span>
+          {comparisonItem && (
+            <span>Empresa: {formatPercent(comparisonItem.share, 1)} · {comparisonItem.count} colaborador(es)</span>
+          )}
+          <span>{title} filtrado com base na seleção atual.</span>
+          {onSelect && <span>Clica para aplicar este filtro.</span>}
+        </div>
+      )}
+      </div>
       <div className="ds-pie__legend">
         {data.slice(0, maxLegend).map((item, i) => (
           <button
@@ -371,6 +431,8 @@ function KpiCard({
   delta,
   deltaPositiveIsGood = true,
   tooltip,
+  actionLabel,
+  onAction,
   unit,
 }: {
   label: string;
@@ -378,7 +440,9 @@ function KpiCard({
   companyValue?: string;
   delta?: number;
   deltaPositiveIsGood?: boolean;
-  tooltip?: string;
+  tooltip?: ReactNode;
+  actionLabel?: string;
+  onAction?: () => void;
   unit?: string;
 }) {
   const [showTooltip, setShowTooltip] = useState(false);
@@ -405,8 +469,11 @@ function KpiCard({
             onBlur={() => setShowTooltip(false)}
           >
             ?
-            {showTooltip && <span className="ds-kpi-card__tooltip">{tooltip}</span>}
+            {showTooltip && <div className="ds-kpi-card__tooltip">{tooltip}</div>}
           </button>
+        )}
+        {actionLabel && onAction && (
+          <button type="button" className="ds-kpi-card__action" onClick={onAction}>{actionLabel}</button>
         )}
       </div>
       <div className="ds-kpi-card__value">
@@ -425,6 +492,33 @@ function KpiCard({
   );
 }
 
+function VoucherLeadTooltip({ rows }: { rows: VoucherRequestLeadDetail[] }) {
+  if (rows.length === 0) {
+    return <div className="ds-kpi-card__tooltip-body">Sem colaboradores elegíveis no filtro atual.</div>;
+  }
+
+  return (
+    <div className="ds-kpi-card__tooltip-body">
+      <strong className="ds-kpi-card__tooltip-title">Voucher NOS no filtro atual</strong>
+      <div className="ds-kpi-card__tooltip-list">
+        {rows.map((row) => (
+          <div key={row.id} className="ds-kpi-card__tooltip-row">
+            <div>
+              <strong>{row.name}</strong>
+              <span>{row.teamName}</span>
+            </div>
+            <div>
+              {row.hasRequested
+                ? `${row.leadDays ?? '-'} dia(s) até pedir`
+                : `Ainda não pediu${row.daysSinceStart !== null ? ` · ${row.daysSinceStart} dia(s) desde entrada` : ''}`}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [filters, setFilters] = useState<DashboardFilters>(DEFAULT_FILTERS);
@@ -438,6 +532,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isVoucherLeadModalOpen, setIsVoucherLeadModalOpen] = useState(false);
   const [error, setError] = useState('');
   const contractDropdownRef = useRef<HTMLDivElement | null>(null);
 
@@ -552,7 +647,8 @@ export default function DashboardPage() {
         ? parseDelta(selected.avgVoucherRequestLeadDays, company.avgVoucherRequestLeadDays)
         : undefined,
       deltaPositiveIsGood: false,
-      tooltip: 'Tempo médio entre o início de contrato e o pedido do voucher NOS, apenas para colaboradores elegíveis que já o pediram.',
+      actionLabel: 'Ver detalhe',
+      onAction: () => setIsVoucherLeadModalOpen(true),
     },
     {
       label: '% Cartão Continente preenchido',
@@ -749,6 +845,27 @@ export default function DashboardPage() {
 
   return (
     <section className="trainings-shell dashboard-team-shell">
+
+      {isVoucherLeadModalOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="voucher-lead-modal-title" onClick={(event) => { if (event.target === event.currentTarget) setIsVoucherLeadModalOpen(false); }}>
+          <div className="ds-modal">
+            <div className="ds-modal__header">
+              <div>
+                <p className="ds-modal__kicker">Dashboard</p>
+                <h2 id="voucher-lead-modal-title">Detalhe do tempo até pedir voucher NOS</h2>
+              </div>
+              <button type="button" className="ds-modal__close" onClick={() => setIsVoucherLeadModalOpen(false)} aria-label="Fechar">×</button>
+            </div>
+            <p className="ds-modal__sub">Lista dos colaboradores elegíveis no filtro atual, com indicação de quem já pediu e quanto tempo demorou.</p>
+            <div className="ds-modal__body">
+              <VoucherLeadTooltip rows={selected.voucherRequestLeadDetails} />
+            </div>
+            <div className="ds-modal__footer">
+              <Button type="button" variant="secondary" onClick={() => setIsVoucherLeadModalOpen(false)}>Fechar</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─── Filtros ─── */}
       <section className="ds-filters">
@@ -1003,7 +1120,9 @@ export default function DashboardPage() {
           <article className="ds-chart-card">
             <h3 className="ds-chart-card__title">Nível hierárquico</h3>
             <PieChart
+              title="Nível hierárquico"
               data={selected.distributions.hierarchy}
+              comparisonData={company.distributions.hierarchy}
               onSelect={(label) => applyDrillDown('hierarchy', label)}
               selectedLabel={filters.level || undefined}
             />
@@ -1012,7 +1131,9 @@ export default function DashboardPage() {
           <article className="ds-chart-card">
             <h3 className="ds-chart-card__title">Geografia</h3>
             <PieChart
+              title="Geografia"
               data={selected.distributions.geography}
+              comparisonData={company.distributions.geography}
               onSelect={(label) => applyDrillDown('geography', label)}
               selectedLabel={filters.geography || undefined}
             />
@@ -1021,7 +1142,9 @@ export default function DashboardPage() {
           <article className="ds-chart-card">
             <h3 className="ds-chart-card__title">Género</h3>
             <PieChart
+              title="Género"
               data={selected.distributions.gender}
+              comparisonData={company.distributions.gender}
               onSelect={(label) => applyDrillDown('gender', label)}
               selectedLabel={filters.gender || undefined}
             />
@@ -1031,8 +1154,10 @@ export default function DashboardPage() {
             <h3 className="ds-chart-card__title">Função</h3>
             <div className="ds-chart-card__scroll">
               <PieChart
+                title="Função"
                 data={selected.distributions.function}
                 maxLegend={12}
+                comparisonData={company.distributions.function}
                 onSelect={(label) => applyDrillDown('function', label)}
                 selectedLabel={filters.functionName || undefined}
               />
