@@ -50,7 +50,124 @@ const harassmentReportSchema = z.object({
 });
 
 type WellbeingContent = z.infer<typeof wellbeingContentSchema>;
+type WellbeingResource = z.infer<typeof wellbeingResourceSchema>;
 type WorkCountry = 'PT' | 'BR';
+
+type SharedWellbeingKey = 'formulario_assedio' | 'ergonomia' | 'suporte_basico_vida';
+
+const SHARED_WELLBEING_RESOURCE_IDS: Record<SharedWellbeingKey, string> = {
+  formulario_assedio: 'common-formulario-assedio',
+  ergonomia: 'common-ergonomia',
+  suporte_basico_vida: 'common-suporte-basico-vida',
+};
+
+function normalizeText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function classifySharedWellbeingResource(resource: WellbeingResource): SharedWellbeingKey | null {
+  const normalizedId = normalizeText(resource.id);
+  if (normalizedId === SHARED_WELLBEING_RESOURCE_IDS.formulario_assedio) {
+    return 'formulario_assedio';
+  }
+  if (normalizedId === SHARED_WELLBEING_RESOURCE_IDS.ergonomia) {
+    return 'ergonomia';
+  }
+  if (normalizedId === SHARED_WELLBEING_RESOURCE_IDS.suporte_basico_vida) {
+    return 'suporte_basico_vida';
+  }
+
+  const title = normalizeText(resource.title);
+  if (resource.kind === 'form' && (title.includes('assedio') || title.includes('reportar assedio'))) {
+    return 'formulario_assedio';
+  }
+  if (title.includes('ergonomia')) {
+    return 'ergonomia';
+  }
+  if (title.includes('suporte basico de vida')) {
+    return 'suporte_basico_vida';
+  }
+  return null;
+}
+
+function buildDefaultSharedResource(key: SharedWellbeingKey): WellbeingResource {
+  if (key === 'formulario_assedio') {
+    return {
+      id: SHARED_WELLBEING_RESOURCE_IDS.formulario_assedio,
+      kind: 'form',
+      title: 'Formulário de reportar assédio',
+      description: 'Canal interno para reportar situações que devam ser acompanhadas por RH e t.people.',
+      buttonLabel: 'Reportar situação',
+      files: [],
+    };
+  }
+
+  if (key === 'ergonomia') {
+    return {
+      id: SHARED_WELLBEING_RESOURCE_IDS.ergonomia,
+      kind: 'pdf',
+      title: 'Ergonomia',
+      description: 'Boas práticas e documentação de apoio.',
+      buttonLabel: 'Abrir PDF',
+      files: [],
+    };
+  }
+
+  return {
+    id: SHARED_WELLBEING_RESOURCE_IDS.suporte_basico_vida,
+    kind: 'pdf',
+    title: 'Suporte Básico de Vida',
+    description: 'Materiais de consulta rápida e formação.',
+    buttonLabel: 'Abrir PDF',
+    files: [],
+  };
+}
+
+function enforceSharedWellbeingResources(content: WellbeingContent): WellbeingContent {
+  const allResources = [...content.sections.PT.resources, ...content.sections.BR.resources];
+
+  const resolveShared = (key: SharedWellbeingKey) => {
+    const fromPt = content.sections.PT.resources.find((resource) => classifySharedWellbeingResource(resource) === key);
+    if (fromPt) {
+      return { ...fromPt, id: SHARED_WELLBEING_RESOURCE_IDS[key] };
+    }
+    const fromBr = content.sections.BR.resources.find((resource) => classifySharedWellbeingResource(resource) === key);
+    if (fromBr) {
+      return { ...fromBr, id: SHARED_WELLBEING_RESOURCE_IDS[key] };
+    }
+    const fromPool = allResources.find((resource) => classifySharedWellbeingResource(resource) === key);
+    if (fromPool) {
+      return { ...fromPool, id: SHARED_WELLBEING_RESOURCE_IDS[key] };
+    }
+    return buildDefaultSharedResource(key);
+  };
+
+  const sharedResources = [
+    resolveShared('formulario_assedio'),
+    resolveShared('ergonomia'),
+    resolveShared('suporte_basico_vida'),
+  ];
+
+  const stripShared = (resources: WellbeingResource[]) => resources.filter((resource) => !classifySharedWellbeingResource(resource));
+
+  return {
+    ...content,
+    sections: {
+      PT: {
+        ...content.sections.PT,
+        resources: [...stripShared(content.sections.PT.resources), ...sharedResources],
+      },
+      BR: {
+        ...content.sections.BR,
+        resources: [...stripShared(content.sections.BR.resources), ...sharedResources],
+      },
+    },
+  };
+}
 
 function buildDefaultWellbeingContent(): WellbeingContent {
   return {
@@ -100,7 +217,7 @@ function buildDefaultWellbeingContent(): WellbeingContent {
             files: [],
           },
           {
-            id: 'pt-assedio',
+            id: 'common-formulario-assedio',
             kind: 'form',
             title: 'Formulário de reportar assédio',
             description: 'Canal interno para reportar situações que devam ser acompanhadas por RH e t.people.',
@@ -116,7 +233,7 @@ function buildDefaultWellbeingContent(): WellbeingContent {
             files: [],
           },
           {
-            id: 'pt-ergonomia',
+            id: 'common-ergonomia',
             kind: 'pdf',
             title: 'Ergonomia',
             description: 'Boas práticas e documentação de apoio.',
@@ -124,7 +241,7 @@ function buildDefaultWellbeingContent(): WellbeingContent {
             files: [],
           },
           {
-            id: 'pt-suporte-basico-vida',
+            id: 'common-suporte-basico-vida',
             kind: 'pdf',
             title: 'Suporte Básico de Vida',
             description: 'Materiais de consulta rápida e formação.',
@@ -210,27 +327,28 @@ async function loadWellbeingContent() {
   });
 
   if (!setting?.textValue) {
-    return buildDefaultWellbeingContent();
+    return enforceSharedWellbeingResources(buildDefaultWellbeingContent());
   }
 
   try {
     const parsed = JSON.parse(setting.textValue) as unknown;
     const result = wellbeingContentSchema.safeParse(parsed);
     if (result.success) {
-      return result.data;
+      return enforceSharedWellbeingResources(result.data);
     }
   } catch {
     // fallback below
   }
 
-  return buildDefaultWellbeingContent();
+  return enforceSharedWellbeingResources(buildDefaultWellbeingContent());
 }
 
 async function saveWellbeingContent(content: WellbeingContent) {
+  const normalized = enforceSharedWellbeingResources(content);
   await prisma.systemSetting.upsert({
     where: { key: WELLBEING_SETTING_KEY },
-    update: { textValue: JSON.stringify(content), boolValue: null },
-    create: { key: WELLBEING_SETTING_KEY, textValue: JSON.stringify(content), boolValue: null },
+    update: { textValue: JSON.stringify(normalized), boolValue: null },
+    create: { key: WELLBEING_SETTING_KEY, textValue: JSON.stringify(normalized), boolValue: null },
   });
 }
 
@@ -327,9 +445,10 @@ router.put('/wellbeing/content', requireAuth, async (req: Request, res: Response
   const currentContent = await loadWellbeingContent();
   const allowedCountries = await resolveAllowedCountries(req.authUser);
   const merged = mergeScopedContent(currentContent, parsed.data, allowedCountries);
+  const normalized = enforceSharedWellbeingResources(merged);
 
-  await saveWellbeingContent(merged);
-  return res.json(redactContentByCountries(merged, allowedCountries));
+  await saveWellbeingContent(normalized);
+  return res.json(redactContentByCountries(normalized, allowedCountries));
 });
 
 router.post('/wellbeing/harassment-report', requireAuth, async (req: Request, res: Response) => {
