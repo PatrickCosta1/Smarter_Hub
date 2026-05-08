@@ -680,7 +680,7 @@ async function resolveConfiguredCompanyExtraDays(params: {
 
   if (scopedDays.length > 0) {
     for (const item of scopedDays) {
-      registerDay(item.date, item.label || 'Dia dado pela empresa', item.scope);
+      registerDay(item.date, item.label || 'Dia dado pela empresa', item.scope as CompanyExtraScope);
     }
 
     return {
@@ -691,7 +691,7 @@ async function resolveConfiguredCompanyExtraDays(params: {
 
   if (legacyConfiguredDays.length > 0) {
     for (const item of legacyConfiguredDays) {
-      registerDay(`${params.year}-${item.date}`, item.label || 'Dia dado pela empresa', item.scope);
+      registerDay(`${params.year}-${item.date}`, item.label || 'Dia dado pela empresa', item.scope as CompanyExtraScope);
     }
 
     return {
