@@ -1,0 +1,69 @@
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+
+\geometry{margin=2.3cm}
+
+\definecolor{ManualBlue}{HTML}{0B4EA2}
+\definecolor{ManualInk}{HTML}{0F172A}
+\definecolor{ManualSoft}{HTML}{F4F8FF}
+\definecolor{ManualAccent}{HTML}{0A84FF}
+\definecolor{ManualLine}{HTML}{D6E3F8}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=ManualBlue,
+  urlcolor=ManualAccent,
+  pdftitle={Smarter Hub Manual},
+  pdfauthor={Tlantic}
+}
+
+\setlist[itemize]{noitemsep,topsep=4pt,leftmargin=1.5em}
+\setlist[enumerate]{noitemsep,topsep=4pt,leftmargin=1.7em}
+
+\titleformat{\chapter}[display]
+  {\bfseries\huge\color{ManualBlue}}
+  {\filleft\Large\color{ManualAccent}\chaptername\ \thechapter}
+  {0.6ex}
+  {\titlerule\vspace{1ex}\filright}
+
+\titleformat{\section}
+  {\Large\bfseries\color{ManualInk}}
+  {\thesection}
+  {0.6em}
+  {}
+
+\titleformat{\subsection}
+  {\large\bfseries\color{ManualBlue}}
+  {\thesubsection}
+  {0.6em}
+  {}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\textcolor{ManualBlue}{Smarter Hub}}
+\fancyhead[R]{\textcolor{ManualInk}{\leftmark}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\newtcolorbox{manualnote}[1][]{
+  colback=ManualSoft,
+  colframe=ManualLine,
+  arc=1.5mm,
+  boxrule=0.5pt,
+  left=1.5mm,
+  right=1.5mm,
+  top=1.2mm,
+  bottom=1.2mm,
+  title=#1,
+  coltitle=ManualBlue,
+  fonttitle=\bfseries
+}

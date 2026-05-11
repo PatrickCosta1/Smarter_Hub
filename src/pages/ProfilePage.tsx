@@ -1240,7 +1240,6 @@ export default function ProfilePage() {
     <>
       <section className="profile-hero">
         <div className="hero-main">
-          <p className="hero-kicker">Ficha de colaborador</p>
           <h1>{heroName}</h1>
           <p className="profile-hero__role-line">{heroRoleLine}</p>
           <div className="profile-hero__meta">
