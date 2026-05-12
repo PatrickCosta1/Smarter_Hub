@@ -52,11 +52,11 @@ function roleLabel(ctx: ChatbotContext): string {
   if (ctx.isRootAccess) return 'Root Access';
   if (ctx.isAccessTotal) return 'Access Total';
   switch ((ctx.userRole || '').toLowerCase()) {
-    case 'admin':       return 'Admin';
-    case 'manager':     return 'Manager';
-    case 'coordenador': return 'Coordenador';
-    case 'convidado':   return 'Convidado';
-    default:            return 'Colaborador';
+    case 'admin':       return 'Administração';
+    case 'manager':     return 'Liderança';
+    case 'coordenador': return 'Liderança';
+    case 'convidado':   return 'Acesso limitado';
+    default:            return 'Membro';
   }
 }
 

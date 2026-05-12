@@ -1,7 +1,13 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import path from "path";
+import pino from 'pino';
+import { pinoHttp } from 'pino-http';
+import * as Sentry from '@sentry/node';
+import swaggerUi from 'swagger-ui-express';
 import { ZodError } from "zod";
 
 import { authRouter } from "./routes/auth.js";
@@ -18,6 +24,7 @@ import { careerPlanRouter } from './routes/career-plan.js';
 import { prisma } from './lib/prisma.js';
 import { runCitizenCardExpiryNotificationSweep } from './lib/citizen-card-expiry-notifications.js';
 import { runJanuaryIrsAlertSweep } from './lib/january-irs-alerts.js';
+import { openApiSpec } from './lib/openapi.js';
 import { runWeeklyHourBankReportSweep } from './lib/hour-bank.js';
 import { runOccupationalHealthAlertSweep } from './lib/occupational-health-alerts.js';
 
@@ -25,6 +32,16 @@ dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
+const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
+
+const sentryDsn = process.env.SENTRY_DSN?.trim();
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? 0),
+  });
+}
+
 const defaultAllowedOrigins = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -54,6 +71,31 @@ const envAllowedOrigins = (process.env.FRONTEND_URL ?? '')
 
 const allowedOrigins = Array.from(new Set([...defaultAllowedOrigins, ...envAllowedOrigins]));
 
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: 'Muitas tentativas de autenticação. Tenta novamente em alguns minutos.',
+  },
+});
+
+const writeRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.WRITE_RATE_LIMIT_MAX ?? 120),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    message: 'Limite de pedidos temporariamente excedido. Tenta novamente em instantes.',
+  },
+});
+
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+}));
+app.use(pinoHttp({ logger }));
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -73,6 +115,14 @@ app.use(
 );
 app.use(express.json());
 app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
+app.use('/api', writeRateLimiter);
+app.use('/api/auth/login', authRateLimiter);
+app.use('/api/auth/microsoft', authRateLimiter);
+
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, { explorer: true }));
+app.get('/openapi.json', (_req, res) => {
+  return res.json(openApiSpec);
+});
 
 app.get("/health", (_req, res) => {
   return res.json({ status: "ok" });
@@ -95,9 +145,15 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 async function runCitizenCardExpirySweepSafely() {
   try {
     const result = await runCitizenCardExpiryNotificationSweep(prisma);
-    console.log(`[CC_EXPIRY_SWEEP] scanned=${result.scannedUsers} eligible=${result.eligibleUsers} created=${result.createdNotifications}`);
+    logger.info({
+      event: 'cc-expiry-sweep',
+      scanned: result.scannedUsers,
+      eligible: result.eligibleUsers,
+      created: result.createdNotifications,
+    }, 'Citizen card expiry sweep completed');
   } catch (error) {
-    console.error('[CC_EXPIRY_SWEEP] failed', error);
+    logger.error({ err: error }, 'Citizen card expiry sweep failed');
+    Sentry.captureException(error);
   }
 }
 
@@ -110,12 +166,18 @@ async function runJanuaryIrsAlertSweepSafely() {
   try {
     const result = await runJanuaryIrsAlertSweep(prisma);
     if (result.skipped) {
-      console.log(`[JANUARY_IRS_SWEEP] skipped: ${result.reason}`);
+      logger.info({ event: 'january-irs-sweep', skipped: true, reason: result.reason }, 'January IRS sweep skipped');
     } else {
-      console.log(`[JANUARY_IRS_SWEEP] scanned=${result.scannedUsers} created=${result.createdNotifications}`);
+      logger.info({
+        event: 'january-irs-sweep',
+        skipped: false,
+        scanned: result.scannedUsers,
+        created: result.createdNotifications,
+      }, 'January IRS sweep completed');
     }
   } catch (error) {
-    console.error('[JANUARY_IRS_SWEEP] failed', error);
+    logger.error({ err: error }, 'January IRS sweep failed');
+    Sentry.captureException(error);
   }
 }
 
@@ -128,12 +190,17 @@ async function runWeeklyHourBankReportSweepSafely() {
   try {
     const result = await runWeeklyHourBankReportSweep(prisma);
     if (result.skipped) {
-      console.log(`[HOUR_BANK_WEEKLY_SWEEP] skipped: ${result.reason}`);
+      logger.info({ event: 'hour-bank-weekly-sweep', skipped: true, reason: result.reason }, 'Hour bank weekly sweep skipped');
     } else {
-      console.log(`[HOUR_BANK_WEEKLY_SWEEP] created=${result.createdNotifications}`);
+      logger.info({
+        event: 'hour-bank-weekly-sweep',
+        skipped: false,
+        created: result.createdNotifications,
+      }, 'Hour bank weekly sweep completed');
     }
   } catch (error) {
-    console.error('[HOUR_BANK_WEEKLY_SWEEP] failed', error);
+    logger.error({ err: error }, 'Hour bank weekly sweep failed');
+    Sentry.captureException(error);
   }
 }
 
@@ -146,12 +213,18 @@ async function runOccupationalHealthAlertSweepSafely() {
   try {
     const result = await runOccupationalHealthAlertSweep(prisma);
     if (result.skipped) {
-      console.log(`[OCCUPATIONAL_HEALTH_SWEEP] skipped: ${result.reason}`);
+      logger.info({ event: 'occupational-health-sweep', skipped: true, reason: result.reason }, 'Occupational health sweep skipped');
     } else {
-      console.log(`[OCCUPATIONAL_HEALTH_SWEEP] scanned=${result.scannedUsers} created=${result.createdNotifications}`);
+      logger.info({
+        event: 'occupational-health-sweep',
+        skipped: false,
+        scanned: result.scannedUsers,
+        created: result.createdNotifications,
+      }, 'Occupational health sweep completed');
     }
   } catch (error) {
-    console.error('[OCCUPATIONAL_HEALTH_SWEEP] failed', error);
+    logger.error({ err: error }, 'Occupational health sweep failed');
+    Sentry.captureException(error);
   }
 }
 
@@ -161,6 +234,9 @@ setInterval(() => {
 }, ONE_DAY_MS);
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  logger.error({ err: error }, 'Unhandled request error');
+  Sentry.captureException(error);
+
   if (error instanceof ZodError) {
     return res.status(400).json({
       message: "Payload invalido.",
@@ -176,5 +252,5 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 });
 
 app.listen(port, () => {
-  console.log(`API a correr em http://localhost:${port}`);
+  logger.info({ port }, 'API a correr');
 });

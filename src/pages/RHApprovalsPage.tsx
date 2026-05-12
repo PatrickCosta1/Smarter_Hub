@@ -336,7 +336,7 @@ export default function RHApprovalsPage() {
       <section className="trainings-shell">
         <article className="trainings-list-card">
           <h3>Acesso restrito</h3>
-          <p>Esta página está disponível apenas para manager, coordenador e admin.</p>
+          <p>Esta página está disponível apenas para perfis com capacidade de aprovação.</p>
         </article>
       </section>
     );

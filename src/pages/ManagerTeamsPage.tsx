@@ -294,6 +294,27 @@ function formatPerson(member: TeamMember) {
   return getProfileDisplayName({ username: member.username, profile: member.profile });
 }
 
+function getTeamContextLabel(member: TeamMember | TeamCalendarPerson) {
+  if ('isTeamLeader' in member && member.isTeamLeader) {
+    return 'Responsável da equipa';
+  }
+
+  const cargo = member.profile?.cargo?.trim() || '';
+  const funcao = member.profile?.funcao?.trim() || '';
+
+  if (cargo && funcao) {
+    return `${cargo} · ${funcao}`;
+  }
+  if (cargo) {
+    return cargo;
+  }
+  if (funcao) {
+    return funcao;
+  }
+
+  return 'Membro da equipa';
+}
+
 export default function ManagerTeamsPage() {
   const { hasPermission, isRootAccess, isAccessTotal, currentUser } = usePortal();
   const canViewCostCenter = isRootAccess || isAccessTotal;
@@ -1086,7 +1107,7 @@ export default function ManagerTeamsPage() {
         memberId: member.id,
         memberName: formatPerson(member),
         email: member.email,
-        roleLabel: formatRoleLabel(member.role),
+        roleLabel: getTeamContextLabel(member),
         nextBirthdayIso: target,
         observedBirthdayIso: target,
         daysUntil,
@@ -1379,7 +1400,7 @@ export default function ManagerTeamsPage() {
                       </div>
 
                       <p className="team-member-meta">
-                        {formatRoleLabel(person.role)}
+                        {getTeamContextLabel(person)}
                       </p>
                     </article>
                   ))}

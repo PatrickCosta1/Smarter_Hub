@@ -22,21 +22,16 @@ const ABSENCE_MOTIVOS = [
   'Justificada - Greve',
   'Justificada - Atividades empresa',
   'Justificada - Assistência à família',
-  'Justificada - Assuntos escolares',
+  'Justificada - Estatuto trabalhador-estudante',
   'Justificada - Licença casamento',
   'Justificada - Consultas médicas',
   'Justificada - Doença',
   'Justificada - Formação',
   'Justificada - Licença parental',
   'Justificada - Morte de familiar',
-  'Justificada - Trabalho remoto',
   'Justificada - Feriado local',
-  'Justificada - Compensação de horas',
   'Justificada - Obrigações legais',
-  'Justificada - Isolamento profilático',
-  'Justificada - Dia aniversário',
   'Justificada - Tolerância dada pela empresa',
-  'Justificada - Folga',
 ] as const;
 type AbsenceMotivo = typeof ABSENCE_MOTIVOS[number];
 type VacationPartialDay = 'FULL' | 'AM' | 'PM';
@@ -3390,7 +3385,7 @@ export default function VacationsPage() {
         <>
           <section className="trainings-list-card vacations-unified-actions-card">
             <div className="vacations-unified-actions__header">
-              <h3>Juntar operações de gestão</h3>
+              <h3>Operações</h3>
               <p className="vacations-company-days-subtitle">Escolhe uma ação para abrir o respetivo fluxo.</p>
             </div>
 

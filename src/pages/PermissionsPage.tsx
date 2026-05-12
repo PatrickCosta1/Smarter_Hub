@@ -693,7 +693,7 @@ export default function PermissionsPage() {
                       <textarea
                         value={draft.restrictedToLevels}
                         onChange={(event) => setDrafts((current) => ({ ...current, [permission.id]: { ...draft, restrictedToLevels: event.target.value } }))}
-                        placeholder="COLABORADOR, MANAGER"
+                        placeholder="Membro, Liderança"
                         rows={2}
                         disabled={accessTotal}
                       />

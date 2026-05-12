@@ -45,13 +45,15 @@
 }
 
 .portal-sidebar {
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.7);
+  background:
+    radial-gradient(circle at 18% 14%, rgba(88, 156, 255, 0.22), transparent 52%),
+    linear-gradient(185deg, #103366 0%, #0b274f 58%, #0a2143 100%);
+  border: 1px solid rgba(116, 167, 241, 0.3);
   border-radius: 24px;
-  box-shadow: 0 18px 40px rgba(7, 34, 101, 0.18);
-  padding: 16px;
+  box-shadow: 0 22px 46px rgba(5, 26, 66, 0.4);
+  padding: 18px;
   display: grid;
-  gap: 14px;
+  gap: 16px;
   align-content: start;
   position: sticky;
   top: 12px;
@@ -89,26 +91,54 @@
 }
 
 .portal-nav__link {
+  position: relative;
   text-decoration: none;
-  color: #17427f;
-  font-weight: 700;
+  color: #d9e9ff;
+  font-weight: 650;
   font-size: 0.9rem;
-  padding: 11px 12px;
+  padding: 12px 14px 12px 18px;
   border-radius: 12px;
-  background: #f3f8ff;
-  border: 1px solid #dce9fb;
+  background: rgba(16, 61, 120, 0.58);
+  border: 1px solid rgba(120, 169, 236, 0.24);
+  transition: transform 160ms ease, box-shadow 190ms ease, background-color 190ms ease, border-color 190ms ease;
+}
+
+.portal-nav__link::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(182, 213, 255, 0.95);
 }
 
 .portal-nav__link:hover {
   transform: translateX(2px);
-  box-shadow: 0 10px 22px rgba(17, 97, 214, 0.16);
+  background: rgba(24, 79, 151, 0.74);
+  border-color: rgba(156, 199, 255, 0.45);
+  box-shadow: 0 12px 24px rgba(8, 37, 83, 0.35);
 }
 
 .portal-nav__link.is-active {
-  background: linear-gradient(135deg, #2e7af6, #1295f3);
+  background: linear-gradient(135deg, #2e7af6, #19a5ff);
   color: #fff;
-  border-color: transparent;
+  border-color: rgba(208, 230, 255, 0.6);
   box-shadow: 0 12px 28px rgba(20, 99, 215, 0.3);
+  font-weight: 800;
+}
+
+.portal-nav__link.is-active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 6px 6px 0;
+  background: #ffffff;
 }
 
 .portal-sidebar__footer {
@@ -623,6 +653,80 @@
   border-radius: 8px;
 }
 
+/* ── Language Switcher ─────────────────────────────────────── */
+.language-switcher {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.language-switcher__trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  min-width: 52px;
+  padding: 0 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text, #1a2c4e);
+}
+
+.language-switcher__flag {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.language-switcher__code {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #2e79f5;
+}
+
+.language-switcher__dropdown {
+  position: fixed;
+  z-index: 2147483647;
+  min-width: 140px;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #d5e4fc;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(20, 60, 140, 0.13);
+}
+
+.language-switcher__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #1a2c4e;
+  border-radius: 6px;
+  margin: 2px 4px;
+  transition: background 0.15s;
+  outline: none;
+}
+
+.language-switcher__option:hover,
+.language-switcher__option:focus {
+  background: #edf4ff;
+}
+
+.language-switcher__option--active {
+  background: #ddeeff;
+  font-weight: 600;
+  color: #1a4f9c;
+}
+
+.language-switcher__option-label {
+  flex: 1;
+}
+/* ─────────────────────────────────────────────────────────── */
+
 .quick-action-btn {
   border: 1px solid #c8ddfa;
   background: #f7fbff;
@@ -797,9 +901,10 @@
 
 .dashboard-kpi-card {
   border: 1px solid var(--hub-line-2);
-  border-radius: var(--hub-radius-lg);
-  background: #f8fbff;
-  padding: 12px;
+  border-radius: 14px;
+  background: linear-gradient(165deg, #ffffff, #f4f8ff 74%);
+  box-shadow: 0 10px 22px rgba(15, 60, 124, 0.09);
+  padding: 14px;
   display: grid;
   gap: 6px;
 }
@@ -895,13 +1000,73 @@
 
 .dashboard-list__row {
   border: 1px solid var(--hub-line-2);
-  border-radius: 10px;
-  padding: 10px;
+  border-radius: 12px;
+  padding: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   background: #f8fbff;
+  transition: transform 160ms ease, box-shadow 190ms ease, border-color 190ms ease;
+}
+
+.dashboard-list__row:hover {
+  transform: translateY(-1px);
+  border-color: #bfd5f7;
+  box-shadow: 0 10px 20px rgba(14, 58, 120, 0.1);
+}
+
+.trainings-table tbody tr:nth-child(odd) {
+  background: #fcfeff;
+}
+
+.trainings-table tbody tr:nth-child(even) {
+  background: #f4f9ff;
+}
+
+.trainings-table th,
+.trainings-table td {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.trainings-table tbody tr {
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.portal-sidebar__search input,
+.portal-page input,
+.portal-page select,
+.portal-page textarea,
+.login-input-row input {
+  border-radius: 10px;
+  border: 1px solid #c9dcf6;
+  transition: border-color 160ms ease, box-shadow 180ms ease, transform 160ms ease;
+}
+
+.portal-sidebar__search input:focus,
+.portal-page input:focus,
+.portal-page select:focus,
+.portal-page textarea:focus,
+.login-input-row input:focus {
+  outline: none;
+  border-color: #74aef5;
+  box-shadow: 0 0 0 3px rgba(46, 122, 246, 0.16);
+  transform: translateY(-1px);
+}
+
+.topbar-link,
+.quick-action-btn,
+.icon-button,
+.ui-button,
+.portal-nav__link,
+.wellbeing-card,
+.dashboard-kpi-card,
+.dashboard-panel,
+.trainings-list-card,
+.profile-card,
+.modal {
+  transition: box-shadow 190ms ease, transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
 }
 
 .dashboard-list__row--stacked {
@@ -15259,4 +15424,111 @@
   background: linear-gradient(135deg, #0f4ea1, #1c66c4);
   border-color: #0f4ea1;
   box-shadow: 0 8px 20px rgba(15, 78, 161, 0.26);
+}
+
+/* Final UI overrides: keep these at end due repeated legacy style blocks above. */
+.app-layout.app-layout--modern .portal-sidebar {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  gap: 12px;
+  padding: 14px;
+}
+
+.app-layout.app-layout--modern .portal-nav__link {
+  color: #334155;
+  font-weight: 700;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.app-layout.app-layout--modern .portal-nav__link::before {
+  left: 0;
+  width: 3px;
+  height: 60%;
+  border-radius: 0 6px 6px 0;
+  background: transparent;
+}
+
+.app-layout.app-layout--modern .portal-nav__link:hover {
+  background: #eef2f7;
+  border-color: #dbe4ef;
+  box-shadow: none;
+}
+
+.app-layout.app-layout--modern .portal-nav__link.is-active {
+  background: #e8f1ff;
+  color: #1e3a8a;
+  border-color: #c9dbff;
+  box-shadow: none;
+}
+
+.app-layout.app-layout--modern .portal-nav__link.is-active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 6px 6px 0;
+  background: #2563eb;
+}
+
+.dashboard-kpi-card {
+  border-radius: 14px;
+  background: linear-gradient(165deg, #ffffff, #f4f8ff 74%);
+  box-shadow: 0 10px 22px rgba(15, 60, 124, 0.09);
+  padding: 14px;
+}
+
+.dashboard-list__row {
+  border-radius: 12px;
+  padding: 12px;
+  transition: transform 160ms ease, box-shadow 190ms ease, border-color 190ms ease;
+}
+
+.dashboard-list__row:hover {
+  transform: translateY(-1px);
+  border-color: #bfd5f7;
+  box-shadow: 0 10px 20px rgba(14, 58, 120, 0.1);
+}
+
+.trainings-table tbody tr:nth-child(odd) {
+  background: #fcfeff;
+}
+
+.trainings-table tbody tr:nth-child(even) {
+  background: #f4f9ff;
+}
+
+.trainings-table th,
+.trainings-table td {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.trainings-table tbody tr {
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.portal-sidebar__search input,
+.portal-page input,
+.portal-page select,
+.portal-page textarea,
+.login-input-row input {
+  border-radius: 10px;
+  border: 1px solid #c9dcf6;
+  transition: border-color 160ms ease, box-shadow 180ms ease, transform 160ms ease;
+}
+
+.portal-sidebar__search input:focus,
+.portal-page input:focus,
+.portal-page select:focus,
+.portal-page textarea:focus,
+.login-input-row input:focus {
+  outline: none;
+  border-color: #74aef5;
+  box-shadow: 0 0 0 3px rgba(46, 122, 246, 0.16);
+  transform: translateY(-1px);
 }

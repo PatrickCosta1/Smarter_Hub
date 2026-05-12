@@ -276,6 +276,7 @@ async function validateVacationCountryPolicy(params: {
   db: Pick<Prisma.TransactionClient, 'vacation'>;
   userId: string;
   country: 'PT' | 'BR';
+  brWorkState?: 'SP' | 'RS' | null;
   requestType: 'VACATION' | 'ABSENCE_MEDICAL' | 'ABSENCE_TRAINING';
   dataInicio: string;
   dataFim: string;
@@ -337,7 +338,7 @@ async function validateVacationCountryPolicy(params: {
       toLocalDate(params.dataFim).getFullYear(),
       ...currentYearPeriods.flatMap((period) => [toLocalDate(period.dataInicio).getFullYear(), toLocalDate(period.dataFim).getFullYear()]),
     ]);
-    const holidayDates = await collectHolidayDates(params.country, years);
+    const holidayDates = await collectHolidayDates(params.country, years, params.brWorkState);
     const hasMandatoryConsecutiveBlock = currentYearPeriods.some((period) => vacationDaysForMetrics(period, holidayDates) >= 10);
     const requestedDays = vacationDaysForMetrics(requestedPeriod, holidayDates);
     const warnings: string[] = [];
@@ -394,7 +395,7 @@ async function validateVacationCountryPolicy(params: {
 
   // Phase 2C: BR Post-holiday blocker - não pode começar no dia útil imediatamente após feriado
   const startYear = toLocalDate(params.dataInicio).getFullYear();
-  const brHolidayDatesForStart = await collectHolidayDates('BR', [startYear, startYear - 1]);
+  const brHolidayDatesForStart = await collectHolidayDates('BR', [startYear, startYear - 1], params.brWorkState);
   {
     // Find the previous business day before dataInicio
     const startDate = toLocalDate(params.dataInicio);
@@ -425,7 +426,7 @@ async function validateVacationCountryPolicy(params: {
     toLocalDate(params.dataFim).getFullYear(),
     ...allPeriods.flatMap((period) => [toLocalDate(period.dataInicio).getFullYear(), toLocalDate(period.dataFim).getFullYear()]),
   ]);
-  const holidayDates = await collectHolidayDates(params.country, years);
+  const holidayDates = await collectHolidayDates(params.country, years, params.brWorkState);
 
   const effectivePeriodDays = (period: { dataInicio: string; dataFim: string; requestType?: string; partialDay?: 'FULL' | 'AM' | 'PM' }) =>
     vacationDaysForMetrics({ requestType: 'VACATION', partialDay: 'FULL', ...period }, holidayDates);
@@ -741,8 +742,9 @@ type PublicHoliday = {
 const HOLIDAYS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const holidaysCache = new Map<string, { expiresAt: number; data: PublicHoliday[] }>();
 
-async function fetchHolidays(countryCode: 'PT' | 'BR', year: number) {
-  const cacheKey = `${countryCode}-${year}`;
+async function fetchHolidays(countryCode: 'PT' | 'BR', year: number, brWorkState?: 'SP' | 'RS' | null) {
+  const stateCacheKey = countryCode === 'BR' ? brWorkState ?? 'ALL' : 'ALL';
+  const cacheKey = `${countryCode}-${year}-${stateCacheKey}`;
   const cached = holidaysCache.get(cacheKey);
   const now = Date.now();
   if (cached && cached.expiresAt > now) {
@@ -756,26 +758,38 @@ async function fetchHolidays(countryCode: 'PT' | 'BR', year: number) {
   }
 
   const payload = (await response.json()) as PublicHoliday[];
+  const brCountyCode = brWorkState ? `BR-${brWorkState}` : null;
   const filtered = payload.filter((holiday) => {
-    if (countryCode !== 'PT') {
+    if (countryCode === 'PT') {
+      const label = `${holiday.localName} ${holiday.name}`.toLowerCase();
+      const isMadeiraOrAcores =
+        label.includes('madeira') ||
+        label.includes('açores') ||
+        label.includes('acores');
+
+      if (isMadeiraOrAcores) {
+        return false;
+      }
+
+      if (holiday.global === false) {
+        return false;
+      }
+
       return true;
     }
 
-    const label = `${holiday.localName} ${holiday.name}`.toLowerCase();
-    const isMadeiraOrAcores =
-      label.includes('madeira') ||
-      label.includes('açores') ||
-      label.includes('acores');
-
-    if (isMadeiraOrAcores) {
-      return false;
+    if (holiday.global === true) {
+      return true;
     }
 
-    if (holiday.global === false) {
-      return false;
+    if (Array.isArray(holiday.counties) && holiday.counties.length > 0) {
+      if (!brCountyCode) {
+        return false;
+      }
+      return holiday.counties.includes(brCountyCode);
     }
 
-    return true;
+    return holiday.global !== false;
   });
 
   holidaysCache.set(cacheKey, {
@@ -786,11 +800,11 @@ async function fetchHolidays(countryCode: 'PT' | 'BR', year: number) {
   return filtered;
 }
 
-async function collectHolidayDates(countryCode: 'PT' | 'BR', years: Iterable<number>) {
+async function collectHolidayDates(countryCode: 'PT' | 'BR', years: Iterable<number>, brWorkState?: 'SP' | 'RS' | null) {
   const holidayDates = new Set<string>();
 
   for (const year of years) {
-    const holidays = await fetchHolidays(countryCode, year);
+    const holidays = await fetchHolidays(countryCode, year, brWorkState);
     for (const holiday of holidays) {
       holidayDates.add(holiday.date);
     }
@@ -2004,7 +2018,7 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
 
     const profile = await prisma.profile.findUnique({
       where: { userId: targetUserId },
-      select: { workCountry: true, nomeCompleto: true, nomeAbreviado: true, dataInicioContrato: true, isIntern: true },
+      select: { workCountry: true, brWorkState: true, nomeCompleto: true, nomeAbreviado: true, dataInicioContrato: true, isIntern: true },
     });
     const country = profile?.workCountry ?? 'PT';
 
@@ -2033,6 +2047,7 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
         db: tx,
         userId: targetUserId,
         country,
+        brWorkState: profile?.brWorkState ?? null,
         requestType: data.requestType,
         dataInicio: data.dataInicio,
         dataFim: data.dataFim,
@@ -2919,7 +2934,7 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
 
     const profile = await prisma.profile.findUnique({
       where: { userId },
-      select: { workCountry: true, dataInicioContrato: true, isIntern: true },
+      select: { workCountry: true, brWorkState: true, dataInicioContrato: true, isIntern: true },
     });
     const country = profile?.workCountry ?? 'PT';
 
@@ -2969,6 +2984,7 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
         db: tx,
         userId,
         country,
+        brWorkState: profile?.brWorkState ?? null,
         requestType: data.requestType,
         dataInicio: data.dataInicio,
         dataFim: data.dataFim,

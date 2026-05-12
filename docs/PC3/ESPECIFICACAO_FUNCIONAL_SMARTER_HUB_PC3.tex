@@ -71,7 +71,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[LE,RO]{\small\sffamily\color{MUTED}Especificação Funcional - SMARTER HUB}
-\fancyhead[RE,LO]{\small\sffamily\color{MUTED}PROES 2025/2026 - PC2}
+\fancyhead[RE,LO]{\small\sffamily\color{MUTED}PROES 2025/2026 - PC3}
 \fancyfoot[C]{\small\sffamily\color{MUTED}\thepage\,/\,\pageref{LastPage}}
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\headrule}{\color{RULE!40}\hrule height 0.4pt \vspace{0pt}}
@@ -109,7 +109,7 @@
   linkcolor=RULE,
   urlcolor=RULE,
   citecolor=RULE,
-  pdftitle={Especificação Funcional SMARTER HUB - PC2},
+  pdftitle={Especificação Funcional SMARTER HUB - PC3},
   pdfauthor={Patrick Costa}
 }
 
@@ -132,17 +132,21 @@
 \section{Objetivo, escopo e fronteiras}
 
 \begin{callout}
-\textbf{Objetivo do artefacto.} Consolidar, com nível de entrega académica e operacional, as regras funcionais do SMARTER HUB para o PC2, servindo como referência única para produto, UX, backend e testes.
+\textbf{Objetivo do artefacto.} Consolidar, com nível de entrega académica e operacional, as regras funcionais do SMARTER HUB para o PC3, servindo como referência única para produto, UX, backend e testes. Este documento é de natureza evolutiva: deve ser atualizado sempre que uma alteração funcional for implementada, garantindo alinhamento contínuo entre especificação e produto.
 \end{callout}
 
 \subsection{Escopo funcional coberto}
 \begin{itemize}
   \item Identidade e acesso: login local, Microsoft OAuth, sessão, perfil de acesso.
   \item Estrutura organizacional: equipas, subequipas, chefias, memberships, centros de custo.
-  \item Ficha de membro e pedidos de alteração de dados.
-  \item Férias e ausências: pedido, validação, aprovação, versionamento, calendário, exportação.
+  \item Ficha de membro e pedidos de alteração de dados; processo de admissão de novos membros.
+  \item Férias e ausências: pedido, validação, aprovação, versionamento, calendário, exportação, ciclo processado/realizado.
+  \item Banco de horas para membros BR, com saldo, relatório semanal PDF e política por estado (SP/RS).
+  \item Plano de carreira individual: metas, competências e registo de evolução.
+  \item Saúde e bem-estar: conteúdo informativo por perfil e notificações de medicina do trabalho.
   \item Permissões granulares, acesso total e trilho de auditoria.
   \item Formações, notificações, dashboard e assistente interno contextual.
+  \item Internacionalização PT-PT / PT-BR com seleção de variante por utilizador.
 \end{itemize}
 
 \subsection{Fora de escopo nesta fase}
@@ -237,6 +241,27 @@ Notificações & Inbox pessoal e estados de leitura & Ler, limpar e navegar para
   \item Calendário inclui legenda de feriados, dias automáticos/extra e fins de semana.
 \end{itemize}
 
+\subsection{Catálogo de motivos de ausência}
+
+O sistema oferece um catálogo padronizado de motivos para ausências justificadas, utilizado na classificação de pedidos e relatórios operacionais:
+
+\begin{itemize}
+  \item \textit{Não Justificada}
+  \item \textit{Justificada - Greve}
+  \item \textit{Justificada - Atividades empresa}
+  \item \textit{Justificada - Assistência à família}
+  \item \textit{Justificada - Estatuto trabalhador-estudante}
+  \item \textit{Justificada - Licença casamento}
+  \item \textit{Justificada - Consultas médicas}
+  \item \textit{Justificada - Doença}
+  \item \textit{Justificada - Formação}
+  \item \textit{Justificada - Licença parental}
+  \item \textit{Justificada - Morte de familiar}
+  \item \textit{Justificada - Feriado local}
+  \item \textit{Justificada - Obrigações legais}
+  \item \textit{Justificada - Tolerância dada pela empresa}
+\end{itemize}
+
 \subsection{Políticas PT}
 \begin{itemize}
   \item Aviso de conformidade para ausência de bloco de 10 dias úteis consecutivos (não bloqueante).
@@ -253,6 +278,17 @@ Notificações & Inbox pessoal e estados de leitura & Ler, limpar e navegar para
   \item Alteração/versionamento só com antecedência mínima de 10 dias sobre o início do pedido.
   \item Estagiário: bloqueado antes de 12 meses; após marco, proporcional de 30 dias/ano (2,5 dias/mês).
   \item Venda de férias (abono): até 1/3 do direito anual, teto absoluto de 10 dias.
+  \item Aplicação diferenciada de feriados públicos por estado: São Paulo (SP) e Rio Grande do Sul (RS) utilizam calendários locais de feriados e pontos facultativos, incluindo apenas feriados globais ou feriados específicos do estado na validação de períodos de férias.
+\end{itemize}
+
+\subsection{Ciclo processado/realizado}
+\begin{itemize}
+  \item Após aprovação de férias, o sistema aguarda confirmação em dois momentos distintos.
+  \item \textbf{Processado:} marcado pelo RH/aprovador para confirmar o processamento de pagamento das férias.
+  \item \textbf{Realizado:} confirmado pelo membro após o regresso das férias, ou pelo aprovador em substituição.
+  \item O sistema bloqueia nova confirmação de realizado para férias com data de fim futura.
+  \item Ambas as confirmações registam o ator e o timestamp para audit log.
+  \item O saldo definitivo só é atualizado após marcado como realizado.
 \end{itemize}
 
 \subsection{Banco de horas (BR)}
@@ -262,10 +298,8 @@ Notificações & Inbox pessoal e estados de leitura & Ler, limpar e navegar para
   \item Estrutura de saldo por membro: \textit{saldo creditado}, \textit{saldo debitado}, \textit{total} e \textit{limite}.
   \item Lançamentos manuais (crédito/débito) são operados por utilizadores com \textit{acesso total} (ou root), com motivo obrigatório.
   \item Limite acumulado operacional em BR: \textbf{100h} (controlo automático no cálculo e nos relatórios).
-  \item Campo obrigatório de localização BR na ficha: \texttt{brWorkState} com opções \texttt{SP} e \texttt{RS}.
+  \item Campo obrigatório de localização BR na ficha: \texttt{brWorkState} com opções \texttt{SP} e \texttt{RS}, utilizado para determinar calendário de feriados na validação de férias.
   \item Política de fecho por estado: \texttt{RS} semestral (abril/outubro); \texttt{SP} quadrimestral (fevereiro/junho/outubro).
-  \item Folga por compensação: quando ausência com motivo \textit{Justificada - Folga} é aprovada, o sistema debita automaticamente horas no banco.
-  \item Conversão automática para débito de folga: 1 dia aprovado = 8 horas debitadas.
   \item Excedente é calculado por \( |total| - limite \) quando positivo.
   \item Excedente gera aviso para o membro e para a chefia responsável, com cópia para utilizadores de acesso total.
   \item O sistema gera relatório semanal automático de banco de horas para acesso total, sem operação manual.
@@ -280,10 +314,23 @@ Notificações & Inbox pessoal e estados de leitura & Ler, limpar e navegar para
 \begin{itemize}
   \item \textbf{Home}: sempre visível.
   \item \textbf{A Minha Ficha}: autenticados (exceto caso técnico T.People).
+  \item \textbf{Plano de Carreira}: autenticados (exceto T.People).
   \item \textbf{Dashboard}: apenas root/access total.
   \item \textbf{Aprovações}: requer pelo menos uma permissão de aprovação/visão global.
+  \item \textbf{Admissões}: requer permissão de aprovação de perfil ou root/access total.
   \item \textbf{Férias}: requer permissão de pedido/consulta/gestão de regras.
   \item \textbf{Formações}: requer permissão de consulta/atribuição.
+  \item \textbf{Banco de Horas}: apenas perfis BR (ou T.People) com permissão de consulta/gestão.
+  \item \textbf{Saúde e Bem-estar}: não convidados.
+\end{itemize}
+
+\subsection{Seletor de variante linguística (PT-PT / PT-BR)}
+\begin{itemize}
+  \item O portal disponibiliza um seletor de variante linguística persistente no topo da interface, acessível em qualquer página autenticada.
+  \item As opções são Portugal (PT-PT, por defeito) e Brasil (PT-BR), identificadas pela bandeira nacional respetiva.
+  \item A preferência é guardada localmente (\texttt{localStorage}) e persiste entre sessões.
+  \item A adaptação PT-BR abrange terminologia diferenciada (ex.: \textit{utilizador} \textrightarrow{} \textit{usuário}, \textit{guardar} \textrightarrow{} \textit{salvar}, \textit{equipa} \textrightarrow{} \textit{equipe}, \textit{formação} \textrightarrow{} \textit{treinamento}) e nomenclaturas de campos de ficha.
+  \item Para conteúdo dinâmico (mensagens, descrições, erros), o sistema integra a API LibreTranslate como motor de tradução opcional, com cache local por texto.
 \end{itemize}
 
 \subsection{Vistas mandatórias para operação}
@@ -355,6 +402,24 @@ Notificações & Inbox pessoal e estados de leitura & Ler, limpar e navegar para
   \item Em fluxos acionáveis, notificação navega para o ecrã de decisão.
 \end{enumerate}
 
+\subsection{Fluxo E: ciclo processado/realizado de férias}
+\begin{enumerate}
+  \item Férias transitam para estado \texttt{APPROVED}.
+  \item RH/aprovador marca as férias como \textbf{processadas} (confirma pagamento/processamento).
+  \item Após data de fim das férias, membro visualiza bann\-er de confirmação de realização.
+  \item Membro confirma via modal, ou aprovador confirma em substituição.
+  \item Sistema regista atores, timestamps e atualiza saldo definitivo.
+\end{enumerate}
+
+\subsection{Fluxo F: banco de horas (BR)}
+\begin{enumerate}
+  \item Membro BR visualiza saldo atual (creditado, debitado, total, limite).
+  \item Utilizador com acesso total credita ou debita horas com motivo obrigatório.
+  \item Sistema calcula excedente quando \( |total| > limite \) e envia aviso a membro, chefia e acesso total.
+  \item Sistema gera relatório semanal automático em PDF, acessível em histórico.
+  \item Chefias consultam visão por equipa; RH/acesso total exportam por estado/geo.
+\end{enumerate}
+
 \section{Rastreabilidade, riscos e critérios de aceite}
 
 \subsection{Matriz de rastreabilidade}
@@ -394,22 +459,23 @@ R5 & Perda de rastreabilidade de decisão & Obrigatoriedade de motivo, ator e ti
 \bottomrule
 \end{longtable}
 
-\subsection{Definição de pronto para entrega PC2}
+\subsection{Definição de pronto para entrega PC3}
 \begin{itemize}
   \item Regras de aprovação e políticas PT/BR descritas sem contradições internas.
   \item Perfis, domínios e restrições alinhados com comportamento esperado do portal.
   \item Fluxos críticos mapeados com estados e pontos de auditoria.
   \item Vistas obrigatórias e restrições de acesso identificadas para UX e QA.
-  \item Documento aprovado como referência oficial para continuidade no PC3.
+  \item Módulos Banco de Horas, Plano de Carreira, Admissões, Saúde e Bem-estar e Internacionalização cobertos.
+  \item Documento mantido atualizado como referência oficial durante todo o período PC3.
 \end{itemize}
 
 \subsection{Critérios objetivos de aceitação deste artefacto}
 \begin{itemize}
-  \item \textbf{Completude}: domínios nucleares pedidos no PC2 cobertos sem lacunas estruturais.
+  \item \textbf{Completude}: domínios nucleares do PC3 cobertos sem lacunas estruturais.
   \item \textbf{Clareza}: regras críticas traduzíveis em comportamento observável de sistema.
   \item \textbf{Auditabilidade}: decisão de aprovação/revogação justificável por rasto de dados.
   \item \textbf{Testabilidade}: regras convertíveis em casos unitários, integração e E2E.
-  \item \textbf{Foco}: sem inflação de escopo fora do que é pedido para avaliação de PC2.
+  \item \textbf{Evolução controlada}: qualquer alteração funcional é acompanhada de atualização deste documento.
 \end{itemize}
 
 \end{document}

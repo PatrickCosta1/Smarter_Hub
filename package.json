@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "perf:budget": "node scripts/check-performance-budget.mjs",
+    "quality:frontend": "npm run build && npm run perf:budget",
     "preview": "vite preview",
     "e2e": "node scripts/run-e2e-with-cleanup.mjs",
     "e2e:raw": "playwright test",
@@ -13,6 +15,7 @@
     "e2e:cleanup": "node scripts/cleanup-e2e-residuals.mjs && npm --prefix backend run cleanup:audit"
   },
   "dependencies": {
+    "@sentry/react": "^10.53.0",
     "exceljs": "^4.4.0",
     "firebase": "^12.12.0",
     "react": "^18.3.1",

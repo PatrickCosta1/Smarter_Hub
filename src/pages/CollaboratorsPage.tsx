@@ -3194,7 +3194,7 @@ export default function CollaboratorsPage() {
       <section className="trainings-shell">
         <article className="trainings-list-card">
           <h3>Acesso restrito</h3>
-          <p>Esta área está disponível para Admin e RH (Coordenador).</p>
+          <p>Esta área está disponível para perfis com acesso de gestão de pessoas.</p>
         </article>
       </section>
     );

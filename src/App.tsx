@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import LoadingScreen from './components/LoadingScreen';
 import { PortalProvider, usePortal } from './portal/context';
 import { apiRequestCached, authHeaders } from './portal/api';
+import { LanguageProvider } from './contexts/LanguageContext';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 const ENABLE_AGGRESSIVE_PREFETCH = import.meta.env.VITE_ENABLE_AGGRESSIVE_PREFETCH === 'true';
@@ -214,8 +215,10 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <PortalProvider>
-      <AppRoutes />
-    </PortalProvider>
+    <LanguageProvider>
+      <PortalProvider>
+        <AppRoutes />
+      </PortalProvider>
+    </LanguageProvider>
   );
 }

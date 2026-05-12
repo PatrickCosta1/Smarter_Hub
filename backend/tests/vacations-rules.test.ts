@@ -384,23 +384,40 @@ describe('vacations rules', () => {
     }
   });
 
-  // ─── Phase 2C: BR Wednesday blocker ───────────────────────────────────────
+  // ─── Phase 2C: BR weekday blocker (quinta/sexta) ──────────────────────────
 
-  it('Phase 2C: BR rejects vacation starting on Wednesday', async () => {
+  it('Phase 2C: BR rejects vacation starting on Thursday', async () => {
     const db = { vacation: { findMany: vi.fn().mockResolvedValue([]) } };
 
-    // 2026-06-03 is a Wednesday
+    // 2026-06-04 is a Thursday
     await expect(
       __vacationTestables.validateVacationCountryPolicy({
         db: db as never,
         userId: 'u-1',
         country: 'BR',
         requestType: 'VACATION',
-        dataInicio: '2026-06-03',
+        dataInicio: '2026-06-04',
         dataFim: '2026-06-12',
         partialDay: 'FULL',
       }),
-    ).rejects.toThrow('quarta-feira');
+    ).rejects.toThrow('quinta-feira');
+  });
+
+  it('Phase 2C: BR allows vacation starting on Wednesday', async () => {
+    const db = { vacation: { findMany: vi.fn().mockResolvedValue([]) } };
+
+    // 2026-06-03 is a Wednesday
+    const result = await __vacationTestables.validateVacationCountryPolicy({
+      db: db as never,
+      userId: 'u-1',
+      country: 'BR',
+      requestType: 'VACATION',
+      dataInicio: '2026-06-03',
+      dataFim: '2026-06-19',
+      partialDay: 'FULL',
+    });
+
+    expect(Array.isArray(result)).toBe(true);
   });
 
   it('Phase 2C: BR allows vacation starting on Monday', async () => {

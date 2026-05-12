@@ -44,11 +44,11 @@ export const roleMenus: Record<UserRole, MenuItem[]> = {
 };
 
 export const roleLabels: Record<UserRole, string> = {
-  colaborador: 'Colaborador',
-  manager: 'Manager',
-  coordenador: 'Coordenador',
-  admin: 'Admin',
-  convidado: 'Convidado',
+  colaborador: 'Membro',
+  manager: 'Liderança',
+  coordenador: 'Liderança',
+  admin: 'Administração',
+  convidado: 'Acesso limitado',
 };
 
 export const situacaoIrsOptions = [

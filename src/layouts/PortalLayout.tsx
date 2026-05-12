@@ -7,6 +7,7 @@ import { apiRequest, apiRequestCached, authHeaders } from '../portal/api';
 import ChatbotWidget from '../components/ChatbotWidget';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
@@ -304,7 +305,7 @@ export default function PortalLayout() {
           <nav className="portal-nav" aria-label="Menu principal">
             {personalMenu.length > 0 && (
               <div className="portal-nav__group">
-                <p className="portal-nav__group-label">Colaborador</p>
+                <p className="portal-nav__group-label">Pessoal</p>
                 {personalMenu.map((item) => (
                   <NavLink
                     key={item.id}
@@ -343,7 +344,7 @@ export default function PortalLayout() {
         <section className="portal-content">
           <header className="portal-header">
             <div className="portal-header__meta">
-              <p className="portal-breadcrumb">Portal do Colaborador</p>
+              <p className="portal-breadcrumb">Portal de Pessoas</p>
               <h2>{currentMenu?.label || 'Início'}</h2>
             </div>
 
@@ -380,6 +381,7 @@ export default function PortalLayout() {
                   <span aria-hidden="true">⚙️</span>
                 </button>
               )}
+              <LanguageSwitcher />
               <button className="topbar-link" type="button" onClick={handleLogout}>
                 Sair
               </button>

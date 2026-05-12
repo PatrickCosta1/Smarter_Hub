@@ -1,15 +1,15 @@
 export function formatRoleLabel(role: string) {
   switch (role) {
     case 'COLABORADOR':
-      return 'Colaborador';
+      return 'Membro';
     case 'MANAGER':
-      return 'Manager';
+      return 'Liderança';
     case 'COORDENADOR':
-      return 'Coordenador';
+      return 'Liderança';
     case 'ADMIN':
-      return 'Admin';
+      return 'Administração';
     case 'CONVIDADO':
-      return 'Convidado';
+      return 'Acesso limitado';
     default:
       return role;
   }
