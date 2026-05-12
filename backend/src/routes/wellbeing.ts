@@ -19,6 +19,20 @@ const wellbeingFileSchema = z.object({
   link: z.string().trim().min(1).max(800),
 });
 
+const wellbeingReportConfigSchema = z.object({
+  modalTitle: z.string().trim().max(120).default('Reportar situação'),
+  introTitle: z.string().trim().max(120).default('Canal confidencial de reporte'),
+  introText: z.string().trim().max(800).default('O reporte será notificado ao RH do país respetivo e ao t.people. Usa este canal para situações que precisem de acompanhamento formal.'),
+  subjectLabel: z.string().trim().max(80).default('Assunto'),
+  subjectPlaceholder: z.string().trim().max(140).default('Ex.: Situação de assédio verbal'),
+  descriptionLabel: z.string().trim().max(80).default('Descrição detalhada'),
+  descriptionPlaceholder: z.string().trim().max(300).default('Descreve o ocorrido com contexto, datas aproximadas e pessoas envolvidas.'),
+  preferredContactLabel: z.string().trim().max(100).default('Contacto preferencial'),
+  preferredContactPlaceholder: z.string().trim().max(160).default('Ex.: email pessoal, Teams ou telemóvel'),
+  submitLabel: z.string().trim().max(60).default('Enviar reporte'),
+  cancelLabel: z.string().trim().max(60).default('Cancelar'),
+});
+
 const wellbeingResourceSchema = z.object({
   id: z.string().trim().min(1).max(120),
   kind: z.enum(['pdf', 'form']),
@@ -26,6 +40,7 @@ const wellbeingResourceSchema = z.object({
   description: z.string().trim().max(600).default(''),
   buttonLabel: z.string().trim().max(80).default(''),
   files: z.array(wellbeingFileSchema).max(20).default([]),
+  reportConfig: wellbeingReportConfigSchema.optional(),
 });
 
 const wellbeingSectionSchema = z.object({
@@ -103,6 +118,7 @@ function buildDefaultSharedResource(key: SharedWellbeingKey): WellbeingResource 
       description: 'Canal interno para reportar situações que devam ser acompanhadas por RH e t.people.',
       buttonLabel: 'Reportar situação',
       files: [],
+      reportConfig: wellbeingReportConfigSchema.parse({}),
     };
   }
 
@@ -223,6 +239,7 @@ function buildDefaultWellbeingContent(): WellbeingContent {
             description: 'Canal interno para reportar situações que devam ser acompanhadas por RH e t.people.',
             buttonLabel: 'Reportar situação',
             files: [],
+            reportConfig: wellbeingReportConfigSchema.parse({}),
           },
           {
             id: 'pt-politica-viagens-lazer',

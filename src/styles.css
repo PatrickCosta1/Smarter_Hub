@@ -1931,6 +1931,124 @@ button {
     linear-gradient(180deg, #ffffff 0%, #f4f9ff 100%);
 }
 
+.vacations-unified-actions-card {
+  border: 1px solid #c7defe;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
+  display: grid;
+  gap: 12px;
+}
+
+.vacations-unified-actions__header h3 {
+  margin: 0;
+  color: #163f7a;
+}
+
+.vacations-unified-actions__header p {
+  margin: 4px 0 0;
+}
+
+.vacations-unified-actions__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vacations-unified-actions__item {
+  border: 1px solid #bbd4f9;
+  border-radius: 12px;
+  background: #ffffff;
+  text-align: left;
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+
+.vacations-unified-actions__item strong {
+  color: #1d4d91;
+  font-size: 0.84rem;
+}
+
+.vacations-unified-actions__item span {
+  color: #4f6f9a;
+  font-size: 0.82rem;
+}
+
+.vacations-unified-actions__item:hover:not(:disabled) {
+  border-color: #8db4ef;
+  background: #f5f9ff;
+  transform: translateY(-1px);
+}
+
+.vacations-unified-actions__item:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.vacations-action-modal {
+  width: min(1100px, 95vw);
+  max-height: 90vh;
+  border-radius: 18px;
+  border: 1px solid #c7daf5;
+  background: linear-gradient(180deg, #f7faff 0%, #edf3fe 100%);
+  box-shadow: 0 30px 80px rgba(12, 48, 103, 0.28);
+  overflow: hidden;
+}
+
+.vacations-action-modal .pending-modal__header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: linear-gradient(180deg, rgba(247, 250, 255, 0.98) 0%, rgba(241, 247, 255, 0.98) 100%);
+  border-bottom: 1px solid #d2e0f4;
+  box-shadow: 0 8px 20px rgba(36, 78, 143, 0.08);
+  backdrop-filter: blur(4px);
+}
+
+.vacations-action-modal .pending-modal__kicker {
+  color: #5678a7;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vacations-action-modal .pending-modal__header h2 {
+  color: #143f84;
+}
+
+.vacations-action-modal__section {
+  margin-top: 8px;
+  border: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(244, 249, 255, 0.88) 100%);
+  border-radius: 14px;
+  padding: 12px;
+  border: 1px solid #d6e5fb;
+}
+
+.vacations-action-modal__section .vacations-company-days-subtitle {
+  margin: 0 0 10px;
+  color: #486a98;
+}
+
+.vacations-action-modal__section .vacations-direct-form,
+.vacations-action-modal__section .vacations-direct-grid,
+.vacations-action-modal__section .vauto__form,
+.vacations-action-modal__section .vauto__guide,
+.vacations-action-modal__section .vauto__list {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(2px);
+}
+
+.vacations-action-modal .pending-modal__close {
+  border-color: #aecdF3;
+  background: linear-gradient(180deg, #e8f1ff 0%, #dbe9ff 100%);
+  color: #245391;
+}
+
+.vacations-action-modal .pending-modal__close:hover {
+  background: linear-gradient(180deg, #dbe9ff 0%, #cde1ff 100%);
+}
+
 .vacations-direct-form {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
@@ -1950,7 +2068,7 @@ button {
   padding: 14px 16px;
   border: 1px solid #d7e9ff;
   border-radius: 12px;
-  background: #f4f9ff;
+  background: linear-gradient(180deg, #f8fbff 0%, #f2f7ff 100%);
 }
 
 .vacations-direct-field--grow {
@@ -2037,6 +2155,10 @@ button {
 }
 
 @media (max-width: 980px) {
+  .vacations-unified-actions__grid {
+    grid-template-columns: 1fr;
+  }
+
   .vacations-direct-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2081,52 +2203,91 @@ button {
 }
 
 .rh-collaborator-results {
-  max-height: 248px;
+  max-height: 290px;
   overflow: auto;
-  border: 1px solid #d4e2fb;
-  border-radius: 12px;
-  background: #f8fbff;
+  border: 1px solid #cadbf8;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
   display: grid;
-  gap: 6px;
-  padding: 8px;
+  gap: 8px;
+  padding: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
 }
 
 .rh-collaborator-results p {
   margin: 0;
   color: #55729d;
-  font-size: 0.83rem;
+  font-size: 0.84rem;
+  padding: 10px;
+  border: 1px dashed #d8e6fc;
+  border-radius: 10px;
+  background: #f8fbff;
 }
 
 .rh-collaborator-result {
   width: 100%;
-  border: 1px solid #cfe1ff;
-  border-radius: 10px;
-  background: #fff;
-  padding: 8px 10px;
+  border: 1px solid #d4e3fb;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  padding: 10px 12px;
   display: grid;
-  gap: 2px;
+  gap: 4px;
   text-align: left;
+  transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .rh-collaborator-result strong {
-  color: #0e3f86;
-  font-size: 0.88rem;
+  color: #123f82;
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
 }
 
 .rh-collaborator-result span {
-  color: #4b6791;
-  font-size: 0.8rem;
+  color: #48688f;
+  font-size: 0.82rem;
 }
 
 .rh-collaborator-result small {
-  color: #6884ae;
-  font-size: 0.74rem;
+  color: #5f7ea9;
+  font-size: 0.76rem;
   font-weight: 700;
 }
 
 .rh-collaborator-result:hover {
-  border-color: #9bc0f9;
-  background: #f0f7ff;
+  border-color: #8fb8f5;
+  background: linear-gradient(180deg, #f4f9ff 0%, #edf5ff 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(43, 95, 173, 0.14);
+}
+
+.rh-collaborator-results::-webkit-scrollbar {
+  width: 10px;
+}
+
+.rh-collaborator-results::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: linear-gradient(180deg, #a8c7f3 0%, #83ace4 100%);
+  border: 2px solid #eef5ff;
+}
+
+.rh-collaborator-results::-webkit-scrollbar-track {
+  background: #eef5ff;
+  border-radius: 999px;
+}
+
+.vacations-action-modal__section .vacations-export-form__field input,
+.vacations-action-modal__section .vacations-export-form__field select {
+  min-height: 40px;
+  border-radius: 12px;
+  border-color: #b7cff1;
+  background: #ffffff;
+}
+
+.vacations-action-modal__section .vacations-export-form__field input:focus,
+.vacations-action-modal__section .vacations-export-form__field select:focus {
+  outline: none;
+  border-color: #6fa2e8;
+  box-shadow: 0 0 0 3px rgba(111, 162, 232, 0.2);
 }
 
 .rh-selected-collaborator {

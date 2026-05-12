@@ -9049,6 +9049,12 @@
   margin-left: auto;
 }
 
+.team-vac-calendar-toolbar__actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
 .team-vac-calendar-toolbar__field {
   display: grid;
   gap: 4px;
@@ -9822,6 +9828,15 @@
 
   .team-vac-calendar-toolbar__filters {
     margin-left: 0;
+    width: 100%;
+  }
+
+  .team-vac-calendar-toolbar__actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .team-vac-calendar-toolbar__actions button {
     width: 100%;
   }
 

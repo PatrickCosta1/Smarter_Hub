@@ -639,7 +639,6 @@ function formatTeamPerson(member: TeamVacationMember) {
 
 export default function VacationsPage() {
   const { profile, hasPermission, isRootAccess, isAccessTotal, refreshNotifications, currentUser } = usePortal();
-  const isTPeople = currentUser?.username === 't.people';
   const canExport = isAccessTotal || isRootAccess;
   const canBookForOthers = isAccessTotal || isRootAccess;
 
@@ -726,6 +725,9 @@ export default function VacationsPage() {
   const [assignCreditReason, setAssignCreditReason] = useState('');
   const [isLoadingAssignCandidates, setIsLoadingAssignCandidates] = useState(false);
   const [isCreditingVacationBalance, setIsCreditingVacationBalance] = useState(false);
+  const [isAssignVacationModalOpen, setIsAssignVacationModalOpen] = useState(false);
+  const [isCreditBalanceModalOpen, setIsCreditBalanceModalOpen] = useState(false);
+  const [isFixedDaysModalOpen, setIsFixedDaysModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [conflictRange, setConflictRange] = useState<ConflictRange | null>(null);
   // Calendar range selection:
@@ -900,7 +902,7 @@ export default function VacationsPage() {
 
   const canManageVacationRules = isRootAccess || hasPermission('manage_vacation_rules');
   const canViewTeamVacations = isRootAccess || isAccessTotal || hasPermission('view_team_vacations') || hasPermission('view_all_vacations');
-  const canAccessTeamVacationTab = !isTPeople && (currentUser?.role ?? '') !== 'CONVIDADO' && canViewTeamVacations;
+  const canAccessTeamVacationTab = (currentUser?.role ?? '') !== 'CONVIDADO' && canViewTeamVacations;
 
   const teamVacationYear = teamVacationsMonthCursor.getFullYear();
   const teamVacationMonthIndex = teamVacationsMonthCursor.getMonth();
@@ -1069,14 +1071,12 @@ export default function VacationsPage() {
 
   const allowedTabs = useMemo<Subtab[]>(() => {
     const tabs: Subtab[] = [];
-    if (!isTPeople) tabs.push('overview', 'calendar');
-    if (isTPeople) tabs.push('calendar');
+    tabs.push('overview', 'calendar');
     if (canAccessTeamVacationTab && teamContexts.length > 0) tabs.push('team-vacations');
-    if (canBookForOthers && !isTPeople) tabs.push('direct-assign');
-    if (canManageVacationRules) tabs.push('company-days');
+    if (canBookForOthers) tabs.push('direct-assign');
     if (canExport) tabs.push('export');
     return tabs;
-  }, [canAccessTeamVacationTab, canBookForOthers, canManageVacationRules, canExport, isTPeople, teamContexts.length]);
+  }, [canAccessTeamVacationTab, canBookForOthers, canExport, teamContexts.length]);
 
   useEffect(() => {
     if (!allowedTabs.includes(activeTab)) {
@@ -1172,22 +1172,20 @@ export default function VacationsPage() {
     const controller = new AbortController();
 
     void (async () => {
-      if (!isTPeople && !cacheRef.current.recordsLoaded) {
+      if (!cacheRef.current.recordsLoaded) {
         await loadMine(controller.signal);
         if (!controller.signal.aborted) {
           cacheRef.current.recordsLoaded = true;
         }
       }
 
-      if (!isTPeople) {
-        await loadTeamContexts(controller.signal);
-      }
+      await loadTeamContexts(controller.signal);
     })();
 
     return () => {
       controller.abort();
     };
-  }, [isTPeople]);
+  }, []);
 
   useEffect(() => {
     if (activeTab !== 'overview' || cacheRef.current.overviewLoaded) {
@@ -1224,13 +1222,13 @@ export default function VacationsPage() {
   }, [activeTab]);
 
   useEffect(() => {
-    if ((activeTab !== 'overview' && activeTab !== 'company-days') || !canManageVacationRules) {
+    if ((activeTab !== 'overview' && !isFixedDaysModalOpen) || !canManageVacationRules) {
       return;
     }
 
     const requestedYear = activeTab === 'overview' ? new Date().getFullYear() : companyExtraYear;
     void loadCompanyExtraDays(requestedYear, companyExtraScope);
-  }, [activeTab, canManageVacationRules, companyExtraYear, companyExtraScope]);
+  }, [activeTab, canManageVacationRules, companyExtraYear, companyExtraScope, isFixedDaysModalOpen]);
 
   useEffect(() => {
     const defaultScope = resolveDefaultCompanyExtraScope(profile);
@@ -1241,12 +1239,14 @@ export default function VacationsPage() {
   }, [profile.workCountry, profile.brWorkState]);
 
   useEffect(() => {
-    if (activeTab !== 'export' || !canExport) return;
+    const needsTeamsForExport = activeTab === 'export' && canExport;
+    const needsTeamsForCredit = activeTab === 'direct-assign' && canBookForOthers;
+    if (!needsTeamsForExport && !needsTeamsForCredit) return;
     void loadExportTeams();
-  }, [activeTab, canExport]);
+  }, [activeTab, canBookForOthers, canExport]);
 
   useEffect(() => {
-    if (activeTab !== 'export' || !canExport) {
+    if (activeTab !== 'direct-assign' || !canBookForOthers) {
       return;
     }
 
@@ -1257,7 +1257,7 @@ export default function VacationsPage() {
     return () => {
       window.clearTimeout(timeout);
     };
-  }, [activeTab, canExport, assignFilterTeamId, assignSearch]);
+  }, [activeTab, canBookForOthers, assignFilterTeamId, assignSearch]);
 
   useEffect(() => {
     if (activeTab !== 'export' || !canExport) {
@@ -1642,7 +1642,6 @@ export default function VacationsPage() {
       });
 
       const filtered = (data.rows ?? []).filter((item) => {
-        if (item.username === 't.people') return false;
         if (item.isRootAccess || item.hasAccessTotal) return false;
         return true;
       });
@@ -1682,8 +1681,7 @@ export default function VacationsPage() {
         headers: getAuthHeaders(),
       });
 
-      const filtered = (data.rows ?? []).filter((item) => item.username !== 't.people');
-      setExportCandidates(filtered);
+      setExportCandidates(data.rows ?? []);
     } catch (error) {
       showToast('error', error instanceof Error ? error.message : 'Falha ao carregar lista de colaboradores para exportação.');
     } finally {
@@ -1706,9 +1704,16 @@ export default function VacationsPage() {
     setExportSelectedCollaborators((prev) => prev.filter((item) => item.id !== collaboratorId));
   }
 
-  async function triggerExportWorkbook() {
-    const resolvedStart = exportResolvedStart;
-    const resolvedEnd = exportResolvedEnd;
+  async function triggerExportWorkbook(options?: {
+    year?: number;
+    startDate?: string;
+    endDate?: string;
+    teamId?: string;
+    userIds?: string[];
+    fileNameBase?: string;
+  }) {
+    const resolvedStart = options?.startDate ?? exportResolvedStart;
+    const resolvedEnd = options?.endDate ?? exportResolvedEnd;
 
     if (!resolvedStart || !resolvedEnd) {
       showToast('error', 'Define o período inicial e final da exportação.');
@@ -1722,12 +1727,14 @@ export default function VacationsPage() {
 
     try {
       setIsExporting(true);
-      const params = new URLSearchParams({ year: String(exportYear) });
+      const params = new URLSearchParams({ year: String(options?.year ?? exportYear) });
       params.set('startDate', resolvedStart);
       params.set('endDate', resolvedEnd);
-      if (exportTeamId) params.set('teamId', exportTeamId);
-      if (exportSelectedCollaborators.length > 0) {
-        params.set('userIds', exportSelectedCollaborators.map((item) => item.id).join(','));
+      const targetTeamId = options?.teamId ?? exportTeamId;
+      if (targetTeamId) params.set('teamId', targetTeamId);
+      const selectedUserIds = options?.userIds ?? exportSelectedCollaborators.map((item) => item.id);
+      if (selectedUserIds.length > 0) {
+        params.set('userIds', selectedUserIds.join(','));
       }
       const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
       const response = await fetch(`${getApiBase()}/vacations/export?${params.toString()}`, {
@@ -1743,7 +1750,8 @@ export default function VacationsPage() {
       a.href = url;
       const contentDisposition = response.headers.get('Content-Disposition') || response.headers.get('content-disposition') || '';
       const match = contentDisposition.match(/filename="?([^";]+)"?/i);
-      a.download = match?.[1] || `mapa-ferias-${resolvedStart}-a-${resolvedEnd}.xlsx`;
+      const defaultBase = options?.fileNameBase || 'mapa-ferias';
+      a.download = match?.[1] || `${defaultBase}-${resolvedStart}-a-${resolvedEnd}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (error) {
@@ -1751,6 +1759,29 @@ export default function VacationsPage() {
     } finally {
       setIsExporting(false);
     }
+  }
+
+  async function triggerTeamVacationExport() {
+    if (!selectedTeamVacationId) {
+      showToast('error', 'Seleciona uma equipa para exportar.');
+      return;
+    }
+
+    const teamNameRaw = selectedTeamVacationContext?.teamName?.trim() || 'equipa';
+    const teamNameSlug = teamNameRaw
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase() || 'equipa';
+
+    await triggerExportWorkbook({
+      year: teamVacationYear,
+      startDate: `${teamVacationYear}-01-01`,
+      endDate: `${teamVacationYear}-12-31`,
+      teamId: selectedTeamVacationId,
+      fileNameBase: `mapa-ferias-${teamNameSlug}`,
+    });
   }
 
   async function creditVacationBalance() {
@@ -1791,7 +1822,7 @@ export default function VacationsPage() {
       setAssignCreditDays('1');
       setAssignCreditReason('');
       showToast('success', 'Dias adicionais creditados no saldo de férias do colaborador.');
-      if (activeTab === 'overview' && !isTPeople) {
+      if (activeTab === 'overview') {
         void loadOverview();
       }
     } catch (error) {
@@ -1824,7 +1855,7 @@ export default function VacationsPage() {
       }
       clearApiCache('/vacations/calendar');
       clearApiCache('/vacations/overview');
-      if (activeTab === 'overview' && !isTPeople) {
+      if (activeTab === 'overview') {
         void loadOverview();
       }
       if (activeTab === 'calendar' && calendarYear === targetYear) {
@@ -2509,10 +2540,10 @@ export default function VacationsPage() {
     const today = new Date();
     const todayISO = dayISO(today.getFullYear(), today.getMonth(), today.getDate());
     const isPastDay = iso < todayISO;
-    const rangeClass = !isTPeople ? getDayRangeClass(iso) : '';
+    const rangeClass = getDayRangeClass(iso);
     const isAnchorDay = iso === selectionAnchor;
-    const isVacationWeekend = !isTPeople && draft.requestKind === 'VACATION' && isWeekendIso(iso);
-    const canClickDay = !isTPeople;
+    const isVacationWeekend = draft.requestKind === 'VACATION' && isWeekendIso(iso);
+    const canClickDay = true;
     const dayKind = getDayKind(iso);
     const partialMarker = partialVacationDays.get(iso);
     const hasHalfDayFill = (dayKind === 'approved' || dayKind === 'pending') && (partialMarker === 'AM' || partialMarker === 'PM');
@@ -2539,7 +2570,7 @@ export default function VacationsPage() {
         className={`vacations-day vacations-day--${dayKind}${rangeClass}${isAnchorDay ? ' cal-day-anchor' : ''}${isPastDay ? ' vacations-day--past' : ''}${hasHalfDayFill ? ` vacations-day--half-${(partialMarker as 'AM' | 'PM').toLowerCase()}` : ''}`}
         title={dayTitleWithPartial}
         onClick={() => canClickDay && handleDayClick(iso)}
-        onMouseEnter={() => !isTPeople && handleDayMouseEnter(iso)}
+        onMouseEnter={() => handleDayMouseEnter(iso)}
         style={halfFillStyle}
       >
         {day}
@@ -2654,7 +2685,7 @@ export default function VacationsPage() {
 
   return (
     <section className="trainings-shell vacations-shell">
-      {!isTPeople && pendingVacationRequests.length > 0 && (
+      {pendingVacationRequests.length > 0 && (
         <section className="profile-request-banner profile-request-banner--vacations" role="status" aria-live="polite">
           <div className="profile-request-banner__inner">
             <div className="profile-request-banner__content">
@@ -2675,7 +2706,7 @@ export default function VacationsPage() {
         </section>
       )}
 
-      {!isTPeople && approvedVacationsReadyForRealization.length > 0 && (
+      {approvedVacationsReadyForRealization.length > 0 && (
         <section className="profile-request-banner profile-request-banner--vacations" role="status" aria-live="polite">
           <div className="profile-request-banner__inner">
             <div className="profile-request-banner__content">
@@ -2696,7 +2727,7 @@ export default function VacationsPage() {
         </section>
       )}
 
-      {isPendingVacationDetailOpen && !isTPeople && (
+      {isPendingVacationDetailOpen && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pending-vacation-modal-title" onClick={(e) => { if (e.target === e.currentTarget) setIsPendingVacationDetailOpen(false); }}>
           <div className="pending-modal pending-modal--vacations">
             <div className="pending-modal__header">
@@ -2748,7 +2779,7 @@ export default function VacationsPage() {
         </div>
       )}
 
-      {isApprovedVacationDetailOpen && !isTPeople && (
+      {isApprovedVacationDetailOpen && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="approved-vacation-modal-title" onClick={(e) => { if (e.target === e.currentTarget) setIsApprovedVacationDetailOpen(false); }}>
           <div className="pending-modal pending-modal--vacations">
             <div className="pending-modal__header">
@@ -2859,18 +2890,15 @@ export default function VacationsPage() {
         {allowedTabs.includes('team-vacations') && (
           <button type="button" className={activeTab === 'team-vacations' ? 'is-active' : ''} onClick={() => setActiveTab('team-vacations')}>Férias da equipa</button>
         )}
-        {allowedTabs.includes('company-days') && (
-          <button type="button" className={activeTab === 'company-days' ? 'is-active' : ''} onClick={() => setActiveTab('company-days')}>Dias automáticos</button>
-        )}
         {allowedTabs.includes('export') && (
           <button type="button" className={activeTab === 'export' ? 'is-active' : ''} onClick={() => setActiveTab('export')}>Mapa de Férias</button>
         )}
         {allowedTabs.includes('direct-assign') && (
-          <button type="button" className={activeTab === 'direct-assign' ? 'is-active' : ''} onClick={() => setActiveTab('direct-assign')}>Atribuição imediata</button>
+          <button type="button" className={activeTab === 'direct-assign' ? 'is-active' : ''} onClick={() => setActiveTab('direct-assign')}>Atribuição e crédito</button>
         )}
       </nav>
 
-      {activeTab === 'overview' && !isTPeople && (
+      {activeTab === 'overview' && (
         <section className="trainings-list-card">
           <div className="trainings-list-head">
             <h3>Resumo anual</h3>
@@ -3003,18 +3031,16 @@ export default function VacationsPage() {
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--pending" />Férias Pendentes</span>
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--approved" />Férias aprovadas</span>
             <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--extra" />Dia dado pela empresa</span>
-            {!isTPeople && (
-              <span className="vacations-legend-item vacations-legend-item--hint">
-                {selectionAnchor
-                  ? `📅 ${formatShortDate(selectionAnchor)} - clica no dia de fim`
-                  : draft.dataInicio && draft.dataFim && !selectionAnchor
-                    ? `Selecionado: ${formatShortDate(draft.dataInicio)}${draft.dataInicio !== draft.dataFim ? ' → ' + formatShortDate(draft.dataFim) : ''}`
-                    : 'Clica num dia para iniciar seleção'}
-                {draft.requestKind === 'VACATION'
-                  ? ' · Férias: início/fim apenas em dias úteis.'
-                  : ' · Ausências: pode começar/terminar ao fim de semana.'}
-              </span>
-            )}
+            <span className="vacations-legend-item vacations-legend-item--hint">
+              {selectionAnchor
+                ? `📅 ${formatShortDate(selectionAnchor)} - clica no dia de fim`
+                : draft.dataInicio && draft.dataFim && !selectionAnchor
+                  ? `Selecionado: ${formatShortDate(draft.dataInicio)}${draft.dataInicio !== draft.dataFim ? ' → ' + formatShortDate(draft.dataFim) : ''}`
+                  : 'Clica num dia para iniciar seleção'}
+              {draft.requestKind === 'VACATION'
+                ? ' · Férias: início/fim apenas em dias úteis.'
+                : ' · Ausências: pode começar/terminar ao fim de semana.'}
+            </span>
           </div>
 
           {calendarError ? (
@@ -3070,7 +3096,7 @@ export default function VacationsPage() {
           )}
 
           {/* ── Floating booking bar ── */}
-          {!isTPeople && (selectionAnchor !== null || (draft.dataInicio && draft.dataFim && !selectionAnchor)) && (
+          {(selectionAnchor !== null || (draft.dataInicio && draft.dataFim && !selectionAnchor)) && (
             <div className={`cal-booking-bar${selectionAnchor !== null ? ' cal-booking-bar--picking' : ' cal-booking-bar--ready'}`} role="region" aria-label="Painel de pedido">
               {selectionAnchor !== null ? (
                 <div className="cal-booking-bar__hint">
@@ -3177,8 +3203,7 @@ export default function VacationsPage() {
             </div>
           )}
 
-          {!isTPeople && (
-            <section className="vhist" aria-label="Histórico de pedidos">
+          <section className="vhist" aria-label="Histórico de pedidos">
               <div className="vhist__header">
                 <div className="vhist__title-block">
                   <h3 className="vhist__title">Pedidos</h3>
@@ -3274,8 +3299,7 @@ export default function VacationsPage() {
                   </div>
                 </>
               )}
-            </section>
-          )}
+          </section>
         </section>
       )}
 
@@ -3312,6 +3336,21 @@ export default function VacationsPage() {
                 />
               </label>
             </div>
+
+            {canExport && (
+              <div className="team-vac-calendar-toolbar__actions">
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  isLoading={isExporting}
+                  disabled={!selectedTeamVacationId}
+                  onClick={() => void triggerTeamVacationExport()}
+                >
+                  Exportar equipa (Excel)
+                </Button>
+              </div>
+            )}
           </div>
 
           {selectedTeamVacationContext && (
@@ -3347,16 +3386,58 @@ export default function VacationsPage() {
         </section>
       )}
 
-      {activeTab === 'direct-assign' && canBookForOthers && !isTPeople && (
-        <section className="trainings-list-card vacations-direct-card">
-          <div className="trainings-list-head">
-            <div>
-              <h3>Atribuição imediata de férias / ausências</h3>
-              <p className="vacations-company-days-subtitle">Pesquisa dinâmica, seleção com um clique e submissão sem aprovação intermédia.</p>
+      {activeTab === 'direct-assign' && canBookForOthers && (
+        <>
+          <section className="trainings-list-card vacations-unified-actions-card">
+            <div className="vacations-unified-actions__header">
+              <h3>Juntar operações de gestão</h3>
+              <p className="vacations-company-days-subtitle">Escolhe uma ação para abrir o respetivo fluxo.</p>
             </div>
-          </div>
 
-          <form className="vacations-export-form vacations-direct-form" onSubmit={handleDirectAssignSubmit} noValidate>
+            <div className="vacations-unified-actions__grid">
+              <button
+                type="button"
+                className="vacations-unified-actions__item"
+                onClick={() => setIsCreditBalanceModalOpen(true)}
+              >
+                <strong>Ação</strong>
+                <span>Creditar dias de férias (saldo)</span>
+              </button>
+              <button
+                type="button"
+                className="vacations-unified-actions__item"
+                onClick={() => setIsAssignVacationModalOpen(true)}
+              >
+                <strong>Quem?</strong>
+                <span>Atribuir férias/ausências a colaborador</span>
+              </button>
+              <button
+                type="button"
+                className="vacations-unified-actions__item"
+                onClick={() => setIsFixedDaysModalOpen(true)}
+                disabled={!canManageVacationRules}
+              >
+                <strong>Quanto/Quando?</strong>
+                <span>Adicionar dias fixos automáticos</span>
+              </button>
+            </div>
+
+          </section>
+
+          {isAssignVacationModalOpen && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="assign-vacation-modal-title" onClick={(e) => { if (e.target === e.currentTarget) setIsAssignVacationModalOpen(false); }}>
+          <div className="pending-modal pending-modal--vacations vacations-action-modal">
+            <div className="pending-modal__header">
+              <div>
+                <p className="pending-modal__kicker">Ação 1</p>
+                <h2 id="assign-vacation-modal-title">Atribuição imediata de férias / ausências</h2>
+              </div>
+              <button type="button" className="pending-modal__close" onClick={() => setIsAssignVacationModalOpen(false)} aria-label="Fechar">×</button>
+            </div>
+          <section className="vacations-direct-card vacations-action-modal__section">
+            <p className="vacations-company-days-subtitle">Pesquisa dinâmica, seleção com um clique e submissão sem aprovação intermédia.</p>
+
+            <form className="vacations-export-form vacations-direct-form" onSubmit={handleDirectAssignSubmit} noValidate>
             <div className="vacations-direct-picker vacations-direct-field--full">
               <label className="vacations-export-form__field vacations-export-collaborators__search">
                 <span>Colaborador</span>
@@ -3452,177 +3533,297 @@ export default function VacationsPage() {
               <small className="cal-booking-bar__err">{directAssignErrors.dataInicio || directAssignErrors.dataFim}</small>
             )}
 
-            <div className="vacations-direct-action-row">
-              <Button type="submit" variant="primary" isLoading={isSubmitting}>Registar marcação direta</Button>
-            </div>
-          </form>
-        </section>
-      )}
-
-      {activeTab === 'company-days' && canManageVacationRules && (
-        <section className="vauto trainings-list-card">
-          <div className="vauto__header">
-            <div>
-              <h3 className="vauto__title">Dias automáticos</h3>
-              <p className="vauto__sub">Define dias por ano e abrangência regional (todos, país ou estado BR)</p>
-            </div>
-            <div className="vauto__header-right">
-              <div className="vauto__year-nav" aria-label="Ano">
-                <button type="button" className="vauto__year-btn" onClick={() => { setCompanyExtraYear((y) => y - 1); }} aria-label="Ano anterior">‹</button>
-                <span className="vauto__year-label">{companyExtraYear}</span>
-                <button type="button" className="vauto__year-btn" onClick={() => { setCompanyExtraYear((y) => y + 1); }} aria-label="Próximo ano">›</button>
+              <div className="vacations-direct-action-row">
+                <Button type="submit" variant="primary" isLoading={isSubmitting}>Registar marcação direta</Button>
               </div>
-
-            </div>
+            </form>
+          </section>
           </div>
-
-          <div className="vauto__guide">
-            <div className="vauto__guide-card">
-              <strong>Como usar</strong>
-              <span>1. Escolhe o ano.</span>
-              <span>2. Define a abrangência: Todos, Portugal, Brasil ou um estado específico.</span>
-              <span>3. Seleciona a data e escreve a observação do motivo.</span>
-              <span>4. Adiciona o dia. Se a data já passou este ano, o sistema só deixa aplicar ao próximo.</span>
-            </div>
-            <div className="vauto__guide-card vauto__guide-card--accent">
-              <strong>Configuração atual</strong>
-              <span><b>Ano:</b> {companyExtraYear}</span>
-              <span><b>Abrangência:</b> {companyExtraScopeSummary}</span>
-
-              {isRefreshingCompanyExtraDays && <span className="vauto__refresh">A atualizar lista sem interromper o ecrã…</span>}
-            </div>
           </div>
-
-          {isLoadingCompanyExtraDays && !hasLoadedCompanyExtraDays ? (
-            <div className="vauto__loading">A carregar…</div>
-          ) : (
-            <>
-              <div className="vauto__form">
-                <label className="vauto__field">
-                  <span>País / Abrangência</span>
-                  <select
-                    value={companyExtraScopeCountry}
-                    onChange={(e) => {
-                      const country = e.target.value as 'ALL' | 'PT' | 'BR';
-                      const nextState = country === 'BR' ? companyExtraScopeBrState : 'ALL';
-                      setCompanyExtraScopeCountry(country);
-                      setCompanyExtraScopeBrState(nextState);
-                      setCompanyExtraScope(mapCountryAndStateToScope(country, nextState));
-                    }}
-                  >
-                    <option value="ALL">Todos</option>
-                    <option value="PT">Portugal</option>
-                    <option value="BR">Brasil</option>
-                  </select>
-                </label>
-                {companyExtraScopeCountry === 'BR' && (
-                  <label className="vauto__field">
-                    <span>Estado (Brasil)</span>
-                    <select
-                      value={companyExtraScopeBrState}
-                      onChange={(e) => {
-                        const state = e.target.value as 'ALL' | 'SP' | 'RS';
-                        setCompanyExtraScopeBrState(state);
-                        setCompanyExtraScope(mapCountryAndStateToScope('BR', state));
-                      }}
-                    >
-                      <option value="ALL">Todos os estados</option>
-                      <option value="SP">São Paulo</option>
-                      <option value="RS">Rio Grande do Sul</option>
-                    </select>
-                  </label>
-                )}
-                <label className="vauto__field">
-                  <span>Mês</span>
-                  <select value={companyExtraDayMonth} onChange={(e) => setCompanyExtraDayMonth(e.target.value)}>
-                    <option value="01">Janeiro</option>
-                    <option value="02">Fevereiro</option>
-                    <option value="03">Março</option>
-                    <option value="04">Abril</option>
-                    <option value="05">Maio</option>
-                    <option value="06">Junho</option>
-                    <option value="07">Julho</option>
-                    <option value="08">Agosto</option>
-                    <option value="09">Setembro</option>
-                    <option value="10">Outubro</option>
-                    <option value="11">Novembro</option>
-                    <option value="12">Dezembro</option>
-                  </select>
-                </label>
-                <label className="vauto__field vauto__field--sm">
-                  <span>Dia</span>
-                  <select value={companyExtraDayDay} onChange={(e) => setCompanyExtraDayDay(e.target.value)}>
-                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                      <option key={d} value={String(d).padStart(2, '0')}>{d}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="vauto__field vauto__field--grow">
-                  <span>Observação</span>
-                  <input
-                    type="text"
-                    value={companyExtraDayLabel}
-                    onChange={(e) => setCompanyExtraDayLabel(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addCompanyExtraDay(); } }}
-                    placeholder="Ex.: Encerramento de Natal"
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="vauto__add-btn"
-                  disabled={isSavingCompanyExtraDays}
-                  onClick={() => void addCompanyExtraDay()}
-                >
-                  {isSavingCompanyExtraDays ? '…' : '+ Adicionar'}
-                </button>
-              </div>
-
-              {companyExtraDaysError && (
-                <div className="vauto__error">{companyExtraDaysError}</div>
-              )}
-
-              {companyExtraDays.length === 0 ? (
-                <div className="vauto__empty">
-                  <p>Nenhum dia configurado para {companyExtraYear} nesta abrangência.</p>
-                  <span>Usa o formulário acima para adicionar o primeiro.</span>
-                </div>
-              ) : (
-                <table className="vauto__list">
-                  <thead>
-                    <tr>
-                      <th>Data</th>
-                      <th>Descrição</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {companyExtraDays.map((item) => {
-                      const [mm, dd] = item.date.split('-');
-                      const monthName = MONTHS[parseInt(mm, 10) - 1] || mm;
-                      return (
-                        <tr key={item.date}>
-                          <td className="vauto__list-date">{dd} {monthName}</td>
-                          <td className="vauto__list-label">{item.label}</td>
-                          <td className="vauto__list-action">
-                            <button
-                              type="button"
-                              className="vauto__remove-btn"
-                              disabled={isSavingCompanyExtraDays}
-                              onClick={() => void removeCompanyExtraDay(item.date)}
-                              aria-label={`Remover ${item.label}`}
-                            >
-                              Remover
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </>
           )}
-        </section>
+
+          {isCreditBalanceModalOpen && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="credit-balance-modal-title" onClick={(e) => { if (e.target === e.currentTarget) setIsCreditBalanceModalOpen(false); }}>
+          <div className="pending-modal pending-modal--vacations vacations-action-modal">
+            <div className="pending-modal__header">
+              <div>
+                <p className="pending-modal__kicker">Ação 2</p>
+                <h2 id="credit-balance-modal-title">Crédito de saldo de férias</h2>
+              </div>
+              <button type="button" className="pending-modal__close" onClick={() => setIsCreditBalanceModalOpen(false)} aria-label="Fechar">×</button>
+            </div>
+          <section className="vacations-direct-card vacations-action-modal__section">
+            <p className="vacations-company-days-subtitle">Creditar dias adicionais no saldo anual de colaboradores elegíveis, com motivo obrigatório.</p>
+
+            <div className="vacations-direct-grid">
+              <label className="vacations-export-form__field">
+                <span>Equipa</span>
+                <select value={assignFilterTeamId} onChange={(e) => setAssignFilterTeamId(e.target.value)}>
+                  <option value="">Todas as equipas</option>
+                  {exportTeams.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="vacations-export-form__field vacations-direct-field--grow">
+                <span>Pesquisar colaborador</span>
+                <input
+                  type="text"
+                  value={assignSearch}
+                  onChange={(e) => setAssignSearch(e.target.value)}
+                  placeholder="Escreve nome, username ou email..."
+                />
+              </label>
+
+              <div className="vacations-direct-field--full rh-collaborator-picker">
+                <span>Resultados</span>
+                <div className="rh-collaborator-results">
+                  {isLoadingAssignCandidates ? (
+                    <p>A carregar colaboradores...</p>
+                  ) : assignCandidates.length === 0 ? (
+                    <p>Sem colaboradores elegíveis para crédito de saldo com os filtros atuais.</p>
+                  ) : (
+                    assignCandidates.map((item) => {
+                      const isSelected = item.id === assignSelectedUserId;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          className="rh-collaborator-result"
+                          onClick={() => setAssignSelectedUserId(item.id)}
+                          style={isSelected ? { borderColor: '#6da5f1', background: '#eef5ff' } : undefined}
+                        >
+                          <strong>{item.profile?.nomeAbreviado || item.profile?.nomeCompleto || item.username}</strong>
+                          <span>{item.username}</span>
+                          <small>
+                            {item.team?.name ? `${item.team.name} • ` : ''}
+                            {item.profile?.nomeCompleto || 'Sem nome completo'}
+                          </small>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {selectedAssignCandidate && (
+                <div className="vacations-direct-field--full rh-selected-collaborator">
+                  <strong>Selecionado: {selectedAssignCandidate.profile?.nomeAbreviado || selectedAssignCandidate.profile?.nomeCompleto || selectedAssignCandidate.username}</strong>
+                  <span>
+                    {selectedAssignCandidate.username}
+                    {selectedAssignCandidate.team?.name ? ` • ${selectedAssignCandidate.team.name}` : ''}
+                  </span>
+                </div>
+              )}
+
+              <label className="vacations-export-form__field">
+                <span>Dias a creditar</span>
+                <input type="number" min={1} step={1} value={assignCreditDays} onChange={(e) => setAssignCreditDays(e.target.value)} />
+              </label>
+
+              <label className="vacations-export-form__field">
+                <span>Ano de referência</span>
+                <input type="number" min={2000} max={2100} step={1} value={assignCreditYear} onChange={(e) => setAssignCreditYear(e.target.value)} />
+              </label>
+
+              <label className="vacations-export-form__field vacations-direct-field--full">
+                <span>Motivo *</span>
+                <input
+                  type="text"
+                  value={assignCreditReason}
+                  onChange={(e) => setAssignCreditReason(e.target.value)}
+                  placeholder="Ex.: Crédito extraordinário aprovado pela direção"
+                />
+              </label>
+
+              <div className="vacations-direct-action-row">
+                <Button type="button" variant="primary" isLoading={isCreditingVacationBalance} onClick={() => void creditVacationBalance()}>
+                  Creditar dias no saldo
+                </Button>
+              </div>
+            </div>
+          </section>
+          </div>
+          </div>
+          )}
+
+          {isFixedDaysModalOpen && canManageVacationRules && (
+            <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="fixed-days-modal-title" onClick={(e) => { if (e.target === e.currentTarget) setIsFixedDaysModalOpen(false); }}>
+            <div className="pending-modal pending-modal--vacations vacations-action-modal">
+              <div className="pending-modal__header">
+                <div>
+                  <p className="pending-modal__kicker">Ação 3</p>
+                  <h2 id="fixed-days-modal-title">Dias automáticos</h2>
+                </div>
+                <button type="button" className="pending-modal__close" onClick={() => setIsFixedDaysModalOpen(false)} aria-label="Fechar">×</button>
+              </div>
+            <section className="vauto vacations-action-modal__section">
+              <div className="vauto__header">
+                <div>
+                  <p className="vauto__sub">Define dias por ano e abrangência regional (todos, país ou estado BR)</p>
+                </div>
+                <div className="vauto__header-right">
+                  <div className="vauto__year-nav" aria-label="Ano">
+                    <button type="button" className="vauto__year-btn" onClick={() => { setCompanyExtraYear((y) => y - 1); }} aria-label="Ano anterior">‹</button>
+                    <span className="vauto__year-label">{companyExtraYear}</span>
+                    <button type="button" className="vauto__year-btn" onClick={() => { setCompanyExtraYear((y) => y + 1); }} aria-label="Próximo ano">›</button>
+                  </div>
+
+                </div>
+              </div>
+
+              <div className="vauto__guide">
+                <div className="vauto__guide-card">
+                  <strong>Como usar</strong>
+                  <span>1. Escolhe o ano.</span>
+                  <span>2. Define a abrangência: Todos, Portugal, Brasil ou um estado específico.</span>
+                  <span>3. Seleciona a data e escreve a observação do motivo.</span>
+                  <span>4. Adiciona o dia. Se a data já passou este ano, o sistema só deixa aplicar ao próximo.</span>
+                </div>
+                <div className="vauto__guide-card vauto__guide-card--accent">
+                  <strong>Configuração atual</strong>
+                  <span><b>Ano:</b> {companyExtraYear}</span>
+                  <span><b>Abrangência:</b> {companyExtraScopeSummary}</span>
+
+                  {isRefreshingCompanyExtraDays && <span className="vauto__refresh">A atualizar lista sem interromper o ecrã…</span>}
+                </div>
+              </div>
+
+              {isLoadingCompanyExtraDays && !hasLoadedCompanyExtraDays ? (
+                <div className="vauto__loading">A carregar…</div>
+              ) : (
+                <>
+                  <div className="vauto__form">
+                    <label className="vauto__field">
+                      <span>País / Abrangência</span>
+                      <select
+                        value={companyExtraScopeCountry}
+                        onChange={(e) => {
+                          const country = e.target.value as 'ALL' | 'PT' | 'BR';
+                          const nextState = country === 'BR' ? companyExtraScopeBrState : 'ALL';
+                          setCompanyExtraScopeCountry(country);
+                          setCompanyExtraScopeBrState(nextState);
+                          setCompanyExtraScope(mapCountryAndStateToScope(country, nextState));
+                        }}
+                      >
+                        <option value="ALL">Todos</option>
+                        <option value="PT">Portugal</option>
+                        <option value="BR">Brasil</option>
+                      </select>
+                    </label>
+                    {companyExtraScopeCountry === 'BR' && (
+                      <label className="vauto__field">
+                        <span>Estado (Brasil)</span>
+                        <select
+                          value={companyExtraScopeBrState}
+                          onChange={(e) => {
+                            const state = e.target.value as 'ALL' | 'SP' | 'RS';
+                            setCompanyExtraScopeBrState(state);
+                            setCompanyExtraScope(mapCountryAndStateToScope('BR', state));
+                          }}
+                        >
+                          <option value="ALL">Todos os estados</option>
+                          <option value="SP">São Paulo</option>
+                          <option value="RS">Rio Grande do Sul</option>
+                        </select>
+                      </label>
+                    )}
+                    <label className="vauto__field">
+                      <span>Mês</span>
+                      <select value={companyExtraDayMonth} onChange={(e) => setCompanyExtraDayMonth(e.target.value)}>
+                        <option value="01">Janeiro</option>
+                        <option value="02">Fevereiro</option>
+                        <option value="03">Março</option>
+                        <option value="04">Abril</option>
+                        <option value="05">Maio</option>
+                        <option value="06">Junho</option>
+                        <option value="07">Julho</option>
+                        <option value="08">Agosto</option>
+                        <option value="09">Setembro</option>
+                        <option value="10">Outubro</option>
+                        <option value="11">Novembro</option>
+                        <option value="12">Dezembro</option>
+                      </select>
+                    </label>
+                    <label className="vauto__field vauto__field--sm">
+                      <span>Dia</span>
+                      <select value={companyExtraDayDay} onChange={(e) => setCompanyExtraDayDay(e.target.value)}>
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                          <option key={d} value={String(d).padStart(2, '0')}>{d}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="vauto__field vauto__field--grow">
+                      <span>Observação</span>
+                      <input
+                        type="text"
+                        value={companyExtraDayLabel}
+                        onChange={(e) => setCompanyExtraDayLabel(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void addCompanyExtraDay(); } }}
+                        placeholder="Ex.: Encerramento de Natal"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="vauto__add-btn"
+                      disabled={isSavingCompanyExtraDays}
+                      onClick={() => void addCompanyExtraDay()}
+                    >
+                      {isSavingCompanyExtraDays ? '…' : '+ Adicionar'}
+                    </button>
+                  </div>
+
+                  {companyExtraDaysError && (
+                    <div className="vauto__error">{companyExtraDaysError}</div>
+                  )}
+
+                  {companyExtraDays.length === 0 ? (
+                    <div className="vauto__empty">
+                      <p>Nenhum dia configurado para {companyExtraYear} nesta abrangência.</p>
+                      <span>Usa o formulário acima para adicionar o primeiro.</span>
+                    </div>
+                  ) : (
+                    <table className="vauto__list">
+                      <thead>
+                        <tr>
+                          <th>Data</th>
+                          <th>Descrição</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {companyExtraDays.map((item) => {
+                          const [mm, dd] = item.date.split('-');
+                          const monthName = MONTHS[parseInt(mm, 10) - 1] || mm;
+                          return (
+                            <tr key={item.date}>
+                              <td className="vauto__list-date">{dd} {monthName}</td>
+                              <td className="vauto__list-label">{item.label}</td>
+                              <td className="vauto__list-action">
+                                <button
+                                  type="button"
+                                  className="vauto__remove-btn"
+                                  disabled={isSavingCompanyExtraDays}
+                                  onClick={() => void removeCompanyExtraDay(item.date)}
+                                  aria-label={`Remover ${item.label}`}
+                                >
+                                  Remover
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </>
+              )}
+            </section>
+            </div>
+            </div>
+          )}
+        </>
       )}
 
       {activeTab === 'export' && canExport && (
@@ -3847,103 +4048,6 @@ export default function VacationsPage() {
             </div>
           </section>
 
-          <section className="trainings-list-card vacations-direct-card">
-            <div className="trainings-list-head">
-              <div>
-                <h3>Crédito de Saldo de Férias</h3>
-                <p className="vacations-company-days-subtitle">Acesso total pode creditar dias adicionais no saldo anual de colaboradores elegíveis, com motivo obrigatório.</p>
-              </div>
-            </div>
-
-            <div className="vacations-direct-grid">
-              <label className="vacations-export-form__field">
-                <span>Equipa</span>
-                <select value={assignFilterTeamId} onChange={(e) => setAssignFilterTeamId(e.target.value)}>
-                  <option value="">Todas as equipas</option>
-                  {exportTeams.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="vacations-export-form__field vacations-direct-field--grow">
-                <span>Pesquisar colaborador</span>
-                <input
-                  type="text"
-                  value={assignSearch}
-                  onChange={(e) => setAssignSearch(e.target.value)}
-                  placeholder="Escreve nome, username ou email..."
-                />
-              </label>
-
-              <div className="vacations-direct-field--full rh-collaborator-picker">
-                <span>Resultados</span>
-                <div className="rh-collaborator-results">
-                  {isLoadingAssignCandidates ? (
-                    <p>A carregar colaboradores...</p>
-                  ) : assignCandidates.length === 0 ? (
-                    <p>Sem colaboradores elegíveis para crédito de saldo com os filtros atuais.</p>
-                  ) : (
-                    assignCandidates.map((item) => {
-                      const isSelected = item.id === assignSelectedUserId;
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          className="rh-collaborator-result"
-                          onClick={() => setAssignSelectedUserId(item.id)}
-                          style={isSelected ? { borderColor: '#6da5f1', background: '#eef5ff' } : undefined}
-                        >
-                          <strong>{item.profile?.nomeAbreviado || item.profile?.nomeCompleto || item.username}</strong>
-                          <span>{item.username}</span>
-                          <small>
-                            {item.team?.name ? `${item.team.name} • ` : ''}
-                            {item.profile?.nomeCompleto || 'Sem nome completo'}
-                          </small>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              {selectedAssignCandidate && (
-                <div className="vacations-direct-field--full rh-selected-collaborator">
-                  <strong>Selecionado: {selectedAssignCandidate.profile?.nomeAbreviado || selectedAssignCandidate.profile?.nomeCompleto || selectedAssignCandidate.username}</strong>
-                  <span>
-                    {selectedAssignCandidate.username}
-                    {selectedAssignCandidate.team?.name ? ` • ${selectedAssignCandidate.team.name}` : ''}
-                  </span>
-                </div>
-              )}
-
-              <label className="vacations-export-form__field">
-                <span>Dias a creditar</span>
-                <input type="number" min={1} step={1} value={assignCreditDays} onChange={(e) => setAssignCreditDays(e.target.value)} />
-              </label>
-
-              <label className="vacations-export-form__field">
-                <span>Ano de referência</span>
-                <input type="number" min={2000} max={2100} step={1} value={assignCreditYear} onChange={(e) => setAssignCreditYear(e.target.value)} />
-              </label>
-
-              <label className="vacations-export-form__field vacations-direct-field--full">
-                <span>Motivo *</span>
-                <input
-                  type="text"
-                  value={assignCreditReason}
-                  onChange={(e) => setAssignCreditReason(e.target.value)}
-                  placeholder="Ex.: Crédito extraordinário aprovado pela direção"
-                />
-              </label>
-
-              <div className="vacations-direct-action-row">
-                <Button type="button" variant="primary" isLoading={isCreditingVacationBalance} onClick={() => void creditVacationBalance()}>
-                  Creditar dias no saldo
-                </Button>
-              </div>
-            </div>
-          </section>
         </>
       )}
 
