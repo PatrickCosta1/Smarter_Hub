@@ -159,7 +159,7 @@ function buildCareerPlanView(content: CareerPlanContent, cargo: string, funcao: 
     return roleMatch || keywordMatch;
   }) ?? content.families[0];
 
-  const fallbackLevel = levels[0] || 'Nivel';
+  const fallbackLevel = levels[0] || 'Nível';
   const resolvedCurrentLevel = levels.find((level) => {
     const normalizedLevel = normalizeText(level);
     return normalizedCargo === normalizedLevel || normalizedCargo.includes(normalizedLevel) || normalizedLevel.includes(normalizedCargo);
@@ -233,28 +233,28 @@ function moveAt<T>(items: T[], from: number, direction: -1 | 1) {
 }
 
 const SMART_DEFAULT_SKILLS = [
-  'Inovacao e adaptacao',
-  'Colaboracao',
+  'Inovação e adaptação',
+  'Colaboração',
   'Adaptabilidade',
-  'Etica profissional',
-  'Desenvolvimento continuo',
+  'Ética profissional',
+  'Desenvolvimento contínuo',
 ];
 
 const SMART_DEFAULT_FOCUS = [
-  'Avaliacao de desempenho anual (merito)',
+  'Avaliação de desempenho anual (mérito)',
   'Potencial',
   'Oportunidade interna',
 ];
 
 const SMART_LEVEL_TITLES: Record<string, string> = {
   Trainee: 'Entrada e aprendizagem estruturada',
-  Junior: 'Execucao operacional com supervisao proxima',
-  Associate: 'Execucao com autonomia e foco em resultados',
-  Senior: 'Dominio tecnico e coordenacao de pequena equipa',
-  Lead: 'Coordenacao operacional e gestao de equipa direta',
-  Principal: 'Gestao ampla da unidade e orcamento',
-  Director: 'Direcao de area com visao transversal',
-  'C Level': 'Direcao estrategica do pelouro',
+  Junior: 'Execução operacional com supervisão próxima',
+  Associate: 'Execução com autonomia e foco em resultados',
+  Senior: 'Domínio técnico e coordenação de pequena equipa',
+  Lead: 'Coordenação operacional e gestão de equipa direta',
+  Principal: 'Gestão ampla da unidade e orçamento',
+  Director: 'Direção de área com visão transversal',
+  'C Level': 'Direção estratégica do pelouro',
 };
 
 function splitWords(value: string) {
@@ -276,17 +276,17 @@ function buildSmartKeywords(label: string, roles: string[]) {
 
 function buildSmartExpectations(level: string, familyLabel: string) {
   return [
-    `Atua no nivel ${level} com foco na qualidade de entrega em ${familyLabel}.`,
-    'Alinha prioridades com objetivos da area e do negocio.',
-    'Mantem previsibilidade, colaboracao e melhoria continua.',
+    `Atua no nível ${level} com foco na qualidade de entrega em ${familyLabel}.`,
+    'Alinha prioridades com objetivos da área e do negócio.',
+    'Mantém previsibilidade, colaboração e melhoria contínua.',
   ];
 }
 
 function buildSmartSignals(level: string) {
   return [
-    `Demonstra maturidade consistente para o nivel ${level}.`,
+    `Demonstra maturidade consistente para o nível ${level}.`,
     'Partilha conhecimento e influencia positivamente a equipa.',
-    'Mostra autonomia e criterio na tomada de decisao.',
+    'Mostra autonomia e critério na tomada de decisão.',
   ];
 }
 
@@ -331,7 +331,7 @@ export default function CareerPlanPage() {
           return;
         }
 
-        setLoadError(error instanceof Error ? error.message : 'Falha ao carregar configuracao dinamica do plano de carreira.');
+        setLoadError(error instanceof Error ? error.message : 'Falha ao carregar configuração dinâmica do plano de carreira.');
       } finally {
         if (isMounted) {
           setIsLoadingContent(false);
@@ -531,10 +531,10 @@ export default function CareerPlanPage() {
       return;
     }
 
-    let name = 'Novo nivel';
+    let name = 'Novo nível';
     let suffix = 2;
     while (draftContent.levels.some((level) => level.label === name)) {
-      name = `Novo nivel ${suffix}`;
+      name = `Novo nível ${suffix}`;
       suffix += 1;
     }
 
@@ -702,13 +702,13 @@ export default function CareerPlanPage() {
       <header className="cp-hero">
         <div className="cp-hero__left">
           <span className="cp-eyebrow">{plan.family.label}</span>
-          <h1 className="cp-hero__name">{profile.cargo || 'Nivel por definir'}</h1>
+          <h1 className="cp-hero__name">{profile.cargo || 'Nível por definir'}</h1>
           <p className="cp-hero__sub">{profile.funcao} · {plan.currentStep.title}</p>
-          <div className="cp-progress-track" aria-label="Progressao na hierarquia">
+          <div className="cp-progress-track" aria-label="Progressão na hierarquia">
             <div className="cp-progress-bar" style={{ width: `${Math.round(((currentLevelIndex + 1) / Math.max(levels.length, 1)) * 100)}%` }} />
           </div>
           <p className="cp-progress-label">
-            Nivel {currentLevelIndex + 1} de {levels.length} na hierarquia
+            Nível {currentLevelIndex + 1} de {levels.length} na hierarquia
             {currentLevelIndex + 1 < levels.length && (
               <> · Proximo: <strong>{levels[currentLevelIndex + 1]}</strong></>
             )}
@@ -728,12 +728,12 @@ export default function CareerPlanPage() {
             <strong>{plan.family.label}</strong>
           </div>
           <div className="cp-stat">
-            <span>Funcoes da area</span>
+            <span>Funções da área</span>
             <strong>{plan.family.roles.length > 0 ? plan.family.roles.join(' · ') : '-'}</strong>
           </div>
           <div className="cp-stat">
             <span>Progressao para</span>
-            <strong>{plan.family.nextStepFocus[0] ?? 'Avaliacao de desempenho anual'}</strong>
+            <strong>{plan.family.nextStepFocus[0] ?? 'Avaliação de desempenho anual'}</strong>
           </div>
           {careerPdfUrl && (
             <a className="cp-pdf-link" href={careerPdfUrl} target="_blank" rel="noreferrer">
@@ -758,11 +758,11 @@ export default function CareerPlanPage() {
         </section>
       )}
 
-      <nav className="cp-tabs" aria-label="Secoes">
+      <nav className="cp-tabs" aria-label="Seções">
         {([
           ['nivel', 'O meu nivel'],
           ['roadmap', 'Roadmap de niveis'],
-          ['avaliacao', 'Processo de avaliacao'],
+          ['avaliacao', 'Processo de avaliação'],
         ] as [CareerTab, string][]).map(([id, label]) => (
           <button
             key={id}
@@ -779,7 +779,7 @@ export default function CareerPlanPage() {
         <div className="cp-body">
           <div className="cp-two-col">
             <section className="cp-card">
-              <h2 className="cp-card__title">O que e esperado no meu nivel</h2>
+              <h2 className="cp-card__title">O que é esperado no meu nível</h2>
               <p className="cp-card__desc">{plan.family.summary}</p>
               <ul className="cp-list">
                 {plan.currentStep.expectations.map((item) => (
@@ -789,14 +789,14 @@ export default function CareerPlanPage() {
             </section>
 
             <section className="cp-card">
-              <h2 className="cp-card__title">Sinais de prontidao para o proximo passo</h2>
+              <h2 className="cp-card__title">Sinais de prontidão para o próximo passo</h2>
               <ul className="cp-list cp-list--signals">
                 {plan.currentStep.signals.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>
               <div className="cp-divider" />
-              <h3 className="cp-card__sub">Competencias comportamentais esperadas</h3>
+              <h3 className="cp-card__sub">Competências comportamentais esperadas</h3>
               <ul className="cp-list cp-list--plain">
                 {plan.family.expectedBehaviors.map((item) => (
                   <li key={item}>{item}</li>
@@ -806,7 +806,7 @@ export default function CareerPlanPage() {
           </div>
 
           <section className="cp-card cp-card--accent">
-            <h2 className="cp-card__title">Criterios de progressao de carreira</h2>
+            <h2 className="cp-card__title">Critérios de progressão de carreira</h2>
             <div className="cp-three-col">
               {plan.family.nextStepFocus.map((item, index) => (
                 <div key={item} className="cp-criterion">
@@ -815,11 +815,11 @@ export default function CareerPlanPage() {
                 </div>
               ))}
             </div>
-            <p className="cp-footnote">A progressao e sempre baseada em merito, potencial e oportunidade interna.</p>
+            <p className="cp-footnote">A progressão é sempre baseada em mérito, potencial e oportunidade interna.</p>
           </section>
 
           <section className="cp-card">
-            <h2 className="cp-card__title">Competencias-chave da tua area</h2>
+            <h2 className="cp-card__title">Competências-chave da tua área</h2>
             <div className="cp-tags">
               {plan.family.coreSkills.map((item) => (
                 <span key={item} className="cp-tag">{item}</span>
@@ -859,7 +859,7 @@ export default function CareerPlanPage() {
                   <h2 className="cp-card__title">{activeStep.level}</h2>
                   <span className="cp-detail-sub">{activeStep.title}</span>
                   {activeStep.level === plan.currentStep.level && (
-                    <span className="cp-badge cp-badge--current">Nivel atual</span>
+                    <span className="cp-badge cp-badge--current">Nível atual</span>
                   )}
                 </div>
                 <div className="cp-two-col cp-two-col--flush">
@@ -878,7 +878,7 @@ export default function CareerPlanPage() {
                 </div>
               </>
             ) : (
-              <p className="cp-empty">Seleciona um nivel para ver os detalhes.</p>
+              <p className="cp-empty">Seleciona um nível para ver os detalhes.</p>
             )}
           </section>
         </div>
@@ -888,7 +888,7 @@ export default function CareerPlanPage() {
         <div className="cp-body">
           <section className="cp-card">
             <h2 className="cp-card__title">Como funciona o processo de avaliacao</h2>
-            <p className="cp-card__desc">Dois momentos distintos e complementares, alinhados com o template de avaliacao.</p>
+            <p className="cp-card__desc">Dois momentos distintos e complementares, alinhados com o template de avaliação.</p>
             <div className="cp-stages">
               {plan.evaluationStages.map((stage, index) => (
                 <div key={stage.stage} className="cp-stage">
@@ -905,15 +905,15 @@ export default function CareerPlanPage() {
           </section>
 
           <section className="cp-card">
-            <h2 className="cp-card__title">Secoes do template oficial</h2>
-            <p className="cp-card__desc">Cada secao tem um responsavel definido e orientacoes especificas.</p>
+            <h2 className="cp-card__title">Seções do template oficial</h2>
+            <p className="cp-card__desc">Cada seção tem um responsável definido e orientações específicas.</p>
             <div className="cp-sections-grid">
               {plan.evaluationSections.map((section, index) => (
                 <div key={`${section.title}-${index}`} className="cp-section-item">
                   <div className="cp-section-item__num">{index + 1}</div>
                   <div>
-                    <p className="cp-section-item__title">{section.title.replace(/^Secao \d+\s[-–]\s/, '')}</p>
-                    <p className="cp-section-item__owner">Responsavel: {section.responsible}</p>
+                    <p className="cp-section-item__title">{section.title.replace(/^Seção \d+\s[-–]\s/, '')}</p>
+                    <p className="cp-section-item__owner">Responsável: {section.responsible}</p>
                     <ul className="cp-list cp-list--plain">
                       {section.instructions.map((item) => <li key={item}>{item}</li>)}
                     </ul>
@@ -958,9 +958,9 @@ export default function CareerPlanPage() {
           <div className="cp-editor-modal">
             <div className="cp-editor-tabs">
               {([
-                ['familias', 'Familias e detalhes'],
+                ['familias', 'Famílias e detalhes'],
                 ['niveis', 'Niveis'],
-                ['avaliacao', 'Avaliacao'],
+                ['avaliacao', 'Avaliação'],
               ] as [EditorTab, string][]).map(([id, label]) => (
                 <button
                   key={id}
@@ -1018,13 +1018,13 @@ export default function CareerPlanPage() {
                         </button>
                       ))}
                     </div>
-                    <button type="button" className="cp-btn-primary" onClick={smartFillSelectedFamily}>Auto-preencher familia</button>
+                    <button type="button" className="cp-btn-primary" onClick={smartFillSelectedFamily}>Auto-preencher família</button>
                   </div>
 
                   {familyEditorSection === 'geral' && (
                     <div className="cp-editor-panel">
                       <label className="cp-editor-field">
-                        <span>Nome da familia</span>
+                        <span>Nome da família</span>
                         <input
                           value={selectedFamily.label}
                           onChange={(event) => updateSelectedFamily((family) => ({ ...family, label: event.target.value }))}
@@ -1040,10 +1040,10 @@ export default function CareerPlanPage() {
                       </label>
 
                       <ListEditor
-                        label="Funcoes da area"
+                        label="Funções da área"
                         items={selectedFamily.roles}
                         onChange={(next) => updateSelectedFamily((family) => ({ ...family, roles: next }))}
-                        addLabel="+ Funcao"
+                        addLabel="+ Função"
                         emptyItemPlaceholder="Ex: Product Manager"
                       />
                     </div>
@@ -1052,7 +1052,7 @@ export default function CareerPlanPage() {
                   {familyEditorSection === 'mapeamento' && (
                     <div className="cp-editor-panel">
                       <ListEditor
-                        label="Palavras-chave para mapeamento automatico"
+                        label="Palavras-chave para mapeamento automático"
                         items={selectedFamily.keywords}
                         onChange={(next) => updateSelectedFamily((family) => ({ ...family, keywords: next }))}
                         addLabel="+ Keyword"
@@ -1064,11 +1064,11 @@ export default function CareerPlanPage() {
                   {familyEditorSection === 'competencias' && (
                     <div className="cp-editor-panel">
                       <ListEditor
-                        label="Competencias-chave"
+                        label="Competências-chave"
                         items={selectedFamily.coreSkills}
                         onChange={(next) => updateSelectedFamily((family) => ({ ...family, coreSkills: next }))}
-                        addLabel="+ Competencia"
-                        emptyItemPlaceholder="Ex: Colaboracao"
+                        addLabel="+ Competência"
+                        emptyItemPlaceholder="Ex: Colaboração"
                       />
 
                       <ListEditor
@@ -1076,11 +1076,11 @@ export default function CareerPlanPage() {
                         items={selectedFamily.expectedBehaviors}
                         onChange={(next) => updateSelectedFamily((family) => ({ ...family, expectedBehaviors: next }))}
                         addLabel="+ Comportamento"
-                        emptyItemPlaceholder="Ex: Transparencia"
+                        emptyItemPlaceholder="Ex: Transparência"
                       />
 
                       <ListEditor
-                        label="Focos de progressao"
+                        label="Focos de progressão"
                         items={selectedFamily.nextStepFocus}
                         onChange={(next) => updateSelectedFamily((family) => ({ ...family, nextStepFocus: next }))}
                         addLabel="+ Foco"
@@ -1092,9 +1092,9 @@ export default function CareerPlanPage() {
                   {familyEditorSection === 'niveis' && (
                     <div className="cp-editor-panel">
                       <div className="cp-editor-subblock">
-                        <h4>Detalhes por nivel</h4>
+                        <h4>Detalhes por nível</h4>
                         <label className="cp-editor-field">
-                          <span>Nivel</span>
+                          <span>Nível</span>
                           <select value={selectedLevelLabel} onChange={(event) => setSelectedLevelLabel(event.target.value)}>
                             {draftContent.levels.map((level) => (
                               <option key={level.id} value={level.label}>{level.label}</option>
@@ -1103,7 +1103,7 @@ export default function CareerPlanPage() {
                         </label>
 
                         <label className="cp-editor-field">
-                          <span>Titulo do nivel</span>
+                          <span>Título do nível</span>
                           <input
                             value={selectedFamily.levelDetails[selectedLevelLabel]?.title || ''}
                             onChange={(event) => {
@@ -1123,7 +1123,7 @@ export default function CareerPlanPage() {
                         </label>
 
                         <ListEditor
-                          label="Expectativas do nivel"
+                          label="Expectativas do nível"
                           items={selectedFamily.levelDetails[selectedLevelLabel]?.expectations || []}
                           onChange={(next) => {
                             const level = selectedLevelLabel;
@@ -1143,7 +1143,7 @@ export default function CareerPlanPage() {
                         />
 
                         <ListEditor
-                          label="Sinais de prontidao"
+                          label="Sinais de prontidão"
                           items={selectedFamily.levelDetails[selectedLevelLabel]?.signals || []}
                           onChange={(next) => {
                             const level = selectedLevelLabel;
@@ -1171,8 +1171,8 @@ export default function CareerPlanPage() {
             {activeEditorTab === 'niveis' && (
               <div className="cp-editor-form">
                 <div className="cp-editor-list__head">
-                  <h3>Niveis da hierarquia</h3>
-                  <button type="button" className="cp-btn-secondary" onClick={addLevel}>+ Novo nivel</button>
+                  <h3>Níveis da hierarquia</h3>
+                  <button type="button" className="cp-btn-secondary" onClick={addLevel}>+ Novo nível</button>
                 </div>
 
                 {draftContent.levels.map((level, index) => (
@@ -1194,7 +1194,7 @@ export default function CareerPlanPage() {
                   </div>
                 ))}
 
-                <p className="cp-footnote">Ao renomear ou reordenar niveis, os detalhes nas familias sao preservados automaticamente.</p>
+                <p className="cp-footnote">Ao renomear ou reordenar níveis, os detalhes nas famílias são preservados automaticamente.</p>
               </div>
             )}
 
@@ -1204,7 +1204,7 @@ export default function CareerPlanPage() {
                   <div className="cp-editor-toolbar__chips">
                     {([
                       ['plano', 'Plano 30-60-90'],
-                      ['secoes', 'Secoes'],
+                      ['secoes', 'Seções'],
                       ['etapas', 'Etapas'],
                     ] as [EvaluationEditorSection, string][]).map(([id, label]) => (
                       <button
@@ -1235,30 +1235,30 @@ export default function CareerPlanPage() {
                   <div className="cp-editor-panel">
                     <div className="cp-editor-subblock">
                       <div className="cp-editor-list__head">
-                        <h4>Secoes de avaliacao</h4>
+                        <h4>Seções de avaliação</h4>
                         <button
                           type="button"
                           className="cp-btn-secondary"
                           onClick={() => updateDraft((current) => ({
                             ...current,
-                            evaluationSections: [...current.evaluationSections, { title: 'Nova secao', responsible: 'Gestor', instructions: [] }],
+                            evaluationSections: [...current.evaluationSections, { title: 'Nova seção', responsible: 'Gestor', instructions: [] }],
                           }))}
                         >
-                          + Secao
+                          + Seção
                         </button>
                       </div>
 
                       {draftContent.evaluationSections.map((section, index) => (
                         <div key={`${section.title}-${index}`} className="cp-editor-card">
                           <div className="cp-editor-row cp-editor-row--compact">
-                            <strong>Secao {index + 1}</strong>
+                            <strong>Seção {index + 1}</strong>
                             <button type="button" className="cp-btn-secondary" onClick={() => updateDraft((current) => ({ ...current, evaluationSections: moveAt(current.evaluationSections, index, -1) }))} disabled={index === 0}>Subir</button>
                             <button type="button" className="cp-btn-secondary" onClick={() => updateDraft((current) => ({ ...current, evaluationSections: moveAt(current.evaluationSections, index, 1) }))} disabled={index === draftContent.evaluationSections.length - 1}>Descer</button>
                             <button type="button" className="cp-btn-secondary" onClick={() => updateDraft((current) => ({ ...current, evaluationSections: current.evaluationSections.filter((_, idx) => idx !== index) }))}>Remover</button>
                           </div>
 
                           <label className="cp-editor-field">
-                            <span>Titulo</span>
+                            <span>Título</span>
                             <input
                               value={section.title}
                               onChange={(event) => updateDraft((current) => ({
@@ -1269,7 +1269,7 @@ export default function CareerPlanPage() {
                           </label>
 
                           <label className="cp-editor-field">
-                            <span>Responsavel</span>
+                            <span>Responsável</span>
                             <input
                               value={section.responsible}
                               onChange={(event) => updateDraft((current) => ({
@@ -1280,13 +1280,13 @@ export default function CareerPlanPage() {
                           </label>
 
                           <ListEditor
-                            label="Instrucoes"
+                            label="Instruções"
                             items={section.instructions}
                             onChange={(next) => updateDraft((current) => ({
                               ...current,
                               evaluationSections: current.evaluationSections.map((item, idx) => (idx === index ? { ...item, instructions: next } : item)),
                             }))}
-                            addLabel="+ Instrucao"
+                            addLabel="+ Instrução"
                             emptyItemPlaceholder="Ex: Definir KPIs claros"
                           />
                         </div>
@@ -1299,7 +1299,7 @@ export default function CareerPlanPage() {
                   <div className="cp-editor-panel">
                     <div className="cp-editor-subblock">
                       <div className="cp-editor-list__head">
-                        <h4>Etapas de avaliacao</h4>
+                        <h4>Etapas de avaliação</h4>
                         <button
                           type="button"
                           className="cp-btn-secondary"

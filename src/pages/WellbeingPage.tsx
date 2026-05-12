@@ -9,6 +9,7 @@ import { useFeedbackToast } from '../portal/useFeedbackToast';
 const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
 type WorkCountry = 'PT' | 'BR';
+type WellbeingTab = 'GENERAL' | WorkCountry;
 type WellbeingResourceKind = 'pdf' | 'form';
 
 type WellbeingFile = {
@@ -37,6 +38,70 @@ type WellbeingSection = {
 type WellbeingContent = {
   sections: Record<WorkCountry, WellbeingSection>;
 };
+
+type SharedWellbeingKey = 'formulario_assedio' | 'ergonomia' | 'suporte_basico_vida';
+
+const SHARED_WELLBEING_RESOURCE_IDS: Record<SharedWellbeingKey, string> = {
+  formulario_assedio: 'common-formulario-assedio',
+  ergonomia: 'common-ergonomia',
+  suporte_basico_vida: 'common-suporte-basico-vida',
+};
+
+function normalizeText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function classifySharedWellbeingResource(resource: WellbeingResource): SharedWellbeingKey | null {
+  const normalizedId = normalizeText(resource.id);
+  if (normalizedId === SHARED_WELLBEING_RESOURCE_IDS.formulario_assedio) {
+    return 'formulario_assedio';
+  }
+  if (normalizedId === SHARED_WELLBEING_RESOURCE_IDS.ergonomia) {
+    return 'ergonomia';
+  }
+  if (normalizedId === SHARED_WELLBEING_RESOURCE_IDS.suporte_basico_vida) {
+    return 'suporte_basico_vida';
+  }
+
+  const title = normalizeText(resource.title);
+  if (resource.kind === 'form' && (title.includes('assedio') || title.includes('reportar assedio'))) {
+    return 'formulario_assedio';
+  }
+  if (title.includes('ergonomia')) {
+    return 'ergonomia';
+  }
+  if (title.includes('suporte basico de vida')) {
+    return 'suporte_basico_vida';
+  }
+
+  return null;
+}
+
+function getSharedResources(section: WellbeingSection): WellbeingResource[] {
+  const picked = new Map<SharedWellbeingKey, WellbeingResource>();
+  for (const resource of section.resources) {
+    const key = classifySharedWellbeingResource(resource);
+    if (!key || picked.has(key)) {
+      continue;
+    }
+
+    picked.set(key, { ...resource, id: SHARED_WELLBEING_RESOURCE_IDS[key] });
+  }
+
+  return [
+    picked.get('formulario_assedio'),
+    picked.get('ergonomia'),
+    picked.get('suporte_basico_vida'),
+  ].filter((resource): resource is WellbeingResource => Boolean(resource));
+}
+
+function getCountrySpecificResources(section: WellbeingSection): WellbeingResource[] {
+  return section.resources.filter((resource) => !classifySharedWellbeingResource(resource));
+}
 
 function createResourceId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -77,7 +142,7 @@ export default function WellbeingPage() {
   const canManage = isRootAccess || isAccessTotal || isTPeople || hasPermission('approve_profile_change');
   const canSwitchCountry = isRootAccess || isAccessTotal || isTPeople;
   const profileCountry: WorkCountry = profile.workCountry === 'BR' ? 'BR' : 'PT';
-  const [activeCountry, setActiveCountry] = useState<WorkCountry>(profileCountry);
+  const [activeTab, setActiveTab] = useState<WellbeingTab>('GENERAL');
   const [content, setContent] = useState<WellbeingContent | null>(null);
   const [draft, setDraft] = useState<WellbeingContent | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -94,10 +159,14 @@ export default function WellbeingPage() {
   const { toast, showToast, hideToast } = useFeedbackToast(3600);
 
   useEffect(() => {
-    if (!canManage || !canSwitchCountry) {
-      setActiveCountry(profileCountry);
+    if (canSwitchCountry) {
+      return;
     }
-  }, [canManage, canSwitchCountry, profileCountry]);
+
+    if (activeTab !== 'GENERAL' && activeTab !== profileCountry) {
+      setActiveTab('GENERAL');
+    }
+  }, [activeTab, canSwitchCountry, profileCountry]);
 
   useEffect(() => {
     let active = true;
@@ -131,7 +200,106 @@ export default function WellbeingPage() {
   }, []);
 
   const visibleContent = isEditing ? draft : content;
-  const section = useMemo(() => visibleContent?.sections[activeCountry] ?? null, [activeCountry, visibleContent]);
+  const visibleTabs = canSwitchCountry ? (['GENERAL', 'PT', 'BR'] as WellbeingTab[]) : (['GENERAL', profileCountry] as WellbeingTab[]);
+  const isGeneralTab = activeTab === 'GENERAL';
+  const isCountryTab = activeTab === 'PT' || activeTab === 'BR';
+
+  const section = useMemo(() => {
+    if (!visibleContent) {
+      return null;
+    }
+
+    if (activeTab === 'GENERAL') {
+      const shared = getSharedResources(visibleContent.sections.PT);
+      return {
+        title: 'Geral',
+        description: 'Tudo o que é comum às duas geografias.',
+        resources: shared,
+      } satisfies WellbeingSection;
+    }
+
+    const base = visibleContent.sections[activeTab];
+    return {
+      ...base,
+      resources: getCountrySpecificResources(base),
+    } satisfies WellbeingSection;
+  }, [activeTab, visibleContent]);
+
+  const hasTopbarControls = canManage;
+
+  function updateSharedResourceField(resourceId: string, field: 'title' | 'description' | 'buttonLabel', value: string) {
+    updateDraft((current) => {
+      const patchCountry = (country: WorkCountry) => ({
+        ...current.sections[country],
+        resources: current.sections[country].resources.map((resource) => (
+          resource.id === resourceId ? { ...resource, [field]: value } : resource
+        )),
+      });
+
+      return {
+        ...current,
+        sections: {
+          ...current.sections,
+          PT: patchCountry('PT'),
+          BR: patchCountry('BR'),
+        },
+      };
+    });
+  }
+
+  function updateSharedFileLabel(resourceId: string, fileId: string, value: string) {
+    updateDraft((current) => {
+      const patchCountry = (country: WorkCountry) => ({
+        ...current.sections[country],
+        resources: current.sections[country].resources.map((resource) => {
+          if (resource.id !== resourceId) {
+            return resource;
+          }
+
+          return {
+            ...resource,
+            files: resource.files.map((file) => (file.id === fileId ? { ...file, label: value } : file)),
+          };
+        }),
+      });
+
+      return {
+        ...current,
+        sections: {
+          ...current.sections,
+          PT: patchCountry('PT'),
+          BR: patchCountry('BR'),
+        },
+      };
+    });
+  }
+
+  function removeSharedFile(resourceId: string, fileId: string) {
+    updateDraft((current) => {
+      const patchCountry = (country: WorkCountry) => ({
+        ...current.sections[country],
+        resources: current.sections[country].resources.map((resource) => {
+          if (resource.id !== resourceId) {
+            return resource;
+          }
+
+          return {
+            ...resource,
+            files: resource.files.filter((file) => file.id !== fileId),
+          };
+        }),
+      });
+
+      return {
+        ...current,
+        sections: {
+          ...current.sections,
+          PT: patchCountry('PT'),
+          BR: patchCountry('BR'),
+        },
+      };
+    });
+  }
 
   function updateDraft(transform: (current: WellbeingContent) => WellbeingContent) {
     setDraft((current) => (current ? transform(current) : current));
@@ -240,7 +408,7 @@ export default function WellbeingPage() {
     }));
   }
 
-  async function uploadPdf(country: WorkCountry, resourceId: string, event: ChangeEvent<HTMLInputElement>) {
+  async function uploadPdf(country: WorkCountry | 'GENERAL', resourceId: string, event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = '';
 
@@ -273,34 +441,58 @@ export default function WellbeingPage() {
       }
 
       const fileResponse = payload as UploadResponse;
-      updateDraft((current) => ({
-        ...current,
-        sections: {
-          ...current.sections,
-          [country]: {
-            ...current.sections[country],
-            resources: current.sections[country].resources.map((resource) => {
-              if (resource.id !== resourceId) {
-                return resource;
-              }
+      updateDraft((current) => {
+        const newFile = {
+          id: createResourceId('file'),
+          label: fileResponse.fileName,
+          fileName: fileResponse.fileName,
+          linkPath: fileResponse.linkPath,
+          link: fileResponse.link,
+        };
 
-              return {
-                ...resource,
-                files: [
-                  ...resource.files,
-                  {
-                    id: createResourceId('file'),
-                    label: fileResponse.fileName,
-                    fileName: fileResponse.fileName,
-                    linkPath: fileResponse.linkPath,
-                    link: fileResponse.link,
-                  },
-                ],
-              };
-            }),
+        if (country === 'GENERAL') {
+          const patchCountry = (targetCountry: WorkCountry) => ({
+            ...current.sections[targetCountry],
+            resources: current.sections[targetCountry].resources.map((resource) => (
+              resource.id === resourceId
+                ? {
+                  ...resource,
+                  files: [...resource.files, newFile],
+                }
+                : resource
+            )),
+          });
+
+          return {
+            ...current,
+            sections: {
+              ...current.sections,
+              PT: patchCountry('PT'),
+              BR: patchCountry('BR'),
+            },
+          };
+        }
+
+        return {
+          ...current,
+          sections: {
+            ...current.sections,
+            [country]: {
+              ...current.sections[country],
+              resources: current.sections[country].resources.map((resource) => {
+                if (resource.id !== resourceId) {
+                  return resource;
+                }
+
+                return {
+                  ...resource,
+                  files: [...resource.files, newFile],
+                };
+              }),
+            },
           },
-        },
-      }));
+        };
+      });
       showToast('success', 'PDF carregado com sucesso.');
     } catch (error) {
       showToast('error', error instanceof Error ? error.message : 'Falha ao carregar PDF.');
@@ -358,46 +550,42 @@ export default function WellbeingPage() {
 
   return (
     <section className="trainings-shell wellbeing-shell">
-      <div className="wellbeing-shell__topbar">
-        <div className="wellbeing-shell__topbar-actions">
-          {canManage && canSwitchCountry && (
-            <div className="wellbeing-shell__country-switch" role="tablist" aria-label="País a visualizar">
-              {(['PT', 'BR'] as WorkCountry[]).map((country) => (
-                <button
-                  key={country}
-                  type="button"
-                  className={activeCountry === country ? 'is-active' : ''}
-                  onClick={() => setActiveCountry(country)}
-                >
-                  {country === 'PT' ? 'Portugal' : 'Brasil'}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {canManage && !canSwitchCountry && (
-            <span className="wellbeing-shell__scope-tag">
-              Âmbito: {profileCountry === 'PT' ? 'Portugal' : 'Brasil'}
-            </span>
-          )}
-
-          {canManage && !isEditing && (
-            <Button type="button" variant="secondary" onClick={() => setIsEditing(true)}>
-              Editar página
-            </Button>
-          )}
-
-          {canManage && isEditing && (
-            <>
-              <Button type="button" variant="ghost" onClick={cancelEditing} disabled={isSaving}>
-                Cancelar
+      {hasTopbarControls && (
+        <div className="wellbeing-shell__topbar">
+          <div className="wellbeing-shell__topbar-actions">
+            {canManage && !isEditing && (
+              <Button type="button" variant="secondary" onClick={() => setIsEditing(true)}>
+                Editar página
               </Button>
-              <Button type="button" variant="primary" onClick={() => void saveContent()} isLoading={isSaving}>
-                Guardar alterações
-              </Button>
-            </>
-          )}
+            )}
+
+            {canManage && isEditing && (
+              <>
+                <Button type="button" variant="ghost" onClick={cancelEditing} disabled={isSaving}>
+                  Cancelar
+                </Button>
+                <Button type="button" variant="primary" onClick={() => void saveContent()} isLoading={isSaving}>
+                  Guardar alterações
+                </Button>
+              </>
+            )}
+          </div>
         </div>
+      )}
+
+      <div className="wellbeing-shell__tabs" role="tablist" aria-label="Vista de saúde e bem-estar">
+        {visibleTabs.map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
+            className={activeTab === tab ? 'is-active' : ''}
+            onClick={() => setActiveTab(tab)}
+          >
+            {tab === 'GENERAL' ? 'Geral' : tab === 'PT' ? 'Portugal' : 'Brasil'}
+          </button>
+        ))}
       </div>
 
       {isLoading ? (
@@ -409,16 +597,33 @@ export default function WellbeingPage() {
               <div className="wellbeing-editor-card__grid">
                 <label className="wellbeing-editor-card__field">
                   <span>Título da secção</span>
-                  <input value={section.title} onChange={(event) => updateSectionField(activeCountry, 'title', event.target.value)} />
+                  <input
+                    value={section.title}
+                    onChange={(event) => {
+                      if (isCountryTab) {
+                        updateSectionField(activeTab, 'title', event.target.value);
+                      }
+                    }}
+                    disabled={!isCountryTab}
+                  />
                 </label>
                 <label className="wellbeing-editor-card__field wellbeing-editor-card__field--full">
                   <span>Descrição da secção</span>
-                  <textarea rows={3} value={section.description} onChange={(event) => updateSectionField(activeCountry, 'description', event.target.value)} />
+                  <textarea
+                    rows={3}
+                    value={section.description}
+                    onChange={(event) => {
+                      if (isCountryTab) {
+                        updateSectionField(activeTab, 'description', event.target.value);
+                      }
+                    }}
+                    disabled={!isCountryTab}
+                  />
                 </label>
               </div>
             ) : (
               <div className="wellbeing-country-card__head">
-                <h2>{section.title || (activeCountry === 'PT' ? 'Portugal' : 'Brasil')}</h2>
+                <h2>{section.title || (activeTab === 'BR' ? 'Brasil' : activeTab === 'PT' ? 'Portugal' : 'Geral')}</h2>
               </div>
             )}
 
@@ -427,7 +632,7 @@ export default function WellbeingPage() {
                 <article key={resource.id} className={`wellbeing-card wellbeing-card--${resource.kind}`}>
                   {isEditing && (
                     <div className="wellbeing-card__actions">
-                      <Button type="button" variant="ghost" size="sm" onClick={() => removeResource(activeCountry, resource.id)}>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => isCountryTab && removeResource(activeTab, resource.id)} disabled={!isCountryTab}>
                         Remover bloco
                       </Button>
                     </div>
@@ -437,15 +642,52 @@ export default function WellbeingPage() {
                     <div className="wellbeing-editor-card__grid wellbeing-editor-card__grid--resource">
                       <label className="wellbeing-editor-card__field">
                         <span>Título</span>
-                        <input value={resource.title} onChange={(event) => updateResourceField(activeCountry, resource.id, 'title', event.target.value)} />
+                        <input
+                          value={resource.title}
+                          onChange={(event) => {
+                            if (isGeneralTab) {
+                              updateSharedResourceField(resource.id, 'title', event.target.value);
+                              return;
+                            }
+
+                            if (isCountryTab) {
+                              updateResourceField(activeTab, resource.id, 'title', event.target.value);
+                            }
+                          }}
+                        />
                       </label>
                       <label className="wellbeing-editor-card__field wellbeing-editor-card__field--full">
                         <span>Descrição</span>
-                        <textarea rows={3} value={resource.description} onChange={(event) => updateResourceField(activeCountry, resource.id, 'description', event.target.value)} />
+                        <textarea
+                          rows={3}
+                          value={resource.description}
+                          onChange={(event) => {
+                            if (isGeneralTab) {
+                              updateSharedResourceField(resource.id, 'description', event.target.value);
+                              return;
+                            }
+
+                            if (isCountryTab) {
+                              updateResourceField(activeTab, resource.id, 'description', event.target.value);
+                            }
+                          }}
+                        />
                       </label>
                       <label className="wellbeing-editor-card__field">
                         <span>Texto do botão</span>
-                        <input value={resource.buttonLabel} onChange={(event) => updateResourceField(activeCountry, resource.id, 'buttonLabel', event.target.value)} />
+                        <input
+                          value={resource.buttonLabel}
+                          onChange={(event) => {
+                            if (isGeneralTab) {
+                              updateSharedResourceField(resource.id, 'buttonLabel', event.target.value);
+                              return;
+                            }
+
+                            if (isCountryTab) {
+                              updateResourceField(activeTab, resource.id, 'buttonLabel', event.target.value);
+                            }
+                          }}
+                        />
                       </label>
 
                       {resource.kind === 'pdf' && (
@@ -453,7 +695,7 @@ export default function WellbeingPage() {
                           <div className="wellbeing-files-editor__header">
                             <strong>PDFs associados</strong>
                             <label className="wellbeing-upload-btn">
-                              <input type="file" accept="application/pdf,.pdf" onChange={(event) => void uploadPdf(activeCountry, resource.id, event)} />
+                              <input type="file" accept="application/pdf,.pdf" onChange={(event) => void uploadPdf(isGeneralTab ? 'GENERAL' : activeTab, resource.id, event)} />
                               {uploadingKey === resource.id ? 'A carregar…' : 'Adicionar PDF'}
                             </label>
                           </div>
@@ -464,9 +706,35 @@ export default function WellbeingPage() {
                             <div className="wellbeing-files-editor__list">
                               {resource.files.map((file) => (
                                 <div key={file.id} className="wellbeing-files-editor__row">
-                                  <input value={file.label} onChange={(event) => updateFileLabel(activeCountry, resource.id, file.id, event.target.value)} />
+                                  <input
+                                    value={file.label}
+                                    onChange={(event) => {
+                                      if (isGeneralTab) {
+                                        updateSharedFileLabel(resource.id, file.id, event.target.value);
+                                        return;
+                                      }
+
+                                      if (isCountryTab) {
+                                        updateFileLabel(activeTab, resource.id, file.id, event.target.value);
+                                      }
+                                    }}
+                                  />
                                   <a href={file.link} target="_blank" rel="noreferrer">Ver PDF</a>
-                                  <Button type="button" variant="ghost" size="sm" onClick={() => removeFile(activeCountry, resource.id, file.id)}>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      if (isGeneralTab) {
+                                        removeSharedFile(resource.id, file.id);
+                                        return;
+                                      }
+
+                                      if (isCountryTab) {
+                                        removeFile(activeTab, resource.id, file.id);
+                                      }
+                                    }}
+                                  >
                                     Remover
                                   </Button>
                                 </div>
@@ -507,10 +775,10 @@ export default function WellbeingPage() {
 
             {isEditing && (
               <div className="wellbeing-editor-actions">
-                <Button type="button" variant="ghost" onClick={() => addResource(activeCountry, 'pdf')}>
+                <Button type="button" variant="ghost" onClick={() => isCountryTab && addResource(activeTab, 'pdf')} disabled={!isCountryTab}>
                   + Bloco PDF
                 </Button>
-                <Button type="button" variant="ghost" onClick={() => addResource(activeCountry, 'form')}>
+                <Button type="button" variant="ghost" onClick={() => isCountryTab && addResource(activeTab, 'form')} disabled={!isCountryTab}>
                   + Bloco formulário
                 </Button>
               </div>
@@ -538,25 +806,42 @@ export default function WellbeingPage() {
         )}
       >
         <div className="wellbeing-report-form">
-          <p className="wellbeing-report-form__intro">
-            O reporte será notificado ao RH do país respetivo e ao t.people. Usa este canal para situações que precisem de acompanhamento formal.
-          </p>
-          <label className="wellbeing-editor-card__field">
-            <span>Assunto</span>
-            <input value={reportDraft.subject} onChange={(event) => setReportDraft((current) => ({ ...current, subject: event.target.value }))} />
-          </label>
-          <label className="wellbeing-editor-card__field wellbeing-editor-card__field--full">
-            <span>Descrição</span>
-            <textarea rows={6} value={reportDraft.description} onChange={(event) => setReportDraft((current) => ({ ...current, description: event.target.value }))} />
-          </label>
-          <label className="wellbeing-editor-card__field wellbeing-editor-card__field--full">
-            <span>Contacto preferencial</span>
-            <input
-              placeholder="Ex.: email pessoal, Teams ou telemóvel"
-              value={reportDraft.preferredContact}
-              onChange={(event) => setReportDraft((current) => ({ ...current, preferredContact: event.target.value }))}
-            />
-          </label>
+          <div className="wellbeing-report-form__intro">
+            <h3>Canal confidencial de reporte</h3>
+            <p>
+              O reporte será notificado ao RH do país respetivo e ao t.people. Usa este canal para situações que precisem de acompanhamento formal.
+            </p>
+          </div>
+
+          <div className="wellbeing-report-form__grid">
+            <label className="wellbeing-editor-card__field">
+              <span>Assunto</span>
+              <input
+                placeholder="Ex.: Situação de assédio verbal"
+                value={reportDraft.subject}
+                onChange={(event) => setReportDraft((current) => ({ ...current, subject: event.target.value }))}
+              />
+            </label>
+
+            <label className="wellbeing-editor-card__field">
+              <span>Contacto preferencial</span>
+              <input
+                placeholder="Ex.: email pessoal, Teams ou telemóvel"
+                value={reportDraft.preferredContact}
+                onChange={(event) => setReportDraft((current) => ({ ...current, preferredContact: event.target.value }))}
+              />
+            </label>
+
+            <label className="wellbeing-editor-card__field wellbeing-editor-card__field--full">
+              <span>Descrição detalhada</span>
+              <textarea
+                rows={7}
+                placeholder="Descreve o ocorrido com contexto, datas aproximadas e pessoas envolvidas."
+                value={reportDraft.description}
+                onChange={(event) => setReportDraft((current) => ({ ...current, description: event.target.value }))}
+              />
+            </label>
+          </div>
         </div>
       </Modal>
 

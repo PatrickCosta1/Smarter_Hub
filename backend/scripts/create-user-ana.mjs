@@ -16,7 +16,7 @@ async function main() {
       data: {
         email,
         passwordHash,
-        role: 'RH',
+        role: 'ADMIN',
       },
     });
 
@@ -32,7 +32,7 @@ async function main() {
         username,
         email,
         passwordHash,
-        role: 'RH',
+        role: 'ADMIN',
         profile: { create: {} },
       },
     });
