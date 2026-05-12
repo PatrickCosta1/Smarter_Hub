@@ -3400,16 +3400,16 @@ export default function VacationsPage() {
                 className="vacations-unified-actions__item"
                 onClick={() => setIsCreditBalanceModalOpen(true)}
               >
-                <strong>Ação</strong>
-                <span>Creditar dias de férias (saldo)</span>
+                <strong>Creditar dias de férias (saldo)</strong>
+                <span>Creditar dias adicionais no saldo anual de colaboradores elegíveis, com motivo obrigatório.</span>
               </button>
               <button
                 type="button"
                 className="vacations-unified-actions__item"
                 onClick={() => setIsAssignVacationModalOpen(true)}
               >
-                <strong>Quem?</strong>
-                <span>Atribuir férias/ausências a colaborador</span>
+                <strong>Atribuir férias/ausências a colaborador</strong>
+                <span>Pesquisa dinâmica, seleção com um clique e submissão sem aprovação intermédia.</span>
               </button>
               <button
                 type="button"
@@ -3417,8 +3417,8 @@ export default function VacationsPage() {
                 onClick={() => setIsFixedDaysModalOpen(true)}
                 disabled={!canManageVacationRules}
               >
-                <strong>Quanto/Quando?</strong>
-                <span>Adicionar dias fixos automáticos</span>
+                <strong>Adicionar dias fixos automáticos</strong>
+                <span>Define dias por ano e abrangência regional</span>
               </button>
             </div>
 
