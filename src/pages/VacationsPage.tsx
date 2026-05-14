@@ -250,6 +250,8 @@ type ExportCollaboratorsResponse = {
   total: number;
 };
 
+type CollaboratorPickerMode = 'vacation-target' | 'balance-credit' | 'export-collaborators';
+
 type SubmissionNotice = {
   tone: 'success' | 'error' | 'info' | 'warning';
   message: string;
@@ -620,6 +622,14 @@ function getProfileDisplayName(input: {
   return fullName || input.username;
 }
 
+function getExportCollaboratorDisplayName(input: ExportCollaborator) {
+  return getProfileDisplayName({ username: input.username, profile: input.profile });
+}
+
+function getExportCollaboratorMeta(input: ExportCollaborator) {
+  return [input.team?.name, input.profile?.nomeCompleto || input.username].filter(Boolean).join(' • ');
+}
+
 function normalizeSearchText(value: string) {
   return value
     .normalize('NFD')
@@ -678,7 +688,14 @@ export default function VacationsPage() {
   const [vacationTargetCandidates, setVacationTargetCandidates] = useState<VacationCandidateUser[]>([]);
   const [vacationTargetSearch, setVacationTargetSearch] = useState('');
   const [selectedVacationTargetUserId, setSelectedVacationTargetUserId] = useState('');
+  const [selectedVacationTargetSnapshot, setSelectedVacationTargetSnapshot] = useState<VacationCandidateUser | null>(null);
   const [isLoadingVacationTargets, setIsLoadingVacationTargets] = useState(false);
+  const [directAssignCalendarData, setDirectAssignCalendarData] = useState<CalendarPayload | null>(null);
+  const [directAssignCalendarYear, setDirectAssignCalendarYear] = useState(new Date().getFullYear());
+  const [isDirectAssignCalendarLoading, setIsDirectAssignCalendarLoading] = useState(false);
+  const [directAssignCalendarError, setDirectAssignCalendarError] = useState('');
+  const [directAssignSelectionAnchor, setDirectAssignSelectionAnchor] = useState<string | null>(null);
+  const [directAssignHoverDay, setDirectAssignHoverDay] = useState<string | null>(null);
   const [companyExtraDays, setCompanyExtraDays] = useState<CompanyExtraDay[]>([]);
   const [companyExtraDayMonth, setCompanyExtraDayMonth] = useState('12');
   const [companyExtraDayDay, setCompanyExtraDayDay] = useState('25');
@@ -693,6 +710,7 @@ export default function VacationsPage() {
 
   const [companyExtraDaysError, setCompanyExtraDaysError] = useState('');
   const [hasLoadedCompanyExtraDays, setHasLoadedCompanyExtraDays] = useState(false);
+  const [isCompanyExtraGuideVisible, setIsCompanyExtraGuideVisible] = useState(false);
   // Modal state para selecionar "este ano ou próximo ano?" ao adicionar dias automáticos
   const [isAddCompanyExtraDayModalOpen, setIsAddCompanyExtraDayModalOpen] = useState(false);
   const [companyExtraDayCanApplyCurrentYear, setCompanyExtraDayCanApplyCurrentYear] = useState(true);
@@ -714,8 +732,9 @@ export default function VacationsPage() {
   const [assignFilterTeamId, setAssignFilterTeamId] = useState('');
   const [assignSearch, setAssignSearch] = useState('');
   const [assignCandidates, setAssignCandidates] = useState<ExportCollaborator[]>([]);
-  const [assignSelectedUserId, setAssignSelectedUserId] = useState('');
-  const [assignCreditDays, setAssignCreditDays] = useState('1');
+  const [assignSelectedUserIds, setAssignSelectedUserIds] = useState<string[]>([]);
+  const [assignSelectedSnapshots, setAssignSelectedSnapshots] = useState<ExportCollaborator[]>([]);
+  const [assignCreditDays, setAssignCreditDays] = useState('0.5');
   const [assignCreditYear, setAssignCreditYear] = useState(String(new Date().getFullYear()));
   const [assignCreditReason, setAssignCreditReason] = useState('');
   const [isLoadingAssignCandidates, setIsLoadingAssignCandidates] = useState(false);
@@ -723,6 +742,10 @@ export default function VacationsPage() {
   const [isAssignVacationModalOpen, setIsAssignVacationModalOpen] = useState(false);
   const [isCreditBalanceModalOpen, setIsCreditBalanceModalOpen] = useState(false);
   const [isFixedDaysModalOpen, setIsFixedDaysModalOpen] = useState(false);
+  const [activeCollaboratorPickerMode, setActiveCollaboratorPickerMode] = useState<CollaboratorPickerMode | null>(null);
+  const [draftVacationTargetUserId, setDraftVacationTargetUserId] = useState('');
+  const [draftAssignSelectedUserIds, setDraftAssignSelectedUserIds] = useState<string[]>([]);
+  const [draftExportSelectedCollaborators, setDraftExportSelectedCollaborators] = useState<ExportCollaborator[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [conflictRange, setConflictRange] = useState<ConflictRange | null>(null);
   // Calendar range selection:
@@ -861,6 +884,48 @@ export default function VacationsPage() {
     return map;
   }, [calendarData]);
 
+  const directAssignCalendarRequestDays = useMemo(() => {
+    const approvedVacationDays = new Set<string>();
+    const approvedAbsenceDays = new Set<string>();
+    const pendingVacationDays = new Set<string>();
+    const pendingAbsenceDays = new Set<string>();
+
+    for (const request of directAssignCalendarData?.requests ?? []) {
+      const days = enumerateDates(request.dataInicio, request.dataFim);
+
+      if (request.status === 'APPROVED' && request.requestType === 'VACATION') {
+        days.forEach((day: string) => approvedVacationDays.add(day));
+      }
+
+      if (request.status === 'APPROVED' && request.requestType !== 'VACATION') {
+        days.forEach((day: string) => approvedAbsenceDays.add(day));
+      }
+
+      if (request.status === 'PENDING' && request.requestType === 'VACATION') {
+        days.forEach((day: string) => pendingVacationDays.add(day));
+      }
+
+      if (request.status === 'PENDING' && request.requestType !== 'VACATION') {
+        days.forEach((day: string) => pendingAbsenceDays.add(day));
+      }
+    }
+
+    return {
+      approvedVacationDays,
+      approvedAbsenceDays,
+      pendingVacationDays,
+      pendingAbsenceDays,
+    };
+  }, [directAssignCalendarData]);
+
+  const directAssignExtraDayLabelByDate = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of directAssignCalendarData?.extraDayDetails ?? []) {
+      map.set(item.date, item.label || 'Dia dado pela empresa');
+    }
+    return map;
+  }, [directAssignCalendarData]);
+
   const partialVacationDays = useMemo(() => {
     const map = new Map<string, 'AM' | 'PM' | 'FULL'>();
 
@@ -894,6 +959,40 @@ export default function VacationsPage() {
 
     return map;
   }, [calendarData]);
+
+  const directAssignPartialVacationDays = useMemo(() => {
+    const map = new Map<string, 'AM' | 'PM' | 'FULL'>();
+
+    for (const request of directAssignCalendarData?.requests ?? []) {
+      if (request.requestType !== 'VACATION') {
+        continue;
+      }
+
+      if (request.status !== 'APPROVED' && request.status !== 'PENDING') {
+        continue;
+      }
+
+      if (!request.partialDay || request.partialDay === 'FULL') {
+        continue;
+      }
+
+      if (request.dataInicio !== request.dataFim) {
+        continue;
+      }
+
+      const existing = map.get(request.dataInicio);
+      if (!existing) {
+        map.set(request.dataInicio, request.partialDay);
+        continue;
+      }
+
+      if (existing !== request.partialDay) {
+        map.set(request.dataInicio, 'FULL');
+      }
+    }
+
+    return map;
+  }, [directAssignCalendarData]);
 
   const canManageVacationRules = isRootAccess || hasPermission('manage_vacation_rules');
   const canViewTeamVacations = isRootAccess || isAccessTotal || hasPermission('view_team_vacations') || hasPermission('view_all_vacations');
@@ -1020,8 +1119,8 @@ export default function VacationsPage() {
   }, [teamCalendarMembers, teamVacationSearchQuery]);
 
   const selectedVacationTarget = useMemo(
-    () => vacationTargetCandidates.find((item) => item.id === selectedVacationTargetUserId) ?? null,
-    [selectedVacationTargetUserId, vacationTargetCandidates],
+    () => vacationTargetCandidates.find((item) => item.id === selectedVacationTargetUserId) ?? selectedVacationTargetSnapshot,
+    [selectedVacationTargetSnapshot, selectedVacationTargetUserId, vacationTargetCandidates],
   );
 
   const visibleVacationTargetCandidates = useMemo(() => {
@@ -1120,10 +1219,13 @@ export default function VacationsPage() {
     overviewStats.entitlement - overviewStats.approvedVacationDays - overviewStats.pendingVacationDays,
     0,
   );
-  const selectedAssignCandidate = useMemo(
-    () => assignCandidates.find((item) => item.id === assignSelectedUserId) ?? null,
-    [assignCandidates, assignSelectedUserId],
+  const selectedAssignCandidates = useMemo(
+    () => assignSelectedUserIds
+      .map((id) => assignCandidates.find((item) => item.id === id) ?? assignSelectedSnapshots.find((item) => item.id === id) ?? null)
+      .filter((item): item is ExportCollaborator => item !== null),
+    [assignCandidates, assignSelectedSnapshots, assignSelectedUserIds],
   );
+  const selectedAssignCandidate = selectedAssignCandidates[0] ?? null;
   const exportResolvedStart = exportRangeMode === 'custom' ? exportStartDate : `${exportYear}-01-01`;
   const exportResolvedEnd = exportRangeMode === 'custom' ? exportEndDate : `${exportYear}-12-31`;
   const exportPeriodSummary = exportResolvedStart && exportResolvedEnd ? `${exportResolvedStart} -> ${exportResolvedEnd}` : 'Período por definir';
@@ -1135,6 +1237,15 @@ export default function VacationsPage() {
       cells: buildMonthGrid(year, monthIndex),
     }));
   }, [calendarData]);
+
+  const directAssignYearMonths = useMemo(() => {
+    const year = directAssignCalendarData?.year ?? directAssignCalendarYear;
+    return MONTHS.map((month, monthIndex) => ({
+      month,
+      monthIndex,
+      cells: buildMonthGrid(year, monthIndex),
+    }));
+  }, [directAssignCalendarData, directAssignCalendarYear]);
 
   const calendarMonthIndexToFocus = useMemo(() => {
     if (!calendarData) {
@@ -1291,6 +1402,77 @@ export default function VacationsPage() {
       window.clearTimeout(timeout);
     };
   }, [canBookForOthers, currentUser?.id, selectedVacationTargetUserId, vacationTargetCandidates, vacationTargetSearch]);
+
+  useEffect(() => {
+    if (activeCollaboratorPickerMode === 'vacation-target') {
+      setDraftVacationTargetUserId(selectedVacationTargetUserId);
+      return;
+    }
+
+    if (activeCollaboratorPickerMode === 'balance-credit') {
+      setDraftAssignSelectedUserIds(assignSelectedUserIds);
+      return;
+    }
+
+    if (activeCollaboratorPickerMode === 'export-collaborators') {
+      setDraftExportSelectedCollaborators(exportSelectedCollaborators);
+    }
+  }, [activeCollaboratorPickerMode, assignSelectedUserIds, exportSelectedCollaborators, selectedVacationTargetUserId]);
+
+  useEffect(() => {
+    if (!selectedVacationTargetUserId) {
+      setDirectAssignCalendarData(null);
+      setDirectAssignCalendarError('');
+    }
+
+    setDirectAssignSelectionAnchor(null);
+    setDirectAssignHoverDay(null);
+    setDirectAssignDraft((current) => ({
+      ...current,
+      dataInicio: '',
+      dataFim: '',
+      partialDay: current.requestKind === 'VACATION' ? current.partialDay : 'FULL',
+    }));
+    setDirectAssignErrors((current) => {
+      if (!current.dataInicio && !current.dataFim) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next.dataInicio;
+      delete next.dataFim;
+      return next;
+    });
+  }, [selectedVacationTargetUserId]);
+
+  useEffect(() => {
+    if (!isAssignVacationModalOpen || !selectedVacationTargetUserId) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let disposed = false;
+    setIsDirectAssignCalendarLoading(true);
+    setDirectAssignCalendarError('');
+
+    void loadDirectAssignCalendar(directAssignCalendarYear, selectedVacationTargetUserId, controller.signal)
+      .catch((error) => {
+        if (isAbortError(error) || controller.signal.aborted) {
+          return;
+        }
+        setDirectAssignCalendarData(null);
+      })
+      .finally(() => {
+        if (!disposed) {
+          setIsDirectAssignCalendarLoading(false);
+        }
+      });
+
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
+  }, [directAssignCalendarYear, isAssignVacationModalOpen, selectedVacationTargetUserId]);
 
   useEffect(() => {
     if (activeTab !== 'calendar' || cacheRef.current.calendarLoadedYear === calendarYear) {
@@ -1459,6 +1641,31 @@ export default function VacationsPage() {
     }
   }
 
+  async function loadDirectAssignCalendar(
+    year: number = directAssignCalendarYear,
+    targetUserId: string = selectedVacationTargetUserId,
+    signal?: AbortSignal,
+  ) {
+    if (!targetUserId) {
+      setDirectAssignCalendarData(null);
+      return null;
+    }
+
+    try {
+      const data = await apiRequestCached<CalendarPayload>(`/vacations/calendar?year=${year}&targetUserId=${encodeURIComponent(targetUserId)}`, {
+        headers: getAuthHeaders(),
+        signal,
+      }, 30000);
+      setDirectAssignCalendarData(data);
+      return data;
+    } catch (error) {
+      if (!isAbortError(error) && !signal?.aborted) {
+        setDirectAssignCalendarError(error instanceof Error ? error.message : 'Falha ao carregar calendário do colaborador selecionado.');
+      }
+      throw error;
+    }
+  }
+
   async function loadTeamSpecialCalendar(year: number, signal?: AbortSignal) {
     setIsLoadingTeamSpecialCalendar(true);
 
@@ -1500,23 +1707,6 @@ export default function VacationsPage() {
         ? users.filter((item) => typeof item?.id === 'string' && item.id.length > 0)
         : [];
       setVacationTargetCandidates(normalized);
-
-      setSelectedVacationTargetUserId((current) => {
-        if (current && normalized.some((item) => item.id === current)) {
-          return current;
-        }
-
-        const firstNonSelf = normalized.find((item) => item.id !== currentUser?.id)?.id;
-        if (firstNonSelf) {
-          return firstNonSelf;
-        }
-
-        if (currentUser?.id && normalized.some((item) => item.id === currentUser.id)) {
-          return currentUser.id;
-        }
-
-        return normalized[0]?.id || current;
-      });
     } catch (error) {
       showToast('error', error instanceof Error ? error.message : 'Falha ao carregar colaboradores para marcação direta.');
     } finally {
@@ -1642,11 +1832,6 @@ export default function VacationsPage() {
       });
 
       setAssignCandidates(filtered);
-      if (filtered.length === 0) {
-        setAssignSelectedUserId('');
-      } else if (!filtered.some((item) => item.id === assignSelectedUserId)) {
-        setAssignSelectedUserId(filtered[0].id);
-      }
     } catch (error) {
       showToast('error', error instanceof Error ? error.message : 'Falha ao carregar colaboradores elegíveis para crédito de saldo.');
     } finally {
@@ -1780,13 +1965,14 @@ export default function VacationsPage() {
   }
 
   async function creditVacationBalance() {
-    if (!assignSelectedUserId) {
-      showToast('error', 'Seleciona um colaborador.');
+    if (assignSelectedUserIds.length === 0) {
+      showToast('error', 'Seleciona pelo menos um colaborador.');
       return;
     }
     const days = Number(assignCreditDays);
-    if (!Number.isFinite(days) || days < 1 || !Number.isInteger(days)) {
-      showToast('error', 'Indica um número inteiro de dias a creditar (mínimo 1).');
+    const isHalfDayStep = Math.abs(days * 2 - Math.round(days * 2)) < 1e-9;
+    if (!Number.isFinite(days) || days < 0.5 || !isHalfDayStep) {
+      showToast('error', 'Indica dias a creditar em múltiplos de 0,5 (mínimo 0,5).');
       return;
     }
     const year = Number(assignCreditYear);
@@ -1805,7 +1991,7 @@ export default function VacationsPage() {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({
-          userId: assignSelectedUserId,
+          userIds: assignSelectedUserIds,
           year,
           days,
           reason: assignCreditReason.trim(),
@@ -1814,9 +2000,9 @@ export default function VacationsPage() {
 
       clearApiCache('/vacations/calendar');
       clearApiCache('/vacations/overview');
-      setAssignCreditDays('1');
+      setAssignCreditDays('0.5');
       setAssignCreditReason('');
-      showToast('success', 'Dias adicionais creditados no saldo de férias do colaborador.');
+      showToast('success', assignSelectedUserIds.length === 1 ? 'Dias adicionais creditados no saldo de férias do colaborador.' : `Dias adicionais creditados no saldo de férias de ${assignSelectedUserIds.length} colaboradores.`);
       if (activeTab === 'overview') {
         void loadOverview();
       }
@@ -1825,6 +2011,64 @@ export default function VacationsPage() {
     } finally {
       setIsCreditingVacationBalance(false);
     }
+  }
+
+  function openVacationTargetPicker() {
+    setDraftVacationTargetUserId(selectedVacationTargetUserId);
+    setActiveCollaboratorPickerMode('vacation-target');
+  }
+
+  function openAssignCreditPicker() {
+    setDraftAssignSelectedUserIds(assignSelectedUserIds);
+    setActiveCollaboratorPickerMode('balance-credit');
+  }
+
+  function openExportCollaboratorPicker() {
+    setDraftExportSelectedCollaborators(exportSelectedCollaborators);
+    setActiveCollaboratorPickerMode('export-collaborators');
+  }
+
+  function closeCollaboratorPicker() {
+    setActiveCollaboratorPickerMode(null);
+  }
+
+  function confirmCollaboratorPickerSelection() {
+    if (activeCollaboratorPickerMode === 'vacation-target') {
+      setSelectedVacationTargetUserId(draftVacationTargetUserId);
+      setSelectedVacationTargetSnapshot(vacationTargetCandidates.find((item) => item.id === draftVacationTargetUserId) ?? null);
+    }
+
+    if (activeCollaboratorPickerMode === 'balance-credit') {
+      setAssignSelectedUserIds(draftAssignSelectedUserIds);
+      setAssignSelectedSnapshots(
+        draftAssignSelectedUserIds
+          .map((id) => assignCandidates.find((item) => item.id === id) ?? assignSelectedSnapshots.find((item) => item.id === id) ?? null)
+          .filter((item): item is ExportCollaborator => item !== null),
+      );
+    }
+
+    if (activeCollaboratorPickerMode === 'export-collaborators') {
+      setExportSelectedCollaborators(draftExportSelectedCollaborators);
+    }
+
+    setActiveCollaboratorPickerMode(null);
+  }
+
+  function toggleDraftAssignSelectedUserId(userId: string) {
+    setDraftAssignSelectedUserIds((current) => (
+      current.includes(userId) ? current.filter((item) => item !== userId) : [...current, userId]
+    ));
+  }
+
+  function toggleDraftExportCollaborator(collaborator: ExportCollaborator) {
+    setDraftExportSelectedCollaborators((current) => {
+      const exists = current.some((item) => item.id === collaborator.id);
+      if (exists) {
+        return current.filter((item) => item.id !== collaborator.id);
+      }
+
+      return [...current, collaborator];
+    });
   }
 
   async function saveCompanyExtraDays(days: CompanyExtraDay[], targetYear: number = companyExtraYear) {
@@ -2018,6 +2262,19 @@ export default function VacationsPage() {
     });
   }
 
+  function clearDirectAssignDateErrors() {
+    setDirectAssignErrors((current) => {
+      if (!current.dataInicio && !current.dataFim) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next.dataInicio;
+      delete next.dataFim;
+      return next;
+    });
+  }
+
   function handleRequestKindChange(value: RequestKind) {
     if (value === 'VACATION' && hasWeekendInRange(draft.dataInicio, draft.dataFim)) {
       showToast('info', 'Intervalos com fim de semana só podem ser submetidos como ausência.');
@@ -2039,6 +2296,169 @@ export default function VacationsPage() {
       requestKind: value,
       partialDay: value === 'VACATION' ? current.partialDay : 'FULL',
     }));
+  }
+
+  function handleDirectAssignDayClick(iso: string) {
+    if (!selectedVacationTargetUserId) {
+      showToast('info', 'Seleciona primeiro o colaborador para ver e marcar o respetivo calendário.');
+      return;
+    }
+
+    if (directAssignSelectionAnchor === null) {
+      const nextKind = directAssignDraft.requestKind === 'VACATION' && isWeekendIso(iso) ? 'ABSENCE' : directAssignDraft.requestKind;
+      if (nextKind !== directAssignDraft.requestKind) {
+        showToast('info', 'Fim de semana selecionado: o pedido mudou para ausência.');
+      }
+
+      setDirectAssignDraft((current) => ({
+        ...current,
+        requestKind: nextKind,
+        partialDay: nextKind === 'VACATION' ? current.partialDay : 'FULL',
+        dataInicio: iso,
+        dataFim: iso,
+      }));
+      setDirectAssignSelectionAnchor(iso);
+      setDirectAssignHoverDay(iso);
+      clearDirectAssignDateErrors();
+      return;
+    }
+
+    const start = directAssignSelectionAnchor <= iso ? directAssignSelectionAnchor : iso;
+    const end = directAssignSelectionAnchor <= iso ? iso : directAssignSelectionAnchor;
+    const nextKind = directAssignDraft.requestKind === 'VACATION' && hasWeekendInRange(start, end) ? 'ABSENCE' : directAssignDraft.requestKind;
+    if (nextKind !== directAssignDraft.requestKind) {
+      showToast('info', 'O intervalo inclui fim de semana: o pedido mudou para ausência.');
+    }
+
+    setDirectAssignDraft((current) => ({
+      ...current,
+      requestKind: nextKind,
+      partialDay: nextKind === 'VACATION' ? current.partialDay : 'FULL',
+      dataInicio: start,
+      dataFim: end,
+    }));
+    setDirectAssignSelectionAnchor(null);
+    setDirectAssignHoverDay(null);
+    clearDirectAssignDateErrors();
+  }
+
+  function handleDirectAssignDayMouseEnter(iso: string) {
+    if (directAssignSelectionAnchor !== null) {
+      setDirectAssignHoverDay(iso);
+    }
+  }
+
+  function cancelDirectAssignSelection() {
+    setDirectAssignSelectionAnchor(null);
+    setDirectAssignHoverDay(null);
+    setDirectAssignDraft((current) => ({
+      ...current,
+      dataInicio: '',
+      dataFim: '',
+    }));
+    clearDirectAssignDateErrors();
+  }
+
+  function getDirectAssignDayRangeClass(iso: string): string {
+    const anchor = directAssignSelectionAnchor;
+    const hover = directAssignHoverDay ?? anchor;
+
+    if (anchor !== null && hover !== null) {
+      const previewStart = anchor <= hover ? anchor : hover;
+      const previewEnd = anchor <= hover ? hover : anchor;
+      if (iso === previewStart && iso === previewEnd) return ' cal-range-sole';
+      if (iso === previewStart) return ' cal-range-start';
+      if (iso === previewEnd) return ' cal-range-end';
+      if (iso > previewStart && iso < previewEnd) return ' cal-range-mid';
+      return '';
+    }
+
+    const { dataInicio, dataFim } = directAssignDraft;
+    if (!dataInicio || !dataFim) return '';
+    if (iso === dataInicio && iso === dataFim) return ' cal-range-sole cal-range-confirmed';
+    if (iso === dataInicio) return ' cal-range-start cal-range-confirmed';
+    if (iso === dataFim) return ' cal-range-end cal-range-confirmed';
+    if (iso > dataInicio && iso < dataFim) return ' cal-range-mid cal-range-confirmed';
+    return '';
+  }
+
+  function getDirectAssignDayKind(iso: string) {
+    if (!directAssignCalendarData) {
+      return 'normal';
+    }
+
+    if (directAssignCalendarData.extraDays.includes(iso)) return 'extra';
+    if (directAssignCalendarRequestDays.approvedAbsenceDays.has(iso)) return 'approved-absence';
+    if (directAssignCalendarRequestDays.approvedVacationDays.has(iso)) return 'approved';
+    if (directAssignCalendarRequestDays.pendingAbsenceDays.has(iso)) return 'pending-absence';
+    if (directAssignCalendarRequestDays.pendingVacationDays.has(iso)) return 'pending';
+    if (directAssignCalendarData.absencesDays.includes(iso)) return 'absence';
+    if (directAssignCalendarData.holidays.includes(iso)) return 'holiday';
+    if (directAssignCalendarData.weekendDays.includes(iso)) return 'weekend';
+    return 'normal';
+  }
+
+  function getDirectAssignDayLabel(iso: string) {
+    if (!directAssignCalendarData) {
+      return '';
+    }
+
+    const labels: string[] = [];
+
+    if (directAssignCalendarData.holidays.includes(iso)) labels.push('Feriado');
+    if (directAssignCalendarData.extraDays.includes(iso)) labels.push(directAssignExtraDayLabelByDate.get(iso) || 'Dia dado pela empresa');
+    if (directAssignCalendarRequestDays.approvedVacationDays.has(iso)) labels.push('Férias aprovadas');
+    if (directAssignCalendarRequestDays.approvedAbsenceDays.has(iso)) labels.push('Ausência aprovada');
+    if (directAssignCalendarRequestDays.pendingVacationDays.has(iso)) labels.push('Pedido de férias pendente');
+    if (directAssignCalendarRequestDays.pendingAbsenceDays.has(iso)) labels.push('Pedido de ausência pendente');
+    if (directAssignCalendarData.absencesDays.includes(iso)) labels.push('Ausência');
+    if (directAssignCalendarData.weekendDays.includes(iso)) labels.push('Fim de semana');
+
+    return labels.join(' • ');
+  }
+
+  function renderDirectAssignDayCell(iso: string | null, day: number | null, key: string) {
+    if (!iso) {
+      return <div key={key} className="vacations-day vacations-day--blank" />;
+    }
+
+    const today = new Date();
+    const todayISO = dayISO(today.getFullYear(), today.getMonth(), today.getDate());
+    const isPastDay = iso < todayISO;
+    const rangeClass = getDirectAssignDayRangeClass(iso);
+    const isAnchorDay = iso === directAssignSelectionAnchor;
+    const isVacationWeekend = directAssignDraft.requestKind === 'VACATION' && isWeekendIso(iso);
+    const dayKind = getDirectAssignDayKind(iso);
+    const partialMarker = directAssignPartialVacationDays.get(iso);
+    const hasHalfDayFill = (dayKind === 'approved' || dayKind === 'pending') && (partialMarker === 'AM' || partialMarker === 'PM');
+    const halfFillColor = dayKind === 'approved' ? '#d6f4e1' : '#ffe6ac';
+    const halfFillStyle = hasHalfDayFill
+      ? {
+          background: partialMarker === 'AM'
+            ? `linear-gradient(to bottom, ${halfFillColor} 0 50%, #ffffff 50% 100%)`
+            : `linear-gradient(to bottom, #ffffff 0 50%, ${halfFillColor} 50% 100%)`,
+        }
+      : undefined;
+    const dayTitle = isVacationWeekend
+      ? 'Fim de semana: ao clicar, o pedido muda para ausência.'
+      : (isPastDay ? `Data passada • ${getDirectAssignDayLabel(iso)}` : getDirectAssignDayLabel(iso));
+    const dayTitleWithPartial = hasHalfDayFill
+      ? `${dayTitle}${dayTitle ? ' • ' : ''}${partialMarker === 'AM' ? 'Meio-dia manhã' : 'Meio-dia tarde'}`
+      : dayTitle;
+
+    return (
+      <button
+        type="button"
+        key={key}
+        className={`vacations-day vacations-day--${dayKind}${rangeClass}${isAnchorDay ? ' cal-day-anchor' : ''}${isPastDay ? ' vacations-day--past' : ''}${hasHalfDayFill ? ` vacations-day--half-${(partialMarker as 'AM' | 'PM').toLowerCase()}` : ''}`}
+        title={dayTitleWithPartial}
+        onClick={() => handleDirectAssignDayClick(iso)}
+        onMouseEnter={() => handleDirectAssignDayMouseEnter(iso)}
+        style={halfFillStyle}
+      >
+        {day}
+      </button>
+    );
   }
 
   async function handleDirectAssignSubmit(event: FormEvent<HTMLFormElement>) {
@@ -2107,6 +2527,7 @@ export default function VacationsPage() {
         cacheRef.current.calendarLoadedYear = undefined;
         void loadCalendar(calendarYear);
       }
+      void loadDirectAssignCalendar(directAssignCalendarYear, selectedVacationTargetUserId);
       void refreshNotifications();
 
       const selectedTarget = vacationTargetCandidates.find((item) => item.id === selectedVacationTargetUserId);
@@ -3396,7 +3817,7 @@ export default function VacationsPage() {
                 onClick={() => setIsCreditBalanceModalOpen(true)}
               >
                 <strong>Creditar dias de férias (saldo)</strong>
-                <span>Creditar dias adicionais no saldo anual de colaboradores elegíveis, com motivo obrigatório.</span>
+                <span>Modal mais limpo com escolha múltipla de colaboradores em popup dedicado.</span>
               </button>
               <button
                 type="button"
@@ -3404,7 +3825,7 @@ export default function VacationsPage() {
                 onClick={() => setIsAssignVacationModalOpen(true)}
               >
                 <strong>Atribuir férias/ausências a colaborador</strong>
-                <span>Pesquisa dinâmica, seleção com um clique e submissão sem aprovação intermédia.</span>
+                <span>Escolha o colaborador num popup e marca o período no calendário sem aprovação intermédia.</span>
               </button>
               <button
                 type="button"
@@ -3421,7 +3842,7 @@ export default function VacationsPage() {
 
           {isAssignVacationModalOpen && (
           <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="assign-vacation-modal-title" onClick={(e) => { if (e.target === e.currentTarget) setIsAssignVacationModalOpen(false); }}>
-          <div className="pending-modal pending-modal--vacations vacations-action-modal">
+          <div className="pending-modal pending-modal--vacations vacations-action-modal vacations-action-modal--wide">
             <div className="pending-modal__header">
               <div>
                 <p className="pending-modal__kicker">Ação 1</p>
@@ -3430,52 +3851,27 @@ export default function VacationsPage() {
               <button type="button" className="pending-modal__close" onClick={() => setIsAssignVacationModalOpen(false)} aria-label="Fechar">×</button>
             </div>
           <section className="vacations-direct-card vacations-action-modal__section">
-            <p className="vacations-company-days-subtitle">Pesquisa dinâmica, seleção com um clique e submissão sem aprovação intermédia.</p>
+            <p className="vacations-company-days-subtitle">Seleciona o colaborador num popup dedicado e regista o período diretamente no calendário.</p>
 
             <form className="vacations-export-form vacations-direct-form" onSubmit={handleDirectAssignSubmit} noValidate>
-            <div className="vacations-direct-picker vacations-direct-field--full">
-              <label className="vacations-export-form__field vacations-export-collaborators__search">
-                <span>Colaborador</span>
-                <input
-                  type="search"
-                  value={vacationTargetSearch}
-                  onChange={(e) => setVacationTargetSearch(e.target.value)}
-                  placeholder="Escreve para pesquisar por nome ou username"
-                  autoComplete="off"
-                />
-              </label>
-
-              <div className="vacations-direct-picker__meta" aria-live="polite">
-                {selectedVacationTarget
-                  ? `Selecionado: ${getProfileDisplayName({ username: selectedVacationTarget.username, profile: selectedVacationTarget.profile })}`
-                  : 'Seleciona um colaborador na lista abaixo'}
+            <div className="vacations-operation-panel vacations-direct-field--full">
+              <div className="vacations-operation-panel__head">
+                <div>
+                  <span className="vacations-operation-panel__eyebrow">Colaborador</span>
+                </div>
+                <button type="button" className="vacations-operation-panel__trigger" onClick={openVacationTargetPicker}>
+                  Escolher colaborador
+                </button>
               </div>
 
-              <div className="vacations-direct-picker__list" role="listbox" aria-label="Resultados da pesquisa de colaboradores">
-                {isLoadingVacationTargets ? (
-                  <p>A procurar colaboradores...</p>
-                ) : visibleVacationTargetCandidates.length === 0 ? (
-                  <p>Sem resultados para a pesquisa atual.</p>
-                ) : (
-                  visibleVacationTargetCandidates.map((candidate) => {
-                    const isSelected = candidate.id === selectedVacationTargetUserId;
-                    const label = getProfileDisplayName({ username: candidate.username, profile: candidate.profile });
-                    return (
-                      <button
-                        key={candidate.id}
-                        type="button"
-                        role="option"
-                        aria-selected={isSelected}
-                        className={`vacations-direct-picker__item${isSelected ? ' is-selected' : ''}`}
-                        onClick={() => setSelectedVacationTargetUserId(candidate.id)}
-                      >
-                        <strong>{label}</strong>
-                        <small>@{candidate.username}</small>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
+              {selectedVacationTarget ? (
+                <div className="vacations-operation-panel__selection">
+                  <strong>{getProfileDisplayName({ username: selectedVacationTarget.username, profile: selectedVacationTarget.profile })}</strong>
+                  <span>@{selectedVacationTarget.username}</span>
+                </div>
+              ) : (
+                <div className="vacations-operation-panel__empty">Nenhum colaborador selecionado.</div>
+              )}
             </div>
 
             <label className="vacations-export-form__field">
@@ -3504,15 +3900,147 @@ export default function VacationsPage() {
               </label>
             )}
 
-            <label className="vacations-export-form__field">
-              <span>Data início</span>
-              <input type="date" value={directAssignDraft.dataInicio} onChange={(e) => handleDirectAssignDraftChange('dataInicio', e.target.value)} />
-            </label>
+            <div
+              className="vacations-direct-calendar-shell vacations-direct-field--full"
+              onMouseLeave={() => directAssignSelectionAnchor !== null && setDirectAssignHoverDay(directAssignSelectionAnchor)}
+            >
+              <div className="vacations-direct-calendar-head">
+                <div>
+                  <strong>
+                    {selectedVacationTarget
+                      ? getProfileDisplayName({ username: selectedVacationTarget.username, profile: selectedVacationTarget.profile })
+                      : 'Seleciona um colaborador'}
+                  </strong>
+                  <p>Marca o intervalo diretamente no calendário do colaborador selecionado.</p>
+                </div>
+                <div className="vacations-calendar-toolbar__actions">
+                  <button type="button" className="vacations-calendar-toolbar__btn" onClick={() => setDirectAssignCalendarYear((year) => year - 1)}>
+                    Ano anterior
+                  </button>
+                  <select
+                    className="vacations-calendar-toolbar__year-select"
+                    value={directAssignCalendarYear}
+                    onChange={(event) => setDirectAssignCalendarYear(Number(event.target.value))}
+                  >
+                    {Array.from({ length: 9 }, (_, index) => new Date().getFullYear() - 4 + index).map((year) => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                  <button type="button" className="vacations-calendar-toolbar__btn" onClick={() => setDirectAssignCalendarYear((year) => year + 1)}>
+                    Próximo ano
+                  </button>
+                </div>
+              </div>
 
-            <label className="vacations-export-form__field">
-              <span>Data fim</span>
-              <input type="date" value={directAssignDraft.dataFim} onChange={(e) => handleDirectAssignDraftChange('dataFim', e.target.value)} />
-            </label>
+              <div className="vacations-legend" aria-label="Legenda do calendário de atribuição direta">
+                <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--holiday" />Feriado</span>
+                <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--weekend" />Fim de semana</span>
+                <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--absence" />Ausência pendente</span>
+                <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--approved-absence" />Ausência aprovada</span>
+                <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--pending" />Férias pendentes</span>
+                <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--approved" />Férias aprovadas</span>
+                <span className="vacations-legend-item"><i className="legend-swatch legend-swatch--extra" />Dia dado pela empresa</span>
+                <span className="vacations-legend-item vacations-legend-item--hint">
+                  {directAssignSelectionAnchor
+                    ? `📅 ${formatShortDate(directAssignSelectionAnchor)} - clica no dia de fim`
+                    : directAssignDraft.dataInicio && directAssignDraft.dataFim
+                      ? `Selecionado: ${formatShortDate(directAssignDraft.dataInicio)}${directAssignDraft.dataInicio !== directAssignDraft.dataFim ? ' → ' + formatShortDate(directAssignDraft.dataFim) : ''}`
+                      : 'Clica num dia para iniciar seleção'}
+                </span>
+              </div>
+
+              {directAssignCalendarError ? (
+                <div className="vacations-panel-state">
+                  <p>{directAssignCalendarError}</p>
+                  <button
+                    type="button"
+                    className="vacations-panel-state__action"
+                    onClick={() => {
+                      setDirectAssignCalendarError('');
+                      void loadDirectAssignCalendar(directAssignCalendarYear, selectedVacationTargetUserId);
+                    }}
+                  >
+                    Tentar novamente
+                  </button>
+                </div>
+              ) : isDirectAssignCalendarLoading || !directAssignCalendarData ? (
+                <div className="vacations-year-grid vacations-year-grid--loading">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <article key={index} className="vacations-month-card home-card--loading">
+                      <span className="loading-line loading-line--card-title" />
+                      <span className="loading-line loading-line--card-body" />
+                      <span className="loading-line loading-line--card-body" />
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="vacations-year-grid vacations-year-grid--compact">
+                  {directAssignYearMonths.map((month) => (
+                    <article key={month.month} className="vacations-month-card">
+                      <header>
+                        <h4>{month.month}</h4>
+                      </header>
+
+                      <div className="vacations-month-grid">
+                        {['S', 'T', 'Q', 'Q', 'S', 'S', 'D'].map((label, index) => (
+                          <strong key={`${month.month}-${label}-${index}`}>{label}</strong>
+                        ))}
+
+                        {month.cells.map((cell, idx) => renderDirectAssignDayCell(cell.iso, cell.day, `${month.month}-${cell.iso || 'blank'}-${idx}`))}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+
+              {(directAssignSelectionAnchor !== null || (directAssignDraft.dataInicio && directAssignDraft.dataFim)) && (
+                <div className={`cal-booking-bar${directAssignSelectionAnchor !== null ? ' cal-booking-bar--picking' : ' cal-booking-bar--ready'}`}>
+                  {directAssignSelectionAnchor !== null ? (
+                    <div className="cal-booking-bar__hint">
+                      <span className="cal-booking-bar__hint-icon">📅</span>
+                      <div>
+                        <strong>Início: {formatShortDate(directAssignSelectionAnchor)}</strong>
+                        <p>Clica no dia de fim para definir o intervalo</p>
+                      </div>
+                      <button type="button" className="cal-booking-bar__cancel" onClick={cancelDirectAssignSelection} aria-label="Cancelar seleção">✕</button>
+                    </div>
+                  ) : (
+                    <div className="cal-booking-bar__range">
+                      <span className="cal-booking-bar__range-icon">📅</span>
+                      <div className="cal-booking-bar__range-dates">
+                        <strong>
+                          {directAssignDraft.dataInicio === directAssignDraft.dataFim
+                            ? formatShortDate(directAssignDraft.dataInicio)
+                            : `${formatShortDate(directAssignDraft.dataInicio)} → ${formatShortDate(directAssignDraft.dataFim)}`}
+                        </strong>
+                        <small>
+                          {directAssignDraft.requestKind === 'VACATION'
+                            ? calculateDuration({
+                                dataInicio: directAssignDraft.dataInicio,
+                                dataFim: directAssignDraft.dataFim,
+                                requestType: 'VACATION',
+                                partialDay: directAssignDraft.partialDay,
+                              })
+                            : calculateDays({ dataInicio: directAssignDraft.dataInicio, dataFim: directAssignDraft.dataFim })}{' '}
+                          {directAssignDraft.requestKind === 'VACATION' ? 'dias úteis' : 'dias'}
+                        </small>
+                      </div>
+                      <button
+                        type="button"
+                        className="cal-booking-bar__reselect"
+                        title="Alterar intervalo"
+                        onClick={() => {
+                          setDirectAssignSelectionAnchor(directAssignDraft.dataInicio);
+                          setDirectAssignHoverDay(directAssignDraft.dataFim);
+                        }}
+                      >
+                        ✎
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             <label className="vacations-export-form__field vacations-direct-field--full">
               <span>Observações</span>
@@ -3539,7 +4067,7 @@ export default function VacationsPage() {
 
           {isCreditBalanceModalOpen && (
           <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="credit-balance-modal-title" onClick={(e) => { if (e.target === e.currentTarget) setIsCreditBalanceModalOpen(false); }}>
-          <div className="pending-modal pending-modal--vacations vacations-action-modal">
+          <div className="pending-modal pending-modal--vacations vacations-action-modal vacations-action-modal--wide">
             <div className="pending-modal__header">
               <div>
                 <p className="pending-modal__kicker">Ação 2</p>
@@ -3551,70 +4079,33 @@ export default function VacationsPage() {
             <p className="vacations-company-days-subtitle">Creditar dias adicionais no saldo anual de colaboradores elegíveis, com motivo obrigatório.</p>
 
             <div className="vacations-direct-grid">
-              <label className="vacations-export-form__field">
-                <span>Equipa</span>
-                <select value={assignFilterTeamId} onChange={(e) => setAssignFilterTeamId(e.target.value)}>
-                  <option value="">Todas as equipas</option>
-                  {exportTeams.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="vacations-export-form__field vacations-direct-field--grow">
-                <span>Pesquisar colaborador</span>
-                <input
-                  type="text"
-                  value={assignSearch}
-                  onChange={(e) => setAssignSearch(e.target.value)}
-                  placeholder="Escreve nome, username ou email..."
-                />
-              </label>
-
-              <div className="vacations-direct-field--full rh-collaborator-picker">
-                <span>Resultados</span>
-                <div className="rh-collaborator-results">
-                  {isLoadingAssignCandidates ? (
-                    <p>A carregar colaboradores...</p>
-                  ) : assignCandidates.length === 0 ? (
-                    <p>Sem colaboradores elegíveis para crédito de saldo com os filtros atuais.</p>
-                  ) : (
-                    assignCandidates.map((item) => {
-                      const isSelected = item.id === assignSelectedUserId;
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          className="rh-collaborator-result"
-                          onClick={() => setAssignSelectedUserId(item.id)}
-                          style={isSelected ? { borderColor: '#6da5f1', background: '#eef5ff' } : undefined}
-                        >
-                          <strong>{item.profile?.nomeAbreviado || item.profile?.nomeCompleto || item.username}</strong>
-                          <span>{item.username}</span>
-                          <small>
-                            {item.team?.name ? `${item.team.name} • ` : ''}
-                            {item.profile?.nomeCompleto || 'Sem nome completo'}
-                          </small>
-                        </button>
-                      );
-                    })
-                  )}
+              <div className="vacations-operation-panel vacations-direct-field--full">
+                <div className="vacations-operation-panel__head">
+                  <div>
+                    <span className="vacations-operation-panel__eyebrow">Colaboradores</span>
+                    <strong>Seleciona um ou mais colaboradores</strong>
+                  </div>
+                  <button type="button" className="vacations-operation-panel__trigger" onClick={openAssignCreditPicker}>
+                    Escolher colaboradores
+                  </button>
                 </div>
+
+                {selectedAssignCandidates.length > 0 ? (
+                  <div className="rh-selected-chips">
+                    {selectedAssignCandidates.map((item) => (
+                      <span key={item.id} className="rh-selected-chip" title={getExportCollaboratorMeta(item)}>
+                        {getExportCollaboratorDisplayName(item)}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="vacations-operation-panel__empty">Nenhum colaborador selecionado.</div>
+                )}
               </div>
-
-              {selectedAssignCandidate && (
-                <div className="vacations-direct-field--full rh-selected-collaborator">
-                  <strong>Selecionado: {selectedAssignCandidate.profile?.nomeAbreviado || selectedAssignCandidate.profile?.nomeCompleto || selectedAssignCandidate.username}</strong>
-                  <span>
-                    {selectedAssignCandidate.username}
-                    {selectedAssignCandidate.team?.name ? ` • ${selectedAssignCandidate.team.name}` : ''}
-                  </span>
-                </div>
-              )}
 
               <label className="vacations-export-form__field">
                 <span>Dias a creditar</span>
-                <input type="number" min={1} step={1} value={assignCreditDays} onChange={(e) => setAssignCreditDays(e.target.value)} />
+                <input type="number" min={0.5} step={0.5} value={assignCreditDays} onChange={(e) => setAssignCreditDays(e.target.value)} />
               </label>
 
               <label className="vacations-export-form__field">
@@ -3632,7 +4123,7 @@ export default function VacationsPage() {
                 />
               </label>
 
-              <div className="vacations-direct-action-row">
+              <div className="vacations-direct-action-row vacations-direct-action-row--compact">
                 <Button type="button" variant="primary" isLoading={isCreditingVacationBalance} onClick={() => void creditVacationBalance()}>
                   Creditar dias no saldo
                 </Button>
@@ -3645,7 +4136,7 @@ export default function VacationsPage() {
 
           {isFixedDaysModalOpen && canManageVacationRules && (
             <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="fixed-days-modal-title" onClick={(e) => { if (e.target === e.currentTarget) setIsFixedDaysModalOpen(false); }}>
-            <div className="pending-modal pending-modal--vacations vacations-action-modal">
+            <div className="pending-modal pending-modal--vacations vacations-action-modal vacations-action-modal--wide vacations-action-modal--vauto">
               <div className="pending-modal__header">
                 <div>
                   <p className="pending-modal__kicker">Ação 3</p>
@@ -3657,8 +4148,21 @@ export default function VacationsPage() {
               <div className="vauto__header">
                 <div>
                   <p className="vauto__sub">Define dias por ano e abrangência regional (todos, país ou estado BR)</p>
+                  <div className="vauto__meta">
+                    <span className="vauto__meta-item">Ano: {companyExtraYear}</span>
+                    <span className="vauto__meta-item">Abrangência: {companyExtraScopeSummary}</span>
+                    {isRefreshingCompanyExtraDays && <span className="vauto__refresh">A atualizar lista sem interromper o ecrã…</span>}
+                  </div>
                 </div>
                 <div className="vauto__header-right">
+                  <button
+                    type="button"
+                    className="vauto__help-toggle"
+                    onClick={() => setIsCompanyExtraGuideVisible((current) => !current)}
+                    aria-expanded={isCompanyExtraGuideVisible}
+                  >
+                    {isCompanyExtraGuideVisible ? 'Ocultar ajuda' : 'Como usar'}
+                  </button>
                   <div className="vauto__year-nav" aria-label="Ano">
                     <button type="button" className="vauto__year-btn" onClick={() => { setCompanyExtraYear((y) => y - 1); }} aria-label="Ano anterior">‹</button>
                     <span className="vauto__year-label">{companyExtraYear}</span>
@@ -3668,22 +4172,17 @@ export default function VacationsPage() {
                 </div>
               </div>
 
-              <div className="vauto__guide">
-                <div className="vauto__guide-card">
+              {isCompanyExtraGuideVisible && (
+                <div className="vauto__guide">
+                  <div className="vauto__guide-card">
                   <strong>Como usar</strong>
                   <span>1. Escolhe o ano.</span>
                   <span>2. Define a abrangência: Todos, Portugal, Brasil ou um estado específico.</span>
                   <span>3. Seleciona a data e escreve a observação do motivo.</span>
                   <span>4. Adiciona o dia. Se a data já passou este ano, o sistema só deixa aplicar ao próximo.</span>
                 </div>
-                <div className="vauto__guide-card vauto__guide-card--accent">
-                  <strong>Configuração atual</strong>
-                  <span><b>Ano:</b> {companyExtraYear}</span>
-                  <span><b>Abrangência:</b> {companyExtraScopeSummary}</span>
-
-                  {isRefreshingCompanyExtraDays && <span className="vauto__refresh">A atualizar lista sem interromper o ecrã…</span>}
                 </div>
-              </div>
+              )}
 
               {isLoadingCompanyExtraDays && !hasLoadedCompanyExtraDays ? (
                 <div className="vauto__loading">A carregar…</div>
@@ -3793,7 +4292,7 @@ export default function VacationsPage() {
                           const monthName = MONTHS[parseInt(mm, 10) - 1] || mm;
                           return (
                             <tr key={item.date}>
-                              <td className="vauto__list-date">{dd} {monthName}</td>
+                              <td className="vauto__list-date">{dd} {monthName} {companyExtraYear}</td>
                               <td className="vauto__list-label">{item.label}</td>
                               <td className="vauto__list-action">
                                 <button
@@ -3816,6 +4315,245 @@ export default function VacationsPage() {
               )}
             </section>
             </div>
+            </div>
+          )}
+
+          {activeCollaboratorPickerMode && (
+            <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="collaborator-picker-modal-title" onClick={(e) => { if (e.target === e.currentTarget) closeCollaboratorPicker(); }}>
+              <div className="pending-modal pending-modal--vacations vacations-picker-modal">
+                <div className="pending-modal__header vacations-picker-modal__header">
+                  <div>
+                    <p className="pending-modal__kicker">Seleção</p>
+                    <h2 id="collaborator-picker-modal-title">
+                      {activeCollaboratorPickerMode === 'vacation-target' ? 'Escolher colaborador' : 'Escolher colaboradores'}
+                    </h2>
+                    <p className="vacations-company-days-subtitle">
+                      {activeCollaboratorPickerMode === 'vacation-target'
+                        ? 'Pesquisa e confirma um colaborador para abrir o respetivo calendário.'
+                        : activeCollaboratorPickerMode === 'export-collaborators'
+                          ? 'Filtra por equipa, pesquisa e confirma os colaboradores que devem entrar no export.'
+                          : 'Filtra a lista, seleciona os colaboradores pretendidos e confirma para voltar ao modal principal.'}
+                    </p>
+                  </div>
+                  <button type="button" className="pending-modal__close" onClick={closeCollaboratorPicker} aria-label="Fechar">×</button>
+                </div>
+
+                <div className="vacations-picker-modal__body">
+                  {activeCollaboratorPickerMode === 'vacation-target' ? (
+                    <>
+                      <div className="vacations-picker-modal__toolbar">
+                        <label className="vacations-export-form__field vacations-picker-modal__search">
+                          <span>Pesquisar</span>
+                          <input
+                            type="search"
+                            value={vacationTargetSearch}
+                            onChange={(e) => setVacationTargetSearch(e.target.value)}
+                            placeholder="Nome ou username"
+                            autoComplete="off"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="rh-collaborator-results rh-collaborator-results--multi vacations-picker-modal__results" role="listbox" aria-label="Lista de colaboradores para atribuição direta">
+                        {isLoadingVacationTargets ? (
+                          <p className="rh-picker-loading">A procurar colaboradores...</p>
+                        ) : visibleVacationTargetCandidates.length === 0 ? (
+                          <p className="rh-picker-empty">Sem resultados para a pesquisa atual.</p>
+                        ) : (
+                          visibleVacationTargetCandidates.map((candidate) => {
+                            const isSelected = candidate.id === draftVacationTargetUserId;
+                            const label = getProfileDisplayName({ username: candidate.username, profile: candidate.profile });
+                            return (
+                              <button
+                                key={candidate.id}
+                                type="button"
+                                role="option"
+                                aria-selected={isSelected}
+                                className={`rh-collaborator-result${isSelected ? ' rh-collaborator-result--selected' : ''}`}
+                                onClick={() => setDraftVacationTargetUserId(candidate.id)}
+                              >
+                                <span className="rh-collab-check">{isSelected ? '●' : '○'}</span>
+                                <span className="rh-collab-info">
+                                  <strong>{label}</strong>
+                                  <span>@{candidate.username}</span>
+                                </span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </>
+                  ) : activeCollaboratorPickerMode === 'balance-credit' ? (
+                    <>
+                      <div className="vacations-picker-modal__toolbar vacations-picker-modal__toolbar--split">
+                        <label className="vacations-export-form__field">
+                          <span>Equipa</span>
+                          <select value={assignFilterTeamId} onChange={(e) => setAssignFilterTeamId(e.target.value)}>
+                            <option value="">Todas as equipas</option>
+                            {exportTeams.map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="vacations-export-form__field vacations-picker-modal__search">
+                          <span>Pesquisar</span>
+                          <input
+                            type="search"
+                            value={assignSearch}
+                            onChange={(e) => setAssignSearch(e.target.value)}
+                            placeholder="Nome, username ou email"
+                            autoComplete="off"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="rh-picker-bulk-bar">
+                        <button
+                          type="button"
+                          className="rh-picker-bulk-btn"
+                          disabled={assignCandidates.length === 0}
+                          onClick={() => setDraftAssignSelectedUserIds(assignCandidates.map((item) => item.id))}
+                        >
+                          Selecionar todos visíveis
+                        </button>
+                        <button
+                          type="button"
+                          className="rh-picker-bulk-btn rh-picker-bulk-btn--clear"
+                          disabled={draftAssignSelectedUserIds.length === 0}
+                          onClick={() => setDraftAssignSelectedUserIds([])}
+                        >
+                          Limpar seleção
+                        </button>
+                        <span className="vacations-picker-modal__count">{draftAssignSelectedUserIds.length} selecionado(s)</span>
+                      </div>
+
+                      <div className="rh-collaborator-results rh-collaborator-results--multi vacations-picker-modal__results" role="listbox" aria-label="Lista de colaboradores para crédito de saldo">
+                        {isLoadingAssignCandidates ? (
+                          <p className="rh-picker-loading">A carregar colaboradores...</p>
+                        ) : assignCandidates.length === 0 ? (
+                          <p className="rh-picker-empty">Sem colaboradores elegíveis para os filtros atuais.</p>
+                        ) : (
+                          assignCandidates.map((item) => {
+                            const isSelected = draftAssignSelectedUserIds.includes(item.id);
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                role="option"
+                                aria-selected={isSelected}
+                                className={`rh-collaborator-result${isSelected ? ' rh-collaborator-result--selected' : ''}`}
+                                onClick={() => toggleDraftAssignSelectedUserId(item.id)}
+                              >
+                                <span className="rh-collab-check">{isSelected ? '✓' : '○'}</span>
+                                <span className="rh-collab-info">
+                                  <strong>{getExportCollaboratorDisplayName(item)}</strong>
+                                  <span>{item.username}</span>
+                                  <small>{getExportCollaboratorMeta(item) || 'Sem informação adicional'}</small>
+                                </span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="vacations-picker-modal__toolbar vacations-picker-modal__toolbar--split">
+                        <label className="vacations-export-form__field">
+                          <span>Equipa</span>
+                          <select value={exportTeamId} onChange={(e) => setExportTeamId(e.target.value)}>
+                            <option value="">Todas as equipas</option>
+                            {exportTeams.map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="vacations-export-form__field vacations-picker-modal__search">
+                          <span>Pesquisar</span>
+                          <input
+                            type="search"
+                            value={exportCollaboratorSearch}
+                            onChange={(e) => setExportCollaboratorSearch(e.target.value)}
+                            placeholder="Nome, username ou email"
+                            autoComplete="off"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="rh-picker-bulk-bar">
+                        <button
+                          type="button"
+                          className="rh-picker-bulk-btn"
+                          disabled={exportCandidates.length === 0}
+                          onClick={() => setDraftExportSelectedCollaborators((current) => {
+                            const next = [...current];
+                            for (const candidate of exportCandidates) {
+                              if (!next.some((item) => item.id === candidate.id)) {
+                                next.push(candidate);
+                              }
+                            }
+                            return next;
+                          })}
+                        >
+                          Selecionar todos visíveis
+                        </button>
+                        <button
+                          type="button"
+                          className="rh-picker-bulk-btn rh-picker-bulk-btn--clear"
+                          disabled={draftExportSelectedCollaborators.length === 0}
+                          onClick={() => setDraftExportSelectedCollaborators([])}
+                        >
+                          Limpar seleção
+                        </button>
+                        <span className="vacations-picker-modal__count">{draftExportSelectedCollaborators.length} selecionado(s)</span>
+                      </div>
+
+                      <div className="rh-collaborator-results rh-collaborator-results--multi vacations-picker-modal__results" role="listbox" aria-label="Lista de colaboradores para exportação">
+                        {isLoadingExportCandidates ? (
+                          <p className="rh-picker-loading">A carregar colaboradores...</p>
+                        ) : exportCandidates.length === 0 ? (
+                          <p className="rh-picker-empty">Sem colaboradores para os filtros atuais.</p>
+                        ) : (
+                          exportCandidates.map((item) => {
+                            const isSelected = draftExportSelectedCollaborators.some((selected) => selected.id === item.id);
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                role="option"
+                                aria-selected={isSelected}
+                                className={`rh-collaborator-result${isSelected ? ' rh-collaborator-result--selected' : ''}`}
+                                onClick={() => toggleDraftExportCollaborator(item)}
+                              >
+                                <span className="rh-collab-check">{isSelected ? '✓' : '○'}</span>
+                                <span className="rh-collab-info">
+                                  <strong>{getExportCollaboratorDisplayName(item)}</strong>
+                                  <span>{item.username}</span>
+                                  <small>{getExportCollaboratorMeta(item) || 'Sem informação adicional'}</small>
+                                </span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="vacations-picker-modal__footer">
+                  <button type="button" className="vacations-picker-modal__secondary" onClick={closeCollaboratorPicker}>Cancelar</button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={confirmCollaboratorPickerSelection}
+                    disabled={activeCollaboratorPickerMode === 'vacation-target' ? !draftVacationTargetUserId : activeCollaboratorPickerMode === 'balance-credit' ? draftAssignSelectedUserIds.length === 0 : false}
+                  >
+                    Confirmar seleção
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </>
@@ -3962,78 +4700,50 @@ export default function VacationsPage() {
 
             {isExportCollaboratorsOpen && (
               <div className="vacations-export-collaborators">
-              <div className="vacations-export-collaborators__head">
-                <div>
-                  <h4>Exportar por colaborador</h4>
-                  <p>Seleciona um ou vários colaboradores. Se não selecionares ninguém, o ficheiro inclui todos dentro do filtro atual.</p>
+                <div className="vacations-export-collaborators__head">
+                  <div>
+                    <h4>Exportar por colaborador</h4>
+                    <p>Seleciona um ou vários colaboradores. Se não selecionares ninguém, o ficheiro inclui todos dentro do filtro atual.</p>
+                  </div>
+                  <Badge tone={exportSelectedCollaborators.length > 0 ? 'info' : 'neutral'}>
+                    {exportSelectedCollaborators.length > 0 ? `${exportSelectedCollaborators.length} selecionado(s)` : 'Todos os colaboradores'}
+                  </Badge>
                 </div>
-                <Badge tone={exportSelectedCollaborators.length > 0 ? 'info' : 'neutral'}>
-                  {exportSelectedCollaborators.length > 0 ? `${exportSelectedCollaborators.length} selecionado(s)` : 'Todos os colaboradores'}
-                </Badge>
-              </div>
 
-              <div className="vacations-export-collaborators__controls">
-                <label className="vacations-export-form__field vacations-export-collaborators__search">
-                  <span>Pesquisar colaborador</span>
-                  <input
-                    type="text"
-                    value={exportCollaboratorSearch}
-                    onChange={(e) => setExportCollaboratorSearch(e.target.value)}
-                    placeholder="Nome, username ou email..."
-                  />
-                </label>
-                <div className="vacations-export-collaborators__actions">
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setExportSelectedCollaborators([])}>
-                    Limpar seleção
-                  </Button>
+                <div className="vacations-operation-panel">
+                  <div className="vacations-operation-panel__head">
+                    <div>
+                      <span className="vacations-operation-panel__eyebrow">Colaboradores</span>
+                      <strong>Refina por equipa e escolhe num popup dedicado</strong>
+                    </div>
+                    <button type="button" className="vacations-operation-panel__trigger" onClick={openExportCollaboratorPicker}>
+                      Escolher colaboradores
+                    </button>
+                  </div>
+
+                  {exportSelectedCollaborators.length > 0 ? (
+                    <div className="vacations-export-selected-chips">
+                      {exportSelectedCollaborators.map((item) => {
+                        const label = item.profile?.nomeAbreviado || item.profile?.nomeCompleto || item.username;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className="vacations-export-selected-chip"
+                            onClick={() => removeExportCollaborator(item.id)}
+                            title="Remover da exportação"
+                          >
+                            <span>{label}</span>
+                            <small>{item.username}</small>
+                            <strong>×</strong>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="vacations-operation-panel__empty">Nenhum colaborador selecionado. O export inclui todos os colaboradores do filtro atual.</div>
+                  )}
                 </div>
-              </div>
-
-              {exportSelectedCollaborators.length > 0 && (
-                <div className="vacations-export-selected-chips">
-                  {exportSelectedCollaborators.map((item) => {
-                    const label = item.profile?.nomeAbreviado || item.profile?.nomeCompleto || item.username;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className="vacations-export-selected-chip"
-                        onClick={() => removeExportCollaborator(item.id)}
-                        title="Remover da exportação"
-                      >
-                        <span>{label}</span>
-                        <small>{item.username}</small>
-                        <strong>×</strong>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div className="vacations-export-collaborators__results rh-collaborator-results">
-                {isLoadingExportCandidates ? (
-                  <p>A carregar colaboradores...</p>
-                ) : exportCandidates.length === 0 ? (
-                  <p>Sem colaboradores para os filtros atuais.</p>
-                ) : (
-                  exportCandidates.map((item) => {
-                    const isSelected = exportSelectedCollaborators.some((selected) => selected.id === item.id);
-                    const label = item.profile?.nomeAbreviado || item.profile?.nomeCompleto || item.username;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className={`rh-collaborator-result ${isSelected ? 'vacations-export-collaborator-result--selected' : ''}`}
-                        onClick={() => toggleExportCollaborator(item)}
-                      >
-                        <strong>{label}</strong>
-                        <span>{item.username}</span>
-                        <small>{item.team?.name || 'Sem equipa'}</small>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
               </div>
             )}
 

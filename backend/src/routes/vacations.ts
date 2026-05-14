@@ -108,13 +108,21 @@ const approveRejectSchema = z.object({
 
 const assignBalanceCreditSchema = z
   .object({
-    userId: z.string().min(1, 'Colaborador é obrigatório.'),
+    userId: z.string().min(1, 'Colaborador é obrigatório.').optional(),
+    userIds: z.array(z.string().min(1, 'Colaborador é obrigatório.')).min(1, 'Seleciona pelo menos um colaborador.').optional(),
     year: z.number().int().min(2000).max(2100).optional(),
-    days: z.number().int().min(1, 'Dias a creditar deve ser pelo menos 1.'),
+    days: z.number()
+      .min(0.5, 'Dias a creditar deve ser pelo menos 0,5.')
+      .refine((value) => Math.abs(value * 2 - Math.round(value * 2)) < 1e-9, 'Dias a creditar deve ser em múltiplos de 0,5.'),
     reason: z.string().trim().min(3, 'Motivo é obrigatório.'),
+  })
+  .refine((data) => Boolean(data.userId || (data.userIds && data.userIds.length > 0)), {
+    message: 'Colaborador é obrigatório.',
+    path: ['userId'],
   })
   .transform((data) => ({
     ...data,
+    userIds: Array.from(new Set([...(data.userIds ?? []), ...(data.userId ? [data.userId] : [])])),
     year: data.year ?? new Date().getFullYear(),
     reason: data.reason.trim(),
   }));
@@ -1901,12 +1909,43 @@ router.get('/vacations/overview', requireAuth, async (req: Request, res: Respons
 
 router.get('/vacations/calendar', requireAuth, async (req: Request, res: Response) => {
   try {
-    const userId = req.authUser!.id;
+    const actorUserId = req.authUser!.id;
     const year = Number(typeof req.query.year === 'string' ? req.query.year : new Date().getFullYear());
+    const actorIsFullAccess = await isAccessTotal(actorUserId);
+    let targetUserId = actorUserId;
+    const requestedTargetUserId = typeof req.query.targetUserId === 'string' ? req.query.targetUserId.trim() : '';
+
+    if (requestedTargetUserId && requestedTargetUserId !== actorUserId) {
+      if (!req.authUser!.isRootAccess && !actorIsFullAccess) {
+        return res.status(403).json({ error: 'Só utilizadores com acesso total podem consultar o calendário de outros colaboradores.' });
+      }
+
+      const targetUser = await prisma.user.findUnique({
+        where: { id: requestedTargetUserId },
+        select: {
+          id: true,
+          isActive: true,
+          hasAccessTotal: true,
+        },
+      });
+
+      if (!targetUser || !targetUser.isActive) {
+        return res.status(404).json({ error: 'Colaborador alvo não encontrado ou inativo.' });
+      }
+
+      if (targetUser.hasAccessTotal && !req.authUser!.isRootAccess) {
+        const canReview = await canReviewAccessTotalHierarchy(actorUserId, targetUser.id);
+        if (!canReview) {
+          return res.status(403).json({ error: 'Não podes consultar o calendário de utilizadores acima de ti na hierarquia de acesso total.' });
+        }
+      }
+
+      targetUserId = targetUser.id;
+    }
 
     const [profile, vacations] = await Promise.all([
-      prisma.profile.findUnique({ where: { userId } }),
-      prisma.vacation.findMany({ where: { userId } }),
+      prisma.profile.findUnique({ where: { userId: targetUserId } }),
+      prisma.vacation.findMany({ where: { userId: targetUserId } }),
     ]);
 
     const country = profile?.workCountry ?? 'PT';
@@ -2174,8 +2213,8 @@ async function createVacationBalanceCredit(req: Request, res: Response) {
     }
 
     const data = validation.data;
-    const targetUser = await prisma.user.findUnique({
-      where: { id: data.userId },
+    const targetUsers = await prisma.user.findMany({
+      where: { id: { in: data.userIds } },
       select: {
         id: true,
         isActive: true,
@@ -2185,41 +2224,58 @@ async function createVacationBalanceCredit(req: Request, res: Response) {
       },
     });
 
-    if (!targetUser || !targetUser.isActive) {
-      return res.status(404).json({ error: 'Colaborador não encontrado ou inativo.' });
+    if (targetUsers.length !== data.userIds.length) {
+      return res.status(404).json({ error: 'Um ou mais colaboradores não foram encontrados.' });
     }
 
-    if (targetUser.isRootAccess || targetUser.hasAccessTotal) {
+    const inactiveTarget = targetUsers.find((item) => !item.isActive);
+    if (inactiveTarget) {
+      return res.status(404).json({ error: 'Um ou mais colaboradores estão inativos.' });
+    }
+
+    const protectedTarget = targetUsers.find((item) => item.isRootAccess || item.hasAccessTotal);
+    if (protectedTarget) {
       return res.status(400).json({ error: 'Só é permitido creditar saldo para colaboradores sem acesso total.' });
     }
 
     if (!req.authUser!.isRootAccess) {
-      const canCreditTarget = await canAccessUserByPermission(actorId, 'manage_vacation_rules', targetUser.id);
-      if (!canCreditTarget) {
-        return res.status(403).json({ error: 'Sem permissões para creditar saldo a este colaborador com as restrições atuais.' });
+      for (const targetUser of targetUsers) {
+        const canCreditTarget = await canAccessUserByPermission(actorId, 'manage_vacation_rules', targetUser.id);
+        if (!canCreditTarget) {
+          return res.status(403).json({ error: 'Sem permissões para creditar saldo a um dos colaboradores selecionados com as restrições atuais.' });
+        }
       }
     }
 
-    const created = await prisma.vacationBalanceCredit.create({
-      data: {
-        userId: targetUser.id,
-        year: data.year,
-        days: data.days,
-        reason: data.reason,
-        createdById: actorId,
-      },
-    });
-
     const actorLabel = req.authUser!.username;
-    await prisma.notification.create({
-      data: {
-        userId: targetUser.id,
-        title: 'Saldo de férias creditado',
-        message: `Foram creditados ${data.days} dia(s) ao teu saldo de férias de ${data.year} por ${actorLabel}. Motivo: ${data.reason}`,
-      },
+    const created = await prisma.$transaction(async (tx) => {
+      const credits = [];
+      for (const targetUser of targetUsers) {
+        const credit = await tx.vacationBalanceCredit.create({
+          data: {
+            userId: targetUser.id,
+            year: data.year,
+            days: data.days,
+            reason: data.reason,
+            createdById: actorId,
+          },
+        });
+
+        credits.push(credit);
+
+        await tx.notification.create({
+          data: {
+            userId: targetUser.id,
+            title: 'Saldo de férias creditado',
+            message: `Foram creditados ${data.days} dia(s) ao teu saldo de férias de ${data.year} por ${actorLabel}. Motivo: ${data.reason}`,
+          },
+        });
+      }
+
+      return credits;
     });
 
-    return res.status(201).json(created);
+    return res.status(201).json({ count: created.length, items: created });
   } catch (error) {
     console.error('[POST /vacations/assign-balance-days]', error);
     const status = isVacationBusinessRuleError(error) ? 400 : 500;

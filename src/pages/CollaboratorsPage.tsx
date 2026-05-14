@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase, getBackendBase, isAbortError } from '../portal/api';
 import { usePortal } from '../portal/context';
@@ -102,7 +102,10 @@ type CollaboratorRow = {
     workCountry?: 'PT' | 'BR';
     brWorkState?: 'SP' | 'RS';
     localidade?: string;
-  } | null;
+      photoUrl?: string;
+      certificadoHabilitacoesUrl?: string;
+      cartaConducaoUrl?: string;
+    } | null;
 };
 
 type CollaboratorEditDraft = {
@@ -178,7 +181,10 @@ type CollaboratorEditDraft = {
   dataFimContrato: string;
   tipoContrato: string;
   regimeHorario: string;
-};
+    photoUrl: string;
+    certificadoHabilitacoesUrl: string;
+    cartaConducaoUrl: string;
+  };
 
 type EditSection = 'identificacao' | 'contactos' | 'fiscal' | 'emergencia' | 'contrato';
 type DetailsFichaSection = 'conta' | EditSection;
@@ -225,7 +231,8 @@ const COMMON_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
   { key: 'contactoEmergenciaParentesco', label: 'Parentesco contacto emergência', section: 'emergencia' },
   { key: 'contactoEmergenciaNumero', label: 'Número contacto emergência', section: 'emergencia' },
   { key: 'numeroMecanografico', label: 'Número mecanográfico', section: 'contrato' },
-  { key: 'cargo', label: 'Cargo', section: 'contrato' },
+    { key: 'photoUrl', label: 'Foto de utilizador', section: 'identificacao' },
+    { key: 'cargo', label: 'Cargo', section: 'contrato' },
   { key: 'categoriaProfissional', label: 'Categoria profissional', section: 'contrato' },
   { key: 'funcao', label: 'Função', section: 'contrato' },
   { key: 'dataInicioContrato', label: 'Data início contrato', section: 'contrato' },
@@ -236,6 +243,8 @@ const COMMON_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
 
 const PT_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
   { key: 'matriculaCarro', label: 'Matrícula do carro', section: 'identificacao' },
+    { key: 'certificadoHabilitacoesUrl', label: 'Certificado de habilitações', section: 'identificacao' },
+    { key: 'cartaConducaoUrl', label: 'Carta de condução (opcional)', section: 'identificacao' },
   { key: 'cartaoCidadao', label: 'Cartão de cidadão', section: 'fiscal' },
   { key: 'validadeCartaoCidadao', label: 'Validade cartão de cidadão', section: 'fiscal' },
   { key: 'comprovativoCartaoCidadao', label: 'Comprovativo cartão de cidadão', section: 'fiscal' },
@@ -329,12 +338,71 @@ const DETAILS_FICHA_SECTIONS: Array<{ id: DetailsFichaSection; label: string }> 
   { id: 'contrato', label: 'Contrato' },
 ];
 
+const REQUIRED_IDENTIFICACAO_FIELDS: Array<keyof CollaboratorEditDraft> = [
+  'nomeCompleto',
+  'nomeAbreviado',
+  'dataNascimento',
+  'genero',
+  'estadoCivil',
+  'habilitacoesLiterarias',
+  'curso',
+  'faculdade',
+  'nacionalidade',
+    'photoUrl',
+  ];
+
+const REQUIRED_CONTACTOS_FIELDS: Array<keyof CollaboratorEditDraft> = [
+  'emailPessoal',
+  'telemovel',
+  'moradaFiscal',
+  'endereco',
+  'localidade',
+  'codigoPostal',
+];
+
+const REQUIRED_FISCAL_PT_FIELDS: Array<keyof CollaboratorEditDraft> = [
+  'cartaoCidadao',
+  'validadeCartaoCidadao',
+  'nif',
+  'niss',
+  'iban',
+  'situacaoIrs',
+];
+
+const REQUIRED_FISCAL_BR_FIELDS: Array<keyof CollaboratorEditDraft> = [
+  'cpf',
+  'pis',
+  'rg',
+  'rgOrgaoEmissor',
+  'ctps',
+  'ctpsSerie',
+];
+
+const REQUIRED_EMERGENCIA_FIELDS: Array<keyof CollaboratorEditDraft> = [
+  'contactoEmergenciaNome',
+  'contactoEmergenciaParentesco',
+  'contactoEmergenciaNumero',
+];
+
+const REQUIRED_CONTRATO_FIELDS: Array<keyof CollaboratorEditDraft> = [
+  'categoriaProfissional',
+  'cargo',
+  'funcao',
+  'dataInicioContrato',
+  'tipoContrato',
+  'regimeHorario',
+];
+
 function getEditSectionMeta(section: EditSection): EditSectionMeta {
   return EDIT_SECTION_META.find((item) => item.id === section) ?? {
     id: section,
     title: section,
     description: '',
   };
+}
+
+function isMissingTextValue(value: string | undefined) {
+  return !value || value.trim().length === 0;
 }
 
 function getEditFieldCardClass(fieldKey: keyof CollaboratorEditDraft) {
@@ -346,7 +414,10 @@ function getEditFieldCardClass(fieldKey: keyof CollaboratorEditDraft) {
     'comprovativoIban',
     'comprovativoCartaoContinente',
     'declaracaoIrs',
-  ]);
+      'photoUrl',
+      'certificadoHabilitacoesUrl',
+      'cartaConducaoUrl',
+    ]);
 
   return `cm-field-card${wideFields.has(fieldKey) ? ' is-wide' : ''}`;
 }
@@ -430,8 +501,13 @@ const EMPTY_EDIT_DRAFT: CollaboratorEditDraft = {
   dataInicioContrato: '',
   dataFimContrato: '',
   tipoContrato: '',
-  regimeHorario: '',
-};
+    regimeHorario: '',
+    photoUrl: '',
+    certificadoHabilitacoesUrl: '',
+    cartaConducaoUrl: '',
+  };
+
+
 
 const CARGO_OPTIONS = [
   'Trainee',
@@ -565,8 +641,11 @@ function buildEditDraftFromRow(item: CollaboratorRow): CollaboratorEditDraft {
     dataFimContrato: profile.dataFimContrato || '',
     tipoContrato: profile.tipoContrato || '',
     regimeHorario: profile.regimeHorario || '',
-  };
-}
+      photoUrl: profile.photoUrl || '',
+      certificadoHabilitacoesUrl: profile.certificadoHabilitacoesUrl || '',
+      cartaConducaoUrl: profile.cartaConducaoUrl || '',
+    };
+  }
 
 function getCollaboratorTeamInfo(item: CollaboratorRow) {
   const resolvedTeam = getCollaboratorTeams(item)[0] ?? null;
@@ -788,7 +867,10 @@ const IMPORT_PROFILE_FIELD_KEYS = EDIT_PROFILE_FIELDS
     && field.key !== 'comprovativoCartaoCidadao'
     && field.key !== 'comprovativoIban'
     && field.key !== 'declaracaoIrs'
-    && field.key !== 'comprovativoCartaoContinente')
+      && field.key !== 'comprovativoCartaoContinente'
+      && field.key !== 'photoUrl'
+      && field.key !== 'certificadoHabilitacoesUrl'
+      && field.key !== 'cartaConducaoUrl')
   .map((field) => field.key) as Array<Exclude<keyof CollaboratorEditDraft, 'role' | 'teamId' | 'isActive' | 'workCountry' | 'nomeCompleto' | 'primeiroEmprego' | 'recebeAposentadoria' | 'recebeSeguroDesemprego' | 'valeTransporte'>>;
 
 const IMPORT_FILE_ACCEPT = '.xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
@@ -806,7 +888,10 @@ const IMPORT_TEMPLATE_FIELDS: Array<{ key: string; label: string; required?: boo
       && field.key !== 'comprovativoCartaoCidadao'
       && field.key !== 'comprovativoIban'
       && field.key !== 'declaracaoIrs'
-      && field.key !== 'comprovativoCartaoContinente')
+        && field.key !== 'comprovativoCartaoContinente'
+        && field.key !== 'photoUrl'
+        && field.key !== 'certificadoHabilitacoesUrl'
+        && field.key !== 'cartaConducaoUrl')
     .map((field) => ({
       key: field.key,
       label: field.label,
@@ -1255,9 +1340,9 @@ function buildImportRowsFromMatrix(matrix: string[][]) {
   return { rows, issues };
 }
 
+
 function normalizeUsernamePart(value: string) {
   return value
-    .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '')
@@ -1278,6 +1363,8 @@ function buildAutoEmailFromName(firstName: string, lastName: string) {
   if (!username) return '';
   return `${username}@tlantic.com`;
 }
+
+
 
 function normalizeDropdownValues(values: string[]) {
   const unique = new Map<string, string>();
@@ -1590,6 +1677,48 @@ export default function CollaboratorsPage() {
 
     return options;
   }, [permissionTeams, selectedRowTeam]);
+  const selectedCollaboratorName = useMemo(
+    () => (selectedRow ? getDisplayName(selectedRow) : 'Colaborador'),
+    [selectedRow],
+  );
+  const selectedCollaboratorInitials = useMemo(() => {
+    const parts = selectedCollaboratorName
+      .split(' ')
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (parts.length === 0) {
+      return 'SH';
+    }
+
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  }, [selectedCollaboratorName]);
+  const selectedCollaboratorPhotoUrl = useMemo(
+    () => normalizeFileUrl(editDraft.photoUrl),
+    [editDraft.photoUrl],
+  );
+  const selectedCollaboratorTeamName = useMemo(() => {
+    const draftTeamName = collaboratorTeamOptions.find((team) => team.id === editDraft.teamId)?.name?.trim();
+    return draftTeamName || selectedRowTeam?.name || 'Sem equipa';
+  }, [collaboratorTeamOptions, editDraft.teamId, selectedRowTeam]);
+  const collaboratorRoleLine = useMemo(() => {
+    const cargo = editDraft.cargo.trim() || 'Cargo por preencher';
+    const funcao = editDraft.funcao.trim() || 'Função por preencher';
+    return `${cargo} · ${funcao}`;
+  }, [editDraft.cargo, editDraft.funcao]);
+  const collaboratorRequiredFieldTotal = useMemo(() => {
+    return 3
+      + REQUIRED_IDENTIFICACAO_FIELDS.length
+      + (editDraft.workCountry === 'BR' ? 1 : 0)
+      + REQUIRED_CONTACTOS_FIELDS.length
+      + (editDraft.workCountry === 'BR' ? REQUIRED_FISCAL_BR_FIELDS.length : REQUIRED_FISCAL_PT_FIELDS.length)
+      + REQUIRED_EMERGENCIA_FIELDS.length
+      + REQUIRED_CONTRATO_FIELDS.length;
+  }, [editDraft.workCountry]);
   const selectedRestrictedTeams = useMemo(
     () => permissionTeams.filter((team) => selectedRestrictedTeamIds.includes(team.id)),
     [permissionTeams, selectedRestrictedTeamIds],
@@ -1619,6 +1748,46 @@ export default function CollaboratorsPage() {
   const cargoHistoryEntries = useMemo(
     () => [...profileHistory].sort((a, b) => new Date(b.reviewedAt || 0).getTime() - new Date(a.reviewedAt || 0).getTime()),
     [profileHistory],
+  );
+
+  const detailsFichaMissingCounts = useMemo<Record<DetailsFichaSection, number>>(() => {
+    if (!selectedRow) {
+      return {
+        conta: 0,
+        identificacao: 0,
+        contactos: 0,
+        fiscal: 0,
+        emergencia: 0,
+        contrato: 0,
+      };
+    }
+
+    const countMissing = (fields: Array<keyof CollaboratorEditDraft>) =>
+      fields.reduce((count, fieldKey) => count + (isMissingTextValue(editDraft[fieldKey] as string) ? 1 : 0), 0);
+
+    return {
+      conta: [
+        credentialsDraft.username.trim(),
+        credentialsDraft.email.trim(),
+        editDraft.workCountry,
+      ].reduce((count, value) => count + (isMissingTextValue(value) ? 1 : 0), 0),
+      identificacao: countMissing([
+        ...REQUIRED_IDENTIFICACAO_FIELDS,
+        ...(editDraft.workCountry === 'BR' ? (['brWorkState'] as Array<keyof CollaboratorEditDraft>) : []),
+      ]),
+      contactos: countMissing(REQUIRED_CONTACTOS_FIELDS),
+      fiscal: countMissing(editDraft.workCountry === 'BR' ? REQUIRED_FISCAL_BR_FIELDS : REQUIRED_FISCAL_PT_FIELDS),
+      emergencia: countMissing(REQUIRED_EMERGENCIA_FIELDS),
+      contrato: countMissing(REQUIRED_CONTRATO_FIELDS),
+    };
+  }, [credentialsDraft.email, credentialsDraft.username, editDraft, selectedRow]);
+  const collaboratorMissingFieldTotal = useMemo(
+    () => Object.values(detailsFichaMissingCounts).reduce((totalCount, count) => totalCount + count, 0),
+    [detailsFichaMissingCounts],
+  );
+  const collaboratorCompletion = useMemo(
+    () => Math.max(0, Math.round(((collaboratorRequiredFieldTotal - collaboratorMissingFieldTotal) / Math.max(1, collaboratorRequiredFieldTotal)) * 100)),
+    [collaboratorMissingFieldTotal, collaboratorRequiredFieldTotal],
   );
 
   useEffect(() => {
@@ -2562,7 +2731,11 @@ export default function CollaboratorsPage() {
       || fieldKey === 'comprovativoCartaoCidadao'
       || fieldKey === 'comprovativoIban'
       || fieldKey === 'comprovativoCartaoContinente'
-      || fieldKey === 'declaracaoIrs';
+        || fieldKey === 'declaracaoIrs'
+        || fieldKey === 'certificadoHabilitacoesUrl'
+        || fieldKey === 'cartaConducaoUrl';
+
+      const isPhotoField = fieldKey === 'photoUrl';
 
     const value = editDraft[fieldKey];
 
@@ -2708,9 +2881,43 @@ export default function CollaboratorsPage() {
       );
     }
 
+    if (isPhotoField) {
+      const photoUrl = normalizeFileUrl(String(value || ''));
+      return (
+        <div className="collaborator-proof-field">
+          {photoUrl && (
+            <img src={photoUrl} alt="Foto de utilizador" className="collaborator-photo-preview" />
+          )}
+          <div className="collaborator-proof-field__actions">
+            {photoUrl ? (
+              <a href={photoUrl} target="_blank" rel="noreferrer" className="collaborator-proof-link">
+                Ver foto
+              </a>
+            ) : (
+              <span className="collaborator-proof-link collaborator-proof-link--empty">Sem foto</span>
+            )}
+
+            <label className="collaborator-proof-upload">
+              <span>Carregar foto</span>
+              <input
+                id={hiddenFileInputId(fieldKey)}
+                type="file"
+                accept="image/*"
+                onChange={(event) => void handleCollaboratorFileChange(fieldKey, event)}
+                onClick={(event) => {
+                  event.currentTarget.value = '';
+                }}
+                disabled={!canEditUser || isSavingEditDraft}
+              />
+            </label>
+          </div>
+        </div>
+      );
+    }
+
     if (isComprovativoField) {
       const comprovativoUrl = normalizeFileUrl(String(value || ''));
-      return (
+        return (
         <div className="collaborator-proof-field">
           {fieldKey === 'declaracaoIrs' && (
             <a
@@ -2787,9 +2994,9 @@ export default function CollaboratorsPage() {
         ...current,
         [field]: payload.linkPath || payload.link || '',
       }));
-      setStatus('Comprovativo carregado com sucesso.');
+      setStatus(field === 'photoUrl' ? 'Foto de utilizador carregada com sucesso.' : 'Comprovativo carregado com sucesso.');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Falha ao carregar comprovativo.');
+      setStatus(error instanceof Error ? error.message : field === 'photoUrl' ? 'Falha ao carregar foto de utilizador.' : 'Falha ao carregar comprovativo.');
     }
   }
 
@@ -3438,21 +3645,63 @@ export default function CollaboratorsPage() {
           {selectedRow && detailsTab === 'ficha' && (
             <section className="cm-panel">
               <div className="cm-identity-bar">
-                <div className="cm-avatar">{getDisplayName(selectedRow).charAt(0).toUpperCase()}</div>
-                <div className="cm-identity-info">
-                  <strong>{getDisplayName(selectedRow)}</strong>
-                  <span>@{selectedRow.username} · {selectedRow.email}</span>
-                </div>
-                <div className="cm-identity-badges">
-                  <Badge tone="neutral">{selectedRow.profile?.workCountry || 'PT'}</Badge>
-                  <Badge tone={selectedRow.isActive ? 'success' : 'danger'}>{selectedRow.isActive ? 'Ativo' : 'Inativo'}</Badge>
-                </div>
-                {canManageProfileOptions && (
-                  <div className="cm-identity-actions">
-                    <Button type="button" variant="ghost" size="sm" onClick={() => void openProfileOptionModal('CARGO')}>+ Cargo</Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => void openProfileOptionModal('FUNCAO')}>+ Função</Button>
+                <div className="cm-identity-main">
+                  <div className="cm-avatar-wrap">
+                    {selectedCollaboratorPhotoUrl ? (
+                      <img src={selectedCollaboratorPhotoUrl} alt="Foto de utilizador" className="cm-avatar cm-avatar--photo" />
+                    ) : (
+                      <div className="cm-avatar">{selectedCollaboratorInitials}</div>
+                    )}
+                    {canEditUser && (
+                      <label className="cm-avatar-edit" title="Editar foto de utilizador" aria-label="Editar foto de utilizador">
+                        ✎
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(event) => void handleCollaboratorFileChange('photoUrl', event)}
+                          onClick={(event) => {
+                            event.currentTarget.value = '';
+                          }}
+                          disabled={!canEditUser || isSavingEditDraft}
+                        />
+                      </label>
+                    )}
                   </div>
-                )}
+
+                  <div className="cm-identity-info">
+                    <strong>{selectedCollaboratorName}</strong>
+                    <span className="cm-identity-role">{collaboratorRoleLine}</span>
+                    <span>@{selectedRow.username} · {selectedRow.email}</span>
+                    <div className="cm-identity-meta">
+                      <span>{selectedCollaboratorTeamName}</span>
+                      <span>{editDraft.workCountry || 'PT'}</span>
+                      {editDraft.workCountry === 'BR' && editDraft.brWorkState && <span>{editDraft.brWorkState}</span>}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="cm-identity-side">
+                  <div className="cm-identity-badges">
+                    <Badge tone="neutral">{editDraft.workCountry || 'PT'}</Badge>
+                    <Badge tone={editDraft.isActive ? 'success' : 'danger'}>{editDraft.isActive ? 'Ativo' : 'Inativo'}</Badge>
+                  </div>
+
+                  <div className="cm-identity-progress">
+                    <span className="cm-identity-progress__label">Completude da ficha</span>
+                    <strong>{collaboratorCompletion}%</strong>
+                    <div className="cm-identity-progress__track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={collaboratorCompletion}>
+                      <span style={{ width: `${collaboratorCompletion}%` }} />
+                    </div>
+                    <small>{collaboratorMissingFieldTotal} campo(s) em falta</small>
+                  </div>
+
+                  {canManageProfileOptions && (
+                    <div className="cm-identity-actions">
+                      <Button type="button" variant="ghost" size="sm" onClick={() => void openProfileOptionModal('CARGO')}>+ Cargo</Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => void openProfileOptionModal('FUNCAO')}>+ Função</Button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <nav className="cm-ficha-subnav" aria-label="Subsecções da ficha do colaborador">
@@ -3463,7 +3712,12 @@ export default function CollaboratorsPage() {
                     className={detailsFichaSection === section.id ? 'is-active' : ''}
                     onClick={() => setDetailsFichaSection(section.id)}
                   >
-                    {section.label}
+                    <span className="cm-ficha-subnav__label">{section.label}</span>
+                    {detailsFichaMissingCounts[section.id] > 0 && (
+                      <span className="cm-ficha-subnav__count" aria-label={`${detailsFichaMissingCounts[section.id]} campo(s) por preencher`}>
+                        {detailsFichaMissingCounts[section.id]}
+                      </span>
+                    )}
                   </button>
                 ))}
               </nav>
@@ -3558,7 +3812,7 @@ export default function CollaboratorsPage() {
                         </div>
                       </div>
                       <div className="collaborator-edit-grid">
-                        {getVisibleEditProfileFields(editDraft.workCountry).filter((field) => field.section === section).map((field) => (
+                        {getVisibleEditProfileFields(editDraft.workCountry).filter((field) => field.section === section && field.key !== 'photoUrl').map((field) => (
                           <label key={field.key} className={getEditFieldCardClass(field.key)}>
                             <span>{field.label}</span>
                             {renderEditFieldControl(field.key)}
@@ -3750,10 +4004,6 @@ export default function CollaboratorsPage() {
                       <span>Conta</span>
                       <strong>{selectedRow.isActive ? 'Ativa' : 'Inativa'}</strong>
                     </div>
-                    <div className={`cm-status-card${selectedUserAccessTotal ? ' cm-status-card--total' : ''}`}>
-                      <span>Acesso total</span>
-                      <strong>{selectedUserAccessTotal ? 'Ativo' : 'Inativo'}</strong>
-                    </div>
                     <div className="cm-status-card">
                       <span>Última atualização</span>
                       <strong>{new Intl.DateTimeFormat('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(selectedRow.updatedAt))}</strong>
@@ -3768,16 +4018,6 @@ export default function CollaboratorsPage() {
                     >
                       {selectedRow.isActive ? 'Desativar conta' : 'Reativar conta'}
                     </Button>
-                    {canManagePermissions && selectedRow.username !== 't.people' && !selectedUserAccessTotal && (
-                      <Button type="button" variant="secondary" size="sm" isLoading={isTogglingAccessTotal} disabled={isTogglingAccessTotal} onClick={() => void toggleAccessTotalForSelected(true)}>
-                        Dar acesso total
-                      </Button>
-                    )}
-                    {canManagePermissions && selectedRow.username !== 't.people' && selectedUserAccessTotal && (
-                      <Button type="button" variant="ghost" size="sm" isLoading={isTogglingAccessTotal} disabled={isTogglingAccessTotal} onClick={() => void toggleAccessTotalForSelected(false)}>
-                        Revogar acesso total
-                      </Button>
-                    )}
                   </div>
 
                   <div className="cm-history-block">

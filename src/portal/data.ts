@@ -145,6 +145,9 @@ export const initialProfileData: ProfileData = {
   regimeHorario: '',
   workCountry: 'PT',
   brWorkState: '',
+  photoUrl: '',
+  certificadoHabilitacoesUrl: '',
+  cartaConducaoUrl: '',
 };
 
 export function detectRoleByUsername(currentUsername: string): UserRole {

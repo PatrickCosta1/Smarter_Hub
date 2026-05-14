@@ -1124,8 +1124,16 @@ button {
 
 .manager-teams-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
+}
+
+.manager-team-card-wrapper {
+  display: grid;
+  gap: 0;
+  align-content: start;
+  width: 260px;
+  justify-self: start;
 }
 
 .manager-team-card {
@@ -1133,17 +1141,47 @@ button {
   border: 1px solid #d4e2fb;
   border-left: 4px solid var(--team-color, #4B79F5);
   border-radius: 14px;
-  padding: 14px;
+  padding: 0;
   background: linear-gradient(170deg, rgba(255, 255, 255, 0.98), rgba(242, 248, 255, 0.9));
   text-align: left;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  overflow: hidden;
+}
+
+.manager-team-card--root {
+  min-height: 132px;
+}
+
+.manager-team-card.is-expanded {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
+}
+
+.manager-team-card__content {
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  background: transparent;
+  border: none;
+  text-align: left;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: background 0.15s ease;
+  width: 100%;
+  min-height: 132px;
+}
+
+.manager-team-card__content:hover {
+  background: rgba(75, 121, 245, 0.04);
 }
 
 .manager-team-card:hover {
-  transform: translateY(-2px);
   border-color: var(--team-color);
   box-shadow: 0 10px 24px rgba(19, 66, 136, 0.14);
+}
+
+.manager-team-card.is-expanded:hover {
+  box-shadow: 0 4px 16px rgba(19, 66, 136, 0.1);
 }
 
 .manager-team-card__label {
@@ -1164,6 +1202,128 @@ button {
   margin: 0;
   color: #4f678e;
   font-size: 0.86rem;
+}
+
+.manager-team-card small {
+  color: #5c7294;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* Botão + / − no canto inferior direito do card */
+.manager-team-expand-btn {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid #c8d9f0;
+  background: #f4f8ff;
+  color: #3a6db5;
+  font-size: 1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  z-index: 1;
+}
+
+.manager-team-expand-btn:hover {
+  background: #deeafb;
+  border-color: #7aaee0;
+  color: #133f82;
+  transform: scale(1.12);
+}
+
+.manager-team-expand-btn.is-expanded {
+  background: #133f82;
+  border-color: #133f82;
+  color: #ffffff;
+}
+
+.manager-team-expand-btn.is-expanded:hover {
+  background: #1a52a8;
+  border-color: #1a52a8;
+}
+
+/* Lista de subequipas expandida */
+.manager-team-sublist {
+  display: grid;
+  gap: 0;
+  border: 1px solid #d4e2fb;
+  border-left: 4px solid #d4e2fb;
+  border-top: none;
+  border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 14px;
+  background: #f8fbff;
+  overflow: hidden;
+}
+
+.manager-team-sublist__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid #e8eef8;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s ease;
+  width: 100%;
+  min-height: auto;
+}
+
+.manager-team-sublist__row:first-child {
+  border-top: none;
+}
+
+.manager-team-sublist__row:hover {
+  background: #eef4ff;
+}
+
+.manager-team-sublist__row.is-active {
+  background: #e8f0fd;
+}
+
+.manager-team-sublist__dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--team-color, #4B79F5);
+}
+
+.manager-team-sublist__name {
+  flex: 1;
+  font-size: 0.80rem;
+  font-weight: 700;
+  color: #133f82;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.manager-team-sublist__count {
+  font-size: 0.70rem;
+  color: #7a8ba7;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.manager-team-sublist__action {
+  flex-shrink: 0;
+  font-size: 0.70rem;
+  font-weight: 700;
+  color: #ffffff;
+  background: #2563eb;
+  border-radius: 999px;
+  padding: 2px 8px;
+  letter-spacing: 0.01em;
 }
 
 .team-color-picker {

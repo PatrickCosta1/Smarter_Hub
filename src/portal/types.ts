@@ -78,6 +78,9 @@ export type ProfileData = {
   regimeHorario: string;
   workCountry: 'PT' | 'BR';
   brWorkState: '' | 'SP' | 'RS';
+  photoUrl: string;
+  certificadoHabilitacoesUrl: string;
+  cartaConducaoUrl: string;
 };
 
 export type ProfileFieldError = Partial<Record<keyof ProfileData, string>>;

@@ -757,6 +757,29 @@
   padding: 9px 10px;
   font-size: 0.82rem;
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.profile-stepper__label {
+  min-width: 0;
+}
+
+.profile-stepper__count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid #9fc2f7;
+  background: #deebff;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .profile-stepper__item.is-active {
@@ -764,6 +787,12 @@
   border-color: transparent;
   background: linear-gradient(135deg, #2e79f5, #12a0f7);
   box-shadow: 0 12px 24px rgba(19, 116, 227, 0.28);
+}
+
+.profile-stepper__item.is-active .profile-stepper__count {
+  border-color: rgba(255, 255, 255, 0.58);
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
 }
 
 .profile-stepper-actions {
@@ -5266,6 +5295,90 @@
   width: min(920px, 100%);
 }
 
+.vacations-unified-actions-card {
+  display: grid;
+  gap: 18px;
+}
+
+.vacations-unified-actions__header {
+  display: grid;
+  gap: 6px;
+}
+
+.vacations-unified-actions__header h3 {
+  margin: 0;
+}
+
+.vacations-unified-actions__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.vacations-unified-actions__item {
+  display: grid;
+  gap: 10px;
+  min-height: 160px;
+  padding: 18px;
+  text-align: left;
+  border-radius: 18px;
+  border: 1px solid #d9e6fa;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
+  box-shadow: 0 14px 34px rgba(31, 67, 122, 0.08);
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.vacations-unified-actions__item:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: #bdd2f3;
+  box-shadow: 0 18px 40px rgba(31, 67, 122, 0.12);
+}
+
+.vacations-unified-actions__item:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.vacations-unified-actions__item strong {
+  color: #12305f;
+  font-size: 1rem;
+}
+
+.vacations-unified-actions__item span {
+  color: #607796;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.vacations-action-modal {
+  width: min(1140px, calc(100vw - 32px));
+  max-height: min(90vh, 980px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.vacations-action-modal--wide {
+  width: min(1180px, calc(100vw - 32px));
+}
+
+.vacations-action-modal--vauto {
+  width: min(1040px, calc(100vw - 32px));
+}
+
+.vacations-action-modal .pending-modal__header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #e8eef9;
+  background: linear-gradient(180deg, #fbfdff 0%, #f4f8ff 100%);
+}
+
+.vacations-action-modal__section {
+  padding: 18px 24px 24px;
+  overflow: auto;
+}
+
 .pending-modal__table-wrap {
   border-radius: 12px;
   border: 1px solid #d4e2fb;
@@ -5327,6 +5440,214 @@
   place-items: center;
   z-index: 80;
   padding: 20px;
+}
+
+.vacations-operation-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #dbe7f8;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f5f9ff 100%);
+}
+
+.vacations-operation-panel__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.vacations-operation-panel__eyebrow {
+  display: inline-flex;
+  margin-bottom: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5a7398;
+}
+
+.vacations-operation-panel__head strong {
+  display: block;
+  font-size: 0.95rem;
+  color: #102a55;
+}
+
+.vacations-operation-panel__trigger {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid #b8d0f5;
+  background: #eaf2ff;
+  color: #1d4fa3;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.vacations-operation-panel__trigger:hover {
+  background: #dbe9ff;
+}
+
+.vacations-operation-panel__selection {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #dbe7f8;
+}
+
+.vacations-operation-panel__selection strong {
+  color: #0f2d72;
+  font-size: 0.92rem;
+}
+
+.vacations-operation-panel__selection span {
+  color: #5b7297;
+  font-size: 0.8rem;
+}
+
+.vacations-operation-panel__empty {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px dashed #cddbf0;
+  background: rgba(255, 255, 255, 0.82);
+  color: #6b7f9b;
+  font-size: 0.83rem;
+}
+
+.vacations-picker-modal {
+  width: min(880px, calc(100vw - 32px));
+  max-height: min(86vh, 900px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.vacations-picker-modal__header {
+  padding: 20px 24px 14px;
+  border-bottom: 1px solid #e8eef9;
+  background: linear-gradient(180deg, #fbfdff 0%, #f4f8ff 100%);
+}
+
+.vacations-picker-modal__body {
+  display: grid;
+  gap: 14px;
+  padding: 18px 24px;
+  overflow: auto;
+}
+
+.vacations-picker-modal__toolbar {
+  display: grid;
+  gap: 12px;
+}
+
+.vacations-picker-modal__toolbar--split {
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  align-items: end;
+}
+
+.vacations-picker-modal__search {
+  min-width: 0;
+}
+
+.vacations-picker-modal__results {
+  max-height: none;
+  min-height: 280px;
+}
+
+.vacations-picker-modal__count {
+  margin-left: auto;
+  color: #5d7498;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.vacations-picker-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px 22px;
+  border-top: 1px solid #e8eef9;
+  background: #fbfdff;
+}
+
+.vacations-picker-modal__secondary {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid #d1d9e6;
+  background: #fff;
+  color: #39485d;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.vacations-picker-modal__secondary:hover {
+  background: #f8fafc;
+}
+
+@media (max-width: 1100px) {
+  .vacations-unified-actions__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .vacations-unified-actions__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vacations-unified-actions__item {
+    min-height: auto;
+  }
+
+  .vacations-action-modal,
+  .vacations-action-modal--wide,
+  .vacations-action-modal--vauto,
+  .vacations-picker-modal {
+    width: min(100%, calc(100vw - 20px));
+    max-height: calc(100vh - 20px);
+  }
+
+  .vacations-action-modal .pending-modal__header,
+  .vacations-action-modal__section,
+  .vacations-picker-modal__header,
+  .vacations-picker-modal__body,
+  .vacations-picker-modal__footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .vacations-picker-modal__toolbar--split,
+  .vacations-operation-panel__head {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .modal-backdrop {
+    padding: 10px;
+  }
+
+  .vacations-operation-panel__head,
+  .vacations-picker-modal__footer,
+  .rh-picker-bulk-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .vacations-picker-modal__count {
+    margin-left: 0;
+  }
+
+  .vacations-year-grid--compact {
+    max-height: 38vh;
+  }
 }
 
 .trainings-table thead th {
@@ -6181,6 +6502,40 @@
   gap: 10px;
 }
 
+.vauto__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.vauto__meta-item {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #374151;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.vauto__help-toggle {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 120ms, background 120ms;
+}
+
+.vauto__help-toggle:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
 .vauto__year-nav {
   display: flex;
   align-items: center;
@@ -6269,6 +6624,46 @@
 .vauto__guide-card--accent {
   background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
   border-color: #cfe0fb;
+}
+
+.vacations-direct-calendar-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.vacations-direct-calendar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.vacations-direct-calendar-head strong {
+  display: block;
+  color: #111827;
+  font-size: 0.92rem;
+}
+
+.vacations-direct-calendar-head p {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 0.82rem;
+}
+
+.vacations-year-grid--compact {
+  max-height: 44vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.vacations-direct-calendar-shell .cal-booking-bar {
+  position: static;
+  bottom: auto;
 }
 
 .vauto__form {
@@ -7299,6 +7694,78 @@
 .profile-hero .hero-main h1 {
   margin: 4px 0;
   font-size: clamp(1.7rem, 2.6vw, 2.3rem);
+}
+
+.profile-hero .profile-hero__identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.profile-hero .profile-hero__avatar-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.profile-hero .profile-hero__avatar {
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--elite-line);
+  background: #eef4fc;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #2f537d;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.profile-hero .profile-hero__avatar--fallback {
+  text-transform: uppercase;
+}
+
+.profile-hero .profile-hero__avatar-edit {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid #c5d9f7;
+  background: #ffffff;
+  color: #1b4f95;
+  box-shadow: 0 4px 12px rgba(16, 57, 113, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.profile-hero .profile-hero__avatar-edit:hover {
+  border-color: #8fb5eb;
+  background: #f2f7ff;
+}
+
+.profile-hero .profile-hero__avatar-edit:focus-within {
+  outline: 2px solid rgba(45, 110, 198, 0.36);
+  outline-offset: 1px;
+}
+
+.profile-hero .profile-hero__avatar-edit input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.profile-hero .profile-hero__identity-copy {
+  min-width: 0;
 }
 
 .profile-hero .hero-main p {
@@ -9048,55 +9515,72 @@
 
 .team-modal-nav {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
+  padding: 0 0 16px;
+  border-bottom: 2px solid #eef3ff;
+  margin-bottom: 20px;
 }
 
 .team-modal-nav .notification-filter {
-  border-radius: 999px;
-  border: 1px solid #d6e4f7;
-  background: #f8fbff;
-  color: #234b82;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: #607a9f;
   font-weight: 700;
-  padding: 8px 14px;
+  font-size: 0.95rem;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease;
+  text-transform: none;
+}
+
+.team-modal-nav .notification-filter:hover {
+  background: #f0f4ff;
+  color: #234b82;
 }
 
 .team-modal-nav .notification-filter.is-active {
-  background: #edf4ff;
-  border-color: #b7cff2;
+  background: transparent;
+  color: #0f4db8;
+  border-bottom: 3px solid #0f4db8;
+  padding-bottom: 5px;
 }
 
 .team-overview-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
 }
 
 .team-overview-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-  padding: 12px;
-  border: 1px solid #d8e6f8;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #f9fcff, #f2f8ff);
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid #e0e9f5;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f9fafb, #f3f8fd);
+  box-shadow: 0 2px 8px rgba(15, 77, 184, 0.06);
 }
 
 .team-overview-head strong {
   display: block;
   color: #0f172a;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
 .team-overview-head__kicker {
-  margin: 0 0 4px;
-  color: #355b8f;
-  font-size: 0.72rem;
-  font-weight: 800;
+  margin: 0 0 6px;
+  color: #4a6fa5;
+  font-size: 0.75rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
 }
 
 .team-manage-btn {
@@ -9115,25 +9599,33 @@
 }
 
 .team-overview-metrics article {
-  border: 1px solid var(--elite-line);
-  border-radius: 10px;
-  background: #f9fafb;
-  padding: 10px 12px;
+  border: 1px solid #e0e9f5;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ffffff, #f8fbff);
+  padding: 14px;
   display: grid;
-  gap: 4px;
+  gap: 6px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.team-overview-metrics article:hover {
+  border-color: #d0e4f8;
+  box-shadow: 0 4px 12px rgba(15, 77, 184, 0.08);
+  transform: translateY(-1px);
 }
 
 .team-overview-metrics span {
-  font-size: 0.74rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: #6b7280;
+  letter-spacing: 0.04em;
+  color: #5a7493;
   font-weight: 700;
 }
 
 .team-overview-metrics strong {
-  font-size: 0.95rem;
-  color: #111827;
+  font-size: 1.15rem;
+  color: #0f172a;
+  font-weight: 800;
 }
 
 .manager-team-members-list--structured {
@@ -9545,137 +10037,93 @@
   opacity: 0.76;
 }
 
-.team-birthdays-board {
+.team-birthdays-list {
   display: grid;
-  gap: 12px;
+  gap: 0;
 }
 
-.team-birthdays-hero {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.team-birthdays-hero article {
-  border: 1px solid #d9e7fc;
-  border-radius: 12px;
-  background: linear-gradient(150deg, #f8fbff, #eef5ff);
-  padding: 10px;
-  display: grid;
-  gap: 4px;
-}
-
-.team-birthdays-hero span {
-  font-size: 0.75rem;
-  color: #6582a7;
-  font-weight: 700;
-}
-
-.team-birthdays-hero strong {
-  font-size: 1.1rem;
-  color: #103d82;
-}
-
-.team-birthdays-next {
-  display: grid;
-  gap: 8px;
-}
-
-.team-birthdays-next h3 {
+.team-birthdays-list__items {
+  list-style: none;
   margin: 0;
-  color: #143f84;
-  font-size: 0.95rem;
-}
-
-.team-birthdays-next__grid {
+  padding: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 1px;
+  border: 1px solid #e0e9f5;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #e0e9f5;
 }
 
-.team-birthdays-next__card {
-  border: 1px solid #dce9fc;
-  border-radius: 12px;
-  padding: 10px;
+.team-birthdays-list__item {
+  border: none;
+  border-radius: 0;
   background: #ffffff;
-  display: grid;
-  gap: 3px;
-}
-
-.team-birthdays-next__card.is-today {
-  border-color: #f2bf72;
-  background: linear-gradient(135deg, #fff6e8, #fff9f0);
-}
-
-.team-birthdays-next__card p {
-  margin: 0;
-  color: #1a467f;
-  font-weight: 700;
-}
-
-.team-birthdays-next__card strong {
-  color: #113f84;
-}
-
-.team-birthdays-next__card small {
-  color: #6880a3;
-  font-size: 0.73rem;
-}
-
-.team-birthdays-months {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.team-birthdays-months__group {
-  border: 1px solid #dce9fb;
-  border-radius: 12px;
-  padding: 10px;
-  background: #ffffff;
-  display: grid;
-  gap: 8px;
-}
-
-.team-birthdays-months__group h4 {
-  margin: 0;
-  color: #174386;
-  font-size: 0.9rem;
-}
-
-.team-birthdays-months__list {
-  display: grid;
-  gap: 6px;
-}
-
-.team-birthdays-months__item {
-  border: 1px solid #e6eefb;
-  border-radius: 10px;
-  background: #f9fbff;
-  padding: 8px 9px;
+  padding: 14px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 16px;
+  transition: background 0.15s ease;
 }
 
-.team-birthdays-months__item strong {
-  display: block;
-  color: #144084;
-  font-size: 0.8rem;
+.team-birthdays-list__item:hover {
+  background: #f8fbff;
 }
 
-.team-birthdays-months__item small {
-  display: block;
-  color: #6a82a2;
-  font-size: 0.7rem;
+.team-birthdays-list__item.is-today {
+  border: none;
+  background: linear-gradient(135deg, #fffaf5, #fff9f2);
+  border-left: 4px solid #f59e0b;
 }
 
-@media (max-width: 900px) {
-  .team-birthdays-hero,
-  .team-birthdays-next__grid,
-  .team-birthdays-months {
-    grid-template-columns: 1fr;
+.team-birthdays-list__person {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  flex: 1;
+}
+
+.team-birthdays-list__person strong {
+  color: #0f172a;
+  font-size: 0.96rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.team-birthdays-list__person small {
+  color: #5a7493;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.team-birthdays-list__meta {
+  text-align: right;
+  display: grid;
+  gap: 3px;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.team-birthdays-list__meta strong {
+  color: #0f4db8;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.team-birthdays-list__meta small {
+  color: #7a8fa9;
+  font-size: 0.76rem;
+  font-weight: 500;
+}
+
+@media (max-width: 760px) {
+  .team-birthdays-list__item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .team-birthdays-list__meta {
+    text-align: left;
   }
 }
 
@@ -11199,42 +11647,118 @@
 }
 
 .cm-avatar {
-  width: 46px;
-  height: 46px;
+  width: 82px;
+  height: 82px;
   flex-shrink: 0;
   border-radius: 50%;
   background: linear-gradient(135deg, #1d4ed8, #2563eb);
   color: #fff;
-  font-size: 1.2rem;
+  font-size: 1.55rem;
   font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.28);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
+  border: 2px solid rgba(255, 255, 255, 0.95);
+}
+
+.cm-avatar--photo {
+  object-fit: cover;
+  background: #eff5fd;
+}
+
+.cm-avatar-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.cm-avatar-edit {
+  position: absolute;
+  right: 0;
+  bottom: 2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid #c7d8ef;
+  background: #ffffff;
+  color: #1b4f95;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  font-weight: 900;
+  box-shadow: 0 6px 16px rgba(15, 53, 112, 0.18);
+  cursor: pointer;
+}
+
+.cm-avatar-edit:hover {
+  border-color: #92b8eb;
+  background: #f5f9ff;
+}
+
+.cm-avatar-edit:focus-within {
+  outline: 2px solid rgba(44, 110, 216, 0.26);
+  outline-offset: 2px;
+}
+
+.cm-avatar-edit input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.cm-identity-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  flex: 1 1 420px;
 }
 
 .cm-identity-info {
   display: grid;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
   flex: 1 1 160px;
 }
 
 .cm-identity-info strong {
   color: #0f172a;
-  font-size: 1.06rem;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: clamp(1.35rem, 2vw, 1.85rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 .cm-identity-info span {
   color: #64748b;
-  font-size: 0.79rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 0.83rem;
+}
+
+.cm-identity-role {
+  color: #2f4b6a;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.cm-identity-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.cm-identity-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid #d6e3f4;
+  background: rgba(255, 255, 255, 0.86);
+  color: #445d7d;
+  font-size: 0.77rem;
+  font-weight: 700;
 }
 
 .cm-identity-badges {
@@ -11242,13 +11766,63 @@
   gap: 6px;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
 }
 
 .cm-identity-actions {
   display: flex;
   gap: 6px;
-  margin-left: auto;
   flex-shrink: 0;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.cm-identity-side {
+  display: grid;
+  gap: 12px;
+  margin-left: auto;
+  min-width: min(100%, 260px);
+}
+
+.cm-identity-progress {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid #d7e4f5;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+.cm-identity-progress__label {
+  color: #5d7697;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.cm-identity-progress strong {
+  color: #103971;
+  font-size: 1.85rem;
+  line-height: 1;
+}
+
+.cm-identity-progress__track {
+  height: 10px;
+  border-radius: 999px;
+  background: #dce9fb;
+  overflow: hidden;
+}
+
+.cm-identity-progress__track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4698f0, #7bb7ff);
+}
+
+.cm-identity-progress small {
+  color: #5d7697;
+  font-size: 0.76rem;
 }
 
 /* Edit body */
@@ -11278,7 +11852,35 @@
   font-size: 0.8rem;
   font-weight: 800;
   padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   transition: border-color 140ms ease, background 140ms ease, color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+
+.cm-ficha-subnav__label {
+  min-width: 0;
+}
+
+.cm-ficha-subnav__count {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+  font-size: 0.72rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}
+
+.cm-ficha-subnav button.is-active .cm-ficha-subnav__count {
+  background: #bfdbfe;
+  border-color: #60a5fa;
 }
 
 .cm-ficha-subnav button:hover {
@@ -11813,6 +12415,22 @@
     gap: 10px;
   }
 
+  .cm-identity-main {
+    align-items: flex-start;
+  }
+
+  .cm-avatar {
+    width: 68px;
+    height: 68px;
+    font-size: 1.2rem;
+  }
+
+  .cm-identity-side {
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+  }
+
   .cm-status-cards {
     grid-template-columns: 1fr;
   }
@@ -12144,6 +12762,26 @@
   display: grid;
   gap: 6px;
 }
+
+  .collaborator-photo-preview {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--border-subtle, #dde3ed);
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .profile-photo-preview {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--border-subtle, #dde3ed);
+    display: block;
+    margin-bottom: 8px;
+  }
 
 .collaborator-proof-link {
   display: inline-flex;
@@ -13760,41 +14398,42 @@
 }
 
 .team-manage-panel {
-  border: 1px solid #d8e6f8;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #ffffff, #fbfdff);
-  padding: 14px;
+  border: 1px solid #e0e9f5;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 16px;
   display: grid;
-  gap: 12px;
+  gap: 14px;
   align-content: start;
-  box-shadow: 0 10px 26px rgba(15, 57, 125, 0.07);
-  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  box-shadow: 0 2px 8px rgba(15, 77, 184, 0.06);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .team-manage-panel:hover {
-  border-color: #c4daf8;
-  box-shadow: 0 14px 30px rgba(15, 57, 125, 0.12);
-  transform: translateY(-1px);
+  border-color: #d0e4f8;
+  box-shadow: 0 4px 12px rgba(15, 77, 184, 0.1);
 }
 
 .team-manage-panel header {
   display: grid;
-  gap: 4px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #e3edf9;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #eef3ff;
 }
 
 .team-manage-panel h4 {
   margin: 0;
-  color: #0f2f61;
-  font-size: 1rem;
+  color: #0f172a;
+  font-size: 1.05rem;
+  font-weight: 800;
   letter-spacing: -0.01em;
 }
 
 .team-manage-panel p {
   margin: 0;
-  color: #64748b;
-  font-size: 0.82rem;
+  color: #5a7493;
+  font-size: 0.84rem;
+  line-height: 1.4;
 }
 
 .team-manage-panel label {
@@ -13812,25 +14451,25 @@
 
 .team-manage-panel input,
 .team-manage-panel select {
-  min-height: 42px;
-  border: 1px solid #cfdff3;
-  border-radius: 12px;
+  min-height: 40px;
+  border: 1px solid #d8e6f3;
+  border-radius: 10px;
   padding: 0 12px;
-  background: #fff;
-  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+  background: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  font-size: 0.9rem;
 }
 
 .team-manage-panel input:focus,
 .team-manage-panel select:focus {
   outline: none;
-  border-color: #1f5eb3;
-  box-shadow: 0 0 0 3px rgba(31, 94, 179, 0.14);
-  transform: translateY(-1px);
+  border-color: #0f4db8;
+  box-shadow: 0 0 0 3px rgba(15, 77, 184, 0.1);
 }
 
 .team-manage-members-list {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   max-height: 42vh;
   overflow: auto;
   padding-right: 2px;
@@ -13838,12 +14477,13 @@
 
 .team-manage-search-state {
   margin: 0;
-  border: 1px dashed #ccddf3;
-  border-radius: 12px;
+  border: 1px dashed #d8e6f3;
+  border-radius: 10px;
   background: #f8fbff;
-  color: #4e678d;
+  color: #5a7493;
   padding: 10px 12px;
   font-size: 0.84rem;
+  text-align: center;
 }
 
 .team-manage-members-list::-webkit-scrollbar {
@@ -13883,8 +14523,35 @@
 
 .team-manage-panel--danger {
   grid-column: 1 / -1;
-  border-color: #f1d2d2;
-  background: linear-gradient(180deg, #fff, #fff6f6);
+  border-color: #fce4e6;
+  background: linear-gradient(135deg, #ffffff, #fff9f9);
+}
+
+.team-manage-danger-compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.team-manage-danger-compact > div {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+}
+
+.team-manage-danger-compact h4 {
+  margin: 0;
+  color: #dc2626;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.team-manage-danger-compact p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #7a5555;
+  line-height: 1.4;
 }
 
 .team-manage-panel--danger h4 {
@@ -13892,7 +14559,8 @@
 }
 
 .team-manage-panel--danger .ui-button--danger {
-  min-height: 40px;
+  min-height: 34px;
+  padding-inline: 12px;
   border-radius: 12px;
 }
 
@@ -15353,6 +16021,7 @@
   background:
     radial-gradient(circle at 96% 12%, rgba(34, 106, 212, 0.18), transparent 42%),
     linear-gradient(135deg, #edf5ff, #ffffff);
+  padding: 18px 20px;
 }
 
 .collaborator-modal-shell .cm-ficha-subnav {

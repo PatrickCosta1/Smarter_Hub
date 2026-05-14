@@ -344,6 +344,7 @@ export default function ManagerTeamsPage() {
   const [isDeleteTeamConfirmOpen, setIsDeleteTeamConfirmOpen] = useState(false);
   const [manageQuery, setManageQuery] = useState('');
   const [teamSearchQuery, setTeamSearchQuery] = useState('');
+  const [expandedTeamBranchIds, setExpandedTeamBranchIds] = useState<Record<string, boolean>>({});
   const [vacationsMonthCursor, setVacationsMonthCursor] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -768,6 +769,69 @@ export default function ManagerTeamsPage() {
     });
   }, [teamSearchQuery, teams]);
 
+  const childTeamsByParentId = useMemo(() => {
+    const map = new Map<string, TeamSummary[]>();
+    for (const team of teams) {
+      const parentId = team.parentTeam?.id;
+      if (!parentId) {
+        continue;
+      }
+      const current = map.get(parentId) ?? [];
+      current.push(team);
+      map.set(parentId, current);
+    }
+
+    for (const [key, list] of map.entries()) {
+      map.set(key, [...list].sort((a, b) => a.name.localeCompare(b.name)));
+    }
+
+    return map;
+  }, [teams]);
+
+  const visibleTeamIdSet = useMemo(() => {
+    const ids = new Set<string>();
+    for (const team of filteredTeams) {
+      ids.add(team.id);
+    }
+    return ids;
+  }, [filteredTeams]);
+
+  const visibleBranchRoots = useMemo(() => {
+    const cache = new Map<string, boolean>();
+
+    const branchHasVisibleTeam = (teamId: string): boolean => {
+      if (cache.has(teamId)) {
+        return cache.get(teamId) || false;
+      }
+
+      const directMatch = visibleTeamIdSet.has(teamId);
+      const children = childTeamsByParentId.get(teamId) ?? [];
+      const descendantMatch = children.some((child) => branchHasVisibleTeam(child.id));
+      const result = directMatch || descendantMatch;
+      cache.set(teamId, result);
+      return result;
+    };
+
+    return teams
+      .filter((team) => !team.parentTeam)
+      .filter((team) => branchHasVisibleTeam(team.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [childTeamsByParentId, teams, visibleTeamIdSet]);
+
+  useEffect(() => {
+    if (teamSearchQuery.trim().length === 0) {
+      return;
+    }
+
+    setExpandedTeamBranchIds((current) => {
+      const next = { ...current };
+      for (const rootTeam of visibleBranchRoots) {
+        next[rootTeam.id] = true;
+      }
+      return next;
+    });
+  }, [teamSearchQuery, visibleBranchRoots]);
+
   function openPicker(mode: 'leader' | 'members') {
     setPickerMode(mode);
     setPickerQuery('');
@@ -1118,23 +1182,6 @@ export default function ManagerTeamsPage() {
     return entries.sort((a, b) => a.daysUntil - b.daysUntil || a.memberName.localeCompare(b.memberName));
   }, [teamCalendarMembers, holidaySet]);
 
-  const birthdaysByMonth = useMemo(() => {
-    const grouped = new Map<number, TeamBirthdayEntry[]>();
-    for (const item of teamBirthdays) {
-      const month = new Date(`${item.nextBirthdayIso}T00:00:00`).getMonth();
-      const current = grouped.get(month) ?? [];
-      current.push(item);
-      grouped.set(month, current);
-    }
-    return grouped;
-  }, [teamBirthdays]);
-
-  const birthdayMonthOrder = useMemo(() => {
-    const nowMonth = new Date().getMonth();
-    return Array.from({ length: 12 }, (_, offset) => (nowMonth + offset) % 12)
-      .filter((month) => (birthdaysByMonth.get(month)?.length ?? 0) > 0);
-  }, [birthdaysByMonth]);
-
   function renderVacationCalendar(members: TeamCalendarPerson[]) {
     if (members.length === 0) {
       return null;
@@ -1258,6 +1305,13 @@ export default function ManagerTeamsPage() {
 
   const isSelectedTeamDetailLoading = loadingDetailTeamId === selectedTeamId;
 
+  function toggleTeamBranch(teamId: string) {
+    setExpandedTeamBranchIds((current) => ({
+      ...current,
+      [teamId]: !current[teamId],
+    }));
+  }
+
   return (
     <section className="trainings-shell">
       
@@ -1301,21 +1355,82 @@ export default function ManagerTeamsPage() {
               message="Ajusta o termo de pesquisa para ver outras equipas."
             />
           )}
-          {!loading && filteredTeams.map((team) => (
-            <button
-              key={team.id}
-              type="button"
-              className="manager-team-card"
-              style={{ '--team-color': team.color || '#4B79F5' } as React.CSSProperties}
-              onClick={() => setSelectedTeamId(team.id)}
-            >
-              <span className="manager-team-card__label">Equipa</span>
-              <h3>{team.name}</h3>
-              <p>{team._count?.members ?? 0} membro(s)</p>
-              <small>{team.parentTeam ? `Subequipa de ${team.parentTeam.name}` : 'Equipa base'}</small>
-              
-            </button>
-          ))}
+          {!loading && visibleBranchRoots.map((team) => {
+            const visibleSubTeams = (childTeamsByParentId.get(team.id) ?? []).filter((childTeam) => {
+              if (visibleTeamIdSet.has(childTeam.id)) {
+                return true;
+              }
+
+              const descendants = childTeamsByParentId.get(childTeam.id) ?? [];
+              return descendants.some((descendant) => visibleTeamIdSet.has(descendant.id));
+            });
+            const hasSubTeams = visibleSubTeams.length > 0;
+            const isExpanded = Boolean(expandedTeamBranchIds[team.id]);
+
+            return (
+              <div key={team.id} className="manager-team-card-wrapper">
+                <div className={`manager-team-card manager-team-card--root${isExpanded ? ' is-expanded' : ''}`} style={{ '--team-color': team.color || '#4B79F5' } as CSSProperties}>
+                  <button
+                    type="button"
+                    className="manager-team-card__content"
+                    onClick={() => setSelectedTeamId(team.id)}
+                  >
+                    <span className="manager-team-card__label">Equipa</span>
+                    <h3>{team.name}</h3>
+                    <p>{team._count?.members ?? 0} membro(s)</p>
+                    <small>{hasSubTeams ? `${visibleSubTeams.length} subequipa(s)` : 'Equipa base'}</small>
+                  </button>
+
+                  {hasSubTeams && (
+                    <div
+                      className={`manager-team-expand-btn${isExpanded ? ' is-expanded' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => { e.stopPropagation(); toggleTeamBranch(team.id); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); toggleTeamBranch(team.id); } }}
+                      aria-expanded={isExpanded}
+                      aria-label={isExpanded ? 'Colapsar subequipas' : 'Expandir subequipas'}
+                    >
+                      {isExpanded ? '−' : '+'}
+                    </div>
+                  )}
+                </div>
+
+                {hasSubTeams && isExpanded && (
+                  <div
+                    id={`team-branch-${team.id}`}
+                    className="manager-team-sublist"
+                    role="list"
+                    aria-label={`Subequipas de ${team.name}`}
+                  >
+                    {visibleSubTeams.map((subTeam) => {
+                      const subChildrenCount = childTeamsByParentId.get(subTeam.id)?.length ?? 0;
+                      const isActive = selectedTeamId === subTeam.id;
+
+                      return (
+                        <button
+                          key={subTeam.id}
+                          type="button"
+                          role="listitem"
+                          className={`manager-team-sublist__row${isActive ? ' is-active' : ''}`}
+                          style={{ '--team-color': subTeam.color || '#4B79F5' } as CSSProperties}
+                          onClick={() => setSelectedTeamId(subTeam.id)}
+                        >
+                          <span className="manager-team-sublist__dot" />
+                          <span className="manager-team-sublist__name">{subTeam.name}</span>
+                          <span className="manager-team-sublist__count">
+                            {subTeam._count?.members ?? 0} membro(s)
+                            {subChildrenCount > 0 ? ` · ${subChildrenCount} sub` : ''}
+                          </span>
+                          <span className="manager-team-sublist__action">Ver</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -1409,7 +1524,7 @@ export default function ManagerTeamsPage() {
             )}
 
             {teamModalTab === 'birthdays' && (
-              <section className="team-birthdays-board">
+              <section className="team-birthdays-list">
                 {isSelectedTeamDetailLoading && teamCalendarMembers.length === 0 && (
                   <article className="trainings-mobile-card">
                     <Skeleton lines={4} />
@@ -1424,58 +1539,20 @@ export default function ManagerTeamsPage() {
                 )}
 
                 {!isSelectedTeamDetailLoading && teamBirthdays.length > 0 && (
-                  <>
-                    <div className="team-birthdays-hero">
-                      <article>
-                        <span>Total com aniversário</span>
-                        <strong>{teamBirthdays.length}</strong>
-                      </article>
-                      <article>
-                        <span>Próximos 7 dias</span>
-                        <strong>{teamBirthdays.filter((item) => item.daysUntil <= 7).length}</strong>
-                      </article>
-                      <article>
-                        <span>Hoje</span>
-                        <strong>{teamBirthdays.filter((item) => item.isToday).length}</strong>
-                      </article>
-                    </div>
-
-                    <div className="team-birthdays-next">
-                      <h3>Próximos aniversários</h3>
-                      <div className="team-birthdays-next__grid">
-                        {teamBirthdays.slice(0, 6).map((item) => (
-                          <article key={`next-bday-${item.memberId}`} className={`team-birthdays-next__card${item.isToday ? ' is-today' : ''}`}>
-                            <p>{item.memberName}</p>
-                            <strong>{formatDatePt(item.nextBirthdayIso)}</strong>
-                            <small>{item.isToday ? 'Hoje' : `Faltam ${item.daysUntil} dia(s)`}</small>
-                            <small>{item.roleLabel}</small>
-                          </article>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="team-birthdays-months">
-                      {birthdayMonthOrder.map((month) => (
-                        <article key={`bday-month-${month}`} className="team-birthdays-months__group">
-                          <h4>{MONTH_LABELS[month]}</h4>
-                          <div className="team-birthdays-months__list">
-                            {(birthdaysByMonth.get(month) ?? []).map((item) => (
-                              <div key={`month-bday-${month}-${item.memberId}`} className="team-birthdays-months__item">
-                                <div>
-                                  <strong>{item.memberName}</strong>
-                                  <small>{item.email || 'Sem email disponível'}</small>
-                                </div>
-                                <div>
-                                  <strong>{formatDatePt(item.nextBirthdayIso)}</strong>
-                                  <small>{item.isToday ? 'Hoje' : `${item.daysUntil} dia(s)`}</small>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                  </>
+                  <ul className="team-birthdays-list__items">
+                    {teamBirthdays.map((item) => (
+                      <li key={`birthday-${item.memberId}`} className={`team-birthdays-list__item${item.isToday ? ' is-today' : ''}`}>
+                        <div className="team-birthdays-list__person">
+                          <strong>{item.memberName}</strong>
+                          <small>{item.roleLabel}</small>
+                        </div>
+                        <div className="team-birthdays-list__meta">
+                          <strong>{formatDatePt(item.nextBirthdayIso)}</strong>
+                          <small>{item.isToday ? 'Hoje' : `Faltam ${item.daysUntil} dia(s)`}</small>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </section>
             )}
@@ -1877,20 +1954,21 @@ export default function ManagerTeamsPage() {
 
           {canDeleteTeam && (
             <section className="team-manage-panel team-manage-panel--danger">
-              <header>
-                <h4>Zona de risco</h4>
-                <p>Remove a equipa se já não fizer sentido manter esta estrutura.</p>
-              </header>
-
-              <Button
-                type="button"
-                variant="danger"
-                size="sm"
-                isLoading={isDeletingTeam}
-                onClick={() => setIsDeleteTeamConfirmOpen(true)}
-              >
-                Remover equipa
-              </Button>
+              <div className="team-manage-danger-compact">
+                <div>
+                  <h4>Zona de risco</h4>
+                  <p>Remoção permanente da equipa.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  isLoading={isDeletingTeam}
+                  onClick={() => setIsDeleteTeamConfirmOpen(true)}
+                >
+                  Remover equipa
+                </Button>
+              </div>
             </section>
           )}
         </form>

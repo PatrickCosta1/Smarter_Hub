@@ -34,6 +34,92 @@ const profileSections: Array<{ key: SectionKey; label: string }> = [
   { key: 'benefits', label: 'Pedido de Benefícios' },
 ];
 
+const profileSectionFields: Record<SectionKey, Array<keyof ProfileData>> = {
+  personal: [
+    'nomeCompleto',
+    'nomeAbreviado',
+    'dataNascimento',
+    'genero',
+    'estadoCivil',
+    'habilitacoesLiterarias',
+    'curso',
+    'faculdade',
+    'nacionalidade',
+    'localNascimentoPais',
+    'localNascimentoCidade',
+    'nomePai',
+    'nomeMae',
+    'matriculaCarro',
+      'photoUrl',
+  ],
+  contacts: [
+    'emailPessoal',
+    'telemovel',
+    'githubUser',
+    'moradaFiscal',
+    'endereco',
+    'localidade',
+    'codigoPostal',
+  ],
+  documents: [
+    'cartaoCidadao',
+    'validadeCartaoCidadao',
+    'comprovativoCartaoCidadao',
+      'certificadoHabilitacoesUrl',
+      'cartaConducaoUrl',
+    'cpf',
+    'rg',
+    'rgOrgaoEmissor',
+    'rgDataExpedicao',
+    'ctps',
+    'ctpsSerie',
+    'ctpsDataExpedicao',
+    'cnh',
+    'cnhCategoria',
+    'cnhDataValidade',
+    'tituloEleitor',
+    'zonaEleitoral',
+    'secaoEleitoral',
+    'certificadoReservista',
+  ],
+  tax: [
+    'nif',
+    'niss',
+    'iban',
+    'comprovativoIban',
+    'situacaoIrs',
+    'numeroDependentes',
+    'declaracaoIrs',
+    'irsJovem',
+    'anoPrimeiroDesconto',
+    'pis',
+    'primeiroEmprego',
+    'recebeAposentadoria',
+    'recebeSeguroDesemprego',
+    'valeTransporte',
+    'comprovativoMoradaFiscal',
+  ],
+  emergency: [
+    'contactoEmergenciaNome',
+    'contactoEmergenciaParentesco',
+    'contactoEmergenciaNumero',
+  ],
+  contract: [
+    'workCountry',
+    'brWorkState',
+    'categoriaProfissional',
+    'cargo',
+    'numeroMecanografico',
+    'funcao',
+    'dataInicioContrato',
+    'dataFimContrato',
+    'tipoContrato',
+    'regimeHorario',
+  ],
+  trainings: [],
+  benefits: ['numeroCartaoContinente', 'voucherNosData', 'comprovativoCartaoContinente'],
+};
+
 type ProfileTrainingRecord = {
   id: string;
   nome: string;
@@ -125,6 +211,9 @@ const profileFieldLabels: Partial<Record<keyof ProfileData, string>> = {
   regimeHorario: 'Regime horário',
   workCountry: 'País de trabalho',
   brWorkState: 'Estado de trabalho (BR)',
+    photoUrl: 'Foto de utilizador',
+    certificadoHabilitacoesUrl: 'Certificado de habilitações',
+    cartaConducaoUrl: 'Carta de condução',
 };
 
 const consolidatedAddressFields: Array<keyof ProfileData> = ['moradaFiscal', 'endereco'];
@@ -665,6 +754,23 @@ export default function ProfilePage() {
     [completionIssues],
   );
   const completionIssueCount = completionIssueEntries.length;
+  const completionIssueCountBySection = useMemo<Record<SectionKey, number>>(() => {
+    const result = profileSections.reduce((acc, section) => {
+      acc[section.key] = 0;
+      return acc;
+    }, {} as Record<SectionKey, number>);
+
+    for (const issue of completionIssueEntries) {
+      for (const section of profileSections) {
+        if (profileSectionFields[section.key].includes(issue.field)) {
+          result[section.key] += 1;
+          break;
+        }
+      }
+    }
+
+    return result;
+  }, [completionIssueEntries]);
 
   const collaboratorName = useMemo(() => `${draftProfile.nomeCompleto} ${draftProfile.nomeAbreviado}`.trim(), [draftProfile.nomeAbreviado, draftProfile.nomeCompleto]);
   const heroName = useMemo(
@@ -676,6 +782,22 @@ export default function ProfilePage() {
     const funcao = draftProfile.funcao.trim() || 'Função por definir';
     return `${cargo} • ${funcao}`;
   }, [draftProfile.cargo, draftProfile.funcao]);
+  const heroInitials = useMemo(() => {
+    const parts = heroName
+      .split(' ')
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (parts.length === 0) {
+      return 'SH';
+    }
+
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  }, [heroName]);
   const contractCostCenter = useMemo(() => {
     return currentUser?.team?.costCenter?.trim() || '';
   }, [currentUser?.team?.costCenter]);
@@ -1240,12 +1362,35 @@ export default function ProfilePage() {
     <>
       <section className="profile-hero">
         <div className="hero-main">
-          <h1>{heroName}</h1>
-          <p className="profile-hero__role-line">{heroRoleLine}</p>
-          <div className="profile-hero__meta">
-            <span>{teamName}</span>
-            <span>{draftProfile.workCountry || 'PT'}</span>
-            {draftProfile.workCountry === 'BR' && draftProfile.brWorkState && <span>{draftProfile.brWorkState}</span>}
+          <div className="profile-hero__identity">
+            <div className="profile-hero__avatar-wrap">
+              {draftProfile.photoUrl ? (
+                <img src={draftProfile.photoUrl} alt="Foto de utilizador" className="profile-hero__avatar" />
+              ) : (
+                <span className="profile-hero__avatar profile-hero__avatar--fallback" aria-hidden="true">{heroInitials}</span>
+              )}
+              {canEdit && (
+                <label className="profile-hero__avatar-edit" title="Editar foto de utilizador" aria-label="Editar foto de utilizador">
+                  ✎
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={isSaving}
+                    onClick={handleFileInputClick}
+                    onChange={(event) => handleFileChange('photoUrl', event)}
+                  />
+                </label>
+              )}
+            </div>
+            <div className="profile-hero__identity-copy">
+              <h1>{heroName}</h1>
+              <p className="profile-hero__role-line">{heroRoleLine}</p>
+              <div className="profile-hero__meta">
+                <span>{teamName}</span>
+                <span>{draftProfile.workCountry || 'PT'}</span>
+                {draftProfile.workCountry === 'BR' && draftProfile.brWorkState && <span>{draftProfile.brWorkState}</span>}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1344,7 +1489,12 @@ export default function ProfilePage() {
             className={`profile-stepper__item${currentSection === section.key ? ' is-active' : ''}`}
             onClick={() => setCurrentSection(section.key)}
           >
-            {section.label}
+            <span className="profile-stepper__label">{section.label}</span>
+            {completionIssueCountBySection[section.key] > 0 && (
+              <span className="profile-stepper__count" aria-label={`${completionIssueCountBySection[section.key]} campo(s) pendente(s)`}>
+                {completionIssueCountBySection[section.key]}
+              </span>
+            )}
           </button>
         ))}
       </nav>
@@ -1651,6 +1801,32 @@ export default function ProfilePage() {
               {renderFileLink(draftProfile.comprovativoCartaoCidadao)}
               {profileErrors.comprovativoCartaoCidadao && <small>{profileErrors.comprovativoCartaoCidadao}</small>}
             </label>
+              {!isBrProfile && (
+                <>
+                  <label className="field-span-2">
+                    <span>Certificado de habilitações (PDF/JPG)</span>
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg"
+                      disabled={!editingSections.documents}
+                      onClick={handleFileInputClick}
+                      onChange={(event) => handleFileChange('certificadoHabilitacoesUrl', event)}
+                    />
+                    {renderFileLink(draftProfile.certificadoHabilitacoesUrl)}
+                  </label>
+                  <label className="field-span-2">
+                    <span>Carta de condução (opcional) (PDF/JPG)</span>
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg"
+                      disabled={!editingSections.documents}
+                      onClick={handleFileInputClick}
+                      onChange={(event) => handleFileChange('cartaConducaoUrl', event)}
+                    />
+                    {renderFileLink(draftProfile.cartaConducaoUrl)}
+                  </label>
+                </>
+              )}
           </div>
         </article>
         )}

@@ -77,6 +77,9 @@ const profileKeys: Array<keyof ProfileData> = [
   'regimeHorario',
   'workCountry',
   'brWorkState',
+  'photoUrl',
+  'certificadoHabilitacoesUrl',
+  'cartaConducaoUrl',
 ];
 
 function normalizeProfileData(input: unknown): ProfileData {

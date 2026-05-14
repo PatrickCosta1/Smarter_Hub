@@ -190,8 +190,10 @@ export default function TrainingsPage() {
   const [collaboratorQuery, setCollaboratorQuery] = useState('');
   const [allCollaborators, setAllCollaborators] = useState<Collaborator[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [draftSelectedUserIds, setDraftSelectedUserIds] = useState<string[]>([]);
   const [isLoadingCollaborators, setIsLoadingCollaborators] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [isCollaboratorPickerOpen, setIsCollaboratorPickerOpen] = useState(false);
   const [isRecordsLoading, setIsRecordsLoading] = useState(false);
   const [recordsLoaded, setRecordsLoaded] = useState(false);
   const [completeConfirmRecordId, setCompleteConfirmRecordId] = useState<string | null>(null);
@@ -225,6 +227,11 @@ export default function TrainingsPage() {
   const selectedCollaborators = useMemo(
     () => allCollaborators.filter((c) => selectedUserIds.includes(c.id)),
     [allCollaborators, selectedUserIds],
+  );
+
+  const draftSelectedCollaborators = useMemo(
+    () => allCollaborators.filter((c) => draftSelectedUserIds.includes(c.id)),
+    [allCollaborators, draftSelectedUserIds],
   );
 
   const isOwnScope = scope === 'mine';
@@ -645,8 +652,21 @@ export default function TrainingsPage() {
     );
   }
 
+  function toggleDraftCollaborator(id: string) {
+    setDraftSelectedUserIds((current) =>
+      current.includes(id) ? current.filter((uid) => uid !== id) : [...current, id],
+    );
+  }
+
   function selectAllVisible() {
     setSelectedUserIds((current) => {
+      const toAdd = filteredCollaborators.map((c) => c.id).filter((id) => !current.includes(id));
+      return [...current, ...toAdd];
+    });
+  }
+
+  function selectAllVisibleDraft() {
+    setDraftSelectedUserIds((current) => {
       const toAdd = filteredCollaborators.map((c) => c.id).filter((id) => !current.includes(id));
       return [...current, ...toAdd];
     });
@@ -656,11 +676,36 @@ export default function TrainingsPage() {
     setSelectedUserIds([]);
   }
 
+  function clearDraftSelection() {
+    setDraftSelectedUserIds([]);
+  }
+
+  function openCollaboratorPicker() {
+    setCollaboratorQuery('');
+    setDraftSelectedUserIds(selectedUserIds);
+    setIsCollaboratorPickerOpen(true);
+    if (allCollaborators.length === 0) {
+      void loadAllCollaborators();
+    }
+  }
+
+  function closeCollaboratorPicker() {
+    setIsCollaboratorPickerOpen(false);
+    setCollaboratorQuery('');
+  }
+
+  function confirmCollaboratorPicker() {
+    setSelectedUserIds(draftSelectedUserIds);
+    setIsCollaboratorPickerOpen(false);
+    setCollaboratorQuery('');
+  }
+
   function openAssignModal() {
     setIsAssignModalOpen(true);
     setAssignStatus('');
     setCollaboratorQuery('');
     setSelectedUserIds([]);
+    setDraftSelectedUserIds([]);
     setAssignDraft(EMPTY_ASSIGN_DRAFT);
     if (allCollaborators.length === 0) {
       void loadAllCollaborators();
@@ -1041,104 +1086,31 @@ export default function TrainingsPage() {
             </div>
 
             <form className="trainings-form" onSubmit={handleAssignTraining} noValidate>
-              {/* ── Collaborator multi-picker ── */}
-              <div className="field-span-2 rh-collaborator-picker">
-                <div className="rh-picker-header">
-                  <span>Colaboradores *</span>
-                  {selectedUserIds.length > 0 && (
-                    <span className="rh-picker-badge">{selectedUserIds.length} selecionado{selectedUserIds.length !== 1 ? 's' : ''}</span>
-                  )}
+              <div className="field-span-2 vacations-operation-panel">
+                <div className="vacations-operation-panel__head">
+                  <div>
+                    <span className="vacations-operation-panel__eyebrow">Colaboradores</span>
+                    <strong>Seleciona um ou mais colaboradores</strong>
+                  </div>
+                  <button type="button" className="vacations-operation-panel__trigger" onClick={openCollaboratorPicker}>
+                    Escolher colaboradores
+                  </button>
                 </div>
 
-                {/* Selected chips */}
-                {selectedCollaborators.length > 0 && (
+                {selectedCollaborators.length > 0 ? (
                   <div className="rh-selected-chips">
                     {selectedCollaborators.map((collab) => {
                       const name = collab.profile?.nomeCompleto ?? collab.username;
                       return (
                         <span key={collab.id} className="rh-selected-chip">
                           {name}
-                          <button type="button" aria-label={`Remover ${name}`} onClick={() => toggleCollaborator(collab.id)}>×</button>
                         </span>
                       );
                     })}
                   </div>
+                ) : (
+                  <div className="vacations-operation-panel__empty">Nenhum colaborador selecionado.</div>
                 )}
-
-                {/* Search input */}
-                <div className="rh-picker-search-row">
-                  <input
-                    type="search"
-                    value={collaboratorQuery}
-                    onChange={(event) => setCollaboratorQuery(event.target.value)}
-                    placeholder="Filtrar por nome, email, cargo ou função..."
-                  />
-                </div>
-
-                {/* Bulk action bar */}
-                {!isLoadingCollaborators && allCollaborators.length > 0 && (
-                  <div className="rh-picker-bulk-bar">
-                    <button
-                      type="button"
-                      className="rh-picker-bulk-btn"
-                      onClick={selectAllVisible}
-                      disabled={filteredCollaborators.every((c) => selectedUserIds.includes(c.id))}
-                    >
-                      Selecionar {collaboratorQuery.trim() ? `visíveis (${filteredCollaborators.length})` : `todos (${allCollaborators.length})`}
-                    </button>
-                    {selectedUserIds.length > 0 && (
-                      <button type="button" className="rh-picker-bulk-btn rh-picker-bulk-btn--clear" onClick={clearSelection}>
-                        Limpar seleção
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {/* Results list */}
-                <div className="rh-collaborator-results rh-collaborator-results--multi" role="listbox" aria-label="Lista de colaboradores">
-                  {isLoadingCollaborators && (
-                    <p className="rh-picker-loading">A carregar colaboradores...</p>
-                  )}
-                  {!isLoadingCollaborators && allCollaborators.length === 0 && (
-                    <p className="rh-picker-empty">Nenhum colaborador disponível.</p>
-                  )}
-                  {!isLoadingCollaborators && allCollaborators.length > 0 && filteredCollaborators.length === 0 && (
-                    <p className="rh-picker-empty">Sem resultados para "{collaboratorQuery}".</p>
-                  )}
-                  {!isLoadingCollaborators &&
-                    filteredCollaborators.map((collab) => {
-                      const isSelected = selectedUserIds.includes(collab.id);
-                      const displayName = collab.profile?.nomeCompleto ?? collab.username;
-                      return (
-                        <button
-                          key={collab.id}
-                          type="button"
-                          role="option"
-                          aria-selected={isSelected}
-                          className={`rh-collaborator-result${isSelected ? ' rh-collaborator-result--selected' : ''}`}
-                          onClick={() => toggleCollaborator(collab.id)}
-                        >
-                          <span className="rh-collab-check" aria-hidden="true">
-                            {isSelected ? (
-                              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                                <rect width="14" height="14" rx="3" fill="#1d6fcf" />
-                                <path d="M3 7l3 3 5-5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            ) : (
-                              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                                <rect x="0.5" y="0.5" width="13" height="13" rx="2.5" stroke="#c3d5ef" />
-                              </svg>
-                            )}
-                          </span>
-                          <span className="rh-collab-info">
-                            <strong>{displayName}</strong>
-                            <span>{collab.email}</span>
-                            <small>{collab.profile?.cargo || formatRoleLabel(collab.role)}</small>
-                          </span>
-                        </button>
-                      );
-                    })}
-                </div>
               </div>
 
               {/* ── Training details ── */}
@@ -1179,6 +1151,95 @@ export default function TrainingsPage() {
             </form>
 
             <Toast show={Boolean(assignStatus)} tone={resolveStatusTone(assignStatus)} message={assignStatus} />
+
+            {isCollaboratorPickerOpen && (
+              <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="trainings-collaborator-picker-title" onClick={(event) => { if (event.target === event.currentTarget) closeCollaboratorPicker(); }}>
+                <div className="pending-modal pending-modal--vacations vacations-picker-modal">
+                  <div className="pending-modal__header vacations-picker-modal__header">
+                    <div>
+                      <p className="pending-modal__kicker">Seleção</p>
+                      <h2 id="trainings-collaborator-picker-title">Escolher colaboradores</h2>
+                      <p className="vacations-company-days-subtitle">Filtra a lista, seleciona os colaboradores pretendidos e confirma para voltar ao formulário.</p>
+                    </div>
+                    <button type="button" className="pending-modal__close" onClick={closeCollaboratorPicker} aria-label="Fechar">×</button>
+                  </div>
+
+                  <div className="vacations-picker-modal__body">
+                    <div className="vacations-picker-modal__toolbar">
+                      <label className="vacations-export-form__field vacations-picker-modal__search">
+                        <span>Pesquisar</span>
+                        <input
+                          type="search"
+                          value={collaboratorQuery}
+                          onChange={(event) => setCollaboratorQuery(event.target.value)}
+                          placeholder="Nome, email, cargo ou função"
+                          autoComplete="off"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="rh-picker-bulk-bar">
+                      <button
+                        type="button"
+                        className="rh-picker-bulk-btn"
+                        onClick={selectAllVisibleDraft}
+                        disabled={filteredCollaborators.length === 0 || filteredCollaborators.every((c) => draftSelectedUserIds.includes(c.id))}
+                      >
+                        Selecionar {collaboratorQuery.trim() ? `visíveis (${filteredCollaborators.length})` : `todos (${allCollaborators.length})`}
+                      </button>
+                      <button
+                        type="button"
+                        className="rh-picker-bulk-btn rh-picker-bulk-btn--clear"
+                        onClick={clearDraftSelection}
+                        disabled={draftSelectedUserIds.length === 0}
+                      >
+                        Limpar seleção
+                      </button>
+                      <span className="vacations-picker-modal__count">{draftSelectedUserIds.length} selecionado(s)</span>
+                    </div>
+
+                    <div className="rh-collaborator-results rh-collaborator-results--multi vacations-picker-modal__results" role="listbox" aria-label="Lista de colaboradores para formações">
+                      {isLoadingCollaborators ? (
+                        <p className="rh-picker-loading">A carregar colaboradores...</p>
+                      ) : allCollaborators.length === 0 ? (
+                        <p className="rh-picker-empty">Nenhum colaborador disponível.</p>
+                      ) : filteredCollaborators.length === 0 ? (
+                        <p className="rh-picker-empty">Sem resultados para "{collaboratorQuery}".</p>
+                      ) : (
+                        filteredCollaborators.map((collab) => {
+                          const isSelected = draftSelectedUserIds.includes(collab.id);
+                          const displayName = collab.profile?.nomeCompleto ?? collab.username;
+                          return (
+                            <button
+                              key={collab.id}
+                              type="button"
+                              role="option"
+                              aria-selected={isSelected}
+                              className={`rh-collaborator-result${isSelected ? ' rh-collaborator-result--selected' : ''}`}
+                              onClick={() => toggleDraftCollaborator(collab.id)}
+                            >
+                              <span className="rh-collab-check" aria-hidden="true">{isSelected ? '✓' : '○'}</span>
+                              <span className="rh-collab-info">
+                                <strong>{displayName}</strong>
+                                <span>{collab.email}</span>
+                                <small>{collab.profile?.cargo || formatRoleLabel(collab.role)}</small>
+                              </span>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="vacations-picker-modal__footer">
+                    <button type="button" className="vacations-picker-modal__secondary" onClick={closeCollaboratorPicker}>Cancelar</button>
+                    <Button type="button" variant="primary" onClick={confirmCollaboratorPicker} disabled={draftSelectedUserIds.length === 0}>
+                      Confirmar seleção
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {recentAssigned.length > 0 && (
               <section className="trainings-recent-created" aria-label="Últimas formações criadas">

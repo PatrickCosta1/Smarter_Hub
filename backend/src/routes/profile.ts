@@ -289,6 +289,9 @@ const profileFields = [
   "githubUser",
   "workCountry",
   "brWorkState",
+  "photoUrl",
+  "certificadoHabilitacoesUrl",
+  "cartaConducaoUrl",
 ] as const;
 
 function normalizeProfilePayload(payload: unknown) {
@@ -399,6 +402,9 @@ const updateProfileSchema = z.object({
   githubUser: optionalStringField,
   workCountry: z.enum(['PT', 'BR']).optional(),
   brWorkState: z.enum(['SP', 'RS']).or(z.literal('')).optional().transform((value) => value || undefined),
+  photoUrl: optionalStringField,
+  certificadoHabilitacoesUrl: optionalStringField,
+  cartaConducaoUrl: optionalStringField,
 }).superRefine((data, ctx) => {
   const country = data.workCountry === 'BR' ? 'BR' : 'PT';
 
@@ -567,6 +573,9 @@ const friendlyProfileFieldLabels: Partial<Record<(typeof profileFields)[number],
   githubUser: 'GitHub',
   workCountry: 'País de trabalho',
   brWorkState: 'Estado de trabalho (BR)',
+  photoUrl: 'Foto de utilizador',
+  certificadoHabilitacoesUrl: 'Certificado de habilitações',
+  cartaConducaoUrl: 'Carta de condução',
 };
 
 async function resolveProfileRequestApproverIds(requesterUserId: string) {
