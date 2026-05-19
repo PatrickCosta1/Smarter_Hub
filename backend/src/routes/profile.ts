@@ -95,12 +95,80 @@ const defaultOptionsByType: Record<ProfileOptionType, Array<{ label: string; gro
   FUNCAO: defaultFuncaoOptions,
 };
 
+const SENSITIVE_PROFILE_CHANGE_FIELDS = new Set([
+  'dataNascimento',
+  'emailPessoal',
+  'telemovel',
+  'moradaFiscal',
+  'endereco',
+  'localidade',
+  'codigoPostal',
+  'cartaoCidadao',
+  'validadeCartaoCidadao',
+  'nif',
+  'cpf',
+  'pis',
+  'ctps',
+  'ctpsSerie',
+  'ctpsDataExpedicao',
+  'rg',
+  'rgOrgaoEmissor',
+  'rgDataExpedicao',
+  'cnh',
+  'cnhCategoria',
+  'cnhDataValidade',
+  'tituloEleitor',
+  'zonaEleitoral',
+  'secaoEleitoral',
+  'certificadoReservista',
+  'niss',
+  'iban',
+  'comprovativoMoradaFiscal',
+  'comprovativoCartaoCidadao',
+  'comprovativoIban',
+]);
+
 function normalizeDropdownOptionLabel(value: string) {
   return value.trim().replace(/\s+/g, ' ');
 }
 
 function normalizeDropdownOptionKey(value: string) {
   return normalizeDropdownOptionLabel(value).toLowerCase();
+}
+
+function canViewSensitiveProfileChangeFields(isRootAccess: boolean, isAccessTotalFlag: boolean) {
+  return isRootAccess || isAccessTotalFlag;
+}
+
+function redactProfileChangeRecord(
+  payload: Record<string, unknown>,
+  canViewSensitiveFields: boolean,
+) {
+  if (canViewSensitiveFields) {
+    return payload;
+  }
+
+  return Object.fromEntries(
+    Object.entries(payload).map(([key, value]) => [
+      key,
+      SENSITIVE_PROFILE_CHANGE_FIELDS.has(key) ? '[oculto]' : value,
+    ]),
+  );
+}
+
+function redactProfileChangeDetails(
+  details: Array<{ fieldKey: string; field: string; oldValue: string; newValue: string }>,
+  canViewSensitiveFields: boolean,
+) {
+  if (canViewSensitiveFields) {
+    return details;
+  }
+
+  return details.map((detail) => (
+    SENSITIVE_PROFILE_CHANGE_FIELDS.has(detail.fieldKey)
+      ? { ...detail, oldValue: '[oculto]', newValue: '[oculto]' }
+      : detail
+  ));
 }
 
 const profileDropdownOptionSchema = z.object({
@@ -1146,7 +1214,13 @@ router.get('/profile/requests/history', requireAuth, async (req, res) => {
     ? null
     : buildUserWhereFromScope(scope!);
 
-  const limit = Math.min(500, Math.max(10, Number(typeof req.query.limit === 'string' ? req.query.limit : '200') || 200));
+  const rawLimit = typeof req.query.limit === 'string' ? req.query.limit.trim() : '200';
+  if (!/^\d+$/.test(rawLimit)) {
+    return res.status(400).json({ message: 'Parâmetro limit inválido.' });
+  }
+
+  const limit = Math.min(500, Math.max(10, Number(rawLimit)));
+  const canViewSensitiveFields = canViewSensitiveProfileChangeFields(req.authUser!.isRootAccess, Boolean(req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id)));
 
   const requests = await prisma.profileChangeRequest.findMany({
     where: {
@@ -1190,15 +1264,21 @@ router.get('/profile/requests/history', requireAuth, async (req, res) => {
     const requestedData = (item.requestedData as Record<string, unknown>) ?? {};
     const approvedFields = (item.approvedFields as Record<string, unknown>) ?? {};
     const rejectedFields = (item.rejectedFields as Record<string, unknown>) ?? {};
+    const redactedRequestedData = redactProfileChangeRecord(requestedData, canViewSensitiveFields);
+    const redactedApprovedFields = redactProfileChangeRecord(approvedFields, canViewSensitiveFields);
+    const redactedRejectedFields = redactProfileChangeRecord(rejectedFields, canViewSensitiveFields);
+    const changedFieldNames = Object.keys(redactedRequestedData);
+    const approvedFieldNames = Object.keys(redactedApprovedFields);
+    const rejectedFieldNames = Object.keys(redactedRejectedFields);
 
     return {
       ...item,
-      changedFields: Object.keys(requestedData),
-      approvedFieldNames: Object.keys(approvedFields),
-      rejectedFieldNames: Object.keys(rejectedFields),
-      requestedData,
-      approvedFields,
-      rejectedFields,
+      changedFields: changedFieldNames,
+      approvedFieldNames,
+      rejectedFieldNames,
+      requestedData: redactedRequestedData,
+      approvedFields: redactedApprovedFields,
+      rejectedFields: redactedRejectedFields,
       requesterName: resolveRequesterDisplayName(item.user.profile),
     };
   }));
@@ -1249,25 +1329,28 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
   if (reviewType === 'FULL_APPROVE') {
     const requestedData = request.requestedData as Record<string, unknown>;
 
-    await prisma.profile.upsert({
-      where: { userId: request.userId },
-      update: requestedData,
-      create: {
-        userId: request.userId,
-        ...requestedData,
-      },
-    });
+    // Aplicar alterações ao perfil e marcar pedido como aprovado atomicamente
+    await prisma.$transaction(async (tx) => {
+      await tx.profile.upsert({
+        where: { userId: request.userId },
+        update: requestedData,
+        create: {
+          userId: request.userId,
+          ...requestedData,
+        },
+      });
 
-    await prisma.profileChangeRequest.update({
-      where: { id: request.id },
-      data: {
-        status: 'APPROVED',
-        approvedFields: requestedData as Prisma.InputJsonValue,
-        rejectedFields: {},
-        reviewedBy: { connect: { id: req.authUser!.id } },
-        reviewedAt: new Date(),
-        reviewReason: 'Pedido aprovado.',
-      },
+      await tx.profileChangeRequest.update({
+        where: { id: request.id },
+        data: {
+          status: 'APPROVED',
+          approvedFields: requestedData as Prisma.InputJsonValue,
+          rejectedFields: {},
+          reviewedBy: { connect: { id: req.authUser!.id } },
+          reviewedAt: new Date(),
+          reviewReason: 'Pedido aprovado.',
+        },
+      });
     });
 
     await prisma.notification.create({
@@ -1304,18 +1387,6 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
       return String(current ?? '') !== String(requested ?? '');
     });
 
-    // Aplicar apenas os campos aprovados
-    if (Object.keys(approvedFields).length > 0) {
-      await prisma.profile.upsert({
-        where: { userId: request.userId },
-        update: approvedFields,
-        create: {
-          userId: request.userId,
-          ...approvedFields,
-        },
-      });
-    }
-
     // Montar mensagem detalhada de rejeição
     const approvedFieldsList = changedApprovedFields
       .map((f) => `✓ ${friendlyProfileFieldLabels[f as keyof typeof friendlyProfileFieldLabels] || f}`)
@@ -1325,16 +1396,30 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
       .map(([f, obs]) => `✗ ${friendlyProfileFieldLabels[f as keyof typeof friendlyProfileFieldLabels] || f}: ${obs}`)
       .join('\n');
 
-    await prisma.profileChangeRequest.update({
-      where: { id: request.id },
-      data: {
-        status: 'PARTIALLY_REJECTED',
-        approvedFields: approvedFields as Prisma.InputJsonValue,
-        rejectedFields: rejectedFields as Prisma.InputJsonValue,
-        reviewedBy: { connect: { id: req.authUser!.id } },
-        reviewedAt: new Date(),
-        reviewReason: `Parcialmente rejeitado: ${Object.keys(rejectedFields).join(', ')}`,
-      },
+    // Aplicar campos aprovados e atualizar estado do pedido atomicamente
+    await prisma.$transaction(async (tx) => {
+      if (Object.keys(approvedFields).length > 0) {
+        await tx.profile.upsert({
+          where: { userId: request.userId },
+          update: approvedFields,
+          create: {
+            userId: request.userId,
+            ...approvedFields,
+          },
+        });
+      }
+
+      await tx.profileChangeRequest.update({
+        where: { id: request.id },
+        data: {
+          status: 'PARTIALLY_REJECTED',
+          approvedFields: approvedFields as Prisma.InputJsonValue,
+          rejectedFields: rejectedFields as Prisma.InputJsonValue,
+          reviewedBy: { connect: { id: req.authUser!.id } },
+          reviewedAt: new Date(),
+          reviewReason: `Parcialmente rejeitado: ${Object.keys(rejectedFields).join(', ')}`,
+        },
+      });
     });
 
     await prisma.notification.create({
@@ -1395,27 +1480,29 @@ router.post('/profile/requests/:id/reject', requireAuth, async (req, res) => {
 
   const reason = validation.success ? validation.data.reason?.trim() || 'Pedido recusado.' : 'Pedido recusado.';
 
-  await prisma.profileChangeRequest.update({
-    where: { id: request.id },
-    data: {
-      status: 'REJECTED',
-      reviewedBy: { connect: { id: req.authUser!.id } },
-      reviewedAt: new Date(),
-      reviewReason: reason,
-    },
-  });
+  await prisma.$transaction(async (tx) => {
+    await tx.profileChangeRequest.update({
+      where: { id: request.id },
+      data: {
+        status: 'REJECTED',
+        reviewedBy: { connect: { id: req.authUser!.id } },
+        reviewedAt: new Date(),
+        reviewReason: reason,
+      },
+    });
 
-  await prisma.notification.create({
-    data: {
-      userId: request.userId,
-      title: 'Pedido de alteração de ficha recusado',
-      message: [
-        'Resultado: pedido de alteração de ficha recusado.',
-        `Motivo: ${reason}`,
-        `Decisor: ${req.authUser?.username || 'Aprovador'}.`,
-        'Ação: ajusta os dados e volta a submeter quando necessário.',
-      ].join('\n'),
-    },
+    await tx.notification.create({
+      data: {
+        userId: request.userId,
+        title: 'Pedido de alteração de ficha recusado',
+        message: [
+          'Resultado: pedido de alteração de ficha recusado.',
+          `Motivo: ${reason}`,
+          `Decisor: ${req.authUser?.username || 'Aprovador'}.`,
+          'Ação: ajusta os dados e volta a submeter quando necessário.',
+        ].join('\n'),
+      },
+    });
   });
 
   return res.json({ success: true });

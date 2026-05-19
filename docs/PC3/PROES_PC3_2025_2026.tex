@@ -91,7 +91,7 @@
 \usepackage{lastpage}
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[LE,RO]{\small\sffamily\color{MUTED}Ponto de Controlo 3 - SMARTER HUB}
+\fancyhead[LE,RO]{\small\sffamily\color{MUTED}Ponto de Controlo 2 - SMARTER HUB}
 \fancyhead[RE,LO]{\small\sffamily\color{MUTED}PROES 2025/2026}
 \fancyfoot[C]{\small\sffamily\color{MUTED}\thepage\,/\,\pageref{LastPage}}
 \renewcommand{\headrulewidth}{0.4pt}
@@ -137,7 +137,7 @@
   linkcolor=RULE,
   urlcolor=RULE,
   citecolor=RULE,
-  pdftitle={SMARTER HUB - Ponto de Controlo 3 - Versão Enxuta},
+  pdftitle={SMARTER HUB - Ponto de Controlo 2 - Versão Enxuta},
   pdfauthor={Patrick Costa}
 }
 \usepackage{eso-pic}
@@ -148,7 +148,7 @@
 \begin{titlepage}
 \thispagestyle{empty}
  \AddToShipoutPictureBG*{%
-   \includegraphics[width=\paperwidth,height=\paperheight]{capa_pc2.png}%
+   \includegraphics[width=\paperwidth,height=\paperheight]{capa_pc3.png}%
  }
  \vspace*{\fill}
 \end{titlepage}
@@ -157,7 +157,7 @@
 \tableofcontents
 \newpage
 
-\section{Identificação e Stakeholders}
+\section{Identificação}
 
 \textbf{Aluno:} Patrick Dias Mendes da Costa\\
 \textbf{Supervisor:} Camila Teixeira\\
@@ -165,427 +165,280 @@
 \textbf{Entidade acolhedora:} Tlantic Portugal - Sistemas de Informação, S.A.\\
 \textbf{Local e modo:} Rua Manuel Pinto de Azevedo, n626, 1.º Piso, 4100-320, Porto; regime híbrido
 
-\subsection{Stakeholders principais}
+\section{Alterações Significativas ao Plano Inicial}
 
+\subsection{Logística}
+\begin{itemize}
+  \item Sem alteração de local, entidade, orientação ou regime de trabalho.
+  \item Manteve-se o modelo de acompanhamento académico e de negócio definido no arranque.
+\end{itemize}
+
+\subsection{Objetivos gerais e específicos}
+\begin{itemize}
+  \item O objetivo geral mantém-se: consolidar processos de pessoas numa única plataforma com rastreabilidade e governação de acesso.
+  \item O escopo do checkpoint foi ampliado com entregas efetivas em banco de horas BR, admissões, plano de carreira e internacionalização.
+\end{itemize}
+
+\subsection{Plano}
 \rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\bfseries}p{3.2cm} >{\small}p{5.0cm} >{\small}p{5.1cm}}
+\begin{longtable}{>{\small\bfseries}p{4.8cm} >{\small\centering\arraybackslash}p{2.4cm} >{\small\centering\arraybackslash}p{1.7cm} >{\small}p{5.3cm}}
 \theadrow
-\tH{Stakeholder} & \tH{Interesse no projeto} & \tH{Papel principal} \\
+\tH{Bloco} & \tH{Janela temporal} & \tH{Estado} & \tH{Leitura no PC3} \\
 \midrule
 \endfirsthead
 \theadrow
-\tH{Stakeholder} & \tH{Interesse no projeto} & \tH{Papel principal} \\
+\tH{Bloco} & \tH{Janela temporal} & \tH{Estado} & \tH{Leitura no PC3} \\
 \midrule
 \endhead
-Estudante & Desenvolver uma solução real, validável e alinhada com o contexto de negócio & Análise, conceção, implementação, testes e documentação \\
-Supervisora & Garantir utilidade prática da proposta e alinhamento com o contexto da Tlantic & Priorização funcional, validação do problema e feedback sobre a solução \\
-Orientador & Assegurar coerência metodológica e enquadramento académico do trabalho & Acompanhamento científico, revisão estrutural e suporte na delimitação do escopo \\
-RH / Gestores & Reduzir fricção operacional em pedidos, aprovações e controlo de dados & Fonte de requisitos, validação de fluxos e critério de aceitação operacional \\
+Iniciação e arranque & 07/04 -- 15/04 & 100\% & Fechado no prazo \\
+Planeamento inicial & 16/04 -- 01/05 & 100\% & Fechado no prazo \\
+Análise, desenho e arquitetura & 22/04 -- 22/05 & 100\% & Fechado no prazo \\
+Desenvolvimento do escopo PC3 & 22/04 -- 22/05 & 100\% & Entregas-alvo concluídas \\
+Consolidação e fecho & 15/06 -- 03/07 & Planeado & Hardening e refinamento em PC4+ \\
 \bottomrule
 \end{longtable}
 
-\section{Contexto}
-
-\subsection{Descrição da empresa}
-
-A Tlantic Portugal é uma empresa de desenvolvimento de software com foco em eficiência operacional, gestão de pessoas e suporte a operações intensivas em mão-de-obra. O projeto SMARTER HUB enquadra-se neste contexto por procurar responder a necessidades reais de organização da informação de membro, governação por permissões, padronização de processos e apoio à decisão operacional.
-
-\subsection{Contextualização na área de negócio}
-
-O problema situa-se no domínio do software de gestão operacional de pessoas. Em muitas organizações, os processos de férias, ausências, aprovações, alterações de perfil e controlo de permissões continuam distribuídos por email, folhas de cálculo e validações informais. Esse modelo gera atraso, erro humano, baixa visibilidade sobre o estado dos pedidos e dificuldade em assegurar uma trilha clara de auditoria.
-
-No contexto do SMARTER HUB, o valor de negócio da solução está em consolidar esses fluxos numa plataforma única, reduzindo retrabalho administrativo e aumentando previsibilidade na gestão de equipas.
-
-\subsection{Estado da arte}
-
-No estado atual da prática, existem três abordagens recorrentes para este tipo de problema:
-
+\subsection{Outros ajustes relevantes}
 \begin{itemize}
-  \item utilização de folhas de cálculo e email, com baixo custo inicial mas pouca rastreabilidade e forte dependência manual;
-  \item utilização de módulos dispersos em várias ferramentas, o que reduz visão integrada do processo;
-  \item utilização de plataformas enterprise com workflow e compliance, normalmente robustas, mas mais pesadas de parametrizar e menos ajustadas a necessidades específicas.
+  \item Framing da entrega: \textit{pronto para piloto operacional}, não \textit{produto encerrado}.
+  \item Critério de avaliação reforçado por evidência técnica (código, teste e comportamento observável).
 \end{itemize}
 
-Para este projeto, interessa sobretudo reter três princípios do estado da arte: workflows com estados explícitos, controlo de acesso por permissão efetiva e produção de evidências auditáveis para decisões sensíveis.
+\section{Análise e Desenho}
 
-\subsection{Temas a pesquisar}
+\subsection{Objetivo do desenho}
+O desenho do PC3 foi construído para garantir uma plataforma coerente, audível e fácil de evoluir. A prioridade não foi apenas fechar funcionalidades, mas estruturar a solução de forma que o comportamento da aplicação seja previsível, rastreável e consistente entre frontend, backend e dados.
 
+\subsection{Estrutura da solução}
 \begin{itemize}
-  \item workflows de aprovação multi-nível;
-  \item modelos de controlo de acesso baseados em permissão e escopo;
-  \item regras operacionais e legais diferenciadas por país, nomeadamente PT/BR;
-  \item histórico auditável e rastreabilidade de decisão;
-  \item reporting operacional e exportação de dados para apoio à decisão.
+  \item \textbf{Frontend}: interface em React/Vite, organizada por páginas funcionais e contexto de sessão/permissões.
+  \item \textbf{Backend}: API em Express/TypeScript, responsável por autenticação, regras de negócio e validação por domínio.
+  \item \textbf{Dados}: persistência em PostgreSQL via Prisma, com entidades normalizadas para utilizadores, equipas, férias, permissões e banco de horas.
+  \item \textbf{Integrações}: geração de PDFs/XLSX, upload de ficheiros e ligação com mecanismos externos de autenticação quando aplicável.
 \end{itemize}
 
-\subsection{Tecnologias a utilizar}
-
+\subsection{Decisões de desenho}
 \begin{itemize}
-  \item \textbf{Frontend:} React, TypeScript e Vite para interface web por domínios funcionais;
-  \item \textbf{Backend:} Node.js, Express e TypeScript para serviços HTTP e regras de negócio;
-  \item \textbf{Persistência:} PostgreSQL com Prisma para modelação relacional e acesso a dados;
-  \item \textbf{Testes:} Vitest, Supertest e Playwright para validação unitária, integração e E2E;
-  \item \textbf{Exportação:} ExcelJS para geração de reporting anual em XLSX.
+  \item O controlo de acesso é baseado em permissões efetivas e escopo, não apenas em papéis de interface.
+  \item Os fluxos críticos usam estado explícito e histórico, para preservar rastreabilidade e permitir auditoria.
+  \item A lógica de negócio é separada da interface, reduzindo acoplamento e facilitando manutenção e expansão futura.
+  \item O modelo foi desenhado para suportar o PC4 sem reestruturar os componentes centrais.
 \end{itemize}
 
-\section{Necessidade / Problema a Resolver}
-
-\subsection{Descrição do problema}
-
-O problema central é a inexistência de uma plataforma única para gerir dados de membro, pedidos de férias e ausências, aprovações, permissões e evidências de auditoria. A fragmentação atual faz com que informação sensível, regras de decisão e histórico operacional se encontrem repartidos por canais diferentes, dificultando controlo, consistência e capacidade de resposta.
+\subsection{Diagramas de suporte}
+\begin{itemize}
+  \item Casos de uso (resumo): visão executiva dos fluxos críticos e dos principais atores (ver Anexo A, Figura~\ref{fig:anexo-casos-uso}).
+  \item Arquitetura por componentes (completo): separação detalhada entre interface, API, persistência e integrações (ver Anexo A, Figura~\ref{fig:anexo-arquitetura}).
+  \item Modelo de dados essencial (completo): entidades nucleares e relações que sustentam os fluxos do produto (ver Anexo A, Figura~\ref{fig:anexo-modelo-dados}).
+\end{itemize}
 
 \begin{callout}
-\textbf{Problema central:} os processos de pessoas são hoje executados com demasiada dependência manual, baixa uniformização entre atores e fraca rastreabilidade, comprometendo eficiência operacional, auditabilidade e qualidade da decisão.
+Para manter o corpo principal focado na análise textual, os três diagramas de suporte estão apresentados no \textbf{Anexo A}.
 \end{callout}
-
-\subsection{Situação atual}
-
-\begin{itemize}
-  \item dados de membro e respetivas alterações encontram-se dispersos e nem sempre atualizados;
-  \item pedidos de férias e ausências dependem de validação manual, com pouca visibilidade ponta a ponta;
-  \item o controlo de permissões não está centralizado na mesma lógica operacional que os restantes processos;
-  \item existe dificuldade em refletir regras diferentes por país, equipa e hierarquia;
-  \item a consulta histórica de decisões, exceções e grants/revokes não é imediata nem uniforme.
-\end{itemize}
-
-\subsection{Métricas atuais vs futuras}
-
-\rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\bfseries}p{4.0cm} >{\small\centering\arraybackslash}p{2.5cm} >{\small\centering\arraybackslash}p{2.5cm} >{\small}p{4.4cm}}
-\theadrow
-\tH{Métrica} & \tH{Atual} & \tH{Meta} & \tH{Leitura da melhoria} \\
-\midrule
-\endfirsthead
-\theadrow
-\tH{Métrica} & \tH{Atual} & \tH{Meta} & \tH{Leitura da melhoria} \\
-\midrule
-\endhead
-Tempo médio de aprovação & 72--120h & $\leq 24$h & Menos esperas entre criação do pedido e decisão final \\
-Produção do mapa anual de férias & 20--40 min & $< 2$ min & Eliminação da consolidação manual em folha de cálculo \\
-Pedidos com retrabalho & 10--20\% & $\leq 5\%$ & Melhor qualidade de validação logo no momento de submissão \\
-Registos pessoais desatualizados & 18--25\% & $\leq 5\%$ & Maior fiabilidade do perfil de membro \\
-SLA de notificação após decisão & 2--6h & $\leq 15$ min & Fecho operacional mais rápido para membro e aprovador \\
-\bottomrule
-\end{longtable}
-
-\subsection{Situação futura esperada}
-
-Espera-se uma operação suportada por uma única plataforma onde os pedidos sejam criados, validados, decididos e consultados no mesmo contexto. O estado futuro desejado inclui regras coerentes por escopo, histórico rastreável de eventos e melhor capacidade para exportar e interpretar informação operacional.
-
-\subsection{Objetivo geral}
-
-Conceber uma plataforma integrada para gestão de processos de pessoas, garantindo maior eficiência operacional, controlo de acessos, rastreabilidade de decisão e melhor suporte ao planeamento de equipas.
-
-\subsection{Objetivos específicos}
-
-\begin{enumerate}
-  \item Estruturar o fluxo de pedido, validação e aprovação de férias e ausências.
-  \item Centralizar permissões e acessos por utilizador, escopo e privilégio elevado.
-  \item Refletir regras de negócio por país e contexto organizacional.
-  \item Disponibilizar exportação e visão operacional para apoio à decisão.
-  \item Garantir histórico auditável de ações sensíveis, nomeadamente aprovações e alterações de acesso.
-\end{enumerate}
-
-\section{Solução a Implementar}
-
-\subsection{Descrição da solução}
-
-O \textbf{SMARTER HUB} é uma plataforma web integrada para gestão operacional de processos de pessoas. O sistema implementa um modelo de autorização centrado em \emph{permissões efetivas} - não em papéis fixos de interface. Cada ação é validada pela combinação de permissão atribuída ao utilizador, restrições de escopo por equipa/país/hierarquia, e sinalizadores de privilégio elevado (\texttt{hasAccessTotal} e \texttt{isRootAccess}), com trilho auditável de todas as alterações de acesso.
-
-\subsection{Módulos da plataforma}
-
-\rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\bfseries}p{3.5cm} >{\small}p{4.5cm} >{\small}p{5.4cm}}
-\theadrow
-\tH{Módulo} & \tH{Objetivo} & \tH{Capacidades principais} \\
-\midrule
-\endfirsthead
-\theadrow
-\tH{Módulo} & \tH{Objetivo} & \tH{Capacidades principais} \\
-\midrule
-\endhead
-Férias e ausências & Gerir ciclo completo de pedido & Criar, editar, cancelar, aprovar, rejeitar; histórico e saldo por tipologia \\
-Permissões e acesso total & Governar capacidades por utilizador & Atribuir/revogar permissão, restringir escopo, gerir acesso total, auditar GRANT/REVOKE \\
-Perfil e alterações & Manter dados do membro & Consulta e edição de perfil com fluxo de aprovação de alterações \\
-Notificações & Fechar ciclo de ação & Notificar eventos com marcação de leitura individual e em lote \\
-Estrutura organizacional & Contextualizar decisão & Equipas, memberships, hierarquia e visibilidade operacional \\
-Reporting operacional & Suportar decisão de gestão & Exportação anual XLSX, calendário, overview e dashboard \\
-Autenticação e sessão & Garantir identidade segura & Login local/Microsoft, JWT, sessão autenticada e leitura de contexto \\
-Formações & Suportar desenvolvimento interno & Criar, atribuir, acompanhar e concluir formações \\
-Dias extra e saldo & Parametrizar exceções & Configurar dias extra por país, creditar saldo com motivo obrigatório \\
-Ficheiros e anexos & Centralizar suporte documental & Upload de ficheiros para pedidos e processos \\
-Banco de horas (BR) & Gerir horas flexíveis para col.\ BR & Saldo crédito/débito, limite por período, relatório semanal PDF, política por estado (SP/RS) \\
-Plano de carreira & Apoiar evolução individual & Definir metas, competências e registo de progresso por membro \\
-Admissões & Gerir processo de entrada & Criar candidatura, validar dados, aprovar admissão e criar ficha inicial \\
-Saúde e bem-estar & Informar e sensibilizar & Conteúdo por perfil e alertas de medicina do trabalho \\
-Internacionalização & Adaptar variante linguística & Seletor PT-PT / PT-BR com dicionário estático e integração LibreTranslate \\
-\bottomrule
-\end{longtable}
-
-\subsection{Modelo de autorização}
-
-\rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\centering\arraybackslash}p{1.3cm} >{\small\bfseries}p{3.0cm} >{\small}p{9.0cm}}
-\theadrow
-\tH{Nível} & \tH{Designação} & \tH{Descrição} \\
-\midrule
-\endfirsthead
-\theadrow
-\tH{Nível} & \tH{Designação} & \tH{Descrição} \\
-\midrule
-\endhead
-1 & Catálogo & Capacidades explícitas: \texttt{request\_vacation}, \texttt{approve\_vacation}, \texttt{manage\_permissions}, entre outras \\
-2 & Escopo & Restrições por equipa, país e nível em permissões marcadas como restritivas \\
-3 & Acesso total & Cobertura funcional alargada com controlo explícito (\texttt{hasAccessTotal}) \\
-4 & Root & Privilégio máximo de governação e administração técnica (\texttt{isRootAccess}) \\
-\bottomrule
-\end{longtable}
-
-\subsection{Catálogo de Use Cases}
-
-\rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\centering\arraybackslash\bfseries}p{0.85cm} >{\small}p{2.6cm} >{\small}p{3.5cm} >{\small}p{6.3cm}}
-\theadrow
-\tH{ID} & \tH{Ator} & \tH{Objetivo} & \tH{Fluxo principal} \\
-\midrule
-\endfirsthead
-\theadrow
-\tH{ID} & \tH{Ator} & \tH{Objetivo} & \tH{Fluxo principal} \\
-\midrule
-\endhead
-UC01 & Utilizador & Autenticar (credenciais) & Submete email/password; sistema valida e devolve sessão autenticada \\
-UC02 & Utilizador & Autenticar (Microsoft) & Inicia login federado e obtém sessão válida via OAuth \\
-UC03 & Utilizador autenticado & Consultar sessão atual & Solicita \texttt{/auth/me} para obter identidade e permissões efetivas \\
-UC04 & Membro & Consultar perfil próprio & Acede a \texttt{/profile/me} para visualizar dados e contexto organizacional \\
-UC05 & Membro & Submeter alteração de perfil & Atualiza dados em \texttt{/profile/me}; sistema cria pedido rastreável \\
-UC06 & Membro & Consultar pedidos de perfil & Lista pedidos \texttt{/profile/requests/me} com estado e histórico \\
-UC07 & Aprovador de perfil & Aprovar pedido de perfil & Analisa pedido pendente e confirma com registo de decisão \\
-UC08 & Aprovador de perfil & Rejeitar pedido de perfil & Analisa pedido pendente e rejeita com motivo auditável \\
-UC09 & Membro & Submeter pedido de férias & Define período/tipo/contexto e cria pedido para validação \\
-UC10 & Sistema & Validar conformidade do pedido & Aplica políticas PT/BR, conflitos e sobreposição antes de persistir \\
-UC11 & Membro & Consultar férias e saldo & Consulta \texttt{/vacations/me} com histórico, saldo e metadados \\
-UC12 & Membro & Editar pedido pendente & Altera pedido mantendo trilho de alterações \\
-UC13 & Membro & Cancelar pedido pendente & Remove pedido conforme elegibilidade; notifica aprovadores \\
-UC14 & Aprovador & Consultar pedidos para decisão & Lista pendências filtradas por escopo de aprovação \\
-UC15 & Aprovador & Aprovar pedido de férias & Executa aprovação com atualização de estado e etapas \\
-UC16 & Aprovador & Rejeitar pedido de férias & Executa rejeição com motivo e registo auditável \\
-UC17 & Gestor / RH & Consultar visão anual e calendário & Usa \texttt{/vacations/overview} e \texttt{/vacations/calendar} \\
-UC18 & Admin operacional & Configurar dias extra da empresa & Atualiza \texttt{/vacations/company-extra-days} por país e período \\
-UC19 & Utilizador com acesso total & Creditar saldo de férias & Executa \texttt{/vacations/assign-balance-days} com motivo obrigatório \\
-UC20 & RH / Gestão & Exportar mapa anual de férias & Gera ficheiro XLSX via \texttt{/vacations/export} por ano/equipa/pessoa \\
-UC21 & Gestor de permissões & Consultar catálogo de permissões & Lista \texttt{/permissions} e capacidades disponíveis para governação \\
-UC22 & Gestor de permissões & Consultar permissões de utilizador & Consulta \texttt{/users/:id/permissions} com escopos e estado \\
-UC23 & Gestor de permissões & Conceder permissão a utilizador & Cria grant com restrições de escopo e registo auditável \\
-UC24 & Gestor de permissões & Alterar escopo/estado de permissão & Atualiza grant existente com invalidação de cache \\
-UC25 & Gestor de permissões & Revogar permissão de utilizador & Remove grant com registo de REVOKE em auditoria \\
-UC26 & Gestor de permissões & Gerir acesso total & Atualiza \texttt{/users/:id/access-total} com auditoria \\
-UC27 & Auditor interno & Consultar trilho de grants/revokes & Acede a \texttt{/audit/permission-grants} para evidência de compliance \\
-UC28 & Utilizador autenticado & Gerir notificações pessoais & Lista, marca como lida (individual/todas) e elimina notificações \\
-UC29 & Gestor / RH & Consultar membros e equipas & Usa \texttt{/users}, \texttt{/users/collaborators}, \texttt{/teams} \\
-UC30 & Gestor de estrutura & Atualizar memberships de equipa & Executa \texttt{/manager/team-members/:id} para alinhar hierarquia \\
-UC31 & Admin & Gerir equipas (CRUD) & Usa \texttt{/admin/teams} para criar, editar e remover equipas \\
-UC32 & Admin & Gerir utilizadores (CRUD e estado) & Usa \texttt{/admin/users} e \texttt{/users/:id/active} \\
-UC33 & Admin & Gerir credenciais de utilizador & Atualiza credenciais com controlo de acesso reforçado \\
-UC34 & Admin & Importar utilizadores em lote & Submete dados com validação e relatório de erros por linha \\
-UC35 & Gestor de formação & Criar/editar/remover formações & Opera \texttt{/trainings} para manter catálogo formativo \\
-UC36 & Gestor de formação & Atribuir formação a membros & Executa \texttt{/trainings/assign} para distribuição de ações formativas \\
-UC37 & Membro & Consultar e concluir formações & Consulta \texttt{/trainings/me} e marca conclusão \\
-UC38 & Utilizador autenticado & Carregar ficheiros de suporte & Executa \texttt{/files/upload} para anexar evidências/documentos \\
-UC39 & Direção / Gestão & Consultar dashboard operacional & Usa \texttt{/users/dashboard-summary} para indicadores agregados \\
-\bottomrule
-\end{longtable}
-
-\subsection{User Stories}
-
-\rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\centering\arraybackslash\bfseries}p{1.0cm} >{\small}p{3.7cm} >{\small}p{6.8cm} >{\small\centering\arraybackslash}p{1.6cm}}
-\theadrow
-\tH{ID} & \tH{Como} & \tH{Quero} & \tH{Prior.} \\
-\midrule
-\endfirsthead
-\theadrow
-\tH{ID} & \tH{Como} & \tH{Quero} & \tH{Prior.} \\
-\midrule
-\endhead
-US01 & Utilizador & autenticar-me com credenciais para iniciar sessão segura & Alta \\
-US02 & Utilizador & autenticar-me via Microsoft para acesso federado ao sistema & Média \\
-US03 & Utilizador autenticado & consultar a minha sessão para ver permissões e contexto atual & Média \\
-US04 & Membro & consultar o meu perfil para validar dados e contexto organizacional & Média \\
-US05 & Membro & submeter pedido de alteração de perfil com rastreabilidade do processo & Média \\
-US06 & Membro & consultar os meus pedidos de perfil e respetivo estado & Média \\
-US07 & Aprovador de perfil & aprovar pedido de alteração de perfil com registo auditável & Média \\
-US08 & Aprovador de perfil & rejeitar pedido de alteração de perfil com motivo explícito & Média \\
-US09 & Membro & submeter pedido de férias/ausência com período e contexto de equipa & Alta \\
-US10 & Sistema & validar conformidade PT/BR, sobreposição e capacidade antes de persistir o pedido & Alta \\
-US11 & Membro & consultar férias e saldo para acompanhar consumo e disponibilidade & Alta \\
-US12 & Membro & editar pedido pendente sem perder histórico de alterações & Média \\
-US13 & Membro & cancelar pedido pendente quando já não se aplica & Média \\
-US14 & Aprovador habilitado & consultar pendências de decisão no meu escopo de aprovação & Alta \\
-US15 & Aprovador habilitado & aprovar pedido de férias com atualização de estado por etapa & Alta \\
-US16 & Aprovador habilitado & rejeitar pedido de férias com motivo e evidência de decisão & Alta \\
-US17 & Gestor / RH & consultar visão anual e calendário para planeamento de capacidade & Média \\
-US18 & Admin operacional & configurar dias extra da empresa por país e ano & Média \\
-US19 & Utilizador com acesso total & creditar saldo de férias em cenário excecional com motivo obrigatório & Alta \\
-US20 & RH / Gestão & exportar mapa anual de férias em XLSX por ano/equipa/pessoa & Alta \\
-US21 & Gestor de permissões & consultar catálogo de permissões disponíveis para governação & Média \\
-US22 & Gestor de permissões & consultar permissões efetivas de um utilizador com escopos aplicados & Alta \\
-US23 & Gestor de permissões & conceder permissão a utilizador com restrições de escopo & Alta \\
-US24 & Gestor de permissões & atualizar escopo ou estado de uma permissão já atribuída & Alta \\
-US25 & Gestor de permissões & revogar permissão de utilizador sem ambiguidade operacional & Alta \\
-US26 & Gestor de permissões & gerir acesso total de utilizadores com trilho de auditoria & Alta \\
-US27 & Auditor interno & consultar trilho de grants/revokes para evidência de compliance & Alta \\
-US28 & Utilizador autenticado & gerir notificações pessoais (ler, ler todas, eliminar) & Média \\
-US29 & Gestor / RH & consultar utilizadores e equipas para operação diária & Média \\
-US30 & Gestor de estrutura & atualizar memberships para refletir hierarquia real da organização & Alta \\
-US31 & Admin & gerir equipas (criar, editar e remover) de forma controlada & Média \\
-US32 & Admin & gerir utilizadores (criar, editar, ativar/desativar e remover) & Alta \\
-US33 & Admin & atualizar credenciais de utilizador com controlo de acesso reforçado & Média \\
-US34 & Admin & importar utilizadores em lote com validação e relatório de erros & Média \\
-US35 & Gestor de formação & criar, editar e remover formações do catálogo interno & Baixa \\
-US36 & Gestor de formação & atribuir formações a membros por necessidade operacional & Baixa \\
-US37 & Membro & consultar e concluir formações atribuídas no meu plano de desenvolvimento & Baixa \\
-US38 & Utilizador autenticado & carregar ficheiros de suporte para anexar evidências/documentos & Média \\
-US39 & Direção / Gestão & consultar dashboard operacional com indicadores agregados & Média \\
-\bottomrule
-\end{longtable}
-
-\subsection{Arquitetura técnica}
-
-A solução organiza-se em três camadas com separação clara de responsabilidades:
-
-\begin{itemize}
-  \item \textbf{Frontend} (React + TypeScript + Vite): páginas por domínio funcional, componentes reutilizáveis, comunicação REST com o backend e deduplicação de pedidos em cache local.
-  \item \textbf{Backend} (Express + TypeScript): rotas por contexto (\texttt{vacations}, \texttt{permissions}, \texttt{profile}, \texttt{notifications}, \texttt{users}, \texttt{trainings}), validação de payload por Zod e motor de autorização por permissão/escopo efetivos.
-  \item \textbf{Dados} (PostgreSQL + Prisma): modelo relacional com entidades de pedido, aprovação, governação de acesso, perfil, notificações, formações e estrutura organizacional.
-\end{itemize}
-
-\rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\bfseries}p{3.0cm} >{\small\centering\arraybackslash}p{3.2cm} >{\small}p{7.0cm}}
-\theadrow
-\tH{Camada} & \tH{Stack} & \tH{Responsabilidade principal} \\
-\midrule
-\endfirsthead
-\theadrow
-\tH{Camada} & \tH{Stack} & \tH{Responsabilidade principal} \\
-\midrule
-\endhead
-Frontend & React + TypeScript + Vite & Interface web por domínios funcionais; operação sobre perfil, férias, permissões, notificações e reporting \\
-Backend & Express + TypeScript & Rotas por contexto, validação de pedidos, regras de negócio e motor de autorização por permissão/escopo \\
-Base de dados & PostgreSQL + Prisma & Persistência relacional de membro, pedido, aprovação, permissão, auditoria e equipas \\
-Autenticação & JWT + Microsoft OAuth & Login local e federado; sessão por Bearer token com validação em cada pedido autenticado \\
-Testes & Vitest + Supertest + Playwright & Cobertura unitária, de integração e end-to-end para fluxos críticos \\
-Exportação & ExcelJS & Geração de workbook XLSX para mapa anual de férias por equipa e período \\
-\bottomrule
-\end{longtable}
-
-\begin{note}
-A autorização não é baseada em papéis fixos de interface. Cada endpoint sensível valida a permissão efetiva, o escopo e o nível de privilégio do ator antes de executar qualquer operação. Alterações de permissão invalidam imediatamente a cache de autorização do utilizador alvo.
-\end{note}
-
-\section{Plano Inicial}
-
-O planeamento do projeto está detalhado no ficheiro \texttt{gantt\_chart\_pc2.xlsx}, que serve de referência para o cronograma, marcos e progresso de cada tarefa. A estrutura do plano segue uma progressão lógica entre iniciação, análise, arquitetura, desenvolvimento e consolidação, com sobreposição controlada entre fases quando as dependências o permitem.
-
-O plano está organizado em cinco blocos principais:
-
-\rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\bfseries}p{4.3cm} >{\small\centering\arraybackslash}p{2.7cm} >{\small\centering\arraybackslash}p{1.6cm} >{\small}p{5.4cm}}
-\theadrow
-\tH{Bloco} & \tH{Janela temporal} & \tH{Estado} & \tH{Resultado esperado} \\
-\midrule
-\endfirsthead
-\theadrow
-\tH{Bloco} & \tH{Janela temporal} & \tH{Estado} & \tH{Resultado esperado} \\
-\midrule
-\endhead
-Iniciação e arranque & 07/04 -- 15/04 & 100\% & Integração no contexto da empresa, compreensão do problema e enquadramento inicial do projeto \\
-Planeamento inicial & 16/04 -- 01/05 & 100\% & Estrutura documental, backlog inicial, validação do recorte do problema e entrega do marco PC2 \\
-Análise, desenho e arquitetura & 22/04 -- 22/05 & 100\% & Requisitos completos por domínio, casos de uso, modelo de dados, arquitetura técnica e protótipos UX \\
-Desenvolvimento da solução & 22/04 -- 12/06 & Em conclusão & Implementação progressiva dos módulos nucleares do MVP, features PC3 (banco horas, plano carreira, admissões, internacionalização) e respetiva validação por testes \\
-Consolidação e fecho & 15/06 -- 03/07 & Planeado & Correção final, estabilização, preparação da apresentação e defesa \\
-\bottomrule
-\end{longtable}
-
-\subsection{Trabalho concluído até ao PC2}
-
-Até à data de entrega deste ponto de controlo, estão concluídas a 100\% as seguintes tarefas, distribuídas pelas fases de iniciação, planeamento e análise/arquitetura.
-
-\subsubsection{Iniciação e planeamento}
-
-\rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\bfseries}p{5.8cm} >{\small\centering\arraybackslash}p{1.8cm} >{\small}p{5.5cm}}
-\theadrow
-\tH{Tarefa} & \tH{Estado} & \tH{Resultado obtido} \\
-\midrule
-\endfirsthead
-\theadrow
-\tH{Tarefa} & \tH{Estado} & \tH{Resultado obtido} \\
-\midrule
-\endhead
-Onboarding na Tlantic & 100\% & Integração no contexto organizacional e de negócio da empresa \\
-Formação inicial e contexto de negócio da Tlantic & 100\% & Conhecimento do domínio, terminologia e enquadramento do problema a resolver \\
-Levantamento macro do problema e stakeholders & 100\% & Mapa inicial do problema, identificação dos atores e levantamento das necessidades operacionais \\
-Planeamento inicial, backlog e setup documental & 100\% & Backlog inicial definido, estrutura documental consolidada e repositório configurado \\
-PC1 --- Arranque & 100\% & Marco de arranque validado com orientador e supervisora \\
-PC2 --- Planeamento inicial & 100\% & Entrega do planeamento inicial concluída \\
-\bottomrule
-\end{longtable}
-
-\subsubsection{Análise, desenho e arquitetura}
-
-Esta fase, também concluída a 100\% no Gantt, representa o núcleo da preparação técnica e conceptual do projeto. Cada tarefa resultou num artefacto concreto que serve de base ao desenvolvimento da solução.
-
-\rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\bfseries}p{5.8cm} >{\small\centering\arraybackslash}p{1.8cm} >{\small}p{5.5cm}}
-\theadrow
-\tH{Tarefa} & \tH{Estado} & \tH{Resultado obtido} \\
-\midrule
-\endfirsthead
-\theadrow
-\tH{Tarefa} & \tH{Estado} & \tH{Resultado obtido} \\
-\midrule
-\endhead
-Análise de requisitos: perfil, membros e RBAC & 100\% & Requisitos do módulo de membro, campos editáveis, permissões por perfil e modelo de controlo de acesso baseado em papéis \\
-Análise de requisitos: férias, ausências e saldos anuais & 100\% & Regras de pedido, aprovação, rejeição, cancelamento e cálculo de saldo por país e tipologia de ausência \\
-Análise de requisitos: aprovações, permissões e auditoria & 100\% & Fluxos de aprovação multi-nível, modelo de permissões por escopo, rastreabilidade de decisões e registo auditável de eventos sensíveis \\
-Desenho funcional, use cases e user stories & 100\% & Casos de uso por domínio e histórias de utilizador detalhadas para cada ator do sistema \\
-Arquitetura técnica, modelo de dados e definição de API & 100\% & Esquema relacional em Prisma, organização das rotas por contexto e contratos de API definidos \\
-Prototipagem UX e navegação da aplicação & 100\% & Protótipos de navegação e estrutura de ecrãs por domínio funcional \\
-\bottomrule
-\end{longtable}
 
 \begin{callout}
-O facto de toda a fase de análise e arquitetura estar concluída significa que o desenvolvimento não parte de premissas vagas. Os requisitos, o modelo de dados, a arquitetura e os casos de uso são artefactos consolidados, o que reduz significativamente o risco de retrabalho nas fases seguintes.
+Os diagramas e a implementação estão alinhados: o desenho valida a estrutura da solução e a solução confirma o desenho.
 \end{callout}
 
-\section{Riscos Identificados}
+\section{Evidências de Implementação}
+
+\begin{callout}
+Nesta secção a intenção é mostrar a solução em funcionamento. O foco deixa de ser a implementação interna e passa a ser a experiência visível da plataforma: entrada, navegação, consulta de dados e execução dos fluxos principais.
+\end{callout}
 
 \rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\bfseries}p{0.8cm} >{\small}p{5.0cm} >{\small\centering\arraybackslash}p{1.8cm} >{\small}p{5.1cm}}
+\begin{longtable}{>{\small\bfseries}p{3.6cm} >{\small}p{4.9cm} >{\small}p{5.2cm}}
 \theadrow
-\tH{ID} & \tH{Risco} & \tH{Impacto} & \tH{Mitigação} \\
+\tH{Área} & \tH{O que mostrar no print} & \tH{Porque é relevante} \\
 \midrule
 \endfirsthead
 \theadrow
-\tH{ID} & \tH{Risco} & \tH{Impacto} & \tH{Mitigação} \\
+\tH{Área} & \tH{O que mostrar no print} & \tH{Porque é relevante} \\
 \midrule
 \endhead
-R1 & Alterações de regras de negócio sem atualizar documentação e testes & Alto & Atualizar artefactos funcionais no mesmo ciclo da mudança e manter alinhamento entre regra e implementação \\
-R2 & Erros em lógica de permissões e escalada indevida de privilégios & Alto & Validar operações por permissão efetiva, escopo e auditoria de grants/revokes \\
-R3 & Divergência entre hierarquia real e escopo operacional no sistema & Médio & Rever memberships, equipas e restrições de escopo com validação funcional \\
-R4 & Atraso na validação com stakeholders-chave & Alto & Antecipar recolha de feedback, limitar decisões pendentes e aplicar time-box de revisão \\
-R5 & Acumulação de bugs críticos perto da entrega final & Alto & Reservar janela de hardening e priorizar correção de bloqueadores sobre nova funcionalidade \\
+Entrada na plataforma & Página de login e autenticação concluída & Mostra acesso real e validação de sessão ativa \\
+Visão geral & Home/dashboard com informação operacional carregada & Introduz a plataforma e a leitura inicial do utilizador \\
+Ficha do colaborador & Página de perfil com dados pessoais e profissionais & Mostra a base de gestão de informação do sistema \\
+Férias/Ausências & Fluxo de pedido de férias com estado visível & Evidencia um processo completo do PC3 \\
+Permissões & Gestão de permissões por utilizador com histórico & Mostra governação de acesso e auditabilidade \\
+Banco de horas BR & Saldo e movimentos de banco de horas & Evidencia regras operacionais regionais já ativas \\
 \bottomrule
 \end{longtable}
 
-\section{Ficheiros Incluídos na Pasta Ponto de Controlo 3}
+\subsection{Evidências Visuais da Plataforma (prints a incluir)}
+
+\begin{callout}
+No PC3 já existe implementação funcional suficiente para demonstrar evidência visual direta da solução. As capturas abaixo são evidências reais da plataforma e devem ser lidas como prova de comportamento observável.
+\end{callout}
+
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\bfseries}p{2.0cm} >{\small}p{4.1cm} >{\small}p{4.5cm} >{\small}p{3.2cm}}
+\theadrow
+\tH{ID} & \tH{Ecrã / fluxo a capturar} & \tH{O que a evidência deve provar} & \tH{Estado esperado visível} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{ID} & \tH{Ecrã / fluxo a capturar} & \tH{O que a evidência deve provar} & \tH{Estado esperado visível} \\
+\midrule
+\endhead
+V1 & Página de login e autenticação & Entrada na plataforma e validação de sessão ativa & Login bem-sucedido + utilizador autenticado \\
+V2 & Home / dashboard principal & Visão consolidada da plataforma para utilizador autenticado & Página inicial com informação operacional carregada \\
+V3 & Ficha de colaborador (perfil) & Disponibilidade da ficha e dados operacionais do utilizador & Dados pessoais/profissionais visíveis para consulta/edição \\
+E1 & Pedido de férias & Registo e rastreabilidade de pedido no fluxo de ausências & Pedido apresentado com estado e metadados associados \\
+E2 & Gestão de permissões por utilizador & Governação de acesso com permissões explícitas & Permissões listadas com estado e controlo por utilizador \\
+E3 & Banco de horas BR & Consulta operacional do saldo e movimentos associados & Saldo e detalhe de lançamentos visíveis \\
+\bottomrule
+\end{longtable}
+
+\subsection{Galeria de Evidências}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.94\textwidth]{screenshots/login.png}
+  \caption{Evidência V1 - Página de login e autenticação da plataforma.}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.94\textwidth]{screenshots/home.png}
+  \caption{Evidência V2 - Home/dashboard com visão geral operacional da plataforma.}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.94\textwidth]{screenshots/ficha.png}
+  \caption{Evidência V3 - Ficha de colaborador (perfil) com dados estruturados.}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.94\textwidth]{screenshots/pedido_ferias.png}
+  \caption{Evidência E1 - Fluxo de pedido de férias no módulo de férias/ausências.}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.94\textwidth]{screenshots/permissoes.png}
+  \caption{Evidência E2 - Gestão de permissões por utilizador para governação de acessos.}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.94\textwidth]{screenshots/banco_horas.png}
+  \caption{Evidência E3 - Banco de horas BR com consulta de saldo e movimentos.}
+\end{figure}
+
+
+\section{Plano com Principais Tarefas Terminadas / Em Curso}
+
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\bfseries}p{4.2cm} >{\small\centering\arraybackslash}p{2.2cm} >{\small\centering\arraybackslash}p{2.3cm} >{\small}p{4.9cm}}
+\theadrow
+\tH{Tarefa} & \tH{Estado} & \tH{Data de fim} & \tH{Notas} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{Tarefa} & \tH{Estado} & \tH{Data de fim} & \tH{Notas} \\
+\midrule
+\endhead
+Fecho da análise e desenho & Completa & 22/05/2026 & Estrutura técnica validada \\
+Núcleo funcional da plataforma & Completa & 22/05/2026 & Login, perfil, férias e permissões estabilizados \\
+Banco de horas BR e relatório semanal & Completa & 22/05/2026 & Regras regionais já ativas \\
+Admissões e plano de carreira & Completa & 22/05/2026 & Fluxos operacionais prontos \\
+Cobertura de regressão E2E & Em curso & PC4 & Reforço para cenários limite \\
+Refinamento de experiência e performance & Em curso & PC4 & Ajustes pós-piloto \\
+\bottomrule
+\end{longtable}
+
+\section{Plano com as Fases Futuras}
+
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\bfseries}p{2.9cm} >{\small}p{3.8cm} >{\small\centering\arraybackslash}p{1.6cm} >{\small\centering\arraybackslash}p{1.6cm} >{\small\centering\arraybackslash}p{1.8cm} >{\small}p{2.0cm}}
+\theadrow
+\tH{Tarefa} & \tH{Descrição} & \tH{Início} & \tH{Duração} & \tH{Prioridade} & \tH{Responsável} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{Tarefa} & \tH{Descrição} & \tH{Início} & \tH{Duração} & \tH{Prioridade} & \tH{Responsável} \\
+\midrule
+\endhead
+Consolidação pós-piloto & Correções finais e estabilização & 15/06 & 2 sem. & Elevada & Estudante \\
+Expansão de regressão E2E & Cenários limite e robustez & 15/06 & 2 sem. & Elevada & Estudante \\
+Refinamento de UX & Ajustes de interação e leitura & 15/06 & 2 sem. & Média & Estudante + Supervisora \\
+Performance & Otimização de queries e carregamento & 20/06 & 1 sem. & Média & Estudante \\
+Preparação da defesa & Narrativa final e ensaio da demo & 24/06 & 1 sem. & Elevada & Estudante + Orientador \\
+\bottomrule
+\end{longtable}
+
+\section{Problemas Surgidos e Riscos}
+
+\subsection{Problemas ativos}
+\begin{itemize}
+  \item A cobertura E2E ainda pode crescer em cenários de exceção.
+  \item A estrutura interna do código pode ser otimizada, para facilitar a manutenção.
+\end{itemize}
+
+\subsection{Problemas resolvidos}
+\begin{itemize}
+  \item Atualização de permissões estabilizada após alterações de acesso total.
+  \item Regras BR de férias e banco de horas fechadas e consistentes.
+  \item Ciclo entre aprovação, notificação e auditoria já alinhado.
+\end{itemize}
+
+\subsection{Riscos}
+\rowcolors{1}{ROWSHADE}{white}
+\begin{longtable}{>{\small\bfseries}p{0.9cm} >{\small}p{6.0cm} >{\small}p{5.9cm}}
+\theadrow
+\tH{ID} & \tH{Risco} & \tH{Mitigação} \\
+\midrule
+\endfirsthead
+\theadrow
+\tH{ID} & \tH{Risco} & \tH{Mitigação} \\
+\midrule
+\endhead
+R1 & Regressão em regras PT/BR após ajustes de interface & Testes de regressão por domínio antes de cada entrega \\
+R2 & Sobrecarga de escopo perto da defesa & Congelamento de escopo por checkpoint \\
+R3 & Feedback de negócio em atraso & Janela dedicada de validação com stakeholders \\
+R4 & Divergência entre documento e implementação & Revisão cruzada entre TEX, Gantt e evidência técnica \\
+\bottomrule
+\end{longtable}
+\section{Conclusão}
+
+\begin{callout}
+O PC3 entrega um sistema funcionalmente preparado para piloto operacional, com rastreabilidade de decisão, controlo de acesso e regras de negócio ativas.
+\end{callout}
+
+\section{Ficheiros da Entrega PC3}
 
 \begin{itemize}
-  \item \texttt{PROES\_PC2\_2025\_2026.pptx} -- apresentação do ponto de controlo 2;
-  \item \texttt{PROES\_PC2\_2025\_2026.tex} -- versão extensa do documento de apoio;
-  \item \texttt{PROES\_PC2\_2025\_2026\_enxuto.tex} -- versão enxuta com apenas os temas pedidos no PC2;
-  \item \texttt{gantt\_chart\_pc2.xlsx} -- plano inicial e cronograma do projeto;
-  \item \texttt{ESPECIFICACAO\_FUNCIONAL\_SMARTER\_HUB\_PC2.tex} -- documento de regras funcionais do domínio.
+  \item \texttt{PROES\_2025\_2026\_PC3.pptx}
+  \item \texttt{PROES\_PC3\_2025\_2026.tex}
+  \item \texttt{ESPECIFICACAO\_FUNCIONAL\_SMARTER\_HUB\_PC3.tex}
+  \item \texttt{gantt\_chart\_pc3.xlsx}
 \end{itemize}
+
+\appendix
+\section{Anexo A - Diagramas de Suporte}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.94\linewidth]{smarter_hub_casos_de_uso_resumo.png}
+  \caption{Casos de uso do SMARTER HUB (versão resumida).}
+  \label{fig:anexo-casos-uso}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.94\linewidth]{smarter_hub_arquitetura_completa.png}
+  \caption{Arquitetura por componentes do SMARTER HUB (versão completa).}
+  \label{fig:anexo-arquitetura}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.94\linewidth]{smarter_hub_modelo_dados_completo.png}
+  \caption{Modelo de dados essencial do SMARTER HUB (versão completa).}
+  \label{fig:anexo-modelo-dados}
+\end{figure}
 
 \end{document}

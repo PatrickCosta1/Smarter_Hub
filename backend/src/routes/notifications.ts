@@ -37,19 +37,25 @@ function parsePagination(query: Record<string, unknown>) {
   };
 }
 
-router.get("/notifications/me", requireAuth, async (req, res) => {
-  const userId = req.authUser!.id;
-  const pagination = parsePagination(req.query as Record<string, unknown>);
-  const where = { userId };
+function requirePagination(query: Record<string, unknown>) {
+  const pagination = parsePagination(query);
 
   if (!pagination) {
-    const notifications = await prisma.notification.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-    });
-
-    return res.json(notifications);
+    return { error: 'Parâmetros de paginação são obrigatórios (page e pageSize).' };
   }
+
+  return { pagination };
+}
+
+router.get("/notifications/me", requireAuth, async (req, res) => {
+  const userId = req.authUser!.id;
+  const paginationResult = requirePagination(req.query as Record<string, unknown>);
+  if ('error' in paginationResult) {
+    return res.status(400).json({ error: paginationResult.error });
+  }
+
+  const { pagination } = paginationResult;
+  const where = { userId };
 
   const [total, rows] = await Promise.all([
     prisma.notification.count({ where }),

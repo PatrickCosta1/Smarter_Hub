@@ -24,6 +24,7 @@ type TrainingRecord = {
   dataConclusao: string;
   status?: string;
   createdAt: string;
+    certificateLink?: string;
   user?: {
     id: string;
     username: string;
@@ -86,6 +87,28 @@ type RecentAssignedItem = {
 type TrainingsScope = 'mine' | 'team' | 'hierarchy';
 type SortField = 'createdAt' | 'nome' | 'horas' | 'dataInicio' | 'dataConclusao' | 'status';
 type OrigemFilter = 'all' | 'propria' | 'atribuida';
+
+type PaginatedRows<T> = {
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: T[];
+};
+
+const TRAINING_ENTITIES = [
+  'Udemy',
+  'Coursera',
+  'LinkedIn Learning',
+  'Microsoft Learn',
+  'Google / Google Skillshop',
+  'YouTube',
+  'Pluralsight',
+  'Alura',
+  'DIO',
+  'IEFP',
+  'Tlantic (Interna)',
+  'Outra',
+] as const;
 
 const EMPTY_ASSIGN_DRAFT: AssignDraft = {
   nome: '',
@@ -174,8 +197,9 @@ export default function TrainingsPage() {
   const { hasPermission, isRootAccess, refreshNotifications } = usePortal();
   const canAssignTraining = isRootAccess || hasPermission('assign_training');
   const canViewHierarchyTrainings = isRootAccess || hasPermission('view_all_trainings');
-  const canViewTeamTrainings = canAssignTraining;
+  const canViewTeamTrainings = canAssignTraining && !canViewHierarchyTrainings;
   const canMarkCompleted = isRootAccess || hasPermission('mark_training_completed');
+  const canCompleteForOthers = canAssignTraining || canViewHierarchyTrainings;
   const [scope, setScope] = useState<TrainingsScope>('mine');
 
   const [query, setQuery] = useState('');
@@ -197,6 +221,7 @@ export default function TrainingsPage() {
   const [isRecordsLoading, setIsRecordsLoading] = useState(false);
   const [recordsLoaded, setRecordsLoaded] = useState(false);
   const [completeConfirmRecordId, setCompleteConfirmRecordId] = useState<string | null>(null);
+    const [completeCertLink, setCompleteCertLink] = useState('');
   const [recentAssigned, setRecentAssigned] = useState<RecentAssignedItem[]>([]);
   const [isExportingExcel, setIsExportingExcel] = useState(false);
 
@@ -245,11 +270,11 @@ export default function TrainingsPage() {
     if (showTeamColumn) {
       count += 1;
     }
-    if (isOwnScope && canMarkCompleted) {
+    if ((isOwnScope && canMarkCompleted) || (!isOwnScope && canCompleteForOthers)) {
       count += 1;
     }
     return count;
-  }, [canMarkCompleted, isOwnScope, showTeamColumn]);
+  }, [canMarkCompleted, canCompleteForOthers, isOwnScope, showTeamColumn]);
 
   const sortedRecords = useMemo(() => {
     return [...records].sort((a, b) => {
@@ -366,8 +391,7 @@ export default function TrainingsPage() {
     const scopes: Array<{ id: TrainingsScope; label: string }> = [{ id: 'mine', label: 'Minhas' }];
     if (canViewTeamTrainings) {
       scopes.push({ id: 'team', label: 'Equipa' });
-    }
-    if (canViewHierarchyTrainings) {
+    } else if (canViewHierarchyTrainings) {
       scopes.push({ id: 'hierarchy', label: 'Organização' });
     }
     return scopes;
@@ -603,15 +627,15 @@ export default function TrainingsPage() {
     setIsRecordsLoading(records.length === 0);
     try {
       const path = scope === 'team'
-        ? '/trainings/team'
+        ? '/trainings/team?page=1&pageSize=500'
         : scope === 'hierarchy'
-          ? '/trainings/hierarchy'
-          : '/trainings/me';
-      const data = await apiRequestCached<TrainingRecord[]>(path, {
+          ? '/trainings/hierarchy?page=1&pageSize=500'
+          : '/trainings/me?page=1&pageSize=500';
+      const data = await apiRequestCached<PaginatedRows<TrainingRecord>>(path, {
         headers: getAuthHeaders(),
         signal,
       }, 60000);
-      setRecords(data);
+      setRecords(Array.isArray(data.rows) ? data.rows : []);
       setRecordsLoaded(true);
     } catch (error) {
       if (isAbortError(error) || signal?.aborted) {
@@ -767,11 +791,12 @@ export default function TrainingsPage() {
     }
   }
 
-  async function handleCompleteRecord(id: string) {
+  async function handleCompleteRecord(id: string, certLink = '') {
     try {
       const updated = await apiRequest<TrainingRecord>(`/trainings/${id}/complete`, {
         method: 'POST',
         headers: getAuthHeaders(),
+        body: JSON.stringify({ certificateLink: certLink }),
       });
 
       clearApiCache('/trainings');
@@ -785,6 +810,7 @@ export default function TrainingsPage() {
 
   function openCompleteConfirm(recordId: string) {
     setCompleteConfirmRecordId(recordId);
+    setCompleteCertLink('');
   }
 
   async function confirmCompleteRecord() {
@@ -792,13 +818,36 @@ export default function TrainingsPage() {
       return;
     }
 
-    await handleCompleteRecord(completeConfirmRecordId);
+    await handleCompleteRecord(completeConfirmRecordId, completeCertLink);
     setCompleteConfirmRecordId(null);
+    setCompleteCertLink('');
   }
 
   return (
     <section className="trainings-shell">
-      
+
+      {availableScopes.length > 1 && (
+        <nav className="trainings-scope-nav" aria-label="Âmbito das formações">
+          {availableScopes.map(({ id: scopeId, label }) => (
+            <button
+              key={scopeId}
+              type="button"
+              className={`trainings-scope-nav__btn${scope === scopeId ? ' is-active' : ''}`}
+              onClick={() => setScope(scopeId)}
+              aria-current={scope === scopeId ? 'page' : undefined}
+            >
+              {scopeId === 'mine' ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.58-7 8-7s8 3 8 7"/></svg>
+              ) : scopeId === 'team' ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M2 20c0-3 2.5-5.5 6-5.5"/><circle cx="17" cy="8" r="3"/><path d="M22 20c0-3-2.5-5.5-6-5.5"/><path d="M9 20c0-2.5 1.5-4.5 3-5 1.5.5 3 2.5 3 5"/></svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a7 7 0 0 1 0 18M12 3a7 7 0 0 0 0 18M3 12h18"/></svg>
+              )}
+              {label}
+            </button>
+          ))}
+        </nav>
+      )}
 
       <section className="trainings-list-card">
         <div className="trainings-list-head trainings-list-head--filters">
@@ -973,7 +1022,7 @@ export default function TrainingsPage() {
                 <th>Entidade</th>
                 <th className="sortable-th" onClick={() => toggleSort('dataConclusao')}>Data conclusão {sortIcon('dataConclusao')}</th>
                 <th className="sortable-th" onClick={() => toggleSort('status')}>Estado {sortIcon('status')}</th>
-                {isOwnScope && canMarkCompleted && <th>Ações</th>}
+                {((isOwnScope && canMarkCompleted) || (!isOwnScope && canCompleteForOthers)) && <th>Ações</th>}
               </tr>
             </thead>
             <tbody>
@@ -1004,7 +1053,7 @@ export default function TrainingsPage() {
                         {formatTrainingStatusLabel(record.status)}
                       </Badge>
                     </td>
-                    {isOwnScope && canMarkCompleted && (
+                    {((isOwnScope && canMarkCompleted) || (!isOwnScope && canCompleteForOthers)) && (
                       <td>
                         {record.status === 'ASSIGNED' ? (
                           <div className="trainings-row-actions">
@@ -1065,7 +1114,7 @@ export default function TrainingsPage() {
                 )}
               </div>
 
-              {isOwnScope && canMarkCompleted && record.status === 'ASSIGNED' && (
+              {((isOwnScope && canMarkCompleted) || (!isOwnScope && canCompleteForOthers)) && record.status === 'ASSIGNED' && (
                 <div className="trainings-row-actions">
                   <Button type="button" size="sm" variant="secondary" onClick={() => openCompleteConfirm(record.id)}>Concluir</Button>
                 </div>
@@ -1120,7 +1169,16 @@ export default function TrainingsPage() {
               </label>
 
               <label>
-                <span>Horas *</span>
+                <span>
+                  Horas *
+                  <span
+                    className="field-hint"
+                    data-hint="Insere um número decimal. Usa ponto ou vírgula como separador (ex: 1.5 ou 1,5). Exemplos: 8 = 8h · 1.5 = 1h30 · 0.5 = 30min. Valor mínimo: 0."
+                    tabIndex={0}
+                    role="note"
+                    aria-label="Ajuda: campo Horas"
+                  >?</span>
+                </span>
                 <input type="text" inputMode="decimal" value={assignDraft.horas} onChange={(event) => updateAssignDraft('horas', event.target.value)} />
               </label>
 
@@ -1136,7 +1194,12 @@ export default function TrainingsPage() {
 
               <label>
                 <span>Entidade</span>
-                <input type="text" value={assignDraft.entidade} onChange={(event) => updateAssignDraft('entidade', event.target.value)} placeholder="Ex: Udemy" />
+                <select value={assignDraft.entidade} onChange={(event) => updateAssignDraft('entidade', event.target.value)}>
+                  <option value="">Selecionar entidade...</option>
+                  {TRAINING_ENTITIES.map((e) => (
+                    <option key={e} value={e}>{e}</option>
+                  ))}
+                </select>
               </label>
 
               <div className="trainings-form-actions field-span-2">
@@ -1274,6 +1337,16 @@ export default function TrainingsPage() {
       >
         <div className="permissions-access-modal">
           <p>Esta ação vai marcar a formação como concluída.</p>
+          <label className="trainings-cert-label">
+            <span>Certificado (URL) — opcional</span>
+            <input
+              type="url"
+              className="trainings-cert-input"
+              placeholder="https://... link do certificado ou evidência"
+              value={completeCertLink}
+              onChange={(e) => setCompleteCertLink(e.target.value)}
+            />
+          </label>
           <p className="permissions-access-warning">A alteração só é aplicada depois de confirmares.</p>
         </div>
       </Modal>

@@ -202,10 +202,20 @@ describe('users routes integration', () => {
       permissionEngineMock.hasPermission.mockResolvedValue(false);
 
       const app = buildApp();
-      const response = await request(app).get('/api/users');
+      const response = await request(app).get('/api/users?limit=40');
 
       expect(response.status).toBe(403);
       expect(response.body.message).toContain('permissões');
+    });
+
+    it('returns 400 when limit is missing', async () => {
+      permissionEngineMock.hasPermission.mockResolvedValue(true);
+
+      const app = buildApp();
+      const response = await request(app).get('/api/users');
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('limit');
     });
 
     it('returns 403 when permission scope is null', async () => {
@@ -213,7 +223,7 @@ describe('users routes integration', () => {
       permissionEngineMock.getPermissionScope.mockResolvedValue(null);
 
       const app = buildApp();
-      const response = await request(app).get('/api/users');
+      const response = await request(app).get('/api/users?limit=40');
 
       expect(response.status).toBe(403);
     });
@@ -226,7 +236,7 @@ describe('users routes integration', () => {
       }]);
 
       const app = buildApp();
-      const response = await request(app).get('/api/users');
+      const response = await request(app).get('/api/users?limit=40');
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
@@ -237,21 +247,58 @@ describe('users routes integration', () => {
       prismaMock.user.findMany.mockResolvedValue([]);
 
       const app = buildApp();
-      const response = await request(app).get('/api/users');
+      const response = await request(app).get('/api/users?limit=40');
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual([]);
+    });
+
+    it('redacts sensitive profile fields for non-privileged viewers', async () => {
+      permissionEngineMock.isAccessTotal.mockResolvedValue(false);
+      permissionEngineMock.hasPermission.mockImplementation(async (_userId: string, code: string) => (
+        code === 'view_user_list'
+      ));
+      prismaMock.user.findMany.mockResolvedValue([{
+        ...sampleUser,
+        teamMemberships: [],
+        managedTeams: [],
+        profile: {
+          nomeCompleto: 'João Silva',
+          nomeAbreviado: 'João',
+          iban: 'PT50000000000000000000000',
+          nif: '123456789',
+          moradaFiscal: 'Rua X',
+          contactoEmergenciaNome: 'Maria',
+        },
+      }]);
+
+      const app = buildApp({ isRootAccess: false });
+      const response = await request(app).get('/api/users?limit=40');
+
+      expect(response.status).toBe(200);
+      expect(response.body[0].profile.iban).toBe('');
+      expect(response.body[0].profile.nif).toBe('');
+      expect(response.body[0].profile.moradaFiscal).toBe('');
+      expect(response.body[0].profile.contactoEmergenciaNome).toBe('');
     });
   });
 
   // ─── GET /users/collaborators ─────────────────────────────────────────────
 
   describe('GET /api/users/collaborators', () => {
+    it('returns 400 when pagination is missing', async () => {
+      const app = buildApp();
+      const response = await request(app).get('/api/users/collaborators');
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('paginação');
+    });
+
     it('returns 403 when permission scope is null', async () => {
       permissionEngineMock.getPermissionScope.mockResolvedValue(null);
 
       const app = buildApp();
-      const response = await request(app).get('/api/users/collaborators');
+      const response = await request(app).get('/api/users/collaborators?page=1&pageSize=20');
 
       expect(response.status).toBe(403);
     });
@@ -265,12 +312,42 @@ describe('users routes integration', () => {
       }]);
 
       const app = buildApp();
-      const response = await request(app).get('/api/users/collaborators');
+      const response = await request(app).get('/api/users/collaborators?page=1&pageSize=20');
 
       expect(response.status).toBe(200);
       expect(response.body.total).toBe(2);
       expect(response.body.page).toBe(1);
       expect(Array.isArray(response.body.rows)).toBe(true);
+    });
+
+    it('redacts sensitive profile fields in collaborators list for non-privileged viewers', async () => {
+      permissionEngineMock.isAccessTotal.mockResolvedValue(false);
+      permissionEngineMock.hasPermission.mockImplementation(async (_userId: string, code: string) => (
+        code === 'view_user_list'
+      ));
+      prismaMock.user.count.mockResolvedValue(1);
+      prismaMock.user.findMany.mockResolvedValue([{
+        ...sampleUser,
+        teamMemberships: [],
+        managedTeams: [],
+        profile: {
+          nomeCompleto: 'João Silva',
+          nomeAbreviado: 'João',
+          iban: 'PT50000000000000000000000',
+          nif: '123456789',
+          moradaFiscal: 'Rua X',
+          contactoEmergenciaNumero: '910000000',
+        },
+      }]);
+
+      const app = buildApp({ isRootAccess: false });
+      const response = await request(app).get('/api/users/collaborators?page=1&pageSize=20');
+
+      expect(response.status).toBe(200);
+      expect(response.body.rows[0].profile.iban).toBe('');
+      expect(response.body.rows[0].profile.nif).toBe('');
+      expect(response.body.rows[0].profile.moradaFiscal).toBe('');
+      expect(response.body.rows[0].profile.contactoEmergenciaNumero).toBe('');
     });
   });
 

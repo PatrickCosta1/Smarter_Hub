@@ -385,6 +385,159 @@
   gap: 12px;
 }
 
+.wellbeing-shell--editing::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(2px);
+  z-index: 120;
+}
+
+.wellbeing-country-card--modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 130;
+  width: min(1200px, calc(100vw - 40px));
+  max-height: calc(100vh - 52px);
+  overflow: auto;
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid #d5e1f4;
+  background: linear-gradient(180deg, #f9fbff 0%, #ffffff 100%);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.38);
+}
+
+.wellbeing-edit-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0 0 10px;
+  padding: 15px 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #143a79 0%, #2563eb 100%);
+  color: #fff;
+}
+
+.wellbeing-edit-modal__head-copy p {
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.wellbeing-edit-modal__head-copy strong {
+  display: block;
+  margin: 0 0 5px;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.wellbeing-edit-modal__head-copy span {
+  display: block;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.wellbeing-edit-modal__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wellbeing-editor-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.wellbeing-editor-subtabs {
+  display: inline-flex;
+  gap: 6px;
+  width: fit-content;
+  padding: 5px;
+  border-radius: 16px;
+  background: #edf3fb;
+  border: 1px solid #d9e5f4;
+}
+
+.wellbeing-editor-subtabs button {
+  border: none;
+  background: transparent;
+  color: #5f779b;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.wellbeing-editor-subtabs button.is-active {
+  background: #fff;
+  color: #15458d;
+  box-shadow: 0 4px 14px rgba(15, 47, 92, 0.08);
+}
+
+.wellbeing-editor-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.wellbeing-editor-panel__toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.wellbeing-editor-panel__picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wellbeing-editor-panel__picker button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 180px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid #dbe5f3;
+  background: #fff;
+  color: #21446e;
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 700;
+  text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+.wellbeing-editor-panel__picker button span {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #7390b5;
+}
+
+.wellbeing-editor-panel__picker button.is-active {
+  border-color: #2563eb;
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.14);
+  transform: translateY(-1px);
+}
+
+.wellbeing-editor-panel__picker--forms button {
+  min-width: 220px;
+}
+
 .wellbeing-country-card__head h2 {
   margin: 0;
   color: #123f82;
@@ -397,6 +550,12 @@
   gap: 10px;
 }
 
+.wellbeing-shell--editing .wellbeing-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
 .wellbeing-card {
   border-radius: 12px;
   border: 1px solid #dbe7f7;
@@ -404,6 +563,15 @@
   padding: 12px;
   display: grid;
   gap: 8px;
+}
+
+.wellbeing-card--editor {
+  padding: 16px;
+  border-radius: 18px;
+  border-color: #d7e2f3;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  box-shadow: 0 10px 24px rgba(15, 47, 92, 0.08);
+  gap: 14px;
 }
 
 .wellbeing-card__head {
@@ -465,6 +633,52 @@
   gap: 10px;
 }
 
+.wellbeing-edit-section-meta {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid #d8e3f4;
+  background: linear-gradient(180deg, #f8fbff 0%, #f1f6ff 100%);
+}
+
+.wellbeing-edit-section-meta__intro {
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #0f3a7d 0%, #2f6df6 100%);
+  color: #fff;
+}
+
+.wellbeing-edit-section-meta__intro p {
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.wellbeing-edit-section-meta__intro strong {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 1.02rem;
+  letter-spacing: -0.01em;
+}
+
+.wellbeing-edit-section-meta__intro span {
+  display: block;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 0.87rem;
+  line-height: 1.55;
+}
+
+.wellbeing-edit-section-meta__grid {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid #dbe6f5;
+  border-radius: 16px;
+  padding: 14px;
+}
+
 .wellbeing-editor-card__grid--resource {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -494,6 +708,67 @@
   font: inherit;
   color: #163c72;
   background: #ffffff;
+  box-sizing: border-box;
+}
+
+.wellbeing-editor-card__field input:focus,
+.wellbeing-editor-card__field textarea:focus,
+.wellbeing-files-editor__row input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.wellbeing-editor-resource__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 2px;
+}
+
+.wellbeing-editor-resource__title {
+  display: grid;
+  gap: 5px;
+}
+
+.wellbeing-editor-resource__title strong {
+  color: #143b72;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.wellbeing-editor-resource__title small {
+  color: #6482a8;
+  font-size: 0.79rem;
+  line-height: 1.45;
+}
+
+.wellbeing-editor-resource__kind {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wellbeing-editor-resource__kind--form {
+  background: #eaf2ff;
+  color: #184aa3;
+}
+
+.wellbeing-editor-resource__kind--pdf {
+  background: #edf7f0;
+  color: #18724e;
+}
+
+.wellbeing-editor-resource__body {
+  display: grid;
+  gap: 14px;
 }
 
 .wellbeing-editor-card__field textarea {
@@ -504,7 +779,10 @@
   grid-column: 1 / -1;
   display: grid;
   gap: 8px;
-  padding-top: 4px;
+  padding: 14px;
+  border: 1px solid #dce7f6;
+  border-radius: 16px;
+  background: #f8fbff;
 }
 
 .wellbeing-files-editor__header {
@@ -516,6 +794,7 @@
 
 .wellbeing-files-editor__header strong {
   color: #163c72;
+  font-size: 0.9rem;
 }
 
 .wellbeing-upload-btn {
@@ -523,10 +802,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
-  padding: 0 10px;
-  border-radius: 9px;
-  background: #edf5ff;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 11px;
+  background: #dfeeff;
   color: #123f82;
   font-weight: 700;
   cursor: pointer;
@@ -554,6 +833,10 @@
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: center;
+  padding: 10px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e0e8f5;
 }
 
 .wellbeing-files-editor__row a {
@@ -566,38 +849,189 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  padding-top: 2px;
+}
+
+.wellbeing-report-config-editor {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 14px;
+  margin-top: 8px;
+  padding: 18px;
+  border: 1px solid #d6e2f5;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.wellbeing-report-config-editor__hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #143a79 0%, #2563eb 100%);
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+}
+
+.wellbeing-report-config-editor__hero::after {
+  content: '';
+  position: absolute;
+  right: -28px;
+  top: -26px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.wellbeing-report-config-editor__hero strong {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.wellbeing-report-config-editor__hero span {
+  display: block;
+  max-width: 640px;
+  color: rgba(255, 255, 255, 0.82);
+  line-height: 1.6;
+  font-size: 0.86rem;
+}
+
+.wellbeing-report-config-editor__eyebrow {
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.70rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.wellbeing-report-config-editor__grid {
+  padding: 4px;
+}
+
+.wellbeing-report-config-editor .wellbeing-editor-card__field {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid #dde8f7;
+}
+
+.wellbeing-report-config-editor .wellbeing-editor-card__field span {
+  color: #31527f;
+}
+
+.wellbeing-report-config-editor .wellbeing-editor-card__field input,
+.wellbeing-report-config-editor .wellbeing-editor-card__field textarea {
+  background: #fff;
+  border-color: #c6d6ee;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.wellbeing-report-config-editor .wellbeing-editor-card__field input:focus,
+.wellbeing-report-config-editor .wellbeing-editor-card__field textarea:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
 .wellbeing-report-form {
-  display: grid;
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .wellbeing-report-form__intro {
-  display: grid;
-  gap: 6px;
-  padding: 12px 14px;
-  border: 1px solid #d8e7fb;
-  border-radius: 12px;
-  background: #f7fbff;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 20px 22px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #1a3a6e 0%, #1d4ed8 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.wellbeing-report-form__intro::after {
+  content: '';
+  position: absolute;
+  right: -36px;
+  top: -36px;
+  width: 140px;
+  height: 140px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.wellbeing-report-form__intro::before {
+  content: '';
+  position: absolute;
+  left: -20px;
+  bottom: -40px;
+  width: 100px;
+  height: 100px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.wellbeing-report-form__intro-icon {
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+  backdrop-filter: blur(4px);
+}
+
+.wellbeing-report-form__intro-body {
+  flex: 1;
+  min-width: 0;
 }
 
 .wellbeing-report-form__intro h3 {
-  margin: 0;
-  color: #123f82;
-  font-size: 0.98rem;
+  margin: 0 0 6px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.01em;
 }
 
 .wellbeing-report-form__intro p {
   margin: 0;
-  color: #5d799d;
-  line-height: 1.55;
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.65;
 }
 
 .wellbeing-report-form__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 16px;
+}
+
+.wellbeing-report-form__privacy {
+  margin: 0;
+  padding: 10px 14px;
+  background: #f0f6ff;
+  border: 1px solid #c7ddf7;
+  border-radius: 10px;
+  font-size: 0.80rem;
+  color: #4a6fa5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.45;
 }
 
 @media (max-width: 900px) {
@@ -616,8 +1050,53 @@
   .wellbeing-editor-card__grid,
   .wellbeing-editor-card__grid--resource,
   .wellbeing-grid,
-  .wellbeing-report-form__grid {
+  .wellbeing-report-form__grid,
+  .wellbeing-report-form__intro {
     grid-template-columns: 1fr;
+  }
+
+  .wellbeing-shell--editing .wellbeing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wellbeing-country-card--modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .wellbeing-edit-modal__head {
+    flex-direction: column;
+  }
+
+  .wellbeing-edit-modal__head-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .wellbeing-editor-subtabs {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .wellbeing-editor-subtabs button {
+    justify-content: center;
+  }
+
+  .wellbeing-editor-panel__toolbar {
+    flex-direction: column;
+  }
+
+  .wellbeing-editor-panel__picker {
+    width: 100%;
+  }
+
+  .wellbeing-editor-panel__picker button,
+  .wellbeing-editor-panel__picker--forms button {
+    min-width: 0;
+    width: 100%;
   }
 
   .wellbeing-shell__tabs {
@@ -888,6 +1367,131 @@
 
 .trainings-list-head h3 {
   letter-spacing: -0.01em;
+}
+
+/* ── Field hint tooltip ─────────────────────────────────────── */
+.field-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #deeaff;
+  color: #1d4ed8;
+  font-size: 0.65rem;
+  font-weight: 700;
+  cursor: help;
+  position: relative;
+  vertical-align: middle;
+  margin-left: 5px;
+  flex-shrink: 0;
+  line-height: 1;
+  user-select: none;
+}
+
+.field-hint::after {
+  content: attr(data-hint);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e3a5f;
+  color: #fff;
+  padding: 9px 13px;
+  border-radius: 9px;
+  font-size: 0.76rem;
+  line-height: 1.55;
+  white-space: normal;
+  width: 240px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 300;
+  font-weight: 400;
+  text-align: left;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+}
+
+.field-hint:hover::after,
+.field-hint:focus-visible::after {
+  opacity: 1;
+}
+
+/* ── Trainings scope navigation submenu ──────────────────────── */
+.trainings-scope-nav {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: #f1f5fb;
+  border: 1px solid #dce6f2;
+  border-radius: 14px;
+  width: fit-content;
+  margin-bottom: 16px;
+}
+
+.trainings-scope-nav__btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s, box-shadow 0.14s;
+  white-space: nowrap;
+}
+
+.trainings-scope-nav__btn:hover {
+  background: #e2ecf8;
+  color: #1e40af;
+}
+
+.trainings-scope-nav__btn.is-active {
+  background: #fff;
+  color: #1d4ed8;
+  font-weight: 650;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.09);
+}
+
+.trainings-scope-nav__btn svg {
+  flex-shrink: 0;
+}
+
+/* ── Certificate field in complete modal ─────────────────────── */
+.trainings-cert-label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 10px 0 2px;
+}
+
+.trainings-cert-label > span {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.trainings-cert-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d1d9e8;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: #1e293b;
+  background: #f9fbff;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.trainings-cert-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
 .trainings-table thead th {

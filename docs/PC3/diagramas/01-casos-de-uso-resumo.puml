@@ -1,0 +1,108 @@
+@startuml smarter_hub_casos_de_uso_resumo
+left to right direction
+scale max 1250 width
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam linetype ortho
+skinparam dpi 110
+skinparam ArrowColor #1F3A68
+skinparam defaultFontName Segoe UI
+skinparam defaultFontSize 13
+skinparam usecase {
+  BorderColor #1F3A68
+  BackgroundColor #EEF3FA
+  FontColor #0F2342
+}
+skinparam package {
+  BorderColor #B7C6DD
+  BackgroundColor #F8FAFD
+  FontColor #0F2342
+}
+
+actor "Colaboradores" as COL
+actor "Chefe de Equipa" as CHEFE
+actor "RH (Acesso Total)" as RHAT
+actor "Admin" as ADMIN
+actor "Candidato de Admissão" as CAND
+
+rectangle "SMARTER HUB - Casos de Uso (Resumo Executivo)" as HUB {
+  package "Identidade e Governança de Acesso" {
+    usecase "Iniciar sessão" as UC_LOGIN
+    usecase "Autenticar por OAuth" as UC_OAUTH
+    usecase "Consultar permissões efetivas" as UC_SCOPE
+    usecase "Gerir permissões e acesso total" as UC_PERM
+    usecase "Auditar ações críticas" as UC_AUDIT
+  }
+
+  package "Ciclo de Vida do Colaborador" {
+    usecase "Gerir perfil e alterações sensíveis" as UC_PROFILE
+    usecase "Notificar e acompanhar decisões" as UC_NOTIF
+    usecase "Enviar convite de admissão" as UC_ADM_INV
+    usecase "Submeter ficha por token" as UC_ADM_SUB
+    usecase "Concluir admissão e criar utilizador" as UC_ADM_DONE
+    usecase "Gerir utilizadores, equipas e memberships" as UC_USERS_TEAMS
+  }
+
+  package "Tempo, Compliance e Operação" {
+    usecase "Submeter férias/ausências" as UC_VAC_REQ
+    usecase "Aprovar/Rejeitar cadeia de pedidos" as UC_VAC_DECIDE
+    usecase "Aplicar políticas PT/BR e capacidade" as UC_VAC_RULES
+    usecase "Versionar pedidos e reajustar por ausência" as UC_VAC_VERSION
+    usecase "Ver calendário pessoal/equipa" as UC_CAL
+    usecase "Exportar mapa anual e indicadores" as UC_EXPORT
+  }
+
+  package "Brasil, Desenvolvimento e Bem-estar" {
+    usecase "Operar banco de horas BR" as UC_HB
+    usecase "Controlar excedente e fecho semanal" as UC_HB_POLICY
+    usecase "Gerir formação e plano de carreira" as UC_TRN_CAR
+    usecase "Reportar wellbeing e alerta ocupacional" as UC_WELL
+  }
+}
+
+COL --> UC_LOGIN
+COL --> UC_OAUTH
+COL --> UC_SCOPE
+COL --> UC_PROFILE
+COL --> UC_NOTIF
+COL --> UC_VAC_REQ
+COL --> UC_CAL
+COL --> UC_TRN_CAR
+COL --> UC_WELL
+
+CHEFE --> UC_VAC_DECIDE
+CHEFE --> UC_CAL
+CHEFE --> UC_USERS_TEAMS
+CHEFE --> UC_TRN_CAR
+
+RHAT --> UC_VAC_DECIDE
+RHAT --> UC_VAC_RULES
+RHAT --> UC_VAC_VERSION
+RHAT --> UC_EXPORT
+RHAT --> UC_ADM_INV
+RHAT --> UC_ADM_DONE
+RHAT --> UC_USERS_TEAMS
+RHAT --> UC_HB
+RHAT --> UC_HB_POLICY
+RHAT --> UC_PERM
+RHAT --> UC_WELL
+RHAT --> UC_AUDIT
+
+ADMIN --> UC_PERM
+ADMIN --> UC_AUDIT
+ADMIN --> UC_USERS_TEAMS
+ADMIN --> UC_EXPORT
+
+CAND --> UC_ADM_SUB
+
+UC_VAC_DECIDE ..> UC_AUDIT : <<include>>
+UC_VAC_DECIDE ..> UC_VAC_RULES : <<include>>
+UC_PERM ..> UC_AUDIT : <<include>>
+UC_ADM_DONE ..> UC_USERS_TEAMS : <<include>>
+UC_ADM_SUB ..> UC_ADM_INV : <<extend>>
+UC_HB ..> UC_HB_POLICY : <<include>>
+UC_EXPORT ..> UC_AUDIT : <<include>>
+UC_PROFILE ..> UC_NOTIF : <<include>>
+@enduml

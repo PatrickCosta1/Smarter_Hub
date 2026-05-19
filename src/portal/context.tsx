@@ -140,6 +140,13 @@ type PortalContextValue = {
   saveProfile: (profile: ProfileData) => Promise<{ success: boolean; message?: string; pending?: boolean }>;
 };
 
+type PaginatedRows<T> = {
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: T[];
+};
+
 const PortalContext = createContext<PortalContextValue | null>(null);
 
 type UserPermissionsResponse = {
@@ -214,11 +221,11 @@ export function PortalProvider({ children }: { children: ReactNode }) {
         })
         .catch(() => undefined);
 
-      const notificationsPromise = apiRequestCached<PortalNotification[]>('/notifications/me', {
+      const notificationsPromise = apiRequestCached<PaginatedRows<PortalNotification>>('/notifications/me?page=1&pageSize=50', {
         headers,
       }, 10000)
         .then((notificationsData) => {
-          setNotifications(notificationsData);
+          setNotifications(Array.isArray(notificationsData.rows) ? notificationsData.rows : []);
         })
         .catch(() => undefined);
 
@@ -242,12 +249,12 @@ export function PortalProvider({ children }: { children: ReactNode }) {
 
     const request = (async () => {
       try {
-        const data = await apiRequestCached<PortalNotification[]>('/notifications/me', {
+        const data = await apiRequestCached<PaginatedRows<PortalNotification>>('/notifications/me?page=1&pageSize=50', {
           headers: authHeaders(token),
         }, 15000, forceRefresh, 45000);
 
         if (window.localStorage.getItem(STORAGE_TOKEN_KEY) === token && notificationsRefreshSequence.current === sequence) {
-          setNotifications(data);
+          setNotifications(Array.isArray(data.rows) ? data.rows : []);
           notificationsLastSyncAt.current = Date.now();
         }
       } catch {

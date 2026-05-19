@@ -462,14 +462,7 @@ function buildValidationErrors(draft: VacationDraft): DraftErrors {
   }
 
   if (draft.requestKind === 'ABSENCE' && draft.absenceReason === 'Justificada - Doença') {
-    const start = toLocalDate(draft.dataInicio);
-    const end = toLocalDate(draft.dataFim);
-    const diffMs = end.getTime() - start.getTime();
-    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
-
-    if (Number.isFinite(days) && days > 3) {
-      errors.dataFim = 'Ausência por doença SNS24 só pode ir até 3 dias.';
-    }
+    // Sem validação adicional específica para duração de ausência médica.
   }
 
   if (draft.requestKind === 'VACATION' && draft.partialDay !== 'FULL' && draft.dataInicio !== draft.dataFim) {
@@ -641,6 +634,13 @@ function normalizeSearchText(value: string) {
 function formatTeamPerson(member: TeamVacationMember) {
   return getProfileDisplayName({ username: member.username, profile: member.profile });
 }
+
+type PaginatedRows<T> = {
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: T[];
+};
 
 export default function VacationsPage() {
   const { profile, hasPermission, isRootAccess, isAccessTotal, refreshNotifications, currentUser } = usePortal();
@@ -1595,12 +1595,12 @@ export default function VacationsPage() {
 
   async function loadMine(signal?: AbortSignal) {
     try {
-      const data = await apiRequestCached<VacationRecord[]>('/vacations/me', {
+      const data = await apiRequestCached<PaginatedRows<VacationRecord>>('/vacations/me?page=1&pageSize=500', {
         headers: getAuthHeaders(),
         signal,
       }, 60000);
       if (!signal?.aborted) {
-        setRecords(data);
+        setRecords(Array.isArray(data.rows) ? data.rows : []);
       }
     } catch (error) {
       if (!isAbortError(error) && !signal?.aborted) {

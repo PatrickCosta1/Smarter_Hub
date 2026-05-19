@@ -119,7 +119,7 @@
 \begin{titlepage}
 \thispagestyle{empty}
 \AddToShipoutPictureBG*{%
-  \includegraphics[width=\paperwidth,height=\paperheight]{capa_especificacao.png}%
+  \includegraphics[width=\paperwidth,height=\paperheight]{capa_spec_pc3.png}%
 }
 \vspace*{\fill}
 \end{titlepage}
@@ -129,353 +129,387 @@
 \tableofcontents
 \newpage
 
-\section{Objetivo, escopo e fronteiras}
+\section{Objetivo e Posicionamento da Especificação}
 
 \begin{callout}
-\textbf{Objetivo do artefacto.} Consolidar, com nível de entrega académica e operacional, as regras funcionais do SMARTER HUB para o PC3, servindo como referência única para produto, UX, backend e testes. Este documento é de natureza evolutiva: deve ser atualizado sempre que uma alteração funcional for implementada, garantindo alinhamento contínuo entre especificação e produto.
+Este documento descreve a especificação funcional \textbf{completa} do SMARTER HUB (visão produto) e não apenas um recorte de checkpoint. O PC3 é tratado como \textbf{continuidade evolutiva} da especificação, com atualização de regras, fluxos, cobertura e evidências.
 \end{callout}
 
-\subsection{Escopo funcional coberto}
+\subsection{Propósito}
 \begin{itemize}
-  \item Identidade e acesso: login local, Microsoft OAuth, sessão, perfil de acesso.
-  \item Estrutura organizacional: equipas, subequipas, chefias, memberships, centros de custo.
-  \item Ficha de membro e pedidos de alteração de dados; processo de admissão de novos membros.
-  \item Férias e ausências: pedido, validação, aprovação, versionamento, calendário, exportação, ciclo processado/realizado.
-  \item Banco de horas para membros BR, com saldo, relatório semanal PDF e política por estado (SP/RS).
-  \item Plano de carreira individual: metas, competências e registo de evolução.
-  \item Saúde e bem-estar: conteúdo informativo por perfil e notificações de medicina do trabalho.
-  \item Permissões granulares, acesso total e trilho de auditoria.
-  \item Formações, notificações, dashboard e assistente interno contextual.
-  \item Internacionalização PT-PT / PT-BR com seleção de variante por utilizador.
+  \item Definir como o SMARTER HUB funciona ponta a ponta para colaboradores, liderança, RH/Admin e Root Access.
+  \item Consolidar regras de negócio, estados de processo, critérios de autorização e comportamento por geografia (PT/BR).
+  \item Garantir rastreabilidade entre regra funcional, implementação e validação por testes.
 \end{itemize}
 
-\subsection{Fora de escopo nesta fase}
+\subsection{Escopo do sistema (visão integral)}
 \begin{itemize}
-  \item Decisões de implementação técnica de baixo nível (detalhe de código e infraestrutura).
-  \item Otimizações avançadas sem impacto no comportamento funcional nucleado no PC2.
-  \item Evoluções cosméticas de interface sem alteração de regra, fluxo ou autorização.
+  \item Identidade e sessão (login local, OAuth, contexto autenticado).
+  \item Utilizadores, equipas, subequipas, memberships, cadeia de aprovação.
+  \item Ficha do colaborador, pedidos de alteração e revisão.
+  \item Férias/ausências com políticas PT/BR, calendário, exportação e versionamento.
+  \item Permissões granulares, acesso total, restrições por escopo e auditoria.
+  \item Banco de horas BR com crédito/débito, excedente, notificações e relatório semanal PDF.
+  \item Formações, notificações, plano de carreira, admissões e onboarding.
+  \item Wellbeing (saúde e bem-estar), conteúdos orientativos e canais de reporte sensível.
+  \item Dashboard operacional e exportações.
 \end{itemize}
 
-\subsection{Princípios mandatórios}
+\subsection{Fora de escopo desta especificação}
 \begin{itemize}
-  \item \textbf{Autorização antes de ação:} nenhuma operação crítica executa sem permissão efetiva e escopo válido.
-  \item \textbf{Sem histórico perdido:} alterações a pedidos aprovados são realizadas por versionamento.
-  \item \textbf{Sem rasto, sem commit:} decisão crítica exige auditoria persistida.
-  \item \textbf{Regra por país:} políticas PT/BR são validadas antes de submissão e aprovação final.
-  \item \textbf{Operação explicável:} bloqueios devem devolver causa e indicação de desbloqueio.
+  \item Detalhe de infraestrutura e decisões internas de baixo nível de código.
+  \item Estilo visual e decisões cosméticas sem impacto funcional.
+  \item Procedimentos de operação DevOps não observáveis por utilizador final.
 \end{itemize}
 
-\section{Modelo de atores e autorização}
+\section{Princípios Funcionais Obrigatórios}
 
-\subsection{Perfis funcionais}
+\begin{itemize}
+  \item \textbf{Autorização antes da ação:} qualquer operação sensível exige permissão efetiva e escopo válido.
+  \item \textbf{Sem histórico perdido:} alterações a pedidos aprovados devem gerar versão nova, nunca sobrescrever evidência prévia.
+  \item \textbf{Rastreabilidade obrigatória:} decisões críticas guardam ator, data/hora e motivo.
+  \item \textbf{Regra por contexto geográfico:} políticas PT/BR aplicam-se antes da persistência final.
+  \item \textbf{Comportamento explicável:} bloqueios devolvem causa funcional compreensível para o utilizador.
+\end{itemize}
+
+\section{Atores, Perfis e Governação de Acesso}
+
 \rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\bfseries}p{2.2cm} >{\small}p{4.1cm} >{\small}p{3.5cm} >{\small}p{3.8cm}}
+\begin{longtable}{>{\small\bfseries}p{2.2cm} >{\small}p{4.0cm} >{\small}p{3.7cm} >{\small}p{3.7cm}}
 \theadrow
-\tH{Perfil} & \tH{Âmbito operacional} & \tH{Nível de decisão} & \tH{Limites estruturais} \\
+\tH{Perfil} & \tH{Âmbito operacional} & \tH{Capacidades principais} & \tH{Limites mandatórios} \\
 \midrule
 \endfirsthead
 \theadrow
-\tH{Perfil} & \tH{Âmbito operacional} & \tH{Nível de decisão} & \tH{Limites estruturais} \\
+\tH{Perfil} & \tH{Âmbito operacional} & \tH{Capacidades principais} & \tH{Limites mandatórios} \\
 \midrule
 \endhead
-Membro & Operação individual (ficha, pedidos, notificações, formações) & Sem aprovação de terceiros por defeito & Atua no seu contexto e nas permissões que lhe forem atribuídas \\
-Liderança & Gestão de equipa e aprovação de primeira linha & Aprova linha direta conforme cadeia ativa & Não atua fora do escopo de equipa autorizado \\
-Liderança & Supervisão transversal e segunda linha de decisão & Aprova níveis superiores definidos na cadeia & Não substitui admin em governação global \\
-Admin & Governação global de utilizadores, equipas e permissões & Pode atuar por exceção em PT quando aplicável & Deve manter rasto integral das ações críticas \\
-Root Access & Superutilizador técnico-funcional & Último nível de autorização & Uso restrito a governação e manutenção sensível \\
+Colaborador & Operação individual & Ficha, férias/ausências, notificações, formações & Não aprova terceiros por defeito \\
+Liderança & Equipa/subequipa & Aprovação operacional, leitura de equipa, coordenação & Restrito ao escopo de equipa autorizado \\
+RH/Admin & Governação transversal & Gestão de utilizadores, equipas, admissões e regras operacionais & Ações críticas auditadas e justificadas \\
+Access Total & Escopo alargado com restrições & Gestão transversal sob hierarquia/permissões efetivas & Não elimina trilho de auditoria \\
+Root Access & Superutilizador & Administração total técnico-funcional & Uso excecional, rastreável e controlado \\
 \bottomrule
 \end{longtable}
 
-\subsection{Regras de aprovação e hierarquia}
+\subsection{Regras de decisão e hierarquia}
 \begin{enumerate}
-  \item Um utilizador pode ter múltiplas memberships e papéis distintos por equipa.
-  \item A aprovação base é efetuada pelos chefes das equipas relevantes do membro.
-  \item Em múltiplas equipas, a aprovação é unânime entre aprovadores definidos para o pedido.
-  \item Autoaprovação é sempre proibida.
-  \item Rejeição de um aprovador encerra imediatamente o pedido como rejeitado.
-  \item A lista de aprovadores é congelada no momento de submissão da versão.
-  \item Sem equipa e sem acesso total, o fallback de aprovação é T.People.
-  \item Com acesso total sem equipa, decide o concedente; indisponível, fallback T.People.
-  \item Entre utilizadores com acesso total no mesmo nível hierárquico, não há decisão cruzada.
+  \item Um utilizador pode ter múltiplas memberships ativas em equipas distintas.
+  \item A cadeia de aprovação é calculada no momento de submissão e fica congelada para essa versão.
+  \item Autoaprovação é proibida em fluxos de aprovação formal.
+  \item Em cenários multi-equipa, a decisão exige convergência dos aprovadores necessários.
+  \item Rejeição encerra a versão corrente, preservando histórico para auditoria.
+  \item Em utilizadores com acesso total, aplicam-se regras hierárquicas para revisão cruzada.
 \end{enumerate}
 
-\subsection{Matriz de capacidades por domínio}
-\rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\bfseries}p{2.2cm} >{\small}p{4.1cm} >{\small}p{4.2cm} >{\small}p{3.2cm}}
-\theadrow
-\tH{Domínio} & \tH{Visualização} & \tH{Ação operacional} & \tH{Controlo/Auditoria} \\
-\midrule
-\endfirsthead
-\theadrow
-\tH{Domínio} & \tH{Visualização} & \tH{Ação operacional} & \tH{Controlo/Auditoria} \\
-\midrule
-\endhead
-Identidade & Conta própria, perfil de acesso, sessão atual & Login, refresh de contexto, logout & Registo de autenticação e falhas \\
-Ficha & Dados pessoais/contratuais conforme escopo & Submeter alterações e comprovativos & Histórico de pedido e motivo \\
-Férias/Ausências & Histórico próprio e de equipa (quando permitido) & Submeter, editar pendente, cancelar, versionar aprovado & Trilha de decisões por etapa \\
-Permissões & Permissões efetivas por utilizador autorizado & Grant/revoke, escopo, acesso total & Audit log de grants/revokes \\
-Equipas & Estrutura e memberships por escopo & CRUD equipas (admin), gestão de membros & Rastreio de alterações estruturais \\
-Formações & Plano próprio e organização (autorizados) & Criar, atribuir, concluir, exportar & Histórico de atribuição/conclusão \\
-Dashboard & KPIs por equipa/organização e período & Filtrar cohort e exportar XLSX & Parâmetros de exportação registados \\
-Notificações & Inbox pessoal e estados de leitura & Ler, limpar e navegar para ação & Integridade e idempotência \\
-\bottomrule
-\end{longtable}
+\section{Módulos Funcionais do SMARTER HUB}
 
-\section{Regras de negócio de férias e ausências}
-
-\subsection{Regras transversais}
+\subsection{Identidade e sessão}
 \begin{itemize}
-  \item Pedido inclui tipo, período, contexto de equipa e metadados de validação.
-  \item Conflitos de período com pedidos \texttt{PENDING}/\texttt{APPROVED} bloqueiam submissão.
-  \item Seleção com fim de semana bloqueia tipo \textit{Férias} e força \textit{Ausência}, quando aplicável.
-  \item Pedido aprovado alterado gera nova versão pendente, sem sobrescrever versão anterior.
-  \item Pedidos que atravessam o ano civil devem aparecer em ambos os anos relevantes.
-  \item Meio-dia é suportado com indicação explícita manhã/tarde.
+  \item Autenticação por credenciais locais e OAuth.
+  \item Sessão autenticada com contexto de perfil e permissões efetivas.
+  \item Operações autenticadas só podem executar com token/contexto válidos.
 \end{itemize}
 
-\subsection{Capacidade e calendário}
+\subsection{Utilizadores, equipas e estrutura}
 \begin{itemize}
-  \item O sistema sinaliza risco quando a equipa se aproxima de ocupação crítica em férias simultâneas.
-  \item A vista \textit{Férias da equipa} apresenta apenas pedidos aprovados.
-  \item Distinção visual entre \textit{Férias} e \textit{Ausência} é obrigatória.
-  \item Calendário inclui legenda de feriados, dias automáticos/extra e fins de semana.
+  \item CRUD de utilizadores (incluindo ativação/desativação) sob autorização adequada.
+  \item Gestão de equipas, subequipas, chefias e memberships.
+  \item Importação em lote para aceleração de onboarding operacional.
 \end{itemize}
 
-\subsection{Catálogo de motivos de ausência}
-
-O sistema oferece um catálogo padronizado de motivos para ausências justificadas, utilizado na classificação de pedidos e relatórios operacionais:
-
+\subsection{Ficha de colaborador e pedidos de alteração}
 \begin{itemize}
-  \item \textit{Não Justificada}
-  \item \textit{Justificada - Greve}
-  \item \textit{Justificada - Atividades empresa}
-  \item \textit{Justificada - Assistência à família}
-  \item \textit{Justificada - Estatuto trabalhador-estudante}
-  \item \textit{Justificada - Licença casamento}
-  \item \textit{Justificada - Consultas médicas}
-  \item \textit{Justificada - Doença}
-  \item \textit{Justificada - Formação}
-  \item \textit{Justificada - Licença parental}
-  \item \textit{Justificada - Morte de familiar}
-  \item \textit{Justificada - Feriado local}
-  \item \textit{Justificada - Obrigações legais}
-  \item \textit{Justificada - Tolerância dada pela empresa}
+  \item Ficha estruturada por blocos pessoais, contratuais, fiscais, emergência e benefícios.
+  \item Alterações sensíveis seguem fluxo de pedido e revisão (aprovação/rejeição total ou parcial).
+  \item Regras de validação diferenciam PT e BR (ex.: campos fiscais/legais e obrigatoriedade documental).
 \end{itemize}
 
-\subsection{Políticas PT}
+\subsection{Férias e ausências}
 \begin{itemize}
-  \item Aviso de conformidade para ausência de bloco de 10 dias úteis consecutivos (não bloqueante).
-  \item Contratação no ano corrente: limite proporcional de 2 dias úteis/mês no 1.º ano (máximo 20).
-  \item Bloqueio quando \texttt{PENDING + APPROVED + novo pedido} excede limite proporcional.
-  \item Lembrete automático de transitados a expirar a 30 de abril (default: 30 dias antes).
+  \item Pedido com tipo, período, contexto de equipa e eventual parcial de dia (AM/PM).
+  \item Controlo de conflitos com pedidos \texttt{PENDING}/\texttt{APPROVED}.
+  \item Aprovação por cadeia definida e versionamento de alterações a pedidos já aprovados.
+  \item Vistas de resumo, calendário, equipa e exportações de apoio operacional.
 \end{itemize}
 
-\subsection{Políticas BR}
+\subsection{Permissões, acesso total e auditoria}
 \begin{itemize}
-  \item Início de férias não permitido à quinta-feira nem à sexta-feira.
-  \item Início não permitido no dia útil imediatamente após feriado nacional.
-  \item Validação do período concessivo com bloqueio por antecedência mínima inferior a 30 dias.
-  \item Alteração/versionamento só com antecedência mínima de 10 dias sobre o início do pedido.
-  \item Estagiário: bloqueado antes de 12 meses; após marco, proporcional de 30 dias/ano (2,5 dias/mês).
-  \item Venda de férias (abono): até 1/3 do direito anual, teto absoluto de 10 dias.
-  \item Aplicação diferenciada de feriados públicos por estado: São Paulo (SP) e Rio Grande do Sul (RS) utilizam calendários locais de feriados e pontos facultativos, incluindo apenas feriados globais ou feriados específicos do estado na validação de períodos de férias.
+  \item Catálogo de permissões por domínio (system, users, teams, vacations, trainings, profile, notifications).
+  \item Concessão/revogação com restrições por equipa, país e nível quando aplicável.
+  \item Registo de grants/revokes e ações críticas para inspeção posterior.
 \end{itemize}
 
-\subsection{Ciclo processado/realizado}
+\subsection{Banco de horas (Brasil)}
 \begin{itemize}
-  \item Após aprovação de férias, o sistema aguarda confirmação em dois momentos distintos.
-  \item \textbf{Processado:} marcado pelo RH/aprovador para confirmar o processamento de pagamento das férias.
-  \item \textbf{Realizado:} confirmado pelo membro após o regresso das férias, ou pelo aprovador em substituição.
-  \item O sistema bloqueia nova confirmação de realizado para férias com data de fim futura.
-  \item Ambas as confirmações registam o ator e o timestamp para audit log.
-  \item O saldo definitivo só é atualizado após marcado como realizado.
+  \item Módulo aplicável a colaboradores com \texttt{workCountry = BR}.
+  \item Unidade funcional em horas, com cálculo de crédito, débito, total e excedente.
+  \item Lançamentos manuais exigem motivo e autorização adequada.
+  \item Relatório semanal PDF, histórico de relatórios e notificações de excedente.
 \end{itemize}
 
-\subsection{Banco de horas (BR)}
+\subsection{Formações}
 \begin{itemize}
-  \item O banco de horas é aplicável a membros com \texttt{workCountry = BR}.
-  \item Unidade oficial do saldo: \textbf{horas} (não minutos), com precisão de 2 casas decimais.
-  \item Estrutura de saldo por membro: \textit{saldo creditado}, \textit{saldo debitado}, \textit{total} e \textit{limite}.
-  \item Lançamentos manuais (crédito/débito) são operados por utilizadores com \textit{acesso total} (ou root), com motivo obrigatório.
-  \item Limite acumulado operacional em BR: \textbf{100h} (controlo automático no cálculo e nos relatórios).
-  \item Campo obrigatório de localização BR na ficha: \texttt{brWorkState} com opções \texttt{SP} e \texttt{RS}, utilizado para determinar calendário de feriados na validação de férias.
-  \item Política de fecho por estado: \texttt{RS} semestral (abril/outubro); \texttt{SP} quadrimestral (fevereiro/junho/outubro).
-  \item Excedente é calculado por \( |total| - limite \) quando positivo.
-  \item Excedente gera aviso para o membro e para a chefia responsável, com cópia para utilizadores de acesso total.
-  \item O sistema gera relatório semanal automático de banco de horas para acesso total, sem operação manual.
-  \item O relatório semanal é gerado em \textbf{PDF} e armazenado em histórico próprio para consulta posterior (lista de semanas + abertura direta do ficheiro).
-  \item Notificações e acesso à área de Banco de Horas são restritos a perfis com \texttt{workCountry = BR}; perfis PT não devem visualizar esta área.
-  \item Chefias podem consultar visão por equipa; RH/acesso total podem consultar globalmente e exportar por equipa/geo.
+  \item Catálogo de formações e atribuição a colaboradores.
+  \item Ciclo de estado de formação até conclusão.
+  \item Visualização por colaborador e por escopo organizacional autorizado.
 \end{itemize}
 
-\section{Experiência, vistas e ficheiro de membro}
-
-\subsection{Navegação base por permissões}
+\subsection{Plano de carreira}
 \begin{itemize}
-  \item \textbf{Home}: sempre visível.
-  \item \textbf{A Minha Ficha}: autenticados (exceto caso técnico T.People).
-  \item \textbf{Plano de Carreira}: autenticados (exceto T.People).
-  \item \textbf{Dashboard}: apenas root/access total.
-  \item \textbf{Aprovações}: requer pelo menos uma permissão de aprovação/visão global.
-  \item \textbf{Admissões}: requer permissão de aprovação de perfil ou root/access total.
-  \item \textbf{Férias}: requer permissão de pedido/consulta/gestão de regras.
-  \item \textbf{Formações}: requer permissão de consulta/atribuição.
-  \item \textbf{Banco de Horas}: apenas perfis BR (ou T.People) com permissão de consulta/gestão.
-  \item \textbf{Saúde e Bem-estar}: não convidados.
+  \item Definição de metas e evolução por etapa.
+  \item Feedback de liderança com autoria e data/hora.
+  \item Sem autoaprovação de objetivos críticos.
 \end{itemize}
 
-\subsection{Seletor de variante linguística (PT-PT / PT-BR)}
+\subsection{Notificações}
 \begin{itemize}
-  \item O portal disponibiliza um seletor de variante linguística persistente no topo da interface, acessível em qualquer página autenticada.
-  \item As opções são Portugal (PT-PT, por defeito) e Brasil (PT-BR), identificadas pela bandeira nacional respetiva.
-  \item A preferência é guardada localmente (\texttt{localStorage}) e persiste entre sessões.
-  \item A adaptação PT-BR abrange terminologia diferenciada (ex.: \textit{utilizador} \textrightarrow{} \textit{usuário}, \textit{guardar} \textrightarrow{} \textit{salvar}, \textit{equipa} \textrightarrow{} \textit{equipe}, \textit{formação} \textrightarrow{} \textit{treinamento}) e nomenclaturas de campos de ficha.
-  \item Para conteúdo dinâmico (mensagens, descrições, erros), o sistema integra a API LibreTranslate como motor de tradução opcional, com cache local por texto.
+  \item Inbox individual com eventos operacionais relevantes.
+  \item Marcação de leitura e navegação para ação associada.
+  \item Notificações de aprovação, rejeição e eventos de controlo (ex.: excedente banco de horas).
 \end{itemize}
 
-\subsection{Vistas mandatórias para operação}
+\subsection{Wellbeing (saúde e bem-estar)}
 \begin{itemize}
-  \item Separador \textit{Férias da equipa} com calendário mensal por membro e navegação temporal.
-  \item Dashboard com filtros por período (incluindo presets plurianuais) e exportação XLSX.
-  \item Utilizadores com acesso total podem exportar mapa de férias por intervalo livre.
+  \item Disponibilização de conteúdos de saúde e bem-estar transversais e/ou específicos por geografia.
+  \item Acesso a materiais de apoio (PDF) e formulários de reporte sensível.
+  \item Estrutura funcional orientada para consulta simples, clareza do conteúdo e encaminhamento adequado.
 \end{itemize}
 
-\subsection{Ficha do membro e benefícios}
+\subsection{Admissões e onboarding}
 \begin{itemize}
-  \item Secções: Dados Pessoais, Contacto, Documentos, Fiscal/Bancário, Emergência, Contratuais, Formação, Benefícios.
-  \item Campo \textit{Número mecanográfico} obrigatório na área contratual.
-  \item Centro de custo preenchido com base na equipa efetiva.
-  \item Para \textit{workCountry = BR}: nomenclaturas locais (CPF, PIS, CTPS, RG, CNH, Título de eleitor, CEP), ocultação de campos não aplicáveis e sem bloco Cartão Continente.
-  \item Voucher NOS: apenas contrato \textit{Sem termo}; cooldown de 2 anos entre pedidos.
+  \item Fluxo por token de convite e estados formais de progressão.
+  \item Revisão de dados, pedido de correções, preenchimento contratual e conclusão.
+  \item Conclusão com criação de utilizador e rastreabilidade do processo.
 \end{itemize}
 
-\section{Assistente interno, qualidade e auditoria}
+\section{Regras de Negócio Estruturantes}
 
-\subsection{Assistente interno (chatbot)}
+\subsection{Regras transversais de férias/ausências}
 \begin{itemize}
-  \item Respostas contextualizadas por permissões efetivas e rota atual.
-  \item Prioridade a instruções acionáveis: onde clicar, pré-condição em falta, motivo de bloqueio.
-  \item Em falta de permissão, indica capacidade necessária para desbloqueio.
-  \item Cobertura mínima: autenticação, ficha, benefícios, equipas, membros, permissões, aprovações, férias, formações, dashboard e notificações.
+  \item Pedido de férias deve iniciar e terminar em dia útil.
+  \item Meio-dia (AM/PM) é permitido apenas para \texttt{VACATION} com início e fim no mesmo dia.
+  \item Alteração de pedido aprovado cria nova versão pendente.
 \end{itemize}
 
-\subsection{Requisitos de qualidade e dados}
+\subsection{Política PT de férias}
 \begin{itemize}
-  \item Integridade referencial entre utilizador, equipa, pedido, aprovação e permissão.
-  \item Estados de pedido consistentes entre vistas e endpoints.
-  \item Auditoria com autor, alvo, ação, timestamp e motivo (quando aplicável).
-  \item Alteração funcional só considerada concluída com atualização desta especificação.
-  \item Releases com evidência mínima de testes unitários, integração e E2E crítico.
+  \item Bloco de 10 dias úteis consecutivos é regra de conformidade (com aviso quando aplicável).
+  \item No primeiro ano de contrato aplica-se proporcionalidade (2 dias/mês, limite 20 dias).
+  \item Controlo de excesso no somatório de pendentes, aprovados e novo pedido.
 \end{itemize}
 
-\section{Fluxos ponta a ponta de referência}
+\subsection{Política BR de férias}
+\begin{itemize}
+  \item Início de férias bloqueado à quinta/sexta.
+  \item Início bloqueado no dia útil seguinte a feriado nacional.
+  \item Antecedência mínima de 30 dias para concessão.
+  \item Em alterações/versionamento aplicam-se restrições adicionais de antecedência.
+\end{itemize}
 
-\subsection{Fluxo A: pedido de férias}
+\subsection{Regras de banco de horas BR}
+\begin{itemize}
+  \item Limite operacional base: 100h (podendo existir limite individual superior).
+  \item Política de fecho por estado: RS semestral (abril/outubro) e SP quadrimestral (fevereiro/junho/outubro).
+  \item Folga justificada pode gerar débito automático de horas no banco.
+  \item Excedente aciona notificação ao colaborador e cadeia de liderança/RH com escopo BR.
+\end{itemize}
+
+\subsection{Regras de permissões e escopo}
+\begin{itemize}
+  \item Permissão pode ser global ou restrita por equipas/países/níveis.
+  \item Acesso total e root simplificam autorização, mas não removem auditoria.
+  \item Revogação de permissões/acesso total respeita regras de hierarquia de concessão.
+\end{itemize}
+
+\subsection{Regras de admissões}
+\begin{itemize}
+  \item Convite gera token temporário e não reutilizável.
+  \item Fluxo segue estados formais: \texttt{INVITED}, \texttt{SUBMITTED}, \texttt{CHANGES\_REQUESTED}, \texttt{APPROVED\_PENDING\_CONTRACT}, \texttt{COMPLETED}, \texttt{EXPIRED}, \texttt{CANCELLED}.
+  \item Aprovação final só ocorre com dados obrigatórios validados.
+\end{itemize}
+
+\subsection{Regras de wellbeing}
+\begin{itemize}
+  \item O conteúdo pode ser comum (aplicável a todos) ou localizado (aplicável por país).
+  \item O sistema deve distinguir claramente conteúdo informativo de canais de reporte formal.
+  \item Reportes sensíveis devem privilegiar linguagem objetiva e permitir tratamento posterior pelo fluxo interno competente.
+\end{itemize}
+
+\section{Estados Funcionais dos Processos}
+
+\subsection{Estados de pedido de férias}
+\begin{itemize}
+  \item \texttt{PENDING}: pendente de decisão no nível ativo.
+  \item \texttt{WAITING}: aguardando níveis anteriores.
+  \item \texttt{APPROVED}: aprovado e válido para planeamento.
+  \item \texttt{REJECTED}: rejeitado com motivo.
+  \item \texttt{SKIPPED}: passo não aplicável no fluxo em execução.
+\end{itemize}
+
+\subsection{Estados de formação}
+\begin{itemize}
+  \item \texttt{ASSIGNED}: atribuída e em curso.
+  \item \texttt{COMPLETED}: concluída.
+\end{itemize}
+
+\subsection{Estados de notificação}
+\begin{itemize}
+  \item Não lida (ação pendente de leitura).
+  \item Lida (evento reconhecido pelo utilizador).
+\end{itemize}
+
+\section{Fluxos Ponta-a-Ponta de Referência}
+
+\subsection{Fluxo A: pedido de férias/ausência}
 \begin{enumerate}
-  \item Membro submete pedido com período e contexto.
-  \item Sistema valida regras transversais e política PT/BR.
-  \item Sistema calcula aprovadores e congela cadeia.
-  \item Aprovadores decidem por etapa.
-  \item Pedido termina em aprovado, rejeitado, cancelado ou substituído por versão.
+  \item Utilizador submete pedido com tipo, período e contexto.
+  \item Sistema valida regras transversais e políticas PT/BR.
+  \item Sistema calcula e congela aprovadores da versão.
+  \item Aprovadores decidem por nível com motivo quando necessário.
+  \item Pedido termina em aprovado/rejeitado/cancelado ou gera nova versão.
 \end{enumerate}
 
 \subsection{Fluxo B: alteração de ficha}
 \begin{enumerate}
-  \item Membro submete alteração de dados.
-  \item Sistema cria pedido de alteração em estado pendente.
-  \item Responsável aprova/rejeita com motivo.
-  \item Sistema atualiza dados (se aprovado) e preserva histórico.
+  \item Colaborador submete campos alterados.
+  \item Sistema abre pedido pendente com snapshot dos dados.
+  \item Revisor aprova/rejeita total ou parcialmente com justificação.
+  \item Sistema aplica alterações aprovadas e preserva histórico integral.
 \end{enumerate}
 
 \subsection{Fluxo C: governação de permissões}
 \begin{enumerate}
-  \item Gestor autorizado abre perfil de permissões do alvo.
-  \item Concede/revoga permissão e escopo.
-  \item Sistema regista evento de auditoria.
-  \item Cache/contexto do alvo é reavaliado para refletir novo acesso.
+  \item Ator autorizado seleciona utilizador-alvo e permissão.
+  \item Define escopo e motivo (quando aplicável).
+  \item Sistema persiste atribuição/revogação e regista evento de auditoria.
+  \item Cache de autorização é invalidada para consistência imediata.
 \end{enumerate}
 
-\subsection{Fluxo D: notificações operacionais}
+\subsection{Fluxo D: banco de horas BR}
 \begin{enumerate}
-  \item Evento de negócio gera notificação ao(s) utilizador(es) relevante(s).
-  \item Utilizador consulta lista, marca como lida e/ou remove item.
-  \item Em fluxos acionáveis, notificação navega para o ecrã de decisão.
+  \item Gestor/RH consulta agregados e detalhe por colaborador BR.
+  \item Lança crédito/débito com motivo e validações de escopo.
+  \item Sistema recalcula total, limite e excedente.
+  \item Excedente gera notificação e alimenta relatório semanal PDF.
 \end{enumerate}
 
-\subsection{Fluxo E: ciclo processado/realizado de férias}
+\subsection{Fluxo E: admissões}
 \begin{enumerate}
-  \item Férias transitam para estado \texttt{APPROVED}.
-  \item RH/aprovador marca as férias como \textbf{processadas} (confirma pagamento/processamento).
-  \item Após data de fim das férias, membro visualiza bann\-er de confirmação de realização.
-  \item Membro confirma via modal, ou aprovador confirma em substituição.
-  \item Sistema regista atores, timestamps e atualiza saldo definitivo.
+  \item RH inicia admissão e envia convite por token.
+  \item Candidato submete dados pessoais.
+  \item RH valida, pede correções se necessário e avança para contrato.
+  \item Conclusão cria utilizador ativo com dados iniciais e rasto de processo.
 \end{enumerate}
 
-\subsection{Fluxo F: banco de horas (BR)}
+\subsection{Fluxo F: formações e carreira}
 \begin{enumerate}
-  \item Membro BR visualiza saldo atual (creditado, debitado, total, limite).
-  \item Utilizador com acesso total credita ou debita horas com motivo obrigatório.
-  \item Sistema calcula excedente quando \( |total| > limite \) e envia aviso a membro, chefia e acesso total.
-  \item Sistema gera relatório semanal automático em PDF, acessível em histórico.
-  \item Chefias consultam visão por equipa; RH/acesso total exportam por estado/geo.
+  \item RH/liderança atribui formação ou objetivo de carreira.
+  \item Colaborador acompanha execução e evidencia conclusão.
+  \item Liderança regista feedback e decisão de evolução.
 \end{enumerate}
 
-\section{Rastreabilidade, riscos e critérios de aceite}
+\subsection{Fluxo G: wellbeing e reporte sensível}
+\begin{enumerate}
+  \item Utilizador acede à área de wellbeing e identifica o conteúdo/formulário pretendido.
+  \item Sistema apresenta material comum e localizado conforme contexto aplicável.
+  \item Em caso de reporte sensível, utilizador submete informação objetiva e completa.
+  \item Fluxo interno procede ao tratamento do reporte conforme regras organizacionais.
+\end{enumerate}
 
-\subsection{Matriz de rastreabilidade}
+\section{Critérios de Aceitação por Domínio}
+
 \rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\bfseries}p{4.0cm} >{\small}p{4.7cm} >{\small}p{4.8cm}}
+\begin{longtable}{>{\small\bfseries}p{3.5cm} >{\small}p{6.1cm} >{\small\centering\arraybackslash}p{2.5cm}}
 \theadrow
-\tH{Tema pedido no PC2} & \tH{Cobertura nesta especificação} & \tH{Evidência de verificação} \\
+\tH{Domínio} & \tH{Critério funcional objetivo} & \tH{Estado} \\
 \midrule
 \endfirsthead
 \theadrow
-\tH{Tema pedido no PC2} & \tH{Cobertura nesta especificação} & \tH{Evidência de verificação} \\
+\tH{Domínio} & \tH{Critério funcional objetivo} & \tH{Estado} \\
 \midrule
 \endhead
-Necessidade e problema & Escopo, princípios e regras de negócio & Fluxos definidos e políticas PT/BR explícitas \\
-Contexto e solução & Modelo de atores, capacidades e navegação & Tabelas de domínio e autorização \\
-Qualidade e governação & Requisitos de auditoria e dados & Critérios de aceite objetivos \\
-Planeamento funcional & Definição de pronto e fronteiras de escopo & Itens mandatórios e risco monitorizado \\
+Identidade/Sessão & Login e sessão autenticada com contexto válido de permissões & Concluído \\
+Utilizadores/Equipas & Gestão de utilizadores/equipas/memberships com autorização efetiva & Concluído \\
+Ficha e revisão & Alteração de ficha com fluxo de revisão e histórico persistido & Concluído \\
+Férias PT/BR & Regras por país, cadeia de aprovação e versionamento funcional & Concluído \\
+Permissões & Grant/revoke com escopo e trilho de auditoria de decisão & Concluído \\
+Banco de horas BR & Lançamentos com motivo, excedente e relatório semanal PDF & Concluído \\
+Admissões & Fluxo de convite a conclusão com estados de processo & Concluído \\
+Formações e carreira & Atribuição, acompanhamento, conclusão e feedback rastreável & Concluído \\
+Notificações & Inbox funcional com leitura e navegação para ações & Concluído \\
+Wellbeing & Conteúdo de saúde e bem-estar e reporte sensível com distinção funcional clara & Concluído \\
+Cobertura de qualidade & Validação por testes unitários e integração nos domínios críticos & Concluído \\
+Hardening final e cobertura E2E total & Reforço de edge-cases e regressão end-to-end & Em evolução (PC4) \\
 \bottomrule
 \end{longtable}
 
-\subsection{Riscos funcionais monitorizados no PC2}
+\section{Continuidade do PC3: Atualizações e Melhorias}
+
+\begin{itemize}
+  \item Consolidação da visão funcional integral do SMARTER HUB no mesmo documento.
+  \item Expansão das regras de férias PT/BR e integração explícita com banco de horas BR.
+  \item Formalização do fluxo de admissões com estados operacionais completos.
+  \item Reforço das regras de autorização com escopo, hierarquia e auditoria de grants/revokes.
+  \item Rastreabilidade reforçada entre regras, rotas backend e testes funcionais críticos.
+\end{itemize}
+
+\section{Rastreabilidade Funcional-Técnica}
+
+\subsection{Rotas backend de referência}
+\begin{itemize}
+  \item \texttt{backend/src/routes/auth.ts}
+  \item \texttt{backend/src/routes/users.ts}
+  \item \texttt{backend/src/routes/profile.ts}
+  \item \texttt{backend/src/routes/vacations.ts}
+  \item \texttt{backend/src/routes/permissions.ts}
+  \item \texttt{backend/src/routes/hour-bank.ts}
+  \item \texttt{backend/src/routes/trainings.ts}
+  \item \texttt{backend/src/routes/notifications.ts}
+  \item \texttt{backend/src/routes/career-plan.ts}
+  \item \texttt{backend/src/routes/wellbeing.ts}
+\end{itemize}
+
+\subsection{Bibliotecas de regra de negócio relevantes}
+\begin{itemize}
+  \item \texttt{backend/src/lib/permission-engine.ts}
+  \item \texttt{backend/src/lib/permissions.ts}
+  \item \texttt{backend/src/lib/hour-bank.ts}
+\end{itemize}
+
+\subsection{Testes de validação funcional (amostra crítica)}
+\begin{itemize}
+  \item \texttt{backend/tests/vacations-rules.test.ts}
+  \item \texttt{backend/tests/vacations-routes.integration.test.ts}
+  \item \texttt{backend/tests/vacation-regional-compliance.test.ts}
+  \item \texttt{backend/tests/permissions-routes.integration.test.ts}
+  \item \texttt{backend/tests/hour-bank-routes.test.ts}
+  \item \texttt{backend/tests/admissions-routes.test.ts}
+  \item \texttt{backend/tests/approval-workflows.test.ts}
+\end{itemize}
+
+\section{Riscos de Produto e Mitigação}
+
 \rowcolors{1}{ROWSHADE}{white}
-\begin{longtable}{>{\small\bfseries\centering\arraybackslash}p{0.9cm} >{\small}p{6.2cm} >{\small}p{6.0cm}}
+\begin{longtable}{>{\small\bfseries}p{0.9cm} >{\small}p{6.1cm} >{\small}p{6.0cm}}
 \theadrow
-\tH{ID} & \tH{Risco} & \tH{Mitigação definida} \\
+\tH{ID} & \tH{Risco funcional} & \tH{Mitigação operacional} \\
 \midrule
 \endfirsthead
 \theadrow
-\tH{ID} & \tH{Risco} & \tH{Mitigação definida} \\
+\tH{ID} & \tH{Risco funcional} & \tH{Mitigação operacional} \\
 \midrule
 \endhead
-R1 & Alteração de regra sem atualização documental & Governação: alteração funcional só conclui com update desta especificação \\
-R2 & Escalada indevida de privilégio em operação sensível & Validação por permissão efetiva, escopo e trilho de auditoria \\
-R3 & Divergência entre hierarquia real e cadeia de aprovação & Revisão de memberships e cadeia congelada por versão \\
-R4 & Regressão em regras PT/BR por alteração de lógica & Critérios de aceite por política e validação de conflitos \\
-R5 & Perda de rastreabilidade de decisão & Obrigatoriedade de motivo, ator e timestamp em decisão crítica \\
+R1 & Regressão em regras PT/BR após evolução de interface ou API & Testes de regressão por domínio + validação de políticas antes de release \\
+R2 & Escalada indevida de privilégios em operações sensíveis & Verificação de permissão efetiva, escopo e hierarquia + auditoria obrigatória \\
+R3 & Divergência entre cadeia de aprovação e estrutura real de equipas & Revisão periódica de memberships/aprovadores e fallback controlado \\
+R4 & Inconsistência entre documentação e comportamento em produção & Atualização documental obrigatória no mesmo ciclo da alteração funcional \\
+R5 & Perda de rastreabilidade em alterações de pedidos aprovados & Versionamento obrigatório e preservação de histórico por pedido \\
 \bottomrule
 \end{longtable}
 
-\subsection{Definição de pronto para entrega PC3}
-\begin{itemize}
-  \item Regras de aprovação e políticas PT/BR descritas sem contradições internas.
-  \item Perfis, domínios e restrições alinhados com comportamento esperado do portal.
-  \item Fluxos críticos mapeados com estados e pontos de auditoria.
-  \item Vistas obrigatórias e restrições de acesso identificadas para UX e QA.
-  \item Módulos Banco de Horas, Plano de Carreira, Admissões, Saúde e Bem-estar e Internacionalização cobertos.
-  \item Documento mantido atualizado como referência oficial durante todo o período PC3.
-\end{itemize}
+\section{Conclusão}
 
-\subsection{Critérios objetivos de aceitação deste artefacto}
-\begin{itemize}
-  \item \textbf{Completude}: domínios nucleares do PC3 cobertos sem lacunas estruturais.
-  \item \textbf{Clareza}: regras críticas traduzíveis em comportamento observável de sistema.
-  \item \textbf{Auditabilidade}: decisão de aprovação/revogação justificável por rasto de dados.
-  \item \textbf{Testabilidade}: regras convertíveis em casos unitários, integração e E2E.
-  \item \textbf{Evolução controlada}: qualquer alteração funcional é acompanhada de atualização deste documento.
-\end{itemize}
+Esta especificação posiciona o SMARTER HUB como uma plataforma integrada de gestão operacional de pessoas, com regras explícitas, autorização governada por escopo e rastreabilidade de decisão. O PC3 é tratado como continuidade de maturação funcional, mantendo coerência com a visão total do produto e preparando o ciclo seguinte de hardening e cobertura E2E alargada.
 
 \end{document}

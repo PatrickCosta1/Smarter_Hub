@@ -115,6 +115,19 @@ describe('vacations rules', () => {
     expect(result.success).toBe(true);
   });
 
+  it('vacationSchema allows medical absence longer than 3 days', () => {
+    const result = __vacationTestables.vacationSchema.safeParse({
+      dataInicio: '2026-04-20',
+      dataFim: '2026-04-25',
+      requestType: 'ABSENCE_MEDICAL',
+      partialDay: 'FULL',
+      observacoes: '',
+      attachmentLink: '',
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it('buildApprovalGroups creates manager then RH levels for BR', () => {
     expect(
       __vacationTestables.buildApprovalGroups({

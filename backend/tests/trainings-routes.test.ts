@@ -18,6 +18,10 @@ const { prismaMock, permissionEngineMock, notificationsMock } = vi.hoisted(() =>
     team: {
       findMany: vi.fn(),
     },
+    notification: {
+      createMany: vi.fn(),
+    },
+    $transaction: vi.fn(),
   },
   permissionEngineMock: {
     hasPermission: vi.fn(),
@@ -106,24 +110,23 @@ describe('trainings routes integration', () => {
       permissionEngineMock.hasPermission.mockResolvedValue(false);
 
       const app = buildApp();
-      const response = await request(app).get('/api/trainings/me');
+      const response = await request(app).get('/api/trainings/me?page=1&pageSize=10');
 
       expect(response.status).toBe(403);
       expect(response.body.error).toContain('permissões');
     });
 
-    it('returns array of trainings without pagination', async () => {
-      prismaMock.training.findMany.mockResolvedValue([sampleTraining]);
+    it('returns 400 when pagination is missing', async () => {
+      permissionEngineMock.hasPermission.mockResolvedValue(true);
 
       const app = buildApp();
       const response = await request(app).get('/api/trainings/me');
 
-      expect(response.status).toBe(200);
-      expect(Array.isArray(response.body)).toBe(true);
-      expect(response.body[0].id).toBe('training-1');
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain('paginação');
     });
 
-    it('returns paginated trainings when page param is provided', async () => {
+    it('returns paginated trainings', async () => {
       prismaMock.training.count.mockResolvedValue(3);
       prismaMock.training.findMany.mockResolvedValue([sampleTraining]);
 
@@ -144,20 +147,31 @@ describe('trainings routes integration', () => {
       permissionEngineMock.hasPermission.mockResolvedValue(false);
 
       const app = buildApp();
-      const response = await request(app).get('/api/trainings/team');
+      const response = await request(app).get('/api/trainings/team?page=1&pageSize=10');
 
       expect(response.status).toBe(403);
     });
 
-    it('returns empty array when user leads no teams', async () => {
+    it('returns 400 when pagination is missing', async () => {
       permissionEngineMock.hasPermission.mockResolvedValue(true);
-      prismaMock.team.findMany.mockResolvedValue([]);
 
       const app = buildApp();
       const response = await request(app).get('/api/trainings/team');
 
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain('paginação');
+    });
+
+    it('returns empty paginated response when user leads no teams', async () => {
+      permissionEngineMock.hasPermission.mockResolvedValue(true);
+      prismaMock.team.findMany.mockResolvedValue([]);
+
+      const app = buildApp();
+      const response = await request(app).get('/api/trainings/team?page=1&pageSize=10');
+
       expect(response.status).toBe(200);
-      expect(response.body).toEqual([]);
+      expect(response.body.total).toBe(0);
+      expect(response.body.rows).toEqual([]);
     });
 
     it('returns team trainings when user leads teams', async () => {
@@ -166,10 +180,10 @@ describe('trainings routes integration', () => {
       prismaMock.training.findMany.mockResolvedValue([sampleTraining]);
 
       const app = buildApp();
-      const response = await request(app).get('/api/trainings/team');
+      const response = await request(app).get('/api/trainings/team?page=1&pageSize=10');
 
       expect(response.status).toBe(200);
-      expect(Array.isArray(response.body)).toBe(true);
+      expect(Array.isArray(response.body.rows)).toBe(true);
     });
   });
 
@@ -180,7 +194,7 @@ describe('trainings routes integration', () => {
       permissionEngineMock.hasPermission.mockResolvedValue(false);
 
       const app = buildApp();
-      const response = await request(app).get('/api/trainings/hierarchy');
+      const response = await request(app).get('/api/trainings/hierarchy?page=1&pageSize=10');
 
       expect(response.status).toBe(403);
     });
@@ -190,9 +204,20 @@ describe('trainings routes integration', () => {
       permissionEngineMock.getPermissionScope.mockResolvedValue(null);
 
       const app = buildApp();
-      const response = await request(app).get('/api/trainings/hierarchy');
+      const response = await request(app).get('/api/trainings/hierarchy?page=1&pageSize=10');
 
       expect(response.status).toBe(403);
+    });
+
+    it('returns 400 when pagination is missing', async () => {
+      permissionEngineMock.hasPermission.mockResolvedValue(true);
+      permissionEngineMock.getPermissionScope.mockResolvedValue({ isGlobal: true, restrictedToTeams: null });
+
+      const app = buildApp();
+      const response = await request(app).get('/api/trainings/hierarchy');
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('paginação');
     });
 
     it('returns hierarchy trainings when authorized', async () => {
@@ -201,10 +226,10 @@ describe('trainings routes integration', () => {
       prismaMock.training.findMany.mockResolvedValue([]);
 
       const app = buildApp();
-      const response = await request(app).get('/api/trainings/hierarchy');
+      const response = await request(app).get('/api/trainings/hierarchy?page=1&pageSize=10');
 
       expect(response.status).toBe(200);
-      expect(Array.isArray(response.body)).toBe(true);
+      expect(Array.isArray(response.body.rows)).toBe(true);
     });
   });
 
@@ -215,9 +240,20 @@ describe('trainings routes integration', () => {
       permissionEngineMock.hasPermission.mockResolvedValue(false);
 
       const app = buildApp();
-      const response = await request(app).get('/api/trainings/assigned');
+      const response = await request(app).get('/api/trainings/assigned?page=1&pageSize=10');
 
       expect(response.status).toBe(403);
+    });
+
+    it('returns 400 when pagination is missing', async () => {
+      permissionEngineMock.hasPermission.mockResolvedValue(true);
+      permissionEngineMock.getPermissionScope.mockResolvedValue({ isGlobal: true, restrictedToTeams: null });
+
+      const app = buildApp();
+      const response = await request(app).get('/api/trainings/assigned');
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('paginação');
     });
 
     it('returns assigned trainings list when authorized', async () => {
@@ -226,10 +262,10 @@ describe('trainings routes integration', () => {
       prismaMock.training.findMany.mockResolvedValue([{ ...sampleTraining, assignedByUserId: 'manager-1' }]);
 
       const app = buildApp();
-      const response = await request(app).get('/api/trainings/assigned');
+      const response = await request(app).get('/api/trainings/assigned?page=1&pageSize=10');
 
       expect(response.status).toBe(200);
-      expect(Array.isArray(response.body)).toBe(true);
+      expect(Array.isArray(response.body.rows)).toBe(true);
     });
   });
 
@@ -328,6 +364,8 @@ describe('trainings routes integration', () => {
       permissionEngineMock.canAccessUserByPermission.mockResolvedValue(true);
       prismaMock.user.findUnique.mockResolvedValue({ id: 'collab-1', username: 'collab' });
       prismaMock.training.create.mockResolvedValue({ ...sampleTraining, userId: 'collab-1', status: 'ASSIGNED' });
+      prismaMock.notification.createMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (callback: (tx: typeof prismaMock) => Promise<unknown>) => callback(prismaMock as never));
 
       const app = buildApp();
       const response = await request(app).post('/api/trainings/assign').send({
@@ -337,12 +375,9 @@ describe('trainings routes integration', () => {
       });
 
       expect(response.status).toBe(201);
-      expect(notificationsMock.notifyUsers).toHaveBeenCalledWith(
-        expect.anything(),
-        ['collab-1'],
-        expect.any(String),
-        expect.any(String),
-      );
+      expect(prismaMock.notification.createMany).toHaveBeenCalledWith({
+        data: [expect.objectContaining({ userId: 'collab-1', title: 'Nova formação atribuída' })],
+      });
     });
   });
 

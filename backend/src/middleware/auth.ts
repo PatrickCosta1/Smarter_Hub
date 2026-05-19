@@ -13,7 +13,11 @@ declare global {
 }
 
 function getJwtSecret() {
-  return process.env.JWT_SECRET ?? "smarter-hub-dev-secret";
+  const secret = process.env.JWT_SECRET?.trim();
+  if (!secret) {
+    throw new Error('JWT_SECRET não está configurado.');
+  }
+  return secret;
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {

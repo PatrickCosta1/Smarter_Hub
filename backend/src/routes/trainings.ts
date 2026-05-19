@@ -44,6 +44,16 @@ function parsePagination(query: Request['query']) {
   };
 }
 
+function requirePagination(query: Request['query']) {
+  const pagination = parsePagination(query);
+
+  if (!pagination) {
+    return { error: 'Parâmetros de paginação são obrigatórios (page e pageSize).' };
+  }
+
+  return { pagination };
+}
+
 const ownTrainingInclude = {
   assignedBy: {
     select: {
@@ -153,23 +163,19 @@ async function filterHierarchyRecordsForActor(
 router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
-    const pagination = parsePagination(req.query);
+    const paginationResult = requirePagination(req.query);
+
+    if ('error' in paginationResult) {
+      return res.status(400).json({ error: paginationResult.error });
+    }
+
+    const { pagination } = paginationResult;
 
     if (!await hasPermission(userId, 'view_trainings')) {
       return res.status(403).json({ error: 'Sem permissões para consultar formações.' });
     }
 
     const where = { userId };
-
-    if (!pagination) {
-      const trainings = await prisma.training.findMany({
-        where,
-        include: ownTrainingInclude,
-        orderBy: { createdAt: 'desc' },
-      });
-
-      return res.json(trainings);
-    }
 
     const [total, rows] = await Promise.all([
       prisma.training.count({ where }),
@@ -192,7 +198,13 @@ router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => 
 router.get('/trainings/team', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
-    const pagination = parsePagination(req.query);
+    const paginationResult = requirePagination(req.query);
+
+    if ('error' in paginationResult) {
+      return res.status(400).json({ error: paginationResult.error });
+    }
+
+    const { pagination } = paginationResult;
     const [canViewOwn, canAssignOthers, canViewAll, ledTeamIds] = await Promise.all([
       hasPermission(userId, 'view_trainings'),
       hasPermission(userId, 'assign_training'),
@@ -205,10 +217,6 @@ router.get('/trainings/team', requireAuth, async (req: Request, res: Response) =
     }
 
     if (ledTeamIds.length === 0) {
-      if (!pagination) {
-        return res.json([]);
-      }
-
       return res.json({ total: 0, page: pagination.page, pageSize: pagination.pageSize, rows: [] });
     }
 
@@ -228,16 +236,6 @@ router.get('/trainings/team', requireAuth, async (req: Request, res: Response) =
         ],
       },
     };
-
-    if (!pagination) {
-      const trainings = await prisma.training.findMany({
-        where,
-        include: assignedTrainingInclude,
-        orderBy: [{ user: { username: 'asc' } }, { createdAt: 'desc' }],
-      });
-
-      return res.json(trainings);
-    }
 
     const [total, rows] = await Promise.all([
       prisma.training.count({ where }),
@@ -260,7 +258,13 @@ router.get('/trainings/team', requireAuth, async (req: Request, res: Response) =
 router.get('/trainings/hierarchy', requireAuth, async (req: Request, res: Response) => {
   try {
     const actorUserId = req.authUser!.id;
-    const pagination = parsePagination(req.query);
+    const paginationResult = requirePagination(req.query);
+
+    if ('error' in paginationResult) {
+      return res.status(400).json({ message: paginationResult.error });
+    }
+
+    const { pagination } = paginationResult;
 
     if (!await hasPermission(actorUserId, 'view_all_trainings')) {
       return res.status(403).json({ message: 'Sem permissões para consultar formações da hierarquia.' });
@@ -290,10 +294,6 @@ router.get('/trainings/hierarchy', requireAuth, async (req: Request, res: Respon
       records,
     );
 
-    if (!pagination) {
-      return res.json(filteredRecords);
-    }
-
     const pagedRows = filteredRecords.slice(pagination.skip, pagination.skip + pagination.take);
     return res.json({ total: filteredRecords.length, page: pagination.page, pageSize: pagination.pageSize, rows: pagedRows });
   } catch (error) {
@@ -303,7 +303,13 @@ router.get('/trainings/hierarchy', requireAuth, async (req: Request, res: Respon
 });
 
 router.get('/trainings/assigned', requireAuth, async (req: Request, res: Response) => {
-  const pagination = parsePagination(req.query);
+  const paginationResult = requirePagination(req.query);
+
+  if ('error' in paginationResult) {
+    return res.status(400).json({ message: paginationResult.error });
+  }
+
+  const { pagination } = paginationResult;
 
   if (!await hasPermission(req.authUser!.id, 'view_all_trainings')) {
     return res.status(403).json({ message: 'Sem permissões para consultar formações atribuídas.' });
@@ -320,16 +326,6 @@ router.get('/trainings/assigned', requireAuth, async (req: Request, res: Respons
     assignedByUserId: { not: null as null | string },
     ...(userScopeWhere ? { user: userScopeWhere } : {}),
   };
-
-  if (!pagination) {
-    const trainings = await prisma.training.findMany({
-      where,
-      include: assignedTrainingInclude,
-      orderBy: { createdAt: 'desc' },
-    });
-
-    return res.json(trainings);
-  }
 
   const [total, rows] = await Promise.all([
     prisma.training.count({ where }),
@@ -412,21 +408,27 @@ router.post('/trainings/assign', requireAuth, async (req: Request, res: Response
       return res.status(404).json({ error: 'Colaborador não encontrado' });
     }
 
-    const training = await prisma.training.create({
-      data: {
-        userId: collaborator.id,
-        nome: data.nome,
-        link: data.link,
-        horas: data.horas,
-        dataInicio: data.dataInicio,
-        entidade: data.entidade,
-        dataConclusao: '',
-        status: 'ASSIGNED',
-        assignedByUserId: req.authUser!.id,
-      },
-    });
+    const training = await prisma.$transaction(async (tx) => {
+      const t = await tx.training.create({
+        data: {
+          userId: collaborator.id,
+          nome: data.nome,
+          link: data.link,
+          horas: data.horas,
+          dataInicio: data.dataInicio,
+          entidade: data.entidade,
+          dataConclusao: '',
+          status: 'ASSIGNED',
+          assignedByUserId: req.authUser!.id,
+        },
+      });
 
-    await notifyUsers(prisma, [collaborator.id], 'Nova formação atribuída', `Foi-te atribuída a formação ${data.nome}.`);
+      await tx.notification.createMany({
+        data: [{ userId: collaborator.id, title: 'Nova formação atribuída', message: `Foi-te atribuída a formação ${data.nome}.` }],
+      });
+
+      return t;
+    });
 
     return res.status(201).json(training);
   } catch (error) {
@@ -438,18 +440,30 @@ router.post('/trainings/assign', requireAuth, async (req: Request, res: Response
 router.post('/trainings/:id/complete', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
-    if (!await hasPermission(userId, 'mark_training_completed')) {
+
+    const [canMarkOwn, canMarkOthers] = await Promise.all([
+      hasPermission(userId, 'mark_training_completed'),
+      hasPermission(userId, 'assign_training').then((a) => a || hasPermission(userId, 'view_all_trainings')),
+    ]);
+
+    if (!canMarkOwn && !canMarkOthers) {
       return res.status(403).json({ error: 'Sem permissões para concluir formação.' });
     }
 
     const id = typeof req.params.id === 'string' ? req.params.id : '';
 
-    const training = await prisma.training.findFirst({
-      where: { id, userId },
-    });
+    const certParse = z.object({ certificateLink: z.string().default('') }).safeParse(req.body);
+    const certificateLink = certParse.success ? certParse.data.certificateLink : '';
+
+    const training = await prisma.training.findFirst({ where: { id } });
 
     if (!training) {
       return res.status(404).json({ error: 'Formação não encontrada' });
+    }
+
+    const isOwner = training.userId === userId;
+    if (!isOwner && !canMarkOthers) {
+      return res.status(403).json({ error: 'Sem permissões para concluir formação de outro colaborador.' });
     }
 
     if (training.status !== 'ASSIGNED') {
@@ -462,6 +476,7 @@ router.post('/trainings/:id/complete', requireAuth, async (req: Request, res: Re
         status: 'COMPLETED',
         dataConclusao: new Date().toISOString().slice(0, 10),
         completedAt: new Date(),
+        certificateLink,
       },
     });
 

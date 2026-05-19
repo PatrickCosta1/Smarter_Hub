@@ -3,7 +3,7 @@ import ExcelJS from 'exceljs';
 import { z } from 'zod';
 
 import { prisma } from '../lib/prisma.js';
-import { hasPermission, isAccessTotal } from '../lib/permission-engine.js';
+import { canAccessUserByPermission, canReviewAccessTotalHierarchy, hasPermission, isAccessTotal } from '../lib/permission-engine.js';
 import {
   appendHourBankEntry,
   createOrGetWeeklyHourBankReport,
@@ -37,6 +37,24 @@ const updateLimitSchema = z.object({
 
 const occupationalHealthAlertSettingSchema = z.object({
   enabled: z.boolean(),
+});
+
+const hourBankListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(200).optional(),
+  q: z.string().trim().max(120).optional(),
+  workCountry: z.enum(['ALL', 'PT', 'BR']).optional(),
+  teamId: z.string().trim().regex(/^[A-Za-z0-9-]{6,80}$/, 'teamId inválido.').optional(),
+});
+
+const hourBankOverviewQuerySchema = hourBankListQuerySchema.extend({
+  page: z.coerce.number().int().min(1, 'Parâmetro page é obrigatório e deve ser >= 1.'),
+  pageSize: z.coerce.number().int().min(1, 'Parâmetro pageSize é obrigatório e deve ser >= 1.').max(200),
+});
+
+const hourBankReportsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1, 'Parâmetro page é obrigatório e deve ser >= 1.'),
+  pageSize: z.coerce.number().int().min(1, 'Parâmetro pageSize é obrigatório e deve ser >= 1.').max(200),
 });
 
 function normalizeHours(value: number) {
@@ -210,10 +228,18 @@ router.get('/hours-bank/overview', requireAuth, async (req: Request, res: Respon
     return res.status(403).json({ message: 'Sem permissões para consultar banco de horas.' });
   }
 
-  const { skip, take, page, pageSize } = parsePagination(req.query);
-  const query = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : '';
-  const workCountry = typeof req.query.workCountry === 'string' ? req.query.workCountry : 'BR';
-  const teamId = typeof req.query.teamId === 'string' ? req.query.teamId : '';
+  const parsedQuery = hourBankOverviewQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    return res.status(400).json({ message: parsedQuery.error.issues[0].message });
+  }
+
+  const page = parsedQuery.data.page;
+  const pageSize = parsedQuery.data.pageSize;
+  const skip = (page - 1) * pageSize;
+  const take = pageSize;
+  const query = (parsedQuery.data.q ?? '').toLowerCase();
+  const workCountry = parsedQuery.data.workCountry ?? 'BR';
+  const teamId = parsedQuery.data.teamId ?? '';
 
   const canManage = await canManageHourBank(actorId, Boolean(req.authUser!.isRootAccess));
   const scopedTeamIds = canManage ? null : await resolveViewerTeamIds(actorId);
@@ -347,6 +373,7 @@ router.post('/hours-bank/entries', requireAuth, async (req: Request, res: Respon
   }
 
   const { userId, type, hours, reason } = parsed.data;
+  const actorIsFullAccess = await isAccessTotal(actorId);
 
   const target = await prisma.user.findUnique({
     where: { id: userId },
@@ -354,6 +381,7 @@ router.post('/hours-bank/entries', requireAuth, async (req: Request, res: Respon
       id: true,
       username: true,
       isActive: true,
+      hasAccessTotal: true,
       profile: {
         select: {
           workCountry: true,
@@ -370,6 +398,26 @@ router.post('/hours-bank/entries', requireAuth, async (req: Request, res: Respon
 
   if ((target.profile?.workCountry ?? 'PT') !== 'BR') {
     return res.status(400).json({ message: 'Banco de horas está disponível apenas para colaboradores BR.' });
+  }
+
+  if (!req.authUser!.isRootAccess) {
+    if (!actorIsFullAccess) {
+      const canManageTarget = await canAccessUserByPermission(actorId, 'manage_hours_bank', target.id);
+      if (!canManageTarget) {
+        return res.status(403).json({ message: 'Sem permissões para lançar horas neste colaborador com as restrições atuais.' });
+      }
+    }
+
+    if (target.hasAccessTotal) {
+      if (!actorIsFullAccess) {
+        return res.status(403).json({ message: 'Sem permissões para lançar horas em utilizadores com acesso total.' });
+      }
+
+      const canReview = await canReviewAccessTotalHierarchy(actorId, target.id);
+      if (!canReview) {
+        return res.status(403).json({ message: 'Sem permissões para lançar horas neste utilizador com acesso total.' });
+      }
+    }
   }
 
   const entry = await appendHourBankEntry({
@@ -423,6 +471,7 @@ router.patch('/hours-bank/limits/:userId', requireAuth, async (req: Request, res
 
   const userId = typeof req.params.userId === 'string' ? req.params.userId : '';
   const parsed = updateLimitSchema.safeParse(req.body);
+  const actorIsFullAccess = await isAccessTotal(actorId);
 
   if (!parsed.success) {
     return res.status(400).json({ message: parsed.error.issues[0].message });
@@ -433,6 +482,7 @@ router.patch('/hours-bank/limits/:userId', requireAuth, async (req: Request, res
     select: {
       id: true,
       isActive: true,
+      hasAccessTotal: true,
       profile: {
         select: { workCountry: true },
       },
@@ -445,6 +495,26 @@ router.patch('/hours-bank/limits/:userId', requireAuth, async (req: Request, res
 
   if ((user.profile?.workCountry ?? 'PT') !== 'BR') {
     return res.status(400).json({ message: 'Limite de banco de horas só se aplica a colaboradores BR.' });
+  }
+
+  if (!req.authUser!.isRootAccess) {
+    if (!actorIsFullAccess) {
+      const canManageTarget = await canAccessUserByPermission(actorId, 'manage_hours_bank', user.id);
+      if (!canManageTarget) {
+        return res.status(403).json({ message: 'Sem permissões para alterar limite deste colaborador com as restrições atuais.' });
+      }
+    }
+
+    if (user.hasAccessTotal) {
+      if (!actorIsFullAccess) {
+        return res.status(403).json({ message: 'Sem permissões para alterar limite de utilizadores com acesso total.' });
+      }
+
+      const canReview = await canReviewAccessTotalHierarchy(actorId, user.id);
+      if (!canReview) {
+        return res.status(403).json({ message: 'Sem permissões para alterar limite neste utilizador com acesso total.' });
+      }
+    }
   }
 
   await prisma.profile.update({
@@ -470,9 +540,14 @@ router.get('/hours-bank/export', requireAuth, async (req: Request, res: Response
     return res.status(403).json({ message: 'Sem permissões para exportar banco de horas.' });
   }
 
-  const workCountry = typeof req.query.workCountry === 'string' ? req.query.workCountry : 'BR';
-  const teamId = typeof req.query.teamId === 'string' ? req.query.teamId : '';
-  const query = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : '';
+  const parsedQuery = hourBankListQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    return res.status(400).json({ message: parsedQuery.error.issues[0].message });
+  }
+
+  const workCountry = parsedQuery.data.workCountry ?? 'BR';
+  const teamId = parsedQuery.data.teamId ?? '';
+  const query = (parsedQuery.data.q ?? '').toLowerCase();
 
   const canManage = await canManageHourBank(actorId, Boolean(req.authUser!.isRootAccess));
   const scopedTeamIds = canManage ? null : await resolveViewerTeamIds(actorId);
@@ -613,27 +688,43 @@ router.get('/hours-bank/reports', requireAuth, async (req: Request, res: Respons
     return res.status(403).json({ message: 'Sem permissões para consultar relatórios semanais.' });
   }
 
-  const reports = await prisma.weeklyHourBankReport.findMany({
-    orderBy: { generatedAt: 'desc' },
-    take: 104,
-    select: {
-      id: true,
-      weekLabel: true,
-      generatedAt: true,
-      periodStart: true,
-      periodEnd: true,
-      totalUsers: true,
-      positiveUsers: true,
-      negativeUsers: true,
-      exceededUsers: true,
-      pdfFileName: true,
-      pdfPublicUrl: true,
-    },
-  });
+  const parsedQuery = hourBankReportsQuerySchema.safeParse(req.query);
+  if (!parsedQuery.success) {
+    return res.status(400).json({ message: parsedQuery.error.issues[0].message });
+  }
+
+  const page = parsedQuery.data.page;
+  const pageSize = parsedQuery.data.pageSize;
+  const skip = (page - 1) * pageSize;
+  const take = pageSize;
+
+  const [total, reports] = await Promise.all([
+    prisma.weeklyHourBankReport.count(),
+    prisma.weeklyHourBankReport.findMany({
+      orderBy: { generatedAt: 'desc' },
+      skip,
+      take,
+      select: {
+        id: true,
+        weekLabel: true,
+        generatedAt: true,
+        periodStart: true,
+        periodEnd: true,
+        totalUsers: true,
+        positiveUsers: true,
+        negativeUsers: true,
+        exceededUsers: true,
+        pdfFileName: true,
+        pdfPublicUrl: true,
+      },
+    }),
+  ]);
 
   return res.json({
     rows: reports,
-    total: reports.length,
+    total,
+    page,
+    pageSize,
   });
 });
 

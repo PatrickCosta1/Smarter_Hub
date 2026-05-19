@@ -42,6 +42,7 @@ const employeeAdmissionStatusValues = [
 ] as const;
 
 type EmployeeAdmissionStatus = typeof employeeAdmissionStatusValues[number];
+const employeeAdmissionStatusSchema = z.enum(employeeAdmissionStatusValues);
 
 const employeeAdmissionCreateSchema = z.object({
   fullName: z.string().min(2, 'Nome completo é obrigatório.'),
@@ -206,6 +207,56 @@ const updateAdminUserSchema = z.object({
 const updateUserActiveSchema = z.object({
   isActive: z.boolean(),
 });
+
+const SENSITIVE_PROFILE_FIELDS = [
+  'nomePai',
+  'nomeMae',
+  'moradaFiscal',
+  'endereco',
+  'codigoPostal',
+  'cartaoCidadao',
+  'validadeCartaoCidadao',
+  'nif',
+  'cpf',
+  'pis',
+  'ctps',
+  'ctpsSerie',
+  'ctpsDataExpedicao',
+  'rg',
+  'rgOrgaoEmissor',
+  'rgDataExpedicao',
+  'cnh',
+  'cnhCategoria',
+  'cnhDataValidade',
+  'tituloEleitor',
+  'zonaEleitoral',
+  'secaoEleitoral',
+  'certificadoReservista',
+  'niss',
+  'iban',
+  'comprovativoMoradaFiscal',
+  'comprovativoCartaoCidadao',
+  'comprovativoIban',
+  'comprovativoCartaoContinente',
+  'contactoEmergenciaNome',
+  'contactoEmergenciaParentesco',
+  'contactoEmergenciaNumero',
+] as const;
+
+function sanitizeProfileForViewer<T extends object | null | undefined>(profile: T, canViewSensitiveData: boolean): T {
+  if (!profile || canViewSensitiveData) {
+    return profile;
+  }
+
+  const sanitized = { ...(profile as Record<string, unknown>) };
+  for (const field of SENSITIVE_PROFILE_FIELDS) {
+    if (field in sanitized) {
+      sanitized[field] = '';
+    }
+  }
+
+  return sanitized as T;
+}
 
 const updateAdminUserCredentialsSchema = z.object({
   username: z.string().min(3).optional(),
@@ -590,6 +641,19 @@ async function resolveAdmissionReviewersByCountry(workCountry: 'PT' | 'BR') {
   return Array.from(new Set(reviewers.map((item) => item.id)));
 }
 
+async function canActorReviewAdmissionCountry(actor: { id: string; isRootAccess: boolean }, admissionCountry: 'PT' | 'BR') {
+  if (actor.isRootAccess) {
+    return true;
+  }
+
+  const actorProfile = await prisma.profile.findUnique({
+    where: { userId: actor.id },
+    select: { workCountry: true },
+  });
+
+  return (actorProfile?.workCountry ?? 'PT') === admissionCountry;
+}
+
 async function sendAdmissionInviteEmail(params: {
   personalEmail: string;
   fullName: string;
@@ -713,6 +777,13 @@ function sanitizeBulkImportProfile(profile?: Record<string, string>) {
   return sanitized;
 }
 
+function resolveManagedUserInitialPassword() {
+  const configured = process.env.AUTH_PROVISION_INITIAL_PASSWORD?.trim();
+  return configured && configured.length >= 12
+    ? configured
+    : randomBytes(32).toString('base64url');
+}
+
 async function createManagedUser(params: {
   actorUserId: string;
   username: string;
@@ -723,7 +794,7 @@ async function createManagedUser(params: {
   workCountry?: z.infer<typeof countrySchema>;
   profile?: Partial<Record<string, unknown>>;
 }) {
-  const passwordHash = await bcrypt.hash('pola123', 10);
+  const passwordHash = await bcrypt.hash(resolveManagedUserInitialPassword(), 10);
   const fullName = normalizeTextField(params.fullName).replace(/\s+/g, ' ');
   const profile = params.profile ?? {};
   const workCountry = params.workCountry ?? 'PT';
@@ -1122,10 +1193,18 @@ router.get('/users', requireAuth, async (req, res) => {
     return res.status(403).json({ message: 'Sem permissões para consultar utilizadores.' });
   }
 
+  const canViewSensitiveProfileData = req.authUser!.isRootAccess
+    || await isAccessTotal(req.authUser!.id)
+    || await hasPermission(req.authUser!.id, 'edit_other_profile');
+
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   const email = typeof req.query.email === 'string' ? req.query.email : undefined;
-  const parsedLimit = Number(typeof req.query.limit === 'string' ? req.query.limit : '40');
-  const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 100) : 40;
+  const limitRaw = typeof req.query.limit === 'string' ? req.query.limit.trim() : '';
+  if (!/^\d+$/.test(limitRaw)) {
+    return res.status(400).json({ message: 'Parâmetro limit é obrigatório e deve ser numérico.' });
+  }
+
+  const limit = Math.min(Math.max(Number(limitRaw), 1), 100);
 
   const baseWhere: Prisma.UserWhereInput = {
       isActive: true,
@@ -1255,6 +1334,7 @@ router.get('/users', requireAuth, async (req, res) => {
 
   const normalizedUsers = users.map((user) => ({
     ...user,
+    profile: sanitizeProfileForViewer(user.profile, canViewSensitiveProfileData),
     team: user.team ?? user.teamMemberships[0]?.team ?? user.managedTeams[0] ?? null,
     teamRole: (user.team ? user.team.id : user.teamMemberships[0]?.team?.id ?? user.managedTeams[0]?.id)
       && user.managedTeams.some((team) => team.id === (user.team ? user.team.id : user.teamMemberships[0]?.team?.id ?? user.managedTeams[0]?.id))
@@ -1277,6 +1357,10 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
     return res.status(403).json({ message: 'Sem permissões para consultar colaboradores.' });
   }
 
+  const canViewSensitiveProfileData = req.authUser!.isRootAccess
+    || await isAccessTotal(req.authUser!.id)
+    || await hasPermission(req.authUser!.id, 'edit_other_profile');
+
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   const role = typeof req.query.role === 'string' ? req.query.role.trim().toUpperCase() : '';
   const teamId = typeof req.query.teamId === 'string' ? req.query.teamId.trim() : '';
@@ -1284,8 +1368,14 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
   const active = parseBooleanQuery(req.query.active);
   const sortBy = typeof req.query.sortBy === 'string' ? req.query.sortBy : 'createdAt';
   const sortDirection = typeof req.query.sortDirection === 'string' && req.query.sortDirection.toLowerCase() === 'asc' ? 'asc' : 'desc';
-  const page = Math.max(1, Number(typeof req.query.page === 'string' ? req.query.page : '1') || 1);
-  const pageSize = Math.min(100, Math.max(1, Number(typeof req.query.pageSize === 'string' ? req.query.pageSize : '20') || 20));
+  const pageRaw = typeof req.query.page === 'string' ? req.query.page.trim() : '';
+  const pageSizeRaw = typeof req.query.pageSize === 'string' ? req.query.pageSize.trim() : '';
+  if (!/^\d+$/.test(pageRaw) || !/^\d+$/.test(pageSizeRaw)) {
+    return res.status(400).json({ message: 'Parâmetros de paginação são obrigatórios (page e pageSize).' });
+  }
+
+  const page = Math.max(1, Number(pageRaw));
+  const pageSize = Math.min(100, Math.max(1, Number(pageSizeRaw)));
   const parsedRole = roleSchema.safeParse(role);
 
   const andConditions: Prisma.UserWhereInput[] = [];
@@ -1442,6 +1532,7 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
 
   const normalizedRows = rows.map((user) => ({
     ...user,
+    profile: sanitizeProfileForViewer(user.profile, canViewSensitiveProfileData),
     team: user.team ?? user.teamMemberships[0]?.team ?? user.managedTeams[0] ?? null,
     teamRole: (user.team ? user.team.id : user.teamMemberships[0]?.team?.id ?? user.managedTeams[0]?.id)
       && user.managedTeams.some((team) => team.id === (user.team ? user.team.id : user.teamMemberships[0]?.team?.id ?? user.managedTeams[0]?.id))
@@ -3901,6 +3992,11 @@ router.post('/users/admissions/:id/request-correction', requireAuth, async (req,
       return res.status(404).json({ message: 'Pedido de admissão não encontrado.' });
     }
 
+    const canReviewCountry = await canActorReviewAdmissionCountry(req.authUser!, admission.workCountry as 'PT' | 'BR');
+    if (!canReviewCountry) {
+      return res.status(403).json({ message: 'Sem permissões para devolver admissões deste país.' });
+    }
+
     const token = buildAdmissionToken();
     const invitationLink = buildFrontendAdmissionUrl(token);
     await prisma.employeeAdmission.update({
@@ -3941,6 +4037,11 @@ router.post('/users/admissions/:id/approve-personal', requireAuth, async (req, r
       return res.status(404).json({ message: 'Pedido de admissão não encontrado.' });
     }
 
+    const canReviewCountry = await canActorReviewAdmissionCountry(req.authUser!, admission.workCountry as 'PT' | 'BR');
+    if (!canReviewCountry) {
+      return res.status(403).json({ message: 'Sem permissões para aprovar admissões deste país.' });
+    }
+
     if (admission.status !== 'SUBMITTED') {
       return res.status(409).json({ message: 'Este pedido não está pronto para aprovação dos dados pessoais.' });
     }
@@ -3976,6 +4077,11 @@ router.post('/users/admissions/:id/complete', requireAuth, async (req, res, next
     const admission = await prisma.employeeAdmission.findUnique({ where: { id: String(req.params.id) } });
     if (!admission) {
       return res.status(404).json({ message: 'Pedido de admissão não encontrado.' });
+    }
+
+    const canReviewCountry = await canActorReviewAdmissionCountry(req.authUser!, admission.workCountry as 'PT' | 'BR');
+    if (!canReviewCountry) {
+      return res.status(403).json({ message: 'Sem permissões para concluir admissões deste país.' });
     }
 
     if (admission.status !== 'APPROVED_PENDING_CONTRACT') {
@@ -4027,7 +4133,7 @@ router.post('/users/admissions/:id/complete', requireAuth, async (req, res, next
         `Username criado: ${contract.companyUsername.trim().toLowerCase()}`,
         `Email da empresa: ${contract.companyEmail.trim().toLowerCase()}`,
         '',
-        'A password inicial definida é pola123.',
+        'A autenticação no Smarter Hub segue a política definida pela empresa (Microsoft SSO ou credenciais geridas por RH).',
       ].join('\n'),
     });
 
@@ -4047,12 +4153,24 @@ router.get('/users/admissions/list', requireAuth, async (req, res) => {
   const actorProfile = await prisma.profile.findUnique({ where: { userId: req.authUser!.id }, select: { workCountry: true } });
   const countryFilter = req.authUser!.isRootAccess ? {} : { workCountry: actorProfile?.workCountry ?? 'PT' };
 
-  const statusFilter = typeof req.query.status === 'string' && req.query.status
-    ? { status: req.query.status }
+  const rawStatus = typeof req.query.status === 'string' ? req.query.status.trim().toUpperCase() : '';
+  const statusValidation = rawStatus ? employeeAdmissionStatusSchema.safeParse(rawStatus) : null;
+  if (statusValidation && !statusValidation.success) {
+    return res.status(400).json({ message: 'Parâmetro status inválido.' });
+  }
+
+  const statusFilter = statusValidation
+    ? { status: statusValidation.data as EmployeeAdmissionStatus }
     : {};
 
-  const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10));
-  const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? '50'), 10)));
+  const pageRaw = typeof req.query.page === 'string' ? req.query.page.trim() : '1';
+  const pageSizeRaw = typeof req.query.pageSize === 'string' ? req.query.pageSize.trim() : '50';
+  if (!/^\d+$/.test(pageRaw) || !/^\d+$/.test(pageSizeRaw)) {
+    return res.status(400).json({ message: 'Parâmetros de paginação inválidos.' });
+  }
+
+  const page = Math.max(1, Number(pageRaw));
+  const pageSize = Math.min(100, Math.max(1, Number(pageSizeRaw)));
 
   const where = { ...countryFilter, ...statusFilter };
 

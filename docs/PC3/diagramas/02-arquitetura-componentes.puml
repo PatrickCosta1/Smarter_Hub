@@ -1,0 +1,116 @@
+@startuml smarter_hub_arquitetura_completa
+left to right direction
+scale max 1600 width
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam dpi 130
+skinparam defaultFontName Segoe UI
+skinparam defaultFontSize 13
+skinparam ArrowColor #1F3A68
+skinparam RectangleBorderColor #AFC2DD
+skinparam RectangleBackgroundColor #F8FAFD
+skinparam ComponentBorderColor #1F3A68
+skinparam ComponentBackgroundColor #EEF3FA
+
+actor "Utilizador Web" as USER
+
+rectangle "Frontend Web (React + TypeScript + Vite)" as FE {
+  component "Router + Guards" as FE_ROUTER
+  component "Contexto de Sessão\n e Permissões Efetivas" as FE_CTX
+  component "Páginas por Domínio" as FE_PAGES
+  component "Cliente REST\n + Cache + Retry" as FE_API
+  component "I18N PT-PT/PT-BR" as FE_I18N
+  component "Gestor de Estado de UI\n e Loading/Erros" as FE_STATE
+}
+
+rectangle "Backend API (Express + TypeScript)" as BE {
+  component "Segurança de Entrada\nCORS + Helmet + Rate Limit" as BE_SEC
+  component "Autenticação\nJWT/Bearer + OAuth" as BE_AUTH
+  component "Motor de Escopo\n e Permissão Efetiva" as BE_SCOPE
+  component "Validação de Payload\nZod + Regras" as BE_VALID
+  component "Auditoria e Telemetria" as BE_AUDIT
+
+  rectangle "API por Domínios (Rotas)" as ROUTES {
+    component "auth" as R_AUTH
+    component "users (inclui admissões)" as R_USERS
+    component "profile" as R_PROFILE
+    component "vacations" as R_VAC
+    component "permissions" as R_PERM
+    component "hour-bank" as R_HB
+    component "trainings" as R_TRN
+    component "career-plan" as R_CAR
+    component "notifications" as R_NOTIF
+    component "files" as R_FILE
+    component "wellbeing" as R_WELL
+  }
+
+  rectangle "Serviços de Domínio" as DOMAIN {
+    component "Aprovações\n e Versionamento" as D_APPROVAL
+    component "Políticas PT/BR\nCompliance e Capacidade" as D_POLICY
+    component "Permissões\n e Restrições" as D_PERM
+    component "Auditoria" as D_AUDIT
+    component "Exportação XLSX/PDF" as D_EXPORT
+    component "Eventos e Notificações" as D_NOTIFY
+    component "Admissões\n e Onboarding" as D_ADM
+    component "Wellbeing\n e Reporte Sensível" as D_WELL
+    component "Banco de Horas BR" as D_HB
+    component "Formação + Carreira" as D_TALENT
+  }
+}
+
+database "PostgreSQL (Dados Transacionais)" as DB
+component "Prisma ORM" as ORM
+cloud "OAuth (Microsoft/Firebase)" as OAUTH
+cloud "Storage Uploads\n e Relatórios" as STORE
+cloud "Sentry" as OBS
+cloud "API Feriados Nager.Date" as HOLIDAYS
+
+USER --> FE_ROUTER
+FE_ROUTER --> FE_CTX
+FE_CTX --> FE_PAGES
+FE_I18N --> FE_PAGES
+FE_PAGES --> FE_API
+FE_STATE --> FE_PAGES
+
+FE_API --> BE_SEC
+BE_SEC --> BE_AUTH
+BE_AUTH --> BE_SCOPE
+BE_SCOPE --> BE_VALID
+BE_VALID --> BE_AUDIT
+BE_SCOPE --> ROUTES
+
+R_AUTH --> OAUTH
+R_PROFILE --> D_APPROVAL
+R_VAC --> D_APPROVAL
+R_VAC --> D_POLICY
+R_VAC --> HOLIDAYS
+R_HB --> D_POLICY
+R_HB --> D_HB
+R_HB --> D_NOTIFY
+R_PERM --> D_PERM
+R_PERM --> D_AUDIT
+R_HB --> D_EXPORT
+R_VAC --> D_EXPORT
+R_NOTIF --> D_NOTIFY
+R_TRN --> D_NOTIFY
+R_TRN --> D_TALENT
+R_CAR --> D_TALENT
+R_USERS --> D_ADM
+R_USERS --> D_PERM
+R_USERS --> D_AUDIT
+R_WELL --> D_WELL
+R_FILE --> STORE
+
+ROUTES --> ORM
+ORM --> DB
+D_EXPORT --> STORE
+BE --> OBS
+
+note bottom
+Arquitetura de produto completo: separação por camadas,
+governança de acesso, compliance PT/BR e rastreabilidade.
+end note
+@enduml

@@ -50,15 +50,6 @@ const vacationSchema = z
 
     const start = new Date(`${data.dataInicio}T00:00:00`);
     const end = new Date(`${data.dataFim}T00:00:00`);
-    const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-
-    if (data.requestType === 'ABSENCE_MEDICAL' && days > 3) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['dataFim'],
-        message: 'Ausência médica (SNS24) está limitada a 3 dias.',
-      });
-    }
 
     if (data.requestType === 'VACATION') {
       const startDay = start.getDay();
@@ -146,6 +137,29 @@ const APPROVAL_WAITING = 'WAITING';
 const APPROVAL_APPROVED = 'APPROVED';
 const APPROVAL_REJECTED = 'REJECTED';
 const APPROVAL_SKIPPED = 'SKIPPED';
+
+function parsePagination(query: Request['query']) {
+  const pageRaw = typeof query.page === 'string' ? query.page.trim() : '1';
+  const pageSizeRaw = typeof query.pageSize === 'string' ? query.pageSize.trim() : '50';
+
+  if (!/^\d+$/.test(pageRaw) || !/^\d+$/.test(pageSizeRaw)) {
+    return { error: 'Parâmetros de paginação inválidos.' };
+  }
+
+  const page = Number(pageRaw);
+  const pageSize = Number(pageSizeRaw);
+
+  if (!Number.isInteger(page) || !Number.isInteger(pageSize) || page < 1 || pageSize < 1 || pageSize > 200) {
+    return { error: 'Parâmetros de paginação inválidos.' };
+  }
+
+  return {
+    page,
+    pageSize,
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  };
+}
 
 function toLocalDate(dateText: string) {
   return new Date(`${dateText}T00:00:00`);
@@ -810,9 +824,12 @@ async function fetchHolidays(countryCode: 'PT' | 'BR', year: number, brWorkState
 
 async function collectHolidayDates(countryCode: 'PT' | 'BR', years: Iterable<number>, brWorkState?: 'SP' | 'RS' | null) {
   const holidayDates = new Set<string>();
+  const yearList = Array.from(years);
+  const holidaysByYear = await Promise.all(
+    yearList.map((year) => fetchHolidays(countryCode, year, brWorkState)),
+  );
 
-  for (const year of years) {
-    const holidays = await fetchHolidays(countryCode, year, brWorkState);
+  for (const holidays of holidaysByYear) {
     for (const holiday of holidays) {
       holidayDates.add(holiday.date);
     }
@@ -842,15 +859,20 @@ function brVacationDaysByAbsences(absences: number) {
   return 0;
 }
 
-async function sumVacationBalanceCreditsByUser(params: { userIds: string[]; year: number }) {
+async function sumVacationBalanceCreditsByUser(params: { userIds: string[]; years: number[] }) {
   if (params.userIds.length === 0) {
+    return new Map<string, number>();
+  }
+
+  const years = Array.from(new Set(params.years));
+  if (years.length === 0) {
     return new Map<string, number>();
   }
 
   const credits = await prisma.vacationBalanceCredit.findMany({
     where: {
       userId: { in: params.userIds },
-      year: params.year,
+      year: { in: years },
     },
     select: {
       userId: true,
@@ -1617,27 +1639,41 @@ async function finalizeVacationApproval(
 router.get('/vacations/me', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
+    const pagination = parsePagination(req.query);
+    if ('error' in pagination) {
+      return res.status(400).json({ error: pagination.error });
+    }
 
-    const vacations = await prisma.vacation.findMany({
-      where: { userId },
-      include: {
-        contextTeam: { select: { id: true, name: true } },
-        approvals: {
-          select: {
-            id: true,
-            approverId: true,
-            approvalLevel: true,
-            status: true,
-            decidedAt: true,
-            reason: true,
+    const [total, rows] = await Promise.all([
+      prisma.vacation.count({ where: { userId } }),
+      prisma.vacation.findMany({
+        where: { userId },
+        include: {
+          contextTeam: { select: { id: true, name: true } },
+          approvals: {
+            select: {
+              id: true,
+              approverId: true,
+              approvalLevel: true,
+              status: true,
+              decidedAt: true,
+              reason: true,
+            },
+            orderBy: [{ approvalLevel: 'asc' }, { createdAt: 'asc' }],
           },
-          orderBy: [{ approvalLevel: 'asc' }, { createdAt: 'asc' }],
         },
-      },
-      orderBy: [{ createdAt: 'desc' }],
-    });
+        orderBy: [{ createdAt: 'desc' }],
+        skip: pagination.skip,
+        take: pagination.take,
+      }),
+    ]);
 
-    res.json(vacations);
+    return res.json({
+      total,
+      page: pagination.page,
+      pageSize: pagination.pageSize,
+      rows,
+    });
   } catch (error) {
     console.error('[GET /vacations/me]', error);
     res.status(500).json({ error: 'Falha ao carregar férias' });
@@ -2288,6 +2324,11 @@ router.post('/vacations/assign-direct', requireAuth, createVacationBalanceCredit
 
 router.get('/vacations/requests', requireAuth, async (req: Request, res: Response) => {
   const timer = createRequestTimer('GET /vacations/requests');
+  const pagination = parsePagination(req.query);
+  if ('error' in pagination) {
+    return res.status(400).json({ message: pagination.error });
+  }
+
   const userId = req.authUser!.id;
   const [canApproveVacation, canRejectVacation, canViewAllVacations, isFullAccess, viewAllScope] = await Promise.all([
     hasPermission(userId, 'approve_vacation'),
@@ -2380,9 +2421,18 @@ router.get('/vacations/requests', requireAuth, async (req: Request, res: Respons
     filteredPendingByStep.push(request);
   }
 
-  timer.done({ count: filteredPendingByStep.length });
+  const pagedRows = filteredPendingByStep.slice(
+    pagination.skip,
+    pagination.skip + pagination.take,
+  );
 
-  return res.json(filteredPendingByStep);
+  timer.done({ count: filteredPendingByStep.length, page: pagination.page });
+  return res.json({
+    total: filteredPendingByStep.length,
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    rows: pagedRows,
+  });
 });
 
 router.post('/vacations/:id/approve', requireAuth, async (req: Request, res: Response) => {
@@ -2797,20 +2847,24 @@ router.post('/vacations/:id/mark-processado', requireAuth, async (req: Request, 
     return res.status(400).json({ message: 'Este pedido já foi marcado como processado.' });
   }
 
-  const updated = await prisma.vacation.update({
-    where: { id },
-    data: {
-      processadoAt: new Date(),
-      processadoById: userId,
-    },
-  });
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.vacation.update({
+      where: { id },
+      data: {
+        processadoAt: new Date(),
+        processadoById: userId,
+      },
+    });
 
-  await prisma.notification.create({
-    data: {
-      userId: vacation.userId,
-      title: 'Férias processadas',
-      message: `Tuas férias de ${formatIsoDatePt(vacation.dataInicio)} até ${formatIsoDatePt(vacation.dataFim)} foram marcadas como processadas. Confirmação de realização será solicitada após o período.`,
-    },
+    await tx.notification.create({
+      data: {
+        userId: vacation.userId,
+        title: 'Férias processadas',
+        message: `Tuas férias de ${formatIsoDatePt(vacation.dataInicio)} até ${formatIsoDatePt(vacation.dataFim)} foram marcadas como processadas. Confirmação de realização será solicitada após o período.`,
+      },
+    });
+
+    return result;
   });
 
   return res.json({ success: true, data: updated });
@@ -2879,16 +2933,15 @@ router.post('/vacations/:id/mark-realizado', requireAuth, async (req: Request, r
       select: { id: true },
     });
 
-    for (const rh of rhUsers) {
-      if (rh.id !== vacation.userId) {
-        await prisma.notification.create({
-          data: {
-            userId: rh.id,
-            title: 'Confirmação de realização de férias pendente',
-            message: `O colaborador confirmou que realizou as suas férias. Favor validar a realização.`,
-          },
-        });
-      }
+    const recipientIds = rhUsers.map((rh) => rh.id).filter((rhId) => rhId !== vacation.userId);
+    if (recipientIds.length > 0) {
+      await prisma.notification.createMany({
+        data: recipientIds.map((recipientId) => ({
+          userId: recipientId,
+          title: 'Confirmação de realização de férias pendente',
+          message: `O colaborador confirmou que realizou as suas férias. Favor validar a realização.`,
+        })),
+      });
     }
   } else if (isRHConfirm && isFullyConfirmed) {
     // Notify collaborator that vacation is fully confirmed
@@ -3203,6 +3256,37 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
       return res.status(403).json({ message: 'Sem permissões para exportar o mapa de férias.' });
     }
 
+    const rawTeamIdQuery = typeof req.query.teamId === 'string' ? req.query.teamId.trim() : '';
+    if (rawTeamIdQuery && !/^[A-Za-z0-9-]{6,80}$/.test(rawTeamIdQuery)) {
+      return res.status(400).json({ message: 'teamId inválido.' });
+    }
+
+    const rawUserIdsQuery = typeof req.query.userIds === 'string' ? req.query.userIds.trim() : '';
+    let userIdsFilter: string[] | null = null;
+    if (rawUserIdsQuery) {
+      const parsedUserIds = rawUserIdsQuery
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      if (parsedUserIds.length === 0) {
+        return res.status(400).json({ message: 'userIds inválido.' });
+      }
+
+      if (parsedUserIds.length > 500) {
+        return res.status(400).json({ message: 'Número máximo de userIds excedido (500).' });
+      }
+
+      const invalidUserId = parsedUserIds.find((item) => !/^[A-Za-z0-9-]{6,80}$/.test(item));
+      if (invalidUserId) {
+        return res.status(400).json({ message: 'userIds inválido.' });
+      }
+
+      userIdsFilter = Array.from(new Set(parsedUserIds));
+    }
+
+    const teamIdFilter = rawTeamIdQuery || null;
+
     const yearQuery = typeof req.query.year === 'string' ? req.query.year : '';
     const startDateQuery = typeof req.query.startDate === 'string' ? req.query.startDate.trim() : '';
     const endDateQuery = typeof req.query.endDate === 'string' ? req.query.endDate.trim() : '';
@@ -3245,11 +3329,6 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
       yearsInPeriod.push(year);
     }
 
-    const teamIdFilter = typeof req.query.teamId === 'string' && req.query.teamId ? req.query.teamId : null;
-    const userIdsFilter = typeof req.query.userIds === 'string' && req.query.userIds
-      ? req.query.userIds.split(',').map((s) => s.trim()).filter(Boolean)
-      : null;
-
     // Build user filter
     const userWhere: Prisma.UserWhereInput = {
       isActive: true,
@@ -3284,12 +3363,11 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
     });
 
     // Pre-fetch holidays for countries we'll need
-    const countriesNeeded = new Set(users.map((u) => u.profile?.workCountry ?? 'PT'));
-    const holidaysByCountry = new Map<string, Set<string>>();
-    for (const c of countriesNeeded) {
-      const holidays = await collectHolidayDates(c as 'PT' | 'BR', yearsInPeriod);
-      holidaysByCountry.set(c, holidays);
-    }
+    const countriesNeeded = Array.from(new Set(users.map((u) => u.profile?.workCountry ?? 'PT')));
+    const holidaysPairs = await Promise.all(
+      countriesNeeded.map(async (country) => [country, await collectHolidayDates(country as 'PT' | 'BR', yearsInPeriod)] as const),
+    );
+    const holidaysByCountry = new Map<string, Set<string>>(holidaysPairs);
 
     // Fetch approved vacations that overlap the requested period
     const allVacations = await prisma.vacation.findMany({
@@ -3316,17 +3394,10 @@ router.get('/vacations/export', requireAuth, async (req: Request, res: Response)
       vacationsByUser.get(v.userId)!.push(v);
     }
 
-    const creditByUser = new Map<string, number>();
-    for (const year of yearsInPeriod) {
-      const creditsForYear = await sumVacationBalanceCreditsByUser({
-        userIds: users.map((u) => u.id),
-        year,
-      });
-
-      for (const [targetUserId, days] of creditsForYear.entries()) {
-        creditByUser.set(targetUserId, (creditByUser.get(targetUserId) ?? 0) + days);
-      }
-    }
+    const creditByUser = await sumVacationBalanceCreditsByUser({
+      userIds: users.map((u) => u.id),
+      years: yearsInPeriod,
+    });
 
     const rows: Array<{
       username: string;

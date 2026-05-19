@@ -30,6 +30,10 @@ import { runOccupationalHealthAlertSweep } from './lib/occupational-health-alert
 
 dotenv.config();
 
+if (!process.env.JWT_SECRET?.trim()) {
+  throw new Error('JWT_SECRET é obrigatório para iniciar a API.');
+}
+
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });

@@ -1,0 +1,56 @@
+@startuml smarter_hub_arquitetura_resumo
+left to right direction
+scale max 1200 width
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam linetype ortho
+skinparam dpi 110
+skinparam defaultFontName Segoe UI
+skinparam defaultFontSize 13
+skinparam ArrowColor #1F3A68
+skinparam RectangleBorderColor #AFC2DD
+skinparam RectangleBackgroundColor #F8FAFD
+skinparam ComponentBorderColor #1F3A68
+skinparam ComponentBackgroundColor #EEF3FA
+
+actor "Utilizador" as USER
+
+rectangle "Frontend" as FE {
+  component "UI por Domínio" as FE_UI
+  component "Sessão + Permissões" as FE_AUTHZ
+  component "Cliente REST" as FE_API
+}
+
+rectangle "Backend API" as BE {
+  component "Segurança + Auth" as BE_SEC_AUTH
+  component "Validação + Escopo" as BE_SCOPE
+  component "Serviços de Negócio" as BE_DOMAIN
+  component "Auditoria" as BE_AUD
+}
+
+database "PostgreSQL" as DB
+component "Prisma" as ORM
+cloud "OAuth" as OAUTH
+cloud "Storage/Relatórios" as STORE
+cloud "Nager.Date" as HOLIDAYS
+
+USER --> FE_UI
+FE_UI --> FE_AUTHZ
+FE_UI --> FE_API
+FE_API --> BE_SEC_AUTH
+BE_SEC_AUTH --> BE_SCOPE
+BE_SCOPE --> BE_DOMAIN
+BE_SCOPE --> BE_AUD
+BE_DOMAIN --> ORM
+ORM --> DB
+BE_DOMAIN --> OAUTH
+BE_DOMAIN --> HOLIDAYS
+BE_DOMAIN --> STORE
+
+note bottom
+Resumo arquitetural executivo: fluxo ponta a ponta,
+com segurança, compliance e persistência.
+end note
+@enduml

@@ -39,6 +39,12 @@ const accessTotalSchema = z.object({
   reason: z.string().optional(),
 });
 
+const permissionGrantAuditQuerySchema = z.object({
+  userId: z.string().min(1).optional(),
+  page: z.coerce.number().int().min(1, 'Parâmetro page é obrigatório e deve ser >= 1.'),
+  pageSize: z.coerce.number().int().min(1, 'Parâmetro pageSize é obrigatório e deve ser >= 1.').max(100),
+});
+
 const AUTO_DEFAULT_EMPLOYEE_NOTE = '[AUTO_PRESET_DEFAULT_EMPLOYEE]';
 const DEFAULT_EMPLOYEE_PERMISSION_CODES = [
   'view_profile',
@@ -643,9 +649,15 @@ router.get('/audit/permission-grants', requireAuth, async (req, res) => {
     return res.status(403).json({ message: 'Sem permissões para consultar auditoria de permissões.' });
   }
 
-  const userId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
-  const limit = Math.min(100, Math.max(1, Number(typeof req.query.limit === 'string' ? req.query.limit : '50') || 50));
-  const offset = Math.max(0, Number(typeof req.query.offset === 'string' ? req.query.offset : '0') || 0);
+  const queryResult = permissionGrantAuditQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ message: queryResult.error.issues[0].message });
+  }
+
+  const userId = queryResult.data.userId;
+  const page = queryResult.data.page;
+  const pageSize = queryResult.data.pageSize;
+  const offset = (page - 1) * pageSize;
 
   const grants = await prisma.permissionGrant.findMany({
     where: {
@@ -653,7 +665,7 @@ router.get('/audit/permission-grants', requireAuth, async (req, res) => {
     },
     orderBy: { createdAt: 'desc' },
     skip: offset,
-    take: limit,
+    take: pageSize,
     include: {
       actorUser: {
         select: {
@@ -689,7 +701,7 @@ router.get('/audit/permission-grants', requireAuth, async (req, res) => {
     },
   });
 
-  return res.json({ total, limit, offset, grants });
+  return res.json({ total, page, pageSize, offset, grants });
 });
 
 export { router as permissionsRouter };

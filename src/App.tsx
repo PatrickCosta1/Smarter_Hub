@@ -107,7 +107,7 @@ function AppRoutes() {
 
       const requests: Array<Promise<unknown>> = [];
 
-      requests.push(safePrefetch('/notifications/me', 10000));
+      requests.push(safePrefetch('/notifications/me?page=1&pageSize=50', 10000));
       requests.push(safePrefetch('/profile/me', 30000));
 
       if (!ENABLE_AGGRESSIVE_PREFETCH) {

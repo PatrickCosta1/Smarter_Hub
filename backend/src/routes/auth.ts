@@ -1,6 +1,6 @@
 import { Router } from "express";
 import bcrypt from 'bcryptjs';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { Role } from '@prisma/client';
 import { z } from "zod";
 
@@ -114,6 +114,13 @@ function resolveDefaultWorkCountry() {
   return (process.env.AUTH_MICROSOFT_DEFAULT_WORK_COUNTRY ?? 'PT').trim().toUpperCase() === 'BR' ? 'BR' : 'PT';
 }
 
+function resolveProvisionPassword() {
+  const configured = process.env.AUTH_PROVISION_INITIAL_PASSWORD?.trim();
+  return configured && configured.length >= 12
+    ? configured
+    : randomBytes(32).toString('base64url');
+}
+
 async function assignDefaultEmployeePermissions(userId: string) {
   const permissions = await prisma.permission.findMany({
     where: { code: { in: [...DEFAULT_EMPLOYEE_PERMISSION_CODES] } },
@@ -152,7 +159,7 @@ async function provisionUserFromMicrosoft(email: string, decodedToken: Awaited<R
   const shortName = fullName.trim() || localPart;
 
   const username = await generateUniqueUsername(localPart || fullName);
-  const passwordHash = await bcrypt.hash('pola123', 10);
+  const passwordHash = await bcrypt.hash(resolveProvisionPassword(), 10);
   const role = resolveDefaultRole();
   const workCountry = resolveDefaultWorkCountry() as 'PT' | 'BR';
 

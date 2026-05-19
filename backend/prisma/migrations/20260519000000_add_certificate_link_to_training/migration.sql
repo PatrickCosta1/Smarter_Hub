@@ -1,0 +1,1 @@
+ALTER TABLE "Training" ADD COLUMN IF NOT EXISTS "certificateLink" TEXT NOT NULL DEFAULT '';

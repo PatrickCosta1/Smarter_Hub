@@ -11,6 +11,7 @@ const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 type WorkCountry = 'PT' | 'BR';
 type WellbeingTab = 'GENERAL' | WorkCountry;
 type WellbeingResourceKind = 'pdf' | 'form';
+type WellbeingEditorSubtab = 'section' | 'blocks' | 'report';
 
 type WellbeingFile = {
   id: string;
@@ -185,6 +186,8 @@ export default function WellbeingPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [editorSubtab, setEditorSubtab] = useState<WellbeingEditorSubtab>('section');
+  const [selectedEditorResourceId, setSelectedEditorResourceId] = useState('');
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
@@ -263,8 +266,46 @@ export default function WellbeingPage() {
     } satisfies WellbeingSection;
   }, [activeTab, visibleContent]);
 
+  const editorResources = section?.resources ?? [];
+  const reportResources = editorResources.filter((resource) => resource.kind === 'form');
+  const selectedEditorResource = editorResources.find((resource) => resource.id === selectedEditorResourceId) ?? editorResources[0] ?? null;
+  const selectedReportResource = reportResources.find((resource) => resource.id === selectedEditorResourceId) ?? reportResources[0] ?? null;
+
   const hasTopbarControls = canManage;
   const activeReportConfig = getReportConfig(activeReportResource);
+
+  useEffect(() => {
+    if (!isEditing) {
+      return;
+    }
+
+    if (!selectedEditorResourceId && editorResources[0]?.id) {
+      setSelectedEditorResourceId(editorResources[0].id);
+    }
+  }, [editorResources, isEditing, selectedEditorResourceId]);
+
+  useEffect(() => {
+    if (!isEditing) {
+      return;
+    }
+
+    if (selectedEditorResourceId && editorResources.some((resource) => resource.id === selectedEditorResourceId)) {
+      return;
+    }
+
+    setSelectedEditorResourceId(editorResources[0]?.id ?? '');
+  }, [editorResources, isEditing, selectedEditorResourceId]);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setEditorSubtab('section');
+      return;
+    }
+
+    if (editorSubtab === 'report' && reportResources.length === 0) {
+      setEditorSubtab(editorResources.length > 0 ? 'blocks' : 'section');
+    }
+  }, [editorResources.length, editorSubtab, isEditing, reportResources.length]);
 
   function updateSharedResourceField(resourceId: string, field: 'title' | 'description' | 'buttonLabel', value: string) {
     updateDraft((current) => {
@@ -639,7 +680,7 @@ export default function WellbeingPage() {
   }
 
   return (
-    <section className="trainings-shell wellbeing-shell">
+    <section className={`trainings-shell wellbeing-shell${isEditing ? ' wellbeing-shell--editing' : ''}`}>
       {hasTopbarControls && (
         <div className="wellbeing-shell__topbar">
           <div className="wellbeing-shell__topbar-actions">
@@ -647,17 +688,6 @@ export default function WellbeingPage() {
               <Button type="button" variant="secondary" onClick={() => setIsEditing(true)}>
                 Editar página
               </Button>
-            )}
-
-            {canManage && isEditing && (
-              <>
-                <Button type="button" variant="ghost" onClick={cancelEditing} disabled={isSaving}>
-                  Cancelar
-                </Button>
-                <Button type="button" variant="primary" onClick={() => void saveContent()} isLoading={isSaving}>
-                  Guardar alterações
-                </Button>
-              </>
             )}
           </div>
         </div>
@@ -682,34 +712,419 @@ export default function WellbeingPage() {
         <div className="wellbeing-shell__loading">A carregar página…</div>
       ) : visibleContent && section ? (
         <>
-          <section className="wellbeing-country-card">
+          <section className={`wellbeing-country-card${isEditing ? ' wellbeing-country-card--modal' : ''}`}>
+            {isEditing && (
+              <div className="wellbeing-edit-modal__head">
+                <div className="wellbeing-edit-modal__head-copy">
+                  <p>Editor suspenso</p>
+                  <strong>Editar página Saúde e bem-estar</strong>
+                  <span>Guarda as alterações quando terminares de editar os blocos e o formulário.</span>
+                </div>
+                <div className="wellbeing-edit-modal__head-actions">
+                  <Button type="button" variant="ghost" onClick={cancelEditing} disabled={isSaving}>
+                    Cancelar
+                  </Button>
+                  <Button type="button" variant="primary" onClick={() => void saveContent()} isLoading={isSaving}>
+                    Guardar alterações
+                  </Button>
+                </div>
+              </div>
+            )}
             {isEditing ? (
-              <div className="wellbeing-editor-card__grid">
-                <label className="wellbeing-editor-card__field">
-                  <span>Título da secção</span>
-                  <input
-                    value={section.title}
-                    onChange={(event) => {
-                      if (isCountryTab) {
-                        updateSectionField(activeTab, 'title', event.target.value);
-                      }
-                    }}
-                    disabled={!isCountryTab}
-                  />
-                </label>
-                <label className="wellbeing-editor-card__field wellbeing-editor-card__field--full">
-                  <span>Descrição da secção</span>
-                  <textarea
-                    rows={3}
-                    value={section.description}
-                    onChange={(event) => {
-                      if (isCountryTab) {
-                        updateSectionField(activeTab, 'description', event.target.value);
-                      }
-                    }}
-                    disabled={!isCountryTab}
-                  />
-                </label>
+              <div className="wellbeing-editor-shell">
+                <div className="wellbeing-editor-subtabs" role="tablist" aria-label="Áreas do editor">
+                  <button type="button" role="tab" aria-selected={editorSubtab === 'section'} className={editorSubtab === 'section' ? 'is-active' : ''} onClick={() => setEditorSubtab('section')}>
+                    Secção
+                  </button>
+                  <button type="button" role="tab" aria-selected={editorSubtab === 'blocks'} className={editorSubtab === 'blocks' ? 'is-active' : ''} onClick={() => setEditorSubtab('blocks')}>
+                    Blocos
+                  </button>
+                  {reportResources.length > 0 && (
+                    <button type="button" role="tab" aria-selected={editorSubtab === 'report'} className={editorSubtab === 'report' ? 'is-active' : ''} onClick={() => setEditorSubtab('report')}>
+                      Formulário
+                    </button>
+                  )}
+                </div>
+
+                {editorSubtab === 'section' && (
+                  <div className="wellbeing-edit-section-meta">
+                    <div className="wellbeing-edit-section-meta__intro">
+                      <p>Estrutura da secção</p>
+                      <strong>{activeTab === 'GENERAL' ? 'Conteúdo comum às geografias' : `Secção ${activeTab === 'PT' ? 'Portugal' : 'Brasil'}`}</strong>
+                      <span>Define o enquadramento visual e textual antes de editar cada bloco de conteúdo.</span>
+                    </div>
+                    <div className="wellbeing-editor-card__grid wellbeing-edit-section-meta__grid">
+                      <label className="wellbeing-editor-card__field">
+                        <span>Título da secção</span>
+                        <input
+                          value={section.title}
+                          onChange={(event) => {
+                            if (isCountryTab) {
+                              updateSectionField(activeTab, 'title', event.target.value);
+                            }
+                          }}
+                          disabled={!isCountryTab}
+                        />
+                      </label>
+                      <label className="wellbeing-editor-card__field wellbeing-editor-card__field--full">
+                        <span>Descrição da secção</span>
+                        <textarea
+                          rows={3}
+                          value={section.description}
+                          onChange={(event) => {
+                            if (isCountryTab) {
+                              updateSectionField(activeTab, 'description', event.target.value);
+                            }
+                          }}
+                          disabled={!isCountryTab}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {editorSubtab === 'blocks' && (
+                  <div className="wellbeing-editor-panel">
+                    <div className="wellbeing-editor-panel__toolbar">
+                      <div className="wellbeing-editor-panel__picker" role="tablist" aria-label="Blocos de conteúdo">
+                        {editorResources.map((resource) => (
+                          <button
+                            key={resource.id}
+                            type="button"
+                            className={selectedEditorResource?.id === resource.id ? 'is-active' : ''}
+                            onClick={() => setSelectedEditorResourceId(resource.id)}
+                          >
+                            <span>{resource.kind === 'form' ? 'Form' : 'Doc'}</span>
+                            {resource.title || 'Sem título'}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="wellbeing-editor-actions">
+                        <Button type="button" variant="ghost" onClick={() => isCountryTab && addResource(activeTab, 'pdf')} disabled={!isCountryTab}>
+                          + Bloco PDF
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={() => isCountryTab && addResource(activeTab, 'form')} disabled={!isCountryTab}>
+                          + Bloco formulário
+                        </Button>
+                      </div>
+                    </div>
+
+                    {selectedEditorResource && (
+                      <article className={`wellbeing-card wellbeing-card--${selectedEditorResource.kind} wellbeing-card--editor`}>
+                        <div className="wellbeing-editor-resource__head">
+                          <div className="wellbeing-editor-resource__title">
+                            <span className={`wellbeing-editor-resource__kind wellbeing-editor-resource__kind--${selectedEditorResource.kind}`}>
+                              {selectedEditorResource.kind === 'form' ? 'Formulário' : 'PDF / Vídeo'}
+                            </span>
+                            <strong>{selectedEditorResource.title || 'Bloco sem título'}</strong>
+                            <small>{selectedEditorResource.kind === 'form' ? 'Canal editável com configuração de reporte' : 'Bloco documental com anexos e call-to-action'}</small>
+                          </div>
+                          <Button type="button" variant="ghost" size="sm" onClick={() => isCountryTab && removeResource(activeTab, selectedEditorResource.id)} disabled={!isCountryTab}>
+                            Remover bloco
+                          </Button>
+                        </div>
+
+                        <div className="wellbeing-editor-resource__body">
+                          <div className="wellbeing-editor-card__grid wellbeing-editor-card__grid--resource">
+                            <label className="wellbeing-editor-card__field">
+                              <span>Título</span>
+                              <input
+                                value={selectedEditorResource.title}
+                                onChange={(event) => {
+                                  if (isGeneralTab) {
+                                    updateSharedResourceField(selectedEditorResource.id, 'title', event.target.value);
+                                    return;
+                                  }
+                                  if (isCountryTab) {
+                                    updateResourceField(activeTab, selectedEditorResource.id, 'title', event.target.value);
+                                  }
+                                }}
+                              />
+                            </label>
+                            <label className="wellbeing-editor-card__field wellbeing-editor-card__field--full">
+                              <span>Descrição</span>
+                              <textarea
+                                rows={3}
+                                value={selectedEditorResource.description}
+                                onChange={(event) => {
+                                  if (isGeneralTab) {
+                                    updateSharedResourceField(selectedEditorResource.id, 'description', event.target.value);
+                                    return;
+                                  }
+                                  if (isCountryTab) {
+                                    updateResourceField(activeTab, selectedEditorResource.id, 'description', event.target.value);
+                                  }
+                                }}
+                              />
+                            </label>
+                            <label className="wellbeing-editor-card__field">
+                              <span>Texto do botão</span>
+                              <input
+                                value={selectedEditorResource.buttonLabel}
+                                onChange={(event) => {
+                                  if (isGeneralTab) {
+                                    updateSharedResourceField(selectedEditorResource.id, 'buttonLabel', event.target.value);
+                                    return;
+                                  }
+                                  if (isCountryTab) {
+                                    updateResourceField(activeTab, selectedEditorResource.id, 'buttonLabel', event.target.value);
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+
+                          <div className="wellbeing-files-editor">
+                            <div className="wellbeing-files-editor__header">
+                              <strong>Ficheiros associados (PDF ou vídeo)</strong>
+                              <label className="wellbeing-upload-btn">
+                                <input type="file" accept="application/pdf,.pdf,video/*,.mp4,.mov,.avi,.webm,.mkv" onChange={(event) => void uploadFile(isGeneralTab ? 'GENERAL' : activeTab, selectedEditorResource.id, event)} />
+                                {uploadingKey === selectedEditorResource.id ? 'A carregar…' : 'Adicionar ficheiro'}
+                              </label>
+                            </div>
+
+                            {selectedEditorResource.files.length === 0 ? (
+                              <p className="wellbeing-files-editor__empty">Ainda não há ficheiros neste bloco.</p>
+                            ) : (
+                              <div className="wellbeing-files-editor__list">
+                                {selectedEditorResource.files.map((file) => (
+                                  <div key={file.id} className="wellbeing-files-editor__row">
+                                    <input
+                                      value={file.label}
+                                      onChange={(event) => {
+                                        if (isGeneralTab) {
+                                          updateSharedFileLabel(selectedEditorResource.id, file.id, event.target.value);
+                                          return;
+                                        }
+                                        if (isCountryTab) {
+                                          updateFileLabel(activeTab, selectedEditorResource.id, file.id, event.target.value);
+                                        }
+                                      }}
+                                    />
+                                    <a href={file.link} target="_blank" rel="noreferrer">Abrir</a>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => {
+                                        if (isGeneralTab) {
+                                          removeSharedFile(selectedEditorResource.id, file.id);
+                                          return;
+                                        }
+                                        if (isCountryTab) {
+                                          removeFile(activeTab, selectedEditorResource.id, file.id);
+                                        }
+                                      }}
+                                    >
+                                      Remover
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </article>
+                    )}
+                  </div>
+                )}
+
+                {editorSubtab === 'report' && selectedReportResource && (
+                  <div className="wellbeing-editor-panel">
+                    <div className="wellbeing-editor-panel__picker wellbeing-editor-panel__picker--forms" role="tablist" aria-label="Formulários configuráveis">
+                      {reportResources.map((resource) => (
+                        <button
+                          key={resource.id}
+                          type="button"
+                          className={selectedReportResource.id === resource.id ? 'is-active' : ''}
+                          onClick={() => setSelectedEditorResourceId(resource.id)}
+                        >
+                          <span>Formulário</span>
+                          {resource.title || 'Sem título'}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="wellbeing-report-config-editor">
+                      <div className="wellbeing-report-config-editor__hero">
+                        <div>
+                          <p className="wellbeing-report-config-editor__eyebrow">Editor do formulário</p>
+                          <strong>Configuração do formulário de reporte</strong>
+                          <span>Personaliza o modal, microcopy e call-to-actions apresentados ao colaborador.</span>
+                        </div>
+                      </div>
+                      <div className="wellbeing-editor-card__grid wellbeing-editor-card__grid--resource wellbeing-report-config-editor__grid">
+                        <label className="wellbeing-editor-card__field">
+                          <span>Título do modal</span>
+                          <input
+                            value={getReportConfig(selectedReportResource).modalTitle}
+                            onChange={(event) => {
+                              if (isGeneralTab) {
+                                updateSharedReportConfig(selectedReportResource.id, 'modalTitle', event.target.value);
+                                return;
+                              }
+                              if (isCountryTab) {
+                                updateResourceReportConfig(activeTab, selectedReportResource.id, 'modalTitle', event.target.value);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label className="wellbeing-editor-card__field">
+                          <span>Título da introdução</span>
+                          <input
+                            value={getReportConfig(selectedReportResource).introTitle}
+                            onChange={(event) => {
+                              if (isGeneralTab) {
+                                updateSharedReportConfig(selectedReportResource.id, 'introTitle', event.target.value);
+                                return;
+                              }
+                              if (isCountryTab) {
+                                updateResourceReportConfig(activeTab, selectedReportResource.id, 'introTitle', event.target.value);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label className="wellbeing-editor-card__field wellbeing-editor-card__field--full">
+                          <span>Texto da introdução</span>
+                          <textarea
+                            rows={3}
+                            value={getReportConfig(selectedReportResource).introText}
+                            onChange={(event) => {
+                              if (isGeneralTab) {
+                                updateSharedReportConfig(selectedReportResource.id, 'introText', event.target.value);
+                                return;
+                              }
+                              if (isCountryTab) {
+                                updateResourceReportConfig(activeTab, selectedReportResource.id, 'introText', event.target.value);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label className="wellbeing-editor-card__field">
+                          <span>Label de assunto</span>
+                          <input
+                            value={getReportConfig(selectedReportResource).subjectLabel}
+                            onChange={(event) => {
+                              if (isGeneralTab) {
+                                updateSharedReportConfig(selectedReportResource.id, 'subjectLabel', event.target.value);
+                                return;
+                              }
+                              if (isCountryTab) {
+                                updateResourceReportConfig(activeTab, selectedReportResource.id, 'subjectLabel', event.target.value);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label className="wellbeing-editor-card__field">
+                          <span>Placeholder de assunto</span>
+                          <input
+                            value={getReportConfig(selectedReportResource).subjectPlaceholder}
+                            onChange={(event) => {
+                              if (isGeneralTab) {
+                                updateSharedReportConfig(selectedReportResource.id, 'subjectPlaceholder', event.target.value);
+                                return;
+                              }
+                              if (isCountryTab) {
+                                updateResourceReportConfig(activeTab, selectedReportResource.id, 'subjectPlaceholder', event.target.value);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label className="wellbeing-editor-card__field">
+                          <span>Label de contacto</span>
+                          <input
+                            value={getReportConfig(selectedReportResource).preferredContactLabel}
+                            onChange={(event) => {
+                              if (isGeneralTab) {
+                                updateSharedReportConfig(selectedReportResource.id, 'preferredContactLabel', event.target.value);
+                                return;
+                              }
+                              if (isCountryTab) {
+                                updateResourceReportConfig(activeTab, selectedReportResource.id, 'preferredContactLabel', event.target.value);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label className="wellbeing-editor-card__field">
+                          <span>Placeholder de contacto</span>
+                          <input
+                            value={getReportConfig(selectedReportResource).preferredContactPlaceholder}
+                            onChange={(event) => {
+                              if (isGeneralTab) {
+                                updateSharedReportConfig(selectedReportResource.id, 'preferredContactPlaceholder', event.target.value);
+                                return;
+                              }
+                              if (isCountryTab) {
+                                updateResourceReportConfig(activeTab, selectedReportResource.id, 'preferredContactPlaceholder', event.target.value);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label className="wellbeing-editor-card__field">
+                          <span>Label de descrição</span>
+                          <input
+                            value={getReportConfig(selectedReportResource).descriptionLabel}
+                            onChange={(event) => {
+                              if (isGeneralTab) {
+                                updateSharedReportConfig(selectedReportResource.id, 'descriptionLabel', event.target.value);
+                                return;
+                              }
+                              if (isCountryTab) {
+                                updateResourceReportConfig(activeTab, selectedReportResource.id, 'descriptionLabel', event.target.value);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label className="wellbeing-editor-card__field wellbeing-editor-card__field--full">
+                          <span>Placeholder de descrição</span>
+                          <textarea
+                            rows={2}
+                            value={getReportConfig(selectedReportResource).descriptionPlaceholder}
+                            onChange={(event) => {
+                              if (isGeneralTab) {
+                                updateSharedReportConfig(selectedReportResource.id, 'descriptionPlaceholder', event.target.value);
+                                return;
+                              }
+                              if (isCountryTab) {
+                                updateResourceReportConfig(activeTab, selectedReportResource.id, 'descriptionPlaceholder', event.target.value);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label className="wellbeing-editor-card__field">
+                          <span>Texto botão enviar</span>
+                          <input
+                            value={getReportConfig(selectedReportResource).submitLabel}
+                            onChange={(event) => {
+                              if (isGeneralTab) {
+                                updateSharedReportConfig(selectedReportResource.id, 'submitLabel', event.target.value);
+                                return;
+                              }
+                              if (isCountryTab) {
+                                updateResourceReportConfig(activeTab, selectedReportResource.id, 'submitLabel', event.target.value);
+                              }
+                            }}
+                          />
+                        </label>
+                        <label className="wellbeing-editor-card__field">
+                          <span>Texto botão cancelar</span>
+                          <input
+                            value={getReportConfig(selectedReportResource).cancelLabel}
+                            onChange={(event) => {
+                              if (isGeneralTab) {
+                                updateSharedReportConfig(selectedReportResource.id, 'cancelLabel', event.target.value);
+                                return;
+                              }
+                              if (isCountryTab) {
+                                updateResourceReportConfig(activeTab, selectedReportResource.id, 'cancelLabel', event.target.value);
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="wellbeing-country-card__head">
@@ -717,299 +1132,10 @@ export default function WellbeingPage() {
               </div>
             )}
 
-            <div className="wellbeing-grid">
-              {section.resources.map((resource) => (
-                <article key={resource.id} className={`wellbeing-card wellbeing-card--${resource.kind}`}>
-                  {isEditing && (
-                    <div className="wellbeing-card__actions">
-                      <Button type="button" variant="ghost" size="sm" onClick={() => isCountryTab && removeResource(activeTab, resource.id)} disabled={!isCountryTab}>
-                        Remover bloco
-                      </Button>
-                    </div>
-                  )}
-
-                  {isEditing ? (
-                    <div className="wellbeing-editor-card__grid wellbeing-editor-card__grid--resource">
-                      <label className="wellbeing-editor-card__field">
-                        <span>Título</span>
-                        <input
-                          value={resource.title}
-                          onChange={(event) => {
-                            if (isGeneralTab) {
-                              updateSharedResourceField(resource.id, 'title', event.target.value);
-                              return;
-                            }
-
-                            if (isCountryTab) {
-                              updateResourceField(activeTab, resource.id, 'title', event.target.value);
-                            }
-                          }}
-                        />
-                      </label>
-                      <label className="wellbeing-editor-card__field wellbeing-editor-card__field--full">
-                        <span>Descrição</span>
-                        <textarea
-                          rows={3}
-                          value={resource.description}
-                          onChange={(event) => {
-                            if (isGeneralTab) {
-                              updateSharedResourceField(resource.id, 'description', event.target.value);
-                              return;
-                            }
-
-                            if (isCountryTab) {
-                              updateResourceField(activeTab, resource.id, 'description', event.target.value);
-                            }
-                          }}
-                        />
-                      </label>
-                      <label className="wellbeing-editor-card__field">
-                        <span>Texto do botão</span>
-                        <input
-                          value={resource.buttonLabel}
-                          onChange={(event) => {
-                            if (isGeneralTab) {
-                              updateSharedResourceField(resource.id, 'buttonLabel', event.target.value);
-                              return;
-                            }
-
-                            if (isCountryTab) {
-                              updateResourceField(activeTab, resource.id, 'buttonLabel', event.target.value);
-                            }
-                          }}
-                        />
-                      </label>
-
-                      <div className="wellbeing-files-editor">
-                        <div className="wellbeing-files-editor__header">
-                          <strong>Ficheiros associados (PDF ou vídeo)</strong>
-                          <label className="wellbeing-upload-btn">
-                            <input type="file" accept="application/pdf,.pdf,video/*,.mp4,.mov,.avi,.webm,.mkv" onChange={(event) => void uploadFile(isGeneralTab ? 'GENERAL' : activeTab, resource.id, event)} />
-                            {uploadingKey === resource.id ? 'A carregar…' : 'Adicionar ficheiro'}
-                          </label>
-                        </div>
-
-                        {resource.files.length === 0 ? (
-                          <p className="wellbeing-files-editor__empty">Ainda não há ficheiros neste bloco.</p>
-                        ) : (
-                          <div className="wellbeing-files-editor__list">
-                            {resource.files.map((file) => (
-                              <div key={file.id} className="wellbeing-files-editor__row">
-                                <input
-                                  value={file.label}
-                                  onChange={(event) => {
-                                    if (isGeneralTab) {
-                                      updateSharedFileLabel(resource.id, file.id, event.target.value);
-                                      return;
-                                    }
-
-                                    if (isCountryTab) {
-                                      updateFileLabel(activeTab, resource.id, file.id, event.target.value);
-                                    }
-                                  }}
-                                />
-                                <a href={file.link} target="_blank" rel="noreferrer">Abrir</a>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    if (isGeneralTab) {
-                                      removeSharedFile(resource.id, file.id);
-                                      return;
-                                    }
-
-                                    if (isCountryTab) {
-                                      removeFile(activeTab, resource.id, file.id);
-                                    }
-                                  }}
-                                >
-                                  Remover
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      {resource.kind === 'form' && (
-                        <div className="wellbeing-files-editor">
-                          <div className="wellbeing-files-editor__header">
-                            <strong>Configuração do formulário de reporte</strong>
-                          </div>
-                          <div className="wellbeing-editor-card__grid wellbeing-editor-card__grid--resource">
-                            <label className="wellbeing-editor-card__field">
-                              <span>Título do modal</span>
-                              <input
-                                value={getReportConfig(resource).modalTitle}
-                                onChange={(event) => {
-                                  if (isGeneralTab) {
-                                    updateSharedReportConfig(resource.id, 'modalTitle', event.target.value);
-                                    return;
-                                  }
-                                  if (isCountryTab) {
-                                    updateResourceReportConfig(activeTab, resource.id, 'modalTitle', event.target.value);
-                                  }
-                                }}
-                              />
-                            </label>
-                            <label className="wellbeing-editor-card__field">
-                              <span>Título da introdução</span>
-                              <input
-                                value={getReportConfig(resource).introTitle}
-                                onChange={(event) => {
-                                  if (isGeneralTab) {
-                                    updateSharedReportConfig(resource.id, 'introTitle', event.target.value);
-                                    return;
-                                  }
-                                  if (isCountryTab) {
-                                    updateResourceReportConfig(activeTab, resource.id, 'introTitle', event.target.value);
-                                  }
-                                }}
-                              />
-                            </label>
-                            <label className="wellbeing-editor-card__field wellbeing-editor-card__field--full">
-                              <span>Texto da introdução</span>
-                              <textarea
-                                rows={3}
-                                value={getReportConfig(resource).introText}
-                                onChange={(event) => {
-                                  if (isGeneralTab) {
-                                    updateSharedReportConfig(resource.id, 'introText', event.target.value);
-                                    return;
-                                  }
-                                  if (isCountryTab) {
-                                    updateResourceReportConfig(activeTab, resource.id, 'introText', event.target.value);
-                                  }
-                                }}
-                              />
-                            </label>
-                            <label className="wellbeing-editor-card__field">
-                              <span>Label de assunto</span>
-                              <input
-                                value={getReportConfig(resource).subjectLabel}
-                                onChange={(event) => {
-                                  if (isGeneralTab) {
-                                    updateSharedReportConfig(resource.id, 'subjectLabel', event.target.value);
-                                    return;
-                                  }
-                                  if (isCountryTab) {
-                                    updateResourceReportConfig(activeTab, resource.id, 'subjectLabel', event.target.value);
-                                  }
-                                }}
-                              />
-                            </label>
-                            <label className="wellbeing-editor-card__field">
-                              <span>Placeholder de assunto</span>
-                              <input
-                                value={getReportConfig(resource).subjectPlaceholder}
-                                onChange={(event) => {
-                                  if (isGeneralTab) {
-                                    updateSharedReportConfig(resource.id, 'subjectPlaceholder', event.target.value);
-                                    return;
-                                  }
-                                  if (isCountryTab) {
-                                    updateResourceReportConfig(activeTab, resource.id, 'subjectPlaceholder', event.target.value);
-                                  }
-                                }}
-                              />
-                            </label>
-                            <label className="wellbeing-editor-card__field">
-                              <span>Label de contacto</span>
-                              <input
-                                value={getReportConfig(resource).preferredContactLabel}
-                                onChange={(event) => {
-                                  if (isGeneralTab) {
-                                    updateSharedReportConfig(resource.id, 'preferredContactLabel', event.target.value);
-                                    return;
-                                  }
-                                  if (isCountryTab) {
-                                    updateResourceReportConfig(activeTab, resource.id, 'preferredContactLabel', event.target.value);
-                                  }
-                                }}
-                              />
-                            </label>
-                            <label className="wellbeing-editor-card__field">
-                              <span>Placeholder de contacto</span>
-                              <input
-                                value={getReportConfig(resource).preferredContactPlaceholder}
-                                onChange={(event) => {
-                                  if (isGeneralTab) {
-                                    updateSharedReportConfig(resource.id, 'preferredContactPlaceholder', event.target.value);
-                                    return;
-                                  }
-                                  if (isCountryTab) {
-                                    updateResourceReportConfig(activeTab, resource.id, 'preferredContactPlaceholder', event.target.value);
-                                  }
-                                }}
-                              />
-                            </label>
-                            <label className="wellbeing-editor-card__field">
-                              <span>Label de descrição</span>
-                              <input
-                                value={getReportConfig(resource).descriptionLabel}
-                                onChange={(event) => {
-                                  if (isGeneralTab) {
-                                    updateSharedReportConfig(resource.id, 'descriptionLabel', event.target.value);
-                                    return;
-                                  }
-                                  if (isCountryTab) {
-                                    updateResourceReportConfig(activeTab, resource.id, 'descriptionLabel', event.target.value);
-                                  }
-                                }}
-                              />
-                            </label>
-                            <label className="wellbeing-editor-card__field wellbeing-editor-card__field--full">
-                              <span>Placeholder de descrição</span>
-                              <textarea
-                                rows={2}
-                                value={getReportConfig(resource).descriptionPlaceholder}
-                                onChange={(event) => {
-                                  if (isGeneralTab) {
-                                    updateSharedReportConfig(resource.id, 'descriptionPlaceholder', event.target.value);
-                                    return;
-                                  }
-                                  if (isCountryTab) {
-                                    updateResourceReportConfig(activeTab, resource.id, 'descriptionPlaceholder', event.target.value);
-                                  }
-                                }}
-                              />
-                            </label>
-                            <label className="wellbeing-editor-card__field">
-                              <span>Texto botão enviar</span>
-                              <input
-                                value={getReportConfig(resource).submitLabel}
-                                onChange={(event) => {
-                                  if (isGeneralTab) {
-                                    updateSharedReportConfig(resource.id, 'submitLabel', event.target.value);
-                                    return;
-                                  }
-                                  if (isCountryTab) {
-                                    updateResourceReportConfig(activeTab, resource.id, 'submitLabel', event.target.value);
-                                  }
-                                }}
-                              />
-                            </label>
-                            <label className="wellbeing-editor-card__field">
-                              <span>Texto botão cancelar</span>
-                              <input
-                                value={getReportConfig(resource).cancelLabel}
-                                onChange={(event) => {
-                                  if (isGeneralTab) {
-                                    updateSharedReportConfig(resource.id, 'cancelLabel', event.target.value);
-                                    return;
-                                  }
-                                  if (isCountryTab) {
-                                    updateResourceReportConfig(activeTab, resource.id, 'cancelLabel', event.target.value);
-                                  }
-                                }}
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
+            {!isEditing && (
+              <div className="wellbeing-grid">
+                {section.resources.map((resource) => (
+                  <article key={resource.id} className={`wellbeing-card wellbeing-card--${resource.kind}`}>
                     <>
                       <h3>{resource.title}</h3>
 
@@ -1045,19 +1171,8 @@ export default function WellbeingPage() {
                         </div>
                       )}
                     </>
-                  )}
-                </article>
-              ))}
-            </div>
-
-            {isEditing && (
-              <div className="wellbeing-editor-actions">
-                <Button type="button" variant="ghost" onClick={() => isCountryTab && addResource(activeTab, 'pdf')} disabled={!isCountryTab}>
-                  + Bloco PDF
-                </Button>
-                <Button type="button" variant="ghost" onClick={() => isCountryTab && addResource(activeTab, 'form')} disabled={!isCountryTab}>
-                  + Bloco formulário
-                </Button>
+                  </article>
+                ))}
               </div>
             )}
           </section>
@@ -1097,8 +1212,16 @@ export default function WellbeingPage() {
       >
         <div className="wellbeing-report-form">
           <div className="wellbeing-report-form__intro">
-            <h3>{activeReportConfig.introTitle}</h3>
-            <p>{activeReportConfig.introText}</p>
+            <div className="wellbeing-report-form__intro-icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.25C17.25 22.15 21 17.25 21 12V7L12 2z" fill="rgba(255,255,255,0.92)" />
+                <path d="M10 13l2 2 4-4" stroke="rgba(29,78,216,0.7)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <div className="wellbeing-report-form__intro-body">
+              <h3>{activeReportConfig.introTitle}</h3>
+              <p>{activeReportConfig.introText}</p>
+            </div>
           </div>
 
           <div className="wellbeing-report-form__grid">
@@ -1130,6 +1253,10 @@ export default function WellbeingPage() {
               />
             </label>
           </div>
+          <p className="wellbeing-report-form__privacy">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+            Este reporte é confidencial e será tratado com discrição pelo RH e t.people.
+          </p>
         </div>
       </Modal>
 

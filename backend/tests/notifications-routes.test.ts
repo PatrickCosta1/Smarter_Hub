@@ -75,19 +75,13 @@ describe('notifications routes integration', () => {
   // ─── GET /notifications/me ────────────────────────────────────────────────
 
   describe('GET /api/notifications/me', () => {
-    it('returns all notifications as array when no pagination params', async () => {
-      const notifications = [
-        { id: 'n1', userId: 'auth-user', title: 'Aviso', message: 'Texto', isRead: false, createdAt: new Date() },
-      ];
-      prismaMock.notification.findMany.mockResolvedValue(notifications);
+    it('returns 400 when pagination is missing', async () => {
 
       const app = buildApp();
       const response = await request(app).get('/api/notifications/me');
 
-      expect(response.status).toBe(200);
-      expect(Array.isArray(response.body)).toBe(true);
-      expect(response.body).toHaveLength(1);
-      expect(response.body[0].id).toBe('n1');
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain('paginação');
     });
 
     it('returns paginated response when page and pageSize are provided', async () => {
@@ -106,14 +100,16 @@ describe('notifications routes integration', () => {
       expect(Array.isArray(response.body.rows)).toBe(true);
     });
 
-    it('returns empty array when no notifications exist', async () => {
+    it('returns empty paginated rows when no notifications exist', async () => {
+      prismaMock.notification.count.mockResolvedValue(0);
       prismaMock.notification.findMany.mockResolvedValue([]);
 
       const app = buildApp();
-      const response = await request(app).get('/api/notifications/me');
+      const response = await request(app).get('/api/notifications/me?page=1&pageSize=20');
 
       expect(response.status).toBe(200);
-      expect(response.body).toEqual([]);
+      expect(response.body.total).toBe(0);
+      expect(response.body.rows).toEqual([]);
     });
   });
 

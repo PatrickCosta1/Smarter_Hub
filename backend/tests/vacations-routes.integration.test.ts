@@ -147,7 +147,12 @@ describe('vacations routes integration', () => {
     const response = await request(app).get('/api/vacations/requests');
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual([]);
+    expect(response.body).toEqual({
+      total: 0,
+      page: 1,
+      pageSize: 50,
+      rows: [],
+    });
   });
 
   it('POST /api/vacations returns 400 when no approvers are configured', async () => {
