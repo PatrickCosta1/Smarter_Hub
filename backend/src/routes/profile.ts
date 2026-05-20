@@ -4,6 +4,7 @@ import { Prisma, ProfileOptionType } from "@prisma/client";
 
 import { prisma } from "../lib/prisma.js";
 import { getUserProfile } from "../services/profile/get-profile.service.js";
+import { getProfileOptions } from "../services/profile/profile-options.service.js";
 import {
   buildUserWhereFromScope,
   canAccessUserByPermission,
@@ -192,25 +193,12 @@ async function canManageProfileDropdownOptions(userId: string, isRootAccessFlag:
 }
 
 router.get('/profile/options', requireAuth, async (req, res) => {
-  const customOptions = await prisma.profileDropdownOption.findMany({
-    where: { isActive: true },
-    select: {
-      id: true,
-      type: true,
-      label: true,
-      groupLabel: true,
-    },
-    orderBy: [{ type: 'asc' }, { label: 'asc' }],
-  });
-
-  return res.json({
-    cargo: customOptions
-      .filter((option) => option.type === 'CARGO')
-      .map((option) => ({ id: option.id, label: option.label, groupLabel: option.groupLabel })),
-    funcao: customOptions
-      .filter((option) => option.type === 'FUNCAO')
-      .map((option) => ({ id: option.id, label: option.label, groupLabel: option.groupLabel })),
-  });
+  try {
+    const options = await getProfileOptions();
+    return res.json(options);
+  } catch (error) {
+    return res.status(500).json({ error: 'Falha ao obter opções de perfil.' });
+  }
 });
 
 router.post('/profile/options', requireAuth, async (req, res) => {
