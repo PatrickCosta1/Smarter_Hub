@@ -1,15 +1,14 @@
 import { ChangeEvent, FormEvent, Fragment, type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase, isAbortError } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 import { usePortal } from '../portal/context';
 import { formatVacationStatusLabel, getVacationStatusTone } from '../portal/labels';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import Toast from '../components/ui/Toast';
 
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
-
 function getAuthHeaders() {
-  const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+  const token = getStoredAuthToken();
   return authHeaders(token);
 }
 
@@ -1916,7 +1915,7 @@ export default function VacationsPage() {
       if (selectedUserIds.length > 0) {
         params.set('userIds', selectedUserIds.join(','));
       }
-      const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+      const token = getStoredAuthToken();
       const response = await fetch(`${getApiBase()}/vacations/export?${params.toString()}`, {
         headers: authHeaders(token),
       });
@@ -2564,7 +2563,7 @@ export default function VacationsPage() {
       return;
     }
 
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     const formData = new FormData();
     formData.append('file', file);
 

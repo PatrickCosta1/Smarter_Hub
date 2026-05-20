@@ -1,18 +1,28 @@
 ﻿import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase, getBackendBase, isAbortError } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 import { usePortal } from '../portal/context';
 import { estadoCivilOptions, generoOptions, habilitacoesOptions, irsJovemOptions, parentescoOptions, regimeHorarioOptions, situacaoIrsOptions, tipoContratoOptions } from '../portal/data';
 import { formatRoleLabel } from '../portal/labels';
 import Badge from '../components/ui/Badge';
 import DataTable from '../components/ui/DataTable';
 import Button from '../components/ui/Button';
-import Modal from '../components/ui/Modal';
-import Skeleton from '../components/ui/Skeleton';
-import EmptyState from '../components/ui/EmptyState';
 import Toast from '../components/ui/Toast';
+import CollaboratorsFilterBar from '../components/collaborators/CollaboratorsFilterBar';
+import CollaboratorsHeaderActions from '../components/collaborators/CollaboratorsHeaderActions';
+import CollaboratorsPagination from '../components/collaborators/CollaboratorsPagination';
+import CollaboratorTeamCell from '../components/collaborators/CollaboratorTeamCell';
+import CollaboratorsRowActions from '../components/collaborators/CollaboratorsRowActions';
+import CollaboratorExportModal from '../components/collaborators/CollaboratorExportModal';
+import CollaboratorsImportModal from '../components/collaborators/CollaboratorsImportModal';
+import CollaboratorCreateModal, { type CollaboratorCreateDraft } from '../components/collaborators/CollaboratorCreateModal';
+import CollaboratorDetailsModal from '../components/collaborators/CollaboratorDetailsModal';
+import CollaboratorProfileOptionModal from '../components/collaborators/CollaboratorProfileOptionModal';
+import CollaboratorActiveConfirmModal from '../components/collaborators/CollaboratorActiveConfirmModal';
+import CollaboratorCountryChangeModal from '../components/collaborators/CollaboratorCountryChangeModal';
+import CollaboratorsActionsMenuPanel from '../components/collaborators/CollaboratorsActionsMenuPanel';
 
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 const PERMISSION_CATEGORIES = ['SYSTEM', 'USERS', 'TEAMS', 'VACATIONS', 'TRAININGS', 'PROFILE', 'NOTIFICATIONS'] as const;
 type PermissionCategory = typeof PERMISSION_CATEGORIES[number];
 
@@ -928,7 +938,7 @@ const IMPORT_FIELD_TARGETS = new Map<string, string>(
 );
 
 function getAuthHeaders() {
-  const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+  const token = getStoredAuthToken();
   return authHeaders(token);
 }
 
@@ -1576,7 +1586,7 @@ export default function CollaboratorsPage() {
   const [isSavingProfileOption, setIsSavingProfileOption] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
-  const [newUserDraft, setNewUserDraft] = useState({ fullName: '', personalEmail: '', workCountry: 'PT' as 'PT' | 'BR', brWorkState: '' as '' | 'SP' | 'RS' });
+  const [newUserDraft, setNewUserDraft] = useState<CollaboratorCreateDraft>({ fullName: '', personalEmail: '', workCountry: 'PT', brWorkState: '' });
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isParsingImportFile, setIsParsingImportFile] = useState(false);
   const [isImportingUsers, setIsImportingUsers] = useState(false);
@@ -1735,6 +1745,45 @@ export default function CollaboratorsPage() {
     () => permissionTeams.filter((team) => !selectedRestrictedTeamIds.includes(team.id)),
     [permissionTeams, selectedRestrictedTeamIds],
   );
+  const permissionCategoryItems = useMemo(
+    () => PERMISSION_CATEGORIES.map((item) => ({ id: item, label: getPermissionCategoryLabel(item) })),
+    [],
+  );
+  const filteredPermissionListItems = useMemo(
+    () => filteredCategoryPermissions.map((permission) => {
+      const draft = permissionDrafts[permission.id] ?? buildDraftFromAssignment(permission);
+      return {
+        id: permission.id,
+        label: permission.label,
+        isSelected: selectedPermission?.id === permission.id,
+        isEnabled: selectedUserAccessTotal || draft.enabled,
+      };
+    }),
+    [filteredCategoryPermissions, permissionDrafts, selectedPermission?.id, selectedUserAccessTotal],
+  );
+  const activeProfileSectionView = useMemo(() => {
+    if (detailsFichaSection === 'conta') {
+      return null;
+    }
+
+    const sectionMeta = getEditSectionMeta(detailsFichaSection);
+    const fields = getVisibleEditProfileFields(editDraft.workCountry)
+      .filter((field) => field.section === detailsFichaSection && field.key !== 'photoUrl')
+      .map((field) => ({
+        key: String(field.key),
+        label: field.label,
+        className: getEditFieldCardClass(field.key),
+        control: renderEditFieldControl(field.key),
+      }));
+
+    return {
+      key: detailsFichaSection,
+      title: sectionMeta.title,
+      description: sectionMeta.description,
+      sectionClassName: sectionMeta.sectionClassName,
+      fields,
+    };
+  }, [detailsFichaSection, editDraft.workCountry]);
   const exportCandidatesFiltered = useMemo(() => {
     const normalized = exportSearch.trim().toLowerCase();
     const source = exportCandidates.filter((item) => item.id !== currentUser?.id);
@@ -2420,7 +2469,7 @@ export default function CollaboratorsPage() {
   }
 
   async function handleCreateProfileOption() {
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     const normalizedLabel = profileOptionLabel.trim().replace(/\s+/g, ' ');
     const normalizedGroup = profileOptionGroup.trim().replace(/\s+/g, ' ');
 
@@ -2734,6 +2783,42 @@ export default function CollaboratorsPage() {
     }));
   }
 
+  function setSelectedPermissionEnabled(enabled: boolean) {
+    if (!selectedPermission || !selectedPermissionDraft) {
+      return;
+    }
+
+    setPermissionDrafts((current) => ({
+      ...current,
+      [selectedPermission.id]: { ...selectedPermissionDraft, enabled },
+    }));
+  }
+
+  function toggleSelectedPermissionCountry(country: string) {
+    if (!selectedPermission || !selectedPermissionDraft) {
+      return;
+    }
+
+    setPermissionDrafts((current) => ({
+      ...current,
+      [selectedPermission.id]: {
+        ...selectedPermissionDraft,
+        restrictedToCountries: toggleCommaItem(selectedPermissionDraft.restrictedToCountries, country),
+      },
+    }));
+  }
+
+  function setSelectedPermissionNotes(notes: string) {
+    if (!selectedPermission || !selectedPermissionDraft) {
+      return;
+    }
+
+    setPermissionDrafts((current) => ({
+      ...current,
+      [selectedPermission.id]: { ...selectedPermissionDraft, notes },
+    }));
+  }
+
   function renderEditFieldControl(fieldKey: keyof CollaboratorEditDraft) {
     const isComprovativoField = fieldKey === 'comprovativoMoradaFiscal'
       || fieldKey === 'comprovativoCartaoCidadao'
@@ -2982,7 +3067,7 @@ export default function CollaboratorsPage() {
       return;
     }
 
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     const formData = new FormData();
     formData.append('file', file);
 
@@ -3337,6 +3422,10 @@ export default function CollaboratorsPage() {
     setNewUserDraft({ fullName: '', personalEmail: '', workCountry: 'PT', brWorkState: '' });
   }
 
+  function updateNewUserDraft(patch: Partial<CollaboratorCreateDraft>) {
+    setNewUserDraft((current) => ({ ...current, ...patch }));
+  }
+
   async function createUser() {
     const fullName = newUserDraft.fullName.trim().replace(/\s+/g, ' ');
     const personalEmail = newUserDraft.personalEmail.trim().toLowerCase();
@@ -3420,102 +3509,43 @@ export default function CollaboratorsPage() {
     <section className="trainings-shell">
 
       <section className="trainings-list-card">
-        <div className="people-page-header">
-          <div className="people-page-header__actions">
-            {canCreateUser && (
-              <Button type="button" variant="primary" onClick={openCreateModal}>+ Novo colaborador</Button>
-            )}
-            {canCreateUser && (
-              <Button type="button" variant="secondary" onClick={openImportModal}>Importar em massa</Button>
-            )}
-            <Button type="button" variant="primary" onClick={openExportModal}>
-            Exportar
-          </Button>
-          </div>
-        </div>
+        <CollaboratorsHeaderActions
+          canCreateUser={canCreateUser}
+          onCreateUser={openCreateModal}
+          onImportUsers={openImportModal}
+          onExportUsers={openExportModal}
+        />
 
-        <div className="collaborators-filter-bar">
-          <div className="collaborators-filter-group collaborators-filter-group--primary">
-            <label className="collaborators-filter-group__search">
-              <span>Pesquisar</span>
-              <input
-                ref={collaboratorQueryInputRef}
-                type="search"
-                value={query}
-                autoComplete="off"
-                onChange={(event) => { setPage(1); setQuery(event.target.value); }}
-                placeholder="Nome, username, email, cargo, função..."
-              />
-            </label>
-
-            <label>
-              <span>Estado</span>
-              <select value={activeFilter} onChange={(event) => { setPage(1); setActiveFilter(event.target.value as 'ALL' | 'ACTIVE' | 'INACTIVE'); }}>
-                <option value="ACTIVE">Ativo</option>
-                <option value="INACTIVE">Inativo</option>
-                <option value="ALL">Todos</option>
-              </select>
-            </label>
-
-            <label>
-              <span>País</span>
-              <select value={countryFilter} onChange={(event) => { setPage(1); setCountryFilter(event.target.value as 'ALL' | 'PT' | 'BR'); }}>
-                <option value="ALL">Todos</option>
-                <option value="PT">Portugal</option>
-                <option value="BR">Brasil</option>
-              </select>
-            </label>
-          </div>
-
-          <div className="collaborators-filter-group collaborators-filter-group--sort">
-            <label>
-              <span>Ordenar por</span>
-              <select value={sortBy} onChange={(event) => setSortBy(event.target.value as 'createdAt' | 'updatedAt' | 'username' | 'email')}>
-                <option value="updatedAt">Atualização</option>
-                <option value="createdAt">Criação</option>
-                <option value="username">Username</option>
-                <option value="email">Email</option>
-              </select>
-            </label>
-
-            <label>
-              <span>Direção</span>
-              <select value={sortDirection} onChange={(event) => setSortDirection(event.target.value as 'asc' | 'desc')}>
-                <option value="desc">↓ Desc</option>
-                <option value="asc">↑ Asc</option>
-              </select>
-            </label>
-
-            <label>
-              <span>Por página</span>
-              <select value={pageSize} onChange={(event) => { setPage(1); setPageSize(Number(event.target.value)); }}>
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
-            </label>
-
-            <button
-              type="button"
-              className="collaborators-filter-clear-btn"
-              onClick={clearCollaboratorFilters}
-              disabled={!hasCustomFilters && sortBy === 'updatedAt' && sortDirection === 'desc'}
-            >
-              Limpar filtros
-            </button>
-          </div>
-
-          <div className="collaborators-filter-summary" aria-live="polite">
-            <span className="collaborators-filter-summary__label">Filtros ativos</span>
-            {activeFilterTags.length === 0 ? (
-              <span className="collaborators-filter-summary__chip collaborators-filter-summary__chip--muted">Padrão</span>
-            ) : (
-              activeFilterTags.map((tag) => (
-                <span key={tag} className="collaborators-filter-summary__chip">{tag}</span>
-              ))
-            )}
-          </div>
-        </div>
+        <CollaboratorsFilterBar
+          collaboratorQueryInputRef={collaboratorQueryInputRef}
+          query={query}
+          activeFilter={activeFilter}
+          countryFilter={countryFilter}
+          sortBy={sortBy}
+          sortDirection={sortDirection}
+          pageSize={pageSize}
+          hasCustomFilters={hasCustomFilters}
+          activeFilterTags={activeFilterTags}
+          onQueryChange={(value) => {
+            setPage(1);
+            setQuery(value);
+          }}
+          onActiveFilterChange={(value) => {
+            setPage(1);
+            setActiveFilter(value);
+          }}
+          onCountryFilterChange={(value) => {
+            setPage(1);
+            setCountryFilter(value);
+          }}
+          onSortByChange={setSortBy}
+          onSortDirectionChange={setSortDirection}
+          onPageSizeChange={(value) => {
+            setPage(1);
+            setPageSize(value);
+          }}
+          onClearFilters={clearCollaboratorFilters}
+        />
 
         <div className="collaborators-table">
           <DataTable
@@ -3527,26 +3557,8 @@ export default function CollaboratorsPage() {
               header: 'Equipa',
               render: (item: CollaboratorRow) => {
                 const teams = getCollaboratorTeams(item);
-                if (teams.length === 0) {
-                  return <span className="collaborator-cell-text">-</span>;
-                }
 
-                const mainTeam = teams[0];
-                const extraTeams = teams.slice(1);
-                const fullTeamList = teams
-                  .map((team) => `${team.isLeader ? 'Chefe · ' : ''}${team.name}`)
-                  .join(' • ');
-
-                return (
-                  <div className="collaborator-team-cell" title={fullTeamList}>
-                    <span className={`collaborator-team-chip${mainTeam.isLeader ? ' is-leader' : ''}`}>
-                      {mainTeam.isLeader ? 'Chefe · ' : ''}{mainTeam.name}
-                    </span>
-                    {extraTeams.length > 0 && (
-                      <span className="collaborator-team-more">+{extraTeams.length}</span>
-                    )}
-                  </div>
-                );
+                return <CollaboratorTeamCell teams={teams} />;
               },
             },
             { key: 'country', header: 'País', render: (item: CollaboratorRow) => <Badge tone="neutral">{item.profile?.workCountry || 'PT'}</Badge> },
@@ -3560,52 +3572,34 @@ export default function CollaboratorsPage() {
             {
               key: 'actions',
               header: 'Ações',
-              render: (item: CollaboratorRow) => (
-                <div className="collaborators-actions">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="primary"
-                    onClick={() => {
+              render: (item: CollaboratorRow) => {
+                const displayName = getDisplayName(item);
+
+                return (
+                  <CollaboratorsRowActions
+                    displayName={displayName}
+                    isMenuOpen={actionsMenuState?.id === item.id}
+                    onEdit={() => {
                       setActionsMenuState(null);
                       void openDetails(item);
                     }}
-                  >
-                    Editar
-                  </Button>
+                    onToggleMore={(triggerElement) => {
+                      if (actionsMenuState?.id === item.id) {
+                        setActionsMenuState(null);
+                        return;
+                      }
 
-                  <div className="collaborators-actions-menu">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="collaborators-actions-menu__trigger"
-                      aria-haspopup="menu"
-                      aria-expanded={actionsMenuState?.id === item.id}
-                      aria-label={`Mais ações para ${getDisplayName(item)}`}
-                      onClick={(e) => {
-                        if (actionsMenuState?.id === item.id) {
-                          setActionsMenuState(null);
-                          return;
-                        }
-                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        setActionsMenuState({
-                          id: item.id,
-                          top: rect.bottom + 4,
-                          right: window.innerWidth - rect.right,
-                          item,
-                        });
-                      }}
-                    >
-                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                        <circle cx="5" cy="12" r="2" />
-                        <circle cx="12" cy="12" r="2" />
-                        <circle cx="19" cy="12" r="2" />
-                      </svg>
-                    </Button>
-                  </div>
-                </div>
-              ),
+                      const rect = triggerElement.getBoundingClientRect();
+                      setActionsMenuState({
+                        id: item.id,
+                        top: rect.bottom + 4,
+                        right: window.innerWidth - rect.right,
+                        item,
+                      });
+                    }}
+                  />
+                );
+              },
               align: 'right',
             },
             ]}
@@ -3618,917 +3612,218 @@ export default function CollaboratorsPage() {
           />
         </div>
 
-        <div className="trainings-form-actions trainings-form-actions--between">
-          <small>Resultados: {visibleTotal}</small>
-          <div className="trainings-form-actions__group">
-            <Button type="button" variant="ghost" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page <= 1}>Anterior</Button>
-            <Button type="button" variant="ghost" onClick={() => setPage((value) => Math.min(totalPages, value + 1))} disabled={page >= totalPages}>Seguinte</Button>
-          </div>
-        </div>
+        <CollaboratorsPagination
+          visibleTotal={visibleTotal}
+          page={page}
+          totalPages={totalPages}
+          onPreviousPage={() => setPage((value) => Math.max(1, value - 1))}
+          onNextPage={() => setPage((value) => Math.min(totalPages, value + 1))}
+        />
       </section>
 
-      <Modal
+      <CollaboratorDetailsModal
         open={isDetailsOpen}
         title={selectedRow ? getDisplayName(selectedRow) : 'Colaborador'}
+        selectedRow={selectedRow
+          ? {
+            username: selectedRow.username,
+            email: selectedRow.email,
+            isActive: selectedRow.isActive,
+            updatedAt: selectedRow.updatedAt,
+          }
+          : null}
+        detailsTab={detailsTab}
+        onTabChange={setDetailsTab}
+        canEditUser={canEditUser}
+        isSavingEditDraft={isSavingEditDraft}
         onClose={closeDetails}
-        width="min(1360px, 97vw)"
-        showCloseButton={false}
-        footer={
-          <div className="modal-footer-split collaborator-modal-footer">
-            <Button type="button" variant="ghost" onClick={closeDetails}>Fechar</Button>
-            {detailsTab === 'ficha' && canEditUser && (
-              <Button type="button" variant="primary" isLoading={isSavingEditDraft} disabled={isSavingEditDraft} onClick={() => void saveCollaboratorDraft()}>
-                Guardar ficha
-              </Button>
-            )}
-          </div>
-        }
-      >
-        <section className="collaborator-modal-shell">
-          <nav className="collaborator-modal-tabs">
-            <button type="button" className={detailsTab === 'ficha' ? 'is-active' : ''} onClick={() => setDetailsTab('ficha')}>1. Ficha</button>
-            <button type="button" className={detailsTab === 'permissoes' ? 'is-active' : ''} onClick={() => setDetailsTab('permissoes')}>2. Permissões</button>
-            <button type="button" className={detailsTab === 'estado' ? 'is-active' : ''} onClick={() => setDetailsTab('estado')}>3. Estado</button>
-          </nav>
+        onSaveDraft={() => void saveCollaboratorDraft()}
+        selectedCollaboratorPhotoUrl={selectedCollaboratorPhotoUrl}
+        selectedCollaboratorInitials={selectedCollaboratorInitials}
+        selectedCollaboratorName={selectedCollaboratorName}
+        collaboratorRoleLine={collaboratorRoleLine}
+        selectedCollaboratorTeamName={selectedCollaboratorTeamName}
+        collaboratorCompletion={collaboratorCompletion}
+        collaboratorMissingFieldTotal={collaboratorMissingFieldTotal}
+        detailsFichaSections={DETAILS_FICHA_SECTIONS}
+        detailsFichaSection={detailsFichaSection}
+        detailsFichaMissingCounts={detailsFichaMissingCounts}
+        canEditCredentials={canEditCredentials}
+        canManageProfileOptions={canManageProfileOptions}
+        isSavingCredentials={isSavingCredentials}
+        credentialsDraft={credentialsDraft}
+        accountEditDraft={editDraft}
+        collaboratorTeamOptions={collaboratorTeamOptions}
+        activeProfileSectionView={activeProfileSectionView}
+        onSelectFichaSection={setDetailsFichaSection}
+        onPhotoChange={(event) => void handleCollaboratorFileChange('photoUrl', event)}
+        onOpenProfileOption={(optionType) => void openProfileOptionModal(optionType)}
+        onCredentialsDraftChange={(patch) => setCredentialsDraft((current) => ({ ...current, ...patch }))}
+        onWorkCountryChange={(country) => setEditDraft((current) => ({
+          ...current,
+          workCountry: country,
+          brWorkState: country === 'BR' ? current.brWorkState : '',
+        }))}
+        onTeamChange={(teamId) => setEditDraft((current) => ({ ...current, teamId }))}
+        onActiveChange={(isActive) => setEditDraft((current) => ({ ...current, isActive }))}
+        onSaveCredentials={() => void saveCredentials()}
+        isLoadingDetails={isLoadingDetails}
+        selectedUserAccessTotal={selectedUserAccessTotal}
+        canManagePermissions={canManagePermissions}
+        canToggleAccessTotal={Boolean(selectedRow && canManagePermissions && selectedRow.username !== 't.people')}
+        isTogglingAccessTotal={isTogglingAccessTotal}
+        onGrantAccessTotal={() => { void toggleAccessTotalForSelected(true); }}
+        onRevokeAccessTotal={() => { void toggleAccessTotalForSelected(false); }}
+        permissionCategories={permissionCategoryItems}
+        activePermissionCategoryId={permissionCategory}
+        onSelectPermissionCategory={(categoryId) => setPermissionCategory(categoryId as PermissionCategory)}
+        permissionSearch={permissionSearch}
+        onPermissionSearchChange={setPermissionSearch}
+        permissionItems={filteredPermissionListItems}
+        onSelectPermission={setSelectedPermissionId}
+        selectedPermission={selectedPermission
+          ? {
+            id: selectedPermission.id,
+            label: selectedPermission.label,
+            description: selectedPermission.description,
+            grantedByLabel: getGrantDisplayName(selectedPermission.assignment?.grantedBy),
+          }
+          : null}
+        selectedPermissionEnabled={Boolean(selectedPermissionDraft?.enabled)}
+        onSetSelectedPermissionEnabled={setSelectedPermissionEnabled}
+        selectedRestrictionCountries={selectedRestrictionCountries}
+        onToggleCountry={toggleSelectedPermissionCountry}
+        pendingTeamToAdd={pendingTeamToAdd}
+        onPendingTeamToAddChange={setPendingTeamToAdd}
+        availableTeamsToAdd={availableTeamsToAdd}
+        onAddTeamRestriction={() => addTeamRestriction(pendingTeamToAdd)}
+        selectedRestrictedTeams={selectedRestrictedTeams}
+        onRemoveTeamRestriction={removeTeamRestriction}
+        selectedNotes={selectedPermissionDraft?.notes || ''}
+        onNotesChange={setSelectedPermissionNotes}
+        isSavingSelectedPermission={Boolean(selectedPermission && savingPermissionId === selectedPermission.id)}
+        onSaveSelectedPermission={() => { if (selectedPermission) { void savePermission(selectedPermission); } }}
+        canManageActive={canManageActive}
+        cargoHistoryEntries={cargoHistoryEntries}
+        onToggleActive={() => { if (selectedRow) { openActiveConfirm(selectedRow); } }}
+      />
 
-          {selectedRow && detailsTab === 'ficha' && (
-            <section className="cm-panel">
-              <div className="cm-identity-bar">
-                <div className="cm-identity-main">
-                  <div className="cm-avatar-wrap">
-                    {selectedCollaboratorPhotoUrl ? (
-                      <img src={selectedCollaboratorPhotoUrl} alt="Foto de utilizador" className="cm-avatar cm-avatar--photo" />
-                    ) : (
-                      <div className="cm-avatar">{selectedCollaboratorInitials}</div>
-                    )}
-                    {canEditUser && (
-                      <label className="cm-avatar-edit" title="Editar foto de utilizador" aria-label="Editar foto de utilizador">
-                        ✎
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(event) => void handleCollaboratorFileChange('photoUrl', event)}
-                          onClick={(event) => {
-                            event.currentTarget.value = '';
-                          }}
-                          disabled={!canEditUser || isSavingEditDraft}
-                        />
-                      </label>
-                    )}
-                  </div>
-
-                  <div className="cm-identity-info">
-                    <strong>{selectedCollaboratorName}</strong>
-                    <span className="cm-identity-role">{collaboratorRoleLine}</span>
-                    <span>@{selectedRow.username} · {selectedRow.email}</span>
-                    <div className="cm-identity-meta">
-                      <span>{selectedCollaboratorTeamName}</span>
-                      <span>{editDraft.workCountry || 'PT'}</span>
-                      {editDraft.workCountry === 'BR' && editDraft.brWorkState && <span>{editDraft.brWorkState}</span>}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="cm-identity-side">
-                  <div className="cm-identity-badges">
-                    <Badge tone="neutral">{editDraft.workCountry || 'PT'}</Badge>
-                    <Badge tone={editDraft.isActive ? 'success' : 'danger'}>{editDraft.isActive ? 'Ativo' : 'Inativo'}</Badge>
-                  </div>
-
-                  <div className="cm-identity-progress">
-                    <span className="cm-identity-progress__label">Completude da ficha</span>
-                    <strong>{collaboratorCompletion}%</strong>
-                    <div className="cm-identity-progress__track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={collaboratorCompletion}>
-                      <span style={{ width: `${collaboratorCompletion}%` }} />
-                    </div>
-                    <small>{collaboratorMissingFieldTotal} campo(s) em falta</small>
-                  </div>
-
-                  {canManageProfileOptions && (
-                    <div className="cm-identity-actions">
-                      <Button type="button" variant="ghost" size="sm" onClick={() => void openProfileOptionModal('CARGO')}>+ Cargo</Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => void openProfileOptionModal('FUNCAO')}>+ Função</Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <nav className="cm-ficha-subnav" aria-label="Subsecções da ficha do colaborador">
-                {DETAILS_FICHA_SECTIONS.map((section) => (
-                  <button
-                    key={section.id}
-                    type="button"
-                    className={detailsFichaSection === section.id ? 'is-active' : ''}
-                    onClick={() => setDetailsFichaSection(section.id)}
-                  >
-                    <span className="cm-ficha-subnav__label">{section.label}</span>
-                    {detailsFichaMissingCounts[section.id] > 0 && (
-                      <span className="cm-ficha-subnav__count" aria-label={`${detailsFichaMissingCounts[section.id]} campo(s) por preencher`}>
-                        {detailsFichaMissingCounts[section.id]}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </nav>
-
-              <div className="cm-edit-body">
-                {detailsFichaSection === 'conta' && (
-                <article className="cm-section cm-section--account">
-                  <div className="cm-section-head">
-                    <div>
-                      <h5 className="cm-section-title">Conta e acesso</h5>
-                      <p>Configuração base do utilizador, autenticação e contexto organizacional.</p>
-                    </div>
-                    <Badge tone="info">Base</Badge>
-                  </div>
-                  <div className="collaborator-edit-grid collaborator-edit-grid--top">
-                    <label className="cm-field-card">
-                      <span>Username</span>
-                      <input
-                        type="text"
-                        value={canEditCredentials ? credentialsDraft.username : selectedRow.username}
-                        onChange={(e) => setCredentialsDraft((c) => ({ ...c, username: e.target.value }))}
-                        disabled={!canEditCredentials}
-                        autoComplete="off"
-                      />
-                    </label>
-                    <label className="cm-field-card">
-                      <span>Email login</span>
-                      <input
-                        type="email"
-                        value={canEditCredentials ? credentialsDraft.email : selectedRow.email}
-                        onChange={(e) => setCredentialsDraft((c) => ({ ...c, email: e.target.value }))}
-                        disabled={!canEditCredentials}
-                        autoComplete="off"
-                      />
-                    </label>
-                    <label className="cm-field-card">
-                      <span>País de trabalho</span>
-                      <select
-                        value={editDraft.workCountry}
-                        onChange={(event) => setEditDraft((current) => ({
-                          ...current,
-                          workCountry: event.target.value as 'PT' | 'BR',
-                          brWorkState: event.target.value === 'BR' ? current.brWorkState : '',
-                        }))}
-                        disabled={!canEditUser}
-                      >
-                        <option value="PT">Portugal</option>
-                        <option value="BR">Brasil</option>
-                      </select>
-                    </label>
-                    <label className="cm-field-card">
-                      <span>Equipa principal</span>
-                      <select value={editDraft.teamId} onChange={(event) => setEditDraft((current) => ({ ...current, teamId: event.target.value }))} disabled={!canEditUser}>
-                        <option value="">Sem equipa</option>
-                        {collaboratorTeamOptions.map((team) => (
-                          <option key={team.id} value={team.id}>{team.name}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="cm-field-card">
-                      <span>Estado da conta</span>
-                      <select value={editDraft.isActive ? 'ACTIVE' : 'INACTIVE'} onChange={(event) => setEditDraft((current) => ({ ...current, isActive: event.target.value === 'ACTIVE' }))} disabled={!canEditUser || selectedRow.username === 't.people'}>
-                        <option value="ACTIVE">Ativa</option>
-                        <option value="INACTIVE">Inativa</option>
-                      </select>
-                    </label>
-                  </div>
-                  {canEditCredentials && (
-                    <div className="cm-inline-action">
-                      <Button type="button" size="sm" variant="secondary" isLoading={isSavingCredentials} onClick={() => void saveCredentials()}>
-                        Guardar credenciais
-                      </Button>
-                      <small>Altera username e email de acesso ao sistema.</small>
-                    </div>
-                  )}
-                </article>
-                )}
-
-                {(['identificacao', 'contactos', 'fiscal', 'emergencia', 'contrato'] as EditSection[]).map((section) => {
-                  const sectionMeta = getEditSectionMeta(section);
-
-                  if (detailsFichaSection !== section) {
-                    return null;
-                  }
-
-                  return (
-                    <article key={section} className={`cm-section ${sectionMeta.sectionClassName ?? ''}`.trim()}>
-                      <div className="cm-section-head">
-                        <div>
-                          <h5 className="cm-section-title">{sectionMeta.title}</h5>
-                          <p>{sectionMeta.description}</p>
-                        </div>
-                      </div>
-                      <div className="collaborator-edit-grid">
-                        {getVisibleEditProfileFields(editDraft.workCountry).filter((field) => field.section === section && field.key !== 'photoUrl').map((field) => (
-                          <label key={field.key} className={getEditFieldCardClass(field.key)}>
-                            <span>{field.label}</span>
-                            {renderEditFieldControl(field.key)}
-                          </label>
-                        ))}
-                      </div>
-                    </article>
-                  );
-                })}
-
-                {!canEditUser && <p className="cm-no-permission">Sem permissões para editar dados deste colaborador.</p>}
-              </div>
-            </section>
-          )}
-
-          {selectedRow && detailsTab === 'permissoes' && (
-            <section className="cm-panel">
-              {isLoadingDetails ? (
-                <Skeleton lines={3} />
-              ) : (
-                <>
-                  {selectedUserAccessTotal && (
-                    <div className="cm-access-total-banner">
-                      <div className="cm-access-total-banner__info">
-                        <strong>Acesso total ativo</strong>
-                        <span>Este utilizador tem acesso efetivo a todas as permissões do sistema. As configurações individuais estão suspensas.</span>
-                      </div>
-                      {canManagePermissions && selectedRow.username !== 't.people' && (
-                        <Button type="button" size="sm" variant="ghost" isLoading={isTogglingAccessTotal} disabled={isTogglingAccessTotal} onClick={() => void toggleAccessTotalForSelected(false)}>
-                          Revogar
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                  {!selectedUserAccessTotal && canManagePermissions && selectedRow.username !== 't.people' && (
-                    <div className="cm-perms-top-bar">
-                      <Button type="button" size="sm" variant="secondary" isLoading={isTogglingAccessTotal} disabled={isTogglingAccessTotal} onClick={() => void toggleAccessTotalForSelected(true)}>
-                        Dar acesso total
-                      </Button>
-                    </div>
-                  )}
-
-                  <div className="cm-perms-body">
-                    <aside className="cm-perm-categories">
-                      {PERMISSION_CATEGORIES.map((item) => (
-                        <button key={item} type="button" className={item === permissionCategory ? 'is-active' : ''} onClick={() => setPermissionCategory(item)}>
-                          {getPermissionCategoryLabel(item)}
-                        </button>
-                      ))}
-                    </aside>
-
-                    <div className="cm-perm-main">
-                      <div className="cm-perm-list">
-                        <input
-                          type="search"
-                          className="cm-perm-search"
-                          placeholder="Pesquisar permissão..."
-                          value={permissionSearch}
-                          onChange={(event) => setPermissionSearch(event.target.value)}
-                        />
-                        <div className="cm-perm-items">
-                          {filteredCategoryPermissions.length === 0 && (
-                            <EmptyState title="Sem permissões" message="Escolhe outra categoria." />
-                          )}
-                          {filteredCategoryPermissions.map((permission) => {
-                            const draft = permissionDrafts[permission.id] ?? buildDraftFromAssignment(permission);
-                            const effectiveEnabled = selectedUserAccessTotal || draft.enabled;
-                            return (
-                              <button
-                                key={permission.id}
-                                type="button"
-                                className={`cm-perm-item${selectedPermission?.id === permission.id ? ' is-selected' : ''}${effectiveEnabled ? ' is-on' : ''}`}
-                                onClick={() => setSelectedPermissionId(permission.id)}
-                              >
-                                <strong>{permission.label}</strong>
-                                <span>{effectiveEnabled ? '● Ativa' : '○ Inativa'}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="cm-perm-editor">
-                        {!selectedPermission || !selectedPermissionDraft ? (
-                          <p className="cm-perm-empty">Seleciona uma permissão para configurar.</p>
-                        ) : (
-                          <>
-                            <header className="cm-perm-editor-head">
-                              <h5>{selectedPermission.label}</h5>
-                              <p>{selectedPermission.description}</p>
-                            </header>
-
-                            <div className="cm-perm-editor-form">
-                              <div className="cm-perm-field cm-perm-field--toggle">
-                                <span>Estado</span>
-                                <div className="cm-toggle-btns">
-                                  <button type="button" className={selectedPermissionDraft.enabled ? 'is-on' : ''} onClick={() => setPermissionDrafts((current) => ({ ...current, [selectedPermission.id]: { ...selectedPermissionDraft, enabled: true } }))} disabled={!canManagePermissions || selectedUserAccessTotal}>Ativa</button>
-                                  <button type="button" className={!selectedPermissionDraft.enabled ? 'is-on' : ''} onClick={() => setPermissionDrafts((current) => ({ ...current, [selectedPermission.id]: { ...selectedPermissionDraft, enabled: false } }))} disabled={!canManagePermissions || selectedUserAccessTotal}>Inativa</button>
-                                </div>
-                              </div>
-
-                              <div className="cm-perm-field">
-                                <span>Países</span>
-                                <div className="cm-token-pills">
-                                  {['PT', 'BR'].map((country) => (
-                                    <button
-                                      key={country}
-                                      type="button"
-                                      className={selectedRestrictionCountries.includes(country) ? 'is-on' : ''}
-                                      onClick={() => setPermissionDrafts((current) => ({
-                                        ...current,
-                                        [selectedPermission.id]: {
-                                          ...selectedPermissionDraft,
-                                          restrictedToCountries: toggleCommaItem(selectedPermissionDraft.restrictedToCountries, country),
-                                        },
-                                      }))}
-                                      disabled={!canManagePermissions || selectedUserAccessTotal}
-                                    >
-                                      {country}
-                                    </button>
-                                  ))}
-                                </div>
-                                <small>Vazio = todos os países.</small>
-                              </div>
-
-                              <div className="cm-perm-field">
-                                <span>Equipas</span>
-                                <div className="collab-team-selector">
-                                  <select value={pendingTeamToAdd} onChange={(event) => setPendingTeamToAdd(event.target.value)} disabled={!canManagePermissions || selectedUserAccessTotal || availableTeamsToAdd.length === 0}>
-                                    <option value="">Selecionar equipa</option>
-                                    {availableTeamsToAdd.map((team) => (
-                                      <option key={team.id} value={team.id}>{team.name}</option>
-                                    ))}
-                                  </select>
-                                  <Button type="button" size="sm" variant="secondary" onClick={() => addTeamRestriction(pendingTeamToAdd)} disabled={!canManagePermissions || selectedUserAccessTotal || !pendingTeamToAdd}>+</Button>
-                                </div>
-                                {selectedRestrictedTeams.length > 0 && (
-                                  <div className="collab-team-chips">
-                                    {selectedRestrictedTeams.map((team) => (
-                                      <button key={team.id} type="button" className="collab-team-chip" onClick={() => removeTeamRestriction(team.id)} disabled={!canManagePermissions || selectedUserAccessTotal}>
-                                        {team.name} ×
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                                <small>Vazio = todas as equipas.</small>
-                              </div>
-
-                              <div className="cm-perm-field">
-                                <span>Notas</span>
-                                <input
-                                  type="text"
-                                  value={selectedPermissionDraft.notes}
-                                  onChange={(event) => setPermissionDrafts((current) => ({
-                                    ...current,
-                                    [selectedPermission.id]: { ...selectedPermissionDraft, notes: event.target.value },
-                                  }))}
-                                  placeholder="Contexto opcional"
-                                  disabled={!canManagePermissions || selectedUserAccessTotal}
-                                />
-                              </div>
-                            </div>
-
-                            <div className="cm-perm-editor-footer">
-                              <small>Por: {getGrantDisplayName(selectedPermission.assignment?.grantedBy)}</small>
-                              <Button type="button" variant="primary" size="sm" isLoading={savingPermissionId === selectedPermission.id} onClick={() => void savePermission(selectedPermission)} disabled={!canManagePermissions || selectedUserAccessTotal}>
-                                Guardar
-                              </Button>
-                            </div>
-                            {selectedUserAccessTotal && <small className="cm-perm-disabled-hint">Revoga o acesso total para editar permissões individuais.</small>}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-            </section>
-          )}
-
-          {selectedRow && detailsTab === 'estado' && (
-            <section className="cm-panel cm-panel--estado">
-              {isLoadingDetails ? (
-                <Skeleton lines={3} />
-              ) : (
-                <>
-                  <div className="cm-status-cards">
-                    <div className={`cm-status-card${selectedRow.isActive ? ' cm-status-card--active' : ' cm-status-card--inactive'}`}>
-                      <span>Conta</span>
-                      <strong>{selectedRow.isActive ? 'Ativa' : 'Inativa'}</strong>
-                    </div>
-                    <div className="cm-status-card">
-                      <span>Última atualização</span>
-                      <strong>{new Intl.DateTimeFormat('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(selectedRow.updatedAt))}</strong>
-                    </div>
-                  </div>
-                  <div className="cm-status-actions">
-                    <Button
-                      type="button"
-                      variant={selectedRow.isActive ? 'danger' : 'primary'}
-                      onClick={() => openActiveConfirm(selectedRow)}
-                      disabled={!canManageActive || selectedRow.username === 't.people'}
-                    >
-                      {selectedRow.isActive ? 'Desativar conta' : 'Reativar conta'}
-                    </Button>
-                  </div>
-
-                  <div className="cm-history-block">
-                    <h5>Histórico de evolução de cargo</h5>
-                    {cargoHistoryEntries.length === 0 ? (
-                      <p className="cm-history-empty">Sem registos de mudança de cargo até ao momento.</p>
-                    ) : (
-                      <div className="cm-history-list">
-                        {cargoHistoryEntries.map((entry) => {
-                          const reviewedLabel = entry.reviewedAt
-                            ? new Intl.DateTimeFormat('pt-PT', {
-                                day: '2-digit',
-                                month: '2-digit',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              }).format(new Date(entry.reviewedAt))
-                            : 'Data indisponível';
-                          const requestedData = entry.requestedData || {};
-                          const nextCargo = String(requestedData.cargo ?? '').trim() || 'Sem cargo';
-                          const previousCargo = String(requestedData.previousCargo ?? '').trim() || 'Sem cargo';
-                          const reviewerName = entry.reviewedBy?.profile?.nomeAbreviado
-                            || entry.reviewedBy?.profile?.nomeCompleto
-                            || entry.reviewedBy?.username
-                            || 'Sistema';
-
-                          return (
-                            <article key={entry.id} className="cm-history-item">
-                              <div>
-                                <strong>{previousCargo} → {nextCargo}</strong>
-                                <p>{entry.changesSummary || 'Alteração de cargo registada.'}</p>
-                              </div>
-                              <small>{reviewedLabel} · por {reviewerName}</small>
-                            </article>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </section>
-          )}
-        </section>
-      </Modal>
-
-      <Modal
+      <CollaboratorExportModal
         open={isExportModalOpen}
-        title="Exportar ficha de colaborador"
+        isExportingWorkbook={isExportingWorkbook}
+        isLoadingExportCandidates={isLoadingExportCandidates}
+        exportSearch={exportSearch}
+        exportCandidatesFiltered={exportCandidatesFiltered}
+        selectedExportUserId={selectedExportUserId}
+        selectedExportCandidate={selectedExportCandidate}
         onClose={() => setIsExportModalOpen(false)}
-        width="min(980px, 96vw)"
-        showCloseButton={false}
-        footer={(
-          <div className="modal-footer-split">
-            <Button type="button" variant="ghost" onClick={() => setIsExportModalOpen(false)} disabled={isExportingWorkbook}>
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              variant="primary"
-              isLoading={isExportingWorkbook}
-              disabled={!selectedExportCandidate || isLoadingExportCandidates || isExportingWorkbook}
-              onClick={() => void exportSelectedCollaboratorWorkbook()}
-            >
-              Exportar Excel
-            </Button>
-          </div>
-        )}
-      >
-        <div className="collaborator-export-modal">
-          <label className="collaborator-export-modal__search">
-            <span>Pesquisar colaborador</span>
-            <input
-              type="search"
-              value={exportSearch}
-              placeholder="Nome, username, email, cargo, função, equipa..."
-              onChange={(event) => setExportSearch(event.target.value)}
-            />
-          </label>
-
-          {isLoadingExportCandidates ? (
-            <Skeleton lines={4} />
-          ) : exportCandidatesFiltered.length === 0 ? (
-            <EmptyState
-              title="Sem colaboradores para exportação."
-              message="Ajusta os filtros da listagem ou a pesquisa da janela de exportação."
-            />
-          ) : (
-            <div className="collaborator-export-modal__layout">
-              <aside className="collaborator-export-list" aria-label="Selecionar colaborador para exportação">
-                {exportCandidatesFiltered.map((item) => {
-                  const teamInfo = getCollaboratorTeamInfo(item);
-                  const isSelected = selectedExportUserId === item.id;
-
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={`collaborator-export-item${isSelected ? ' is-selected' : ''}`}
-                      onClick={() => setSelectedExportUserId(item.id)}
-                    >
-                      <strong>{getDisplayName(item)}</strong>
-                      <span>{item.email}</span>
-                      <small>{item.profile?.cargo || '-'} · {teamInfo.name === '-' ? 'Sem equipa' : teamInfo.name}</small>
-                    </button>
-                  );
-                })}
-              </aside>
-
-              <section className="collaborator-export-preview" aria-live="polite">
-                {selectedExportCandidate ? (
-                  <>
-                    <h4>{getDisplayName(selectedExportCandidate)}</h4>
-                    <p>{selectedExportCandidate.email}</p>
-                    <div className="collaborator-export-preview__grid">
-                      <article>
-                        <span>Cargo</span>
-                        <strong>{selectedExportCandidate.profile?.cargo || '-'}</strong>
-                      </article>
-                      <article>
-                        <span>Função</span>
-                        <strong>{selectedExportCandidate.profile?.funcao || '-'}</strong>
-                      </article>
-                      <article>
-                        <span>País</span>
-                        <strong>{selectedExportCandidate.profile?.workCountry || 'PT'}</strong>
-                      </article>
-                      <article>
-                        <span>Equipa</span>
-                        <strong>{getCollaboratorTeamInfo(selectedExportCandidate).name === '-' ? 'Sem equipa' : getCollaboratorTeamInfo(selectedExportCandidate).name}</strong>
-                      </article>
-                    </div>
-                    <small>O ficheiro inclui logo, resumo executivo e detalhe da ficha por secções para leitura profissional.</small>
-                  </>
-                ) : (
-                  <EmptyState
-                    title="Seleciona um colaborador"
-                    message="Escolhe um registo na lista para preparar a exportação."
-                  />
-                )}
-              </section>
-            </div>
-          )}
-        </div>
-      </Modal>
+        onExport={() => {
+          void exportSelectedCollaboratorWorkbook();
+        }}
+        onExportSearchChange={setExportSearch}
+        onSelectExportUser={setSelectedExportUserId}
+        getDisplayName={(candidate) => getDisplayName(candidate as CollaboratorRow)}
+        getTeamName={(candidate) => getCollaboratorTeamInfo(candidate as CollaboratorRow).name}
+      />
 
       {canCreateUser && (
-        <Modal
+        <CollaboratorsImportModal
           open={isImportModalOpen}
-          title="Importação em massa de colaboradores"
+          isImportingUsers={isImportingUsers}
+          isParsingImportFile={isParsingImportFile}
+          importFileName={importFileName}
+          importRows={importRows}
+          importIssues={importIssues}
+          importPreviewRows={importPreviewRows}
+          importResults={importResults}
+          importCreatedCount={importCreatedCount}
+          importFailedCount={importFailedCount}
+          importFileAccept={IMPORT_FILE_ACCEPT}
           onClose={closeImportModal}
-          width="min(1180px, 96vw)"
-          showCloseButton={false}
-          footer={(
-            <div className="modal-footer-split">
-              <Button type="button" variant="ghost" onClick={closeImportModal} disabled={isImportingUsers || isParsingImportFile}>
-                Fechar
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                isLoading={isImportingUsers}
-                disabled={isParsingImportFile || isImportingUsers || importRows.length === 0 || importIssues.length > 0}
-                onClick={() => void importUsersFromFile()}
-              >
-                Importar {importRows.length > 0 ? `${importRows.length} linha(s)` : ''}
-              </Button>
-            </div>
-          )}
-        >
-          <div className="collaborator-import-modal">
-            <div className="collaborator-import-modal__hero">
-              <div>
-                <strong>Excel ou CSV da ficha</strong>
-                <p>Importa novos colaboradores em lote a partir de um ficheiro com dados da ficha. Campos de comprovativos não entram neste processo e devem ser anexados depois na ficha individual. Esta ação está disponível apenas para quem tem acesso total.</p>
-              </div>
-              <div className="collaborator-import-modal__hero-actions">
-                <Button type="button" variant="ghost" size="sm" onClick={() => void downloadImportTemplate()}>
-                  Descarregar modelo XLSX
-                </Button>
-                <label className="collaborator-import-upload">
-                  <span>{isParsingImportFile ? 'A ler ficheiro...' : 'Escolher ficheiro'}</span>
-                  <input type="file" accept={IMPORT_FILE_ACCEPT} onChange={(event) => void handleImportFileChange(event)} disabled={isParsingImportFile || isImportingUsers} />
-                </label>
-              </div>
-            </div>
-
-            <div className="collaborator-import-meta">
-              <article>
-                <span>Ficheiro</span>
-                <strong>{importFileName || 'Nenhum selecionado'}</strong>
-              </article>
-              <article>
-                <span>Linhas preparadas</span>
-                <strong>{importRows.length}</strong>
-              </article>
-              <article>
-                <span>Problemas locais</span>
-                <strong>{importIssues.length}</strong>
-              </article>
-            </div>
-
-            {importIssues.length > 0 && (
-              <div className="collaborator-import-issues">
-                <strong>Corrigir antes de importar</strong>
-                <div className="collaborator-import-issues__list">
-                  {importIssues.slice(0, 20).map((issue) => (
-                    <p key={`${issue.rowNumber}-${issue.message}`}>Linha {issue.rowNumber}: {issue.message}</p>
-                  ))}
-                  {importIssues.length > 20 && <p>+ {importIssues.length - 20} problema(s) adicional(is)</p>}
-                </div>
-              </div>
-            )}
-
-            <div className="collaborator-import-preview">
-              <div className="collaborator-import-preview__head">
-                <strong>Pré-visualização</strong>
-                <span>{importRows.length > 8 ? `A mostrar 8 de ${importRows.length} linhas` : `${importRows.length} linha(s)`}</span>
-              </div>
-              {importRows.length === 0 ? (
-                <EmptyState title="Sem dados carregados" message="Seleciona um ficheiro Excel ou CSV para validar o conteúdo antes da importação." />
-              ) : (
-                <div className="collaborator-import-preview__table-wrap">
-                  <table className="collaborator-import-preview__table">
-                    <thead>
-                      <tr>
-                        <th>Linha</th>
-                        <th>Nome</th>
-                        <th>Username</th>
-                        <th>Email</th>
-                        <th>País</th>
-                        <th>Equipa</th>
-                        <th>Subequipa</th>
-                        <th>Cargo</th>
-                        <th>Função</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {importPreviewRows.map((row) => (
-                        <tr key={`${row.rowNumber}-${row.username}-${row.email}`}>
-                          <td>{row.rowNumber}</td>
-                          <td>{row.fullName}</td>
-                          <td>{row.username}</td>
-                          <td>{row.email}</td>
-                          <td>{row.workCountry}</td>
-                          <td>{row.teamName || 'Sem equipa'}</td>
-                          <td>{row.subTeamName || '-'}</td>
-                          <td>{row.profile.cargo || '-'}</td>
-                          <td>{row.profile.funcao || '-'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {importResults.length > 0 && (
-              <div className="collaborator-import-results">
-                <div className="collaborator-import-results__head">
-                  <strong>Resultado da execução</strong>
-                  <span>{importCreatedCount} criado(s) · {importFailedCount} falhado(s)</span>
-                </div>
-                <div className="collaborator-import-results__list">
-                  {importResults.map((item) => (
-                    <article key={`${item.rowNumber}-${item.username}-${item.status}`} className={`collaborator-import-result${item.status === 'CREATED' ? ' is-success' : ' is-failed'}`}>
-                      <div>
-                        <strong>Linha {item.rowNumber} · {item.fullName || item.username || item.email}</strong>
-                        <p>{item.username} · {item.email}</p>
-                      </div>
-                      <span>{item.message}</span>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </Modal>
+          onImport={() => {
+            void importUsersFromFile();
+          }}
+          onDownloadTemplate={() => {
+            void downloadImportTemplate();
+          }}
+          onImportFileChange={(event) => {
+            void handleImportFileChange(event);
+          }}
+        />
       )}
 
-      <Modal
+      <CollaboratorProfileOptionModal
         open={isProfileOptionModalOpen}
-        title={profileOptionType === 'CARGO' ? 'Adicionar novo cargo' : 'Adicionar nova função'}
+        profileOptionType={profileOptionType}
+        profileOptionLabel={profileOptionLabel}
+        profileOptionGroup={profileOptionGroup}
+        isSavingProfileOption={isSavingProfileOption}
         onClose={() => setIsProfileOptionModalOpen(false)}
-        width="520px"
-        footer={(
-          <div className="profile-option-modal__footer">
-            <Button type="button" variant="ghost" onClick={() => setIsProfileOptionModalOpen(false)} disabled={isSavingProfileOption}>
-              Cancelar
-            </Button>
-            <Button type="button" variant="primary" isLoading={isSavingProfileOption} onClick={() => void handleCreateProfileOption()}>
-              Guardar
-            </Button>
-          </div>
-        )}
-      >
-        <div className="profile-option-modal">
-          <label>
-            <span>Tipo</span>
-            <select value={profileOptionType} onChange={(event) => setProfileOptionType(event.target.value as 'CARGO' | 'FUNCAO')} disabled={isSavingProfileOption}>
-              <option value="CARGO">Cargo</option>
-              <option value="FUNCAO">Função</option>
-            </select>
-          </label>
+        onSave={() => void handleCreateProfileOption()}
+        onTypeChange={setProfileOptionType}
+        onLabelChange={setProfileOptionLabel}
+        onGroupChange={setProfileOptionGroup}
+      />
 
-          <label>
-            <span>Nome</span>
-            <input
-              type="text"
-              value={profileOptionLabel}
-              disabled={isSavingProfileOption}
-              placeholder={profileOptionType === 'CARGO' ? 'Ex.: Staff Engineer' : 'Ex.: Data Governance Specialist'}
-              onChange={(event) => setProfileOptionLabel(event.target.value)}
-            />
-          </label>
+      <CollaboratorActiveConfirmModal
+        target={activeConfirmTarget
+          ? {
+            id: activeConfirmTarget.id,
+            isActive: activeConfirmTarget.isActive,
+            displayName: getDisplayName(activeConfirmTarget),
+          }
+          : null}
+        isBusy={Boolean(activeConfirmTarget && busyUserId === activeConfirmTarget.id)}
+        onCancel={() => setActiveConfirmTarget(null)}
+        onConfirm={() => {
+          void confirmToggleActive();
+        }}
+      />
 
-          {profileOptionType === 'FUNCAO' && (
-            <label>
-              <span>Grupo (opcional)</span>
-              <input
-                type="text"
-                value={profileOptionGroup}
-                disabled={isSavingProfileOption}
-                placeholder="Ex.: Produto"
-                onChange={(event) => setProfileOptionGroup(event.target.value)}
-              />
-            </label>
-          )}
-        </div>
-      </Modal>
-
-      <Modal
-        open={Boolean(activeConfirmTarget)}
-        title={activeConfirmTarget?.isActive ? 'Confirmar desativação' : 'Confirmar reativação'}
-        onClose={() => setActiveConfirmTarget(null)}
-        width="min(640px, 92vw)"
-        showCloseButton={false}
-        footer={
-          <div className="modal-footer-split">
-            <Button type="button" variant="ghost" onClick={() => setActiveConfirmTarget(null)}>Cancelar</Button>
-            <Button
-              type="button"
-              variant={activeConfirmTarget?.isActive ? 'danger' : 'primary'}
-              isLoading={Boolean(activeConfirmTarget && busyUserId === activeConfirmTarget.id)}
-              disabled={Boolean(activeConfirmTarget && busyUserId === activeConfirmTarget.id)}
-              onClick={() => void confirmToggleActive()}
-            >
-              Confirmar
-            </Button>
-          </div>
-        }
-      >
-        <div className="permissions-access-modal">
-          <p>
-            {activeConfirmTarget?.isActive
-              ? `Isto vai desativar a conta de ${getDisplayName(activeConfirmTarget)}.`
-              : `Isto vai reativar a conta de ${activeConfirmTarget ? getDisplayName(activeConfirmTarget) : 'este colaborador'}.`}
-          </p>
-        </div>
-      </Modal>
-
-      {/* Country change confirmation modal */}
-      <Modal
+      <CollaboratorCountryChangeModal
         open={isCountryChangeModalOpen}
-        title="Confirmar mudança de país"
-        onClose={() => { setIsCountryChangeModalOpen(false); setPendingCountryChange(null); }}
-        width="min(500px, 94vw)"
-        footer={
-          <div className="modal-footer-split">
-            <Button type="button" variant="ghost" onClick={() => { setIsCountryChangeModalOpen(false); setPendingCountryChange(null); }}>Cancelar</Button>
-            <Button type="button" variant="primary" onClick={() => void saveCollaboratorDraft(true)}>Confirmar e guardar</Button>
-          </div>
-        }
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <p style={{ margin: 0 }}>
-            Está prestes a alterar o país de trabalho de{' '}
-            <strong>{pendingCountryChange?.from === 'BR' ? 'Brasil 🇧🇷' : 'Portugal 🇵🇹'}</strong>{' '}
-            para{' '}
-            <strong>{pendingCountryChange?.to === 'BR' ? 'Brasil 🇧🇷' : 'Portugal 🇵🇹'}</strong>.
-          </p>
-          <p style={{ margin: 0, fontWeight: 600 }}>O que vai acontecer automaticamente:</p>
-          <ul style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.9rem' }}>
-            <li>Todos os <strong>pedidos de férias e ausências pendentes</strong> serão cancelados - foram submetidos sob as regras do país anterior.</li>
-            <li>Todas as <strong>equipas atuais</strong> serão removidas - deverá atribuir o colaborador a uma equipa do novo país.</li>
-            <li>
-              Os <strong>dados exclusivos de {pendingCountryChange?.from === 'PT' ? 'Portugal' : 'Brasil'} serão apagados</strong>:{' '}
-              {pendingCountryChange?.from === 'PT'
-                ? 'NIF, NISS, Cartão de Cidadão, IBAN, dados de IRS, matrícula, Cartão Continente, comprovativos.'
-                : 'CPF, PIS, CTPS, RG, CNH, Título de Eleitor, nome do pai/mãe, informações de benefícios (aposentadoria, seguro-desemprego, vale-transporte).'}
-            </li>
-            {pendingCountryChange?.to === 'BR' && (
-              <li>O <strong>código postal</strong> será apagado - o formato CEP do Brasil é diferente do código postal português.</li>
-            )}
-          </ul>
-          <p style={{ margin: 0, color: '#6b7280', fontSize: '0.85rem' }}>
-            Os registos históricos aprovados, formações e dados existentes são mantidos.
-          </p>
-        </div>
-      </Modal>
+        pendingCountryChange={pendingCountryChange}
+        onCancel={() => {
+          setIsCountryChangeModalOpen(false);
+          setPendingCountryChange(null);
+        }}
+        onConfirm={() => {
+          void saveCollaboratorDraft(true);
+        }}
+      />
 
       {canCreateUser && (
-        <Modal
+        <CollaboratorCreateModal
           open={isCreateModalOpen}
-          title="Novo colaborador"
+          isCreatingUser={isCreatingUser}
+          draft={newUserDraft}
           onClose={closeCreateModal}
-          width="min(700px, 94vw)"
-          footer={
-            <div className="modal-footer-split">
-              <Button type="button" variant="ghost" onClick={closeCreateModal} disabled={isCreatingUser}>Cancelar</Button>
-              <Button type="button" variant="primary" isLoading={isCreatingUser} onClick={() => void createUser()}>Enviar convite</Button>
-            </div>
-          }
-        >
-          <form className="trainings-form" onSubmit={(e) => { e.preventDefault(); void createUser(); }}>
-            <label>
-              <span>Nome completo</span>
-              <input
-                type="text"
-                value={newUserDraft.fullName}
-                onChange={(e) => setNewUserDraft((c) => ({ ...c, fullName: e.target.value }))}
-                placeholder="Ex.: Ana Rodrigues"
-                autoComplete="off"
-                disabled={isCreatingUser}
-              />
-            </label>
-            <label>
-              <span>Email pessoal</span>
-              <input
-                type="email"
-                value={newUserDraft.personalEmail}
-                onChange={(e) => setNewUserDraft((c) => ({ ...c, personalEmail: e.target.value }))}
-                placeholder="ana@email.com"
-                autoComplete="off"
-                disabled={isCreatingUser}
-              />
-              <small>Será enviado um link único e seguro para preencher a ficha de admissão.</small>
-            </label>
-            <label>
-              <span>País de trabalho</span>
-              <select
-                value={newUserDraft.workCountry}
-                onChange={(e) => setNewUserDraft((c) => ({ ...c, workCountry: e.target.value as 'PT' | 'BR' }))}
-                disabled={isCreatingUser}
-              >
-                <option value="PT">Portugal</option>
-                <option value="BR">Brasil</option>
-              </select>
-            </label>
-            {newUserDraft.workCountry === 'BR' ? (
-              <label>
-                <span>Estado de trabalho</span>
-                <select
-                  value={newUserDraft.brWorkState}
-                  onChange={(e) => setNewUserDraft((c) => ({ ...c, brWorkState: e.target.value as '' | 'SP' | 'RS' }))}
-                  disabled={isCreatingUser}
-                >
-                  <option value="">Selecionar</option>
-                  <option value="SP">São Paulo</option>
-                  <option value="RS">Rio Grande do Sul</option>
-                </select>
-              </label>
-            ) : null}
-          </form>
-        </Modal>
+          onSubmit={() => void createUser()}
+          onDraftChange={updateNewUserDraft}
+        />
       )}
 
       <Toast show={Boolean(status)} tone={resolveStatusTone(status)} message={status} />
 
       {actionsMenuState && createPortal(
-        <div
-          className="collaborators-actions-menu__panel"
-          role="menu"
-          aria-label={`Ações rápidas de ${getDisplayName(actionsMenuState.item)}`}
-          style={{ position: 'fixed', top: actionsMenuState.top, right: actionsMenuState.right }}
-        >
-          <button
-            type="button"
-            className="collaborators-actions-menu__item"
-            role="menuitem"
-            disabled={!canManagePermissions}
-            onClick={() => {
-              setActionsMenuState(null);
-              void openDetails(actionsMenuState.item, 'permissoes');
-            }}
-          >
-            Permissões
-          </button>
-          <button
-            type="button"
-            className={`collaborators-actions-menu__item${actionsMenuState.item.isActive ? ' is-danger' : ''}`}
-            role="menuitem"
-            disabled={!canManageActive || busyUserId === actionsMenuState.item.id}
-            onClick={() => {
-              const target = actionsMenuState.item;
-              setActionsMenuState(null);
-              openActiveConfirm(target);
-            }}
-          >
-            {busyUserId === actionsMenuState.item.id ? 'A processar...' : actionsMenuState.item.isActive ? 'Desativar' : 'Reativar'}
-          </button>
-        </div>,
+        <CollaboratorsActionsMenuPanel
+          displayName={getDisplayName(actionsMenuState.item)}
+          isActive={actionsMenuState.item.isActive}
+          isBusy={busyUserId === actionsMenuState.item.id}
+          canManagePermissions={canManagePermissions}
+          canManageActive={canManageActive}
+          top={actionsMenuState.top}
+          right={actionsMenuState.right}
+          onOpenPermissions={() => {
+            setActionsMenuState(null);
+            void openDetails(actionsMenuState.item, 'permissoes');
+          }}
+          onToggleActive={() => {
+            const target = actionsMenuState.item;
+            setActionsMenuState(null);
+            openActiveConfirm(target);
+          }}
+        />,
         document.body,
       )}
     </section>

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import ExcelJS from 'exceljs';
 import { prisma } from '../lib/prisma.js';
+import { getUserVacations } from '../services/vacations/get-vacations.service.js';
 import {
   buildUserWhereFromScope,
   canAccessUserByPermission,
@@ -14,6 +15,17 @@ import {
 import { requireAuth } from '../middleware/auth.js';
 import { notifyUsers } from '../lib/notifications.js';
 import { createRequestTimer } from '../lib/request-timing.js';
+import {
+  findMaxVacationVersionNumber,
+  findTeamNameById,
+  findVacationRequesterProfile,
+  findVacationVersionProfile,
+  findVersionableVacationByIdAndUser,
+} from '../repositories/vacations.repository.js';
+import { cancelVacationForOwner } from '../services/vacations/cancel-vacation.service.js';
+import { assignVacationBalanceCredit } from '../services/vacations/assign-vacation-balance-credit.service.js';
+import { sellVacationDays } from '../services/vacations/sell-vacation-days.service.js';
+import { versionVacationRequest } from '../services/vacations/version-vacation-request.service.js';
 import {
   appendHourBankEntry,
   calculateHourBankDebitFromAbsence,
@@ -1635,40 +1647,16 @@ router.get('/vacations/me', requireAuth, async (req: Request, res: Response) => 
   try {
     const userId = req.authUser!.id;
     const pagination = parsePagination(req.query);
-
-    const [total, rows] = await Promise.all([
-      prisma.vacation.count({ where: { userId } }),
-      prisma.vacation.findMany({
-        where: { userId },
-        include: {
-          contextTeam: { select: { id: true, name: true } },
-          approvals: {
-            select: {
-              id: true,
-              approverId: true,
-              approvalLevel: true,
-              status: true,
-              decidedAt: true,
-              reason: true,
-            },
-            orderBy: [{ approvalLevel: 'asc' }, { createdAt: 'asc' }],
-          },
-        },
-        orderBy: [{ createdAt: 'desc' }],
-        skip: pagination.skip,
-        take: pagination.take,
-      }),
-    ]);
-
+    const data = await getUserVacations(userId, pagination.skip, pagination.take);
+    
     return res.json({
-      total,
+      ...data,
       page: pagination.page,
       pageSize: pagination.pageSize,
-      rows,
     });
   } catch (error) {
     console.error('[GET /vacations/me]', error);
-    res.status(500).json({ error: 'Falha ao carregar férias' });
+    return res.status(500).json({ error: 'Falha ao carregar férias' });
   }
 });
 
@@ -2241,69 +2229,31 @@ async function createVacationBalanceCredit(req: Request, res: Response) {
     }
 
     const data = validation.data;
-    const targetUsers = await prisma.user.findMany({
-      where: { id: { in: data.userIds } },
-      select: {
-        id: true,
-        isActive: true,
-        isRootAccess: true,
-        hasAccessTotal: true,
-        profile: { select: { workCountry: true, nomeAbreviado: true, nomeCompleto: true } },
-      },
+    const result = await assignVacationBalanceCredit({
+      actorId,
+      actorLabel: req.authUser!.username,
+      year: data.year,
+      days: data.days,
+      reason: data.reason,
+      targetUserIds: data.userIds,
+      validateTargetAccess: req.authUser!.isRootAccess
+        ? undefined
+        : async (targetUserId) => canAccessUserByPermission(actorId, 'manage_vacation_rules', targetUserId),
     });
 
-    if (targetUsers.length !== data.userIds.length) {
-      return res.status(404).json({ error: 'Um ou mais colaboradores não foram encontrados.' });
-    }
-
-    const inactiveTarget = targetUsers.find((item) => !item.isActive);
-    if (inactiveTarget) {
-      return res.status(404).json({ error: 'Um ou mais colaboradores estão inativos.' });
-    }
-
-    const protectedTarget = targetUsers.find((item) => item.isRootAccess || item.hasAccessTotal);
-    if (protectedTarget) {
-      return res.status(400).json({ error: 'Só é permitido creditar saldo para colaboradores sem acesso total.' });
-    }
-
-    if (!req.authUser!.isRootAccess) {
-      for (const targetUser of targetUsers) {
-        const canCreditTarget = await canAccessUserByPermission(actorId, 'manage_vacation_rules', targetUser.id);
-        if (!canCreditTarget) {
-          return res.status(403).json({ error: 'Sem permissões para creditar saldo a um dos colaboradores selecionados com as restrições atuais.' });
-        }
-      }
-    }
-
-    const actorLabel = req.authUser!.username;
-    const created = await prisma.$transaction(async (tx) => {
-      const credits = [];
-      for (const targetUser of targetUsers) {
-        const credit = await tx.vacationBalanceCredit.create({
-          data: {
-            userId: targetUser.id,
-            year: data.year,
-            days: data.days,
-            reason: data.reason,
-            createdById: actorId,
-          },
-        });
-
-        credits.push(credit);
-
-        await tx.notification.create({
-          data: {
-            userId: targetUser.id,
-            title: 'Saldo de férias creditado',
-            message: `Foram creditados ${data.days} dia(s) ao teu saldo de férias de ${data.year} por ${actorLabel}. Motivo: ${data.reason}`,
-          },
-        });
+    if (!result.ok) {
+      if (result.code === 'TARGET_NOT_FOUND' || result.code === 'TARGET_INACTIVE') {
+        return res.status(404).json({ error: result.message });
       }
 
-      return credits;
-    });
+      if (result.code === 'TARGET_PROTECTED') {
+        return res.status(400).json({ error: result.message });
+      }
 
-    return res.status(201).json({ count: created.length, items: created });
+      return res.status(403).json({ error: result.message });
+    }
+
+    return res.status(201).json({ count: result.createdCount, items: result.createdItems });
   } catch (error) {
     console.error('[POST /vacations/assign-balance-days]', error);
     const status = isVacationBusinessRuleError(error) ? 400 : 500;
@@ -2956,46 +2906,13 @@ router.post('/vacations/sell-days', requireAuth, async (req: Request, res: Respo
       return res.status(400).json({ error: 'Campo "days" deve ser um número inteiro não negativo.' });
     }
 
-    const profile = await prisma.profile.findUnique({
-      where: { userId },
-      select: { workCountry: true, unjustifiedAbsences: true, isIntern: true, dataInicioContrato: true },
-    });
+    const result = await sellVacationDays({ userId, days });
 
-    if (profile?.workCountry !== 'BR') {
-      return res.status(400).json({ error: 'Venda de férias (abono) é uma funcionalidade exclusiva para colaboradores no regime BR.' });
+    if (!result.ok) {
+      return res.status(400).json({ error: result.message });
     }
 
-    const currentYear = new Date().getFullYear();
-    const extraBalanceDays = (await prisma.vacationBalanceCredit.aggregate({
-      where: { userId, year: currentYear },
-      _sum: { days: true },
-    }))._sum.days ?? 0;
-
-    const unjustifiedAbsences = profile.unjustifiedAbsences ?? 0;
-    const isInternUser = profile.isIntern ?? false;
-    const hireDate = profile.dataInicioContrato ? new Date(`${profile.dataInicioContrato}T00:00:00`) : new Date(`${currentYear}-01-01T00:00:00`);
-    const now = new Date();
-    const monthsWorked = (now.getFullYear() - hireDate.getFullYear()) * 12 + (now.getMonth() - hireDate.getMonth());
-    const internProportionalDays = Math.min(30, Math.floor(monthsWorked * 2.5));
-    const baseEntitledDays = isInternUser
-      ? (monthsWorked < 12 ? 0 : internProportionalDays)
-      : brVacationDaysByAbsences(unjustifiedAbsences);
-    const entitledDays = baseEntitledDays + extraBalanceDays;
-    const maxSellable = Math.min(10, Math.floor(entitledDays / 3));
-    const availableEntitledDays = Math.max(entitledDays - days, 0);
-
-    if (days > maxSellable) {
-      return res.status(400).json({
-        error: `Política BR: pode vender no máximo ${maxSellable} dias de férias (1/3 do total, máx. 10 dias). Tentou vender ${days} dias.`,
-      });
-    }
-
-    await prisma.profile.update({
-      where: { userId },
-      data: { ...( { soldVacationDays: days } as Record<string, unknown> ) },
-    });
-
-    return res.json({ soldVacationDays: days, maxSellable, entitledDays, availableEntitledDays });
+    return res.json(result);
   } catch (error) {
     console.error('[POST /vacations/sell-days]', error);
     return res.status(500).json({ error: 'Falha ao processar venda de dias de férias.' });
@@ -3012,16 +2929,7 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
       return res.status(400).json({ error: validation.error.issues[0].message });
     }
 
-    const existing = await prisma.vacation.findFirst({
-      where: {
-        id,
-        userId,
-        status: { in: ['PENDING', 'APPROVED'] },
-      },
-      include: {
-        contextTeam: { select: { id: true } },
-      },
-    });
+    const existing = await findVersionableVacationByIdAndUser(id, userId);
 
     if (!existing) {
       return res.status(404).json({ error: 'Pedido não encontrado para versionamento.' });
@@ -3030,10 +2938,7 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
     const data = validation.data;
     const contextTeamId = await resolveContextTeamId(userId, data.contextTeamId || existing.contextTeamId || undefined);
 
-    const profile = await prisma.profile.findUnique({
-      where: { userId },
-      select: { workCountry: true, brWorkState: true, dataInicioContrato: true, isIntern: true },
-    });
+    const profile = await findVacationVersionProfile(userId);
     const country = profile?.workCountry ?? 'PT';
 
     // BR: alterações de férias devem ser feitas com pelo menos 10 dias de antecedência
@@ -3060,102 +2965,51 @@ router.put('/vacations/:id', requireAuth, async (req: Request, res: Response) =>
     }
 
     const rootId = existing.versionOfId || existing.id;
-    const maxVersion = await prisma.vacation.findFirst({
-      where: {
-        OR: [{ id: rootId }, { versionOfId: rootId }],
-      },
-      orderBy: { versionNumber: 'desc' },
-      select: { versionNumber: true },
-    });
+    const maxVersionNumber = await findMaxVacationVersionNumber(rootId);
 
     let policyWarnings: string[] = [];
-    const created = await prisma.$transaction(async (tx) => {
-      await enforceNoRequestOverlap({
-        db: tx,
-        userId,
-        dataInicio: data.dataInicio,
-        dataFim: data.dataFim,
-        excludeVacationId: id,
-      });
-
-      policyWarnings = await validateVacationCountryPolicy({
-        db: tx,
-        userId,
-        country,
-        brWorkState: profile?.brWorkState ?? null,
-        requestType: data.requestType,
-        dataInicio: data.dataInicio,
-        dataFim: data.dataFim,
-        partialDay: data.partialDay,
-        excludeVacationId: id,
-        dataInicioContrato: profile?.dataInicioContrato || null,
-        isIntern: profile?.isIntern ?? false,
-      });
-
-      if (data.requestType === 'VACATION' && contextTeamId) {
-        await acquireTeamCapacityLock(tx, contextTeamId);
-        await enforceOneThirdCapacity(tx, contextTeamId, country, data.dataInicio, data.dataFim, data.partialDay, id);
-      }
-
-      await tx.vacation.update({
-        where: { id: existing.id },
-        data: {
-          status: 'CANCELLED',
-          reviewReason: 'Pedido substituído por nova versão.',
-        },
-      });
-
-      await tx.vacationApproval.updateMany({
-        where: {
-          vacationId: existing.id,
-          status: { in: [APPROVAL_PENDING, APPROVAL_WAITING] },
-        },
-        data: {
-          status: APPROVAL_SKIPPED,
-          decidedAt: new Date(),
-          reason: 'Versão substituída.',
-        },
-      });
-
-      const nextVersion = await tx.vacation.create({
-        data: {
+    const created = await versionVacationRequest({
+      existingVacationId: existing.id,
+      rootId,
+      maxVersionNumber,
+      userId,
+      contextTeamId,
+      approvalGroups,
+      data,
+      beforePersist: async (tx) => {
+        await enforceNoRequestOverlap({
+          db: tx,
           userId,
-          contextTeamId,
-          versionOfId: rootId,
-          versionNumber: (maxVersion?.versionNumber ?? 1) + 1,
           dataInicio: data.dataInicio,
           dataFim: data.dataFim,
-          observacoes: data.observacoes,
+          excludeVacationId: id,
+        });
+
+        policyWarnings = await validateVacationCountryPolicy({
+          db: tx,
+          userId,
+          country,
+          brWorkState: profile?.brWorkState ?? null,
           requestType: data.requestType,
+          dataInicio: data.dataInicio,
+          dataFim: data.dataFim,
           partialDay: data.partialDay,
-          attachmentLink: data.attachmentLink,
-          status: 'PENDING',
-        },
-      });
+          excludeVacationId: id,
+          dataInicioContrato: profile?.dataInicioContrato || null,
+          isIntern: profile?.isIntern ?? false,
+        });
 
-      for (const group of approvalGroups) {
-        for (const approverId of group.approverIds) {
-          await tx.vacationApproval.create({
-            data: {
-              vacationId: nextVersion.id,
-              approverId,
-              approvalLevel: group.level,
-              status: group.level === approvalGroups[0].level ? APPROVAL_PENDING : APPROVAL_WAITING,
-            },
-          });
+        if (data.requestType === 'VACATION' && contextTeamId) {
+          await acquireTeamCapacityLock(tx, contextTeamId);
+          await enforceOneThirdCapacity(tx, contextTeamId, country, data.dataInicio, data.dataFim, data.partialDay, id);
         }
-      }
-
-      return nextVersion;
+      },
     });
 
-    const requesterProfile = await prisma.profile.findUnique({
-      where: { userId },
-      select: { nomeAbreviado: true, nomeCompleto: true },
-    });
+    const requesterProfile = await findVacationRequesterProfile(userId);
 
     const contextTeam = created.contextTeamId
-      ? await prisma.team.findUnique({ where: { id: created.contextTeamId }, select: { name: true } })
+      ? await findTeamNameById(created.contextTeamId)
       : null;
     const requesterName = String(requesterProfile?.nomeAbreviado ?? '').trim()
       || String(requesterProfile?.nomeCompleto ?? '').trim()
@@ -3191,32 +3045,14 @@ router.delete('/vacations/:id', requireAuth, async (req: Request, res: Response)
     const userId = req.authUser!.id;
     const id = typeof req.params.id === 'string' ? req.params.id : '';
 
-    const existing = await prisma.vacation.findFirst({ where: { id, userId, status: 'PENDING' } });
+    const result = await cancelVacationForOwner({
+      vacationId: id,
+      userId,
+    });
 
-    if (!existing) {
+    if (!result.cancelled) {
       return res.status(404).json({ error: 'Pedido não encontrado ou já processado.' });
     }
-
-    await prisma.$transaction([
-      prisma.vacation.update({
-        where: { id },
-        data: {
-          status: 'CANCELLED',
-          reviewReason: 'Cancelado pelo colaborador.',
-        },
-      }),
-      prisma.vacationApproval.updateMany({
-        where: {
-          vacationId: id,
-          status: { in: [APPROVAL_PENDING, APPROVAL_WAITING] },
-        },
-        data: {
-          status: APPROVAL_SKIPPED,
-          decidedAt: new Date(),
-          reason: 'Cancelado pelo colaborador.',
-        },
-      }),
-    ]);
 
     res.json({ success: true });
   } catch (error) {

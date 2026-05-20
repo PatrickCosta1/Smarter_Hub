@@ -1,5 +1,6 @@
 import { Fragment, type CSSProperties, useEffect, useMemo, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, isAbortError } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 import { usePortal } from '../portal/context';
 import { formatRoleLabel } from '../portal/labels';
 import Skeleton from '../components/ui/Skeleton';
@@ -9,10 +10,8 @@ import Button from '../components/ui/Button';
 import EmptyState from '../components/ui/EmptyState';
 import Toast from '../components/ui/Toast';
 
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
-
 function getAuthHeaders() {
-  const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+  const token = getStoredAuthToken();
   return authHeaders(token);
 }
 

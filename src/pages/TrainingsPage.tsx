@@ -1,16 +1,15 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { usePortal } from '../portal/context';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, isAbortError } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 import { formatRoleLabel, formatTrainingStatusLabel, getTrainingStatusTone } from '../portal/labels';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Toast from '../components/ui/Toast';
 
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
-
 function getAuthHeaders() {
-  const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+  const token = getStoredAuthToken();
   return authHeaders(token);
 }
 

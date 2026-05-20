@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiRequestCached, authHeaders, isAbortError } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 import { formatRoleLabel } from '../portal/labels';
 import { useFeedbackToast } from '../portal/useFeedbackToast';
 import Toast from '../components/ui/Toast';
@@ -12,8 +13,6 @@ type MeResponse = {
     role: 'COLABORADOR' | 'MANAGER' | 'COORDENADOR' | 'ADMIN' | 'CONVIDADO';
   };
 };
-
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
 export default function AccountAccessPage() {
   const [username, setUsername] = useState('');
@@ -30,7 +29,7 @@ export default function AccountAccessPage() {
   }, []);
 
   async function loadMe(signal?: AbortSignal) {
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
 
     try {
       const data = await apiRequestCached<MeResponse>('/auth/me', {

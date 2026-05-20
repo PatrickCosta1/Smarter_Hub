@@ -4,12 +4,11 @@ import { roleLabels } from '../portal/data';
 import { usePortal } from '../portal/context';
 import { MenuItem } from '../portal/types';
 import { apiRequest, apiRequestCached, authHeaders } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 import ChatbotWidget from '../components/ChatbotWidget';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
 import LanguageSwitcher from '../components/LanguageSwitcher';
-
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
 type OccupationalHealthAlertSettingResponse = {
   enabled: boolean;
@@ -114,7 +113,7 @@ export default function PortalLayout() {
       return;
     }
 
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     if (!token) {
       return;
     }
@@ -154,7 +153,7 @@ export default function PortalLayout() {
       return;
     }
 
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     if (!token) {
       return;
     }
@@ -216,7 +215,7 @@ export default function PortalLayout() {
         break;
     }
 
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     if (!token) {
       return;
     }

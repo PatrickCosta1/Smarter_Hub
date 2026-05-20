@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, isAbortError } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 import { usePortal } from '../portal/context';
 import { formatRoleLabel } from '../portal/labels';
 import Badge from '../components/ui/Badge';
@@ -10,8 +11,6 @@ import Skeleton from '../components/ui/Skeleton';
 import EmptyState from '../components/ui/EmptyState';
 import Toast from '../components/ui/Toast';
 import { useFeedbackToast } from '../portal/useFeedbackToast';
-
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
 const PERMISSION_CATEGORIES = ['SYSTEM', 'USERS', 'TEAMS', 'VACATIONS', 'TRAININGS', 'PROFILE', 'NOTIFICATIONS'] as const;
 
@@ -112,7 +111,7 @@ const EMPTY_PERMISSION_DRAFT: PermissionDraft = {
 };
 
 function getAuthHeaders() {
-  const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+  const token = getStoredAuthToken();
   return authHeaders(token);
 }
 

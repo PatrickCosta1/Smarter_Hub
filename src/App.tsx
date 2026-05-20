@@ -3,9 +3,9 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import LoadingScreen from './components/LoadingScreen';
 import { PortalProvider, usePortal } from './portal/context';
 import { apiRequestCached, authHeaders } from './portal/api';
+import { getStoredAuthToken } from './portal/auth-storage';
 import { LanguageProvider } from './contexts/LanguageContext';
 
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 const ENABLE_AGGRESSIVE_PREFETCH = import.meta.env.VITE_ENABLE_AGGRESSIVE_PREFETCH === 'true';
 
 const LoginView = lazy(() => import('./components/LoginView'));
@@ -72,7 +72,7 @@ function AppRoutes() {
       void import('./pages/WellbeingPage');
     };
 
-    const token = window.localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     const prefetchFingerprint = [
       token,
       ENABLE_AGGRESSIVE_PREFETCH ? 'prefetch-aggressive' : 'prefetch-minimal',

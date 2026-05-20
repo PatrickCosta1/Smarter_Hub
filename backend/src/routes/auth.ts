@@ -5,6 +5,7 @@ import { Role } from '@prisma/client';
 import { z } from "zod";
 
 import { prisma } from "../lib/prisma.js";
+import { getCurrentUser } from "../services/auth/get-current-user.service.js";
 import { verifyFirebaseIdToken } from "../lib/firebase-admin.js";
 import { requireAuth, signAuthToken } from "../middleware/auth.js";
 
@@ -355,28 +356,12 @@ router.post('/auth/microsoft', async (req, res) => {
 });
 
 router.get("/auth/me", requireAuth, async (req, res) => {
-  const user = await prisma.user.findUnique({
-    where: { id: req.authUser!.id },
-    select: {
-      id: true,
-      username: true,
-      email: true,
-      role: true,
-      isActive: true,
-      isRootAccess: true,
-        hasAccessTotal: true,
-      team: {
-        select: authTeamSelect,
-      },
-    },
-  });
-
-  return res.json({
-    user: user ? {
-      ...user,
-      team: mapAuthTeam(user.team, Boolean(user.isRootAccess || user.hasAccessTotal)),
-    } : null,
-  });
+  try {
+    const user = await getCurrentUser(req.authUser!.id);
+    return res.json({ user });
+  } catch (error) {
+    return res.status(500).json({ error: 'Falha ao obter utilizador atual.' });
+  }
 });
 
 router.patch('/auth/account', requireAuth, async (_req, res) => {

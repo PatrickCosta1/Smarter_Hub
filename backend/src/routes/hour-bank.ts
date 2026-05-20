@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import { z } from 'zod';
 
 import { prisma } from '../lib/prisma.js';
+import { getMyHourBankBalance } from '../services/hours-bank/get-hour-bank.service.js';
 import { canAccessUserByPermission, canReviewAccessTotalHierarchy, hasPermission, isAccessTotal } from '../lib/permission-engine.js';
 import {
   appendHourBankEntry,
@@ -170,49 +171,12 @@ router.get('/hours-bank/me', requireAuth, async (req: Request, res: Response) =>
     return res.status(403).json({ message: 'Banco de horas disponível apenas para colaboradores RH/gestão do Brasil.' });
   }
 
-  const [profile, entries] = await Promise.all([
-    prisma.profile.findUnique({
-      where: { userId },
-      select: {
-        workCountry: true,
-        brWorkState: true,
-        hourBankLimitHours: true,
-      },
-    }),
-    prisma.hourBankEntry.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 120,
-      select: {
-        id: true,
-        type: true,
-        hours: true,
-        reason: true,
-        source: true,
-        createdAt: true,
-        createdBy: {
-          select: {
-            id: true,
-            username: true,
-          },
-        },
-      },
-    }),
-  ]);
-
-  const isBr = (profile?.workCountry ?? 'PT') === 'BR';
-  const limitHours = isBr ? resolveBrHourBankLimit(profile?.hourBankLimitHours) : Math.max(profile?.hourBankLimitHours ?? 40, 0);
-  const totals = await getHourBankTotalsByUserId(prisma, userId, limitHours);
-  const closingPolicy = isBr ? resolveBrClosingPolicy(profile?.brWorkState ?? null) : null;
-
-  return res.json({
-    geo: profile?.workCountry ?? 'PT',
-    brWorkState: profile?.brWorkState ?? null,
-    closingPolicyLabel: closingPolicy?.label ?? null,
-    nextClosingDate: closingPolicy ? getNextClosingDateByPolicy(closingPolicy).toISOString().slice(0, 10) : null,
-    ...totals,
-    entries,
-  });
+  try {
+    const data = await getMyHourBankBalance(userId);
+    return res.json(data);
+  } catch (error) {
+    return res.status(500).json({ message: 'Erro ao obter dados do banco de horas.' });
+  }
 });
 
 router.get('/hours-bank/overview', requireAuth, async (req: Request, res: Response) => {

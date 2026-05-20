@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiRequestCached, authHeaders, isAbortError } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 import { usePortal } from '../portal/context';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import LoadingInline from '../components/ui/LoadingInline';
-
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
 type DashboardSummaryMetrics = {
   totals?: {
@@ -17,7 +16,7 @@ type DashboardSummaryMetrics = {
 };
 
 function getAuthHeaders() {
-  const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+  const token = getStoredAuthToken();
   return authHeaders(token);
 }
 

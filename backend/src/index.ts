@@ -3,7 +3,6 @@ import dotenv from "dotenv";
 import express from "express";
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
-import path from "path";
 import pino from 'pino';
 import { pinoHttp } from 'pino-http';
 import * as Sentry from '@sentry/node';
@@ -11,7 +10,7 @@ import swaggerUi from 'swagger-ui-express';
 import { ZodError } from "zod";
 
 import { authRouter } from "./routes/auth.js";
-import { filesRouter } from "./routes/files.js";
+import { filesRouter, uploadsRouter } from "./routes/files.js";
 import { permissionsRouter } from "./routes/permissions.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { profileRouter } from "./routes/profile.js";
@@ -118,7 +117,7 @@ app.use(
   })
 );
 app.use(express.json());
-app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
+app.use('/uploads', uploadsRouter);
 app.use('/api', writeRateLimiter);
 app.use('/api/auth/login', authRateLimiter);
 app.use('/api/auth/microsoft', authRateLimiter);

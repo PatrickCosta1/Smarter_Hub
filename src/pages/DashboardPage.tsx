@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Button from '../components/ui/Button';
 import { apiRequest, apiRequestCached, authHeaders, isAbortError } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 import { tipoContratoOptions } from '../portal/data';
 
 type DistributionItem = {
@@ -123,8 +124,6 @@ type DrillStep = {
   previousFunctionSearch: string;
 };
 
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
-
 const DEFAULT_FILTERS: DashboardFilters = {
   teamId: '',
   gender: '',
@@ -180,7 +179,7 @@ const DRILL_DIMENSION_TO_FILTER: Record<DrillDimension, keyof DashboardFilters> 
 };
 
 function getAuthHeaders() {
-  const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+  const token = getStoredAuthToken();
   return authHeaders(token);
 }
 

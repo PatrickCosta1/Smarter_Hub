@@ -12,6 +12,7 @@ import {
   tipoContratoOptions,
 } from '../portal/data';
 import { apiRequest, apiRequestCached, getApiBase, getBackendBase, authHeaders, isAbortError } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 import { usePortal } from '../portal/context';
 import { useFeedbackToast } from '../portal/useFeedbackToast';
 import { formatTrainingStatusLabel, getTrainingStatusTone } from '../portal/labels';
@@ -139,8 +140,6 @@ type ProfileTrainingRecord = {
     } | null;
   } | null;
 };
-
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
 const profileFieldLabels: Partial<Record<keyof ProfileData, string>> = {
   nomeCompleto: 'Nome completo',
@@ -927,7 +926,7 @@ export default function ProfilePage() {
   }
 
   async function syncPendingRequestState(options?: { signal?: AbortSignal; forceRefresh?: boolean }) {
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     if (!token) {
       return;
     }
@@ -991,7 +990,7 @@ export default function ProfilePage() {
   }, [isPendingDetailOpen, pendingChangeDetails.length]);
 
   useEffect(() => {
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     if (!token) {
       return;
     }
@@ -1028,7 +1027,7 @@ export default function ProfilePage() {
       return;
     }
 
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     if (!token) {
       return;
     }
@@ -1186,7 +1185,7 @@ export default function ProfilePage() {
   }
 
   async function handleCreateProfileOption() {
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     const normalizedLabel = profileOptionLabel.trim().replace(/\s+/g, ' ');
     const normalizedGroup = profileOptionGroup.trim().replace(/\s+/g, ' ');
 
@@ -1262,7 +1261,7 @@ export default function ProfilePage() {
       return;
     }
 
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     const formData = new FormData();
     formData.append('file', file);
 
@@ -1357,7 +1356,7 @@ export default function ProfilePage() {
       return;
     }
 
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     if (!token) {
       showToast('error', 'Sessão inválida. Faz login novamente.');
       return;

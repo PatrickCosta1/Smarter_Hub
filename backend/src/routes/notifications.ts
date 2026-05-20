@@ -1,6 +1,7 @@
 import { Router } from "express";
 
 import { prisma } from "../lib/prisma.js";
+import { getUserNotifications, markNotificationAsRead, deleteNotification, deleteAllNotifications } from "../services/notifications/get-notifications.service.js";
 import { requireAuth } from "../middleware/auth.js";
 import {
   CITIZEN_CARD_EXPIRY_NOTIFICATION_TITLE,
@@ -48,26 +49,20 @@ function requirePagination(query: Record<string, unknown>) {
 }
 
 router.get("/notifications/me", requireAuth, async (req, res) => {
-  const userId = req.authUser!.id;
-  const paginationResult = requirePagination(req.query as Record<string, unknown>);
-  if ('error' in paginationResult) {
-    return res.status(400).json({ error: paginationResult.error });
+  try {
+    const userId = req.authUser!.id;
+    const paginationResult = requirePagination(req.query as Record<string, unknown>);
+    if ('error' in paginationResult) {
+      return res.status(400).json({ error: paginationResult.error });
+    }
+
+    const { pagination } = paginationResult;
+    const data = await getUserNotifications(userId, pagination.skip, pagination.take);
+
+    return res.json({ ...data, page: pagination.page, pageSize: pagination.pageSize });
+  } catch (error) {
+    return res.status(500).json({ error: 'Falha ao obter notificações.' });
   }
-
-  const { pagination } = paginationResult;
-  const where = { userId };
-
-  const [total, rows] = await Promise.all([
-    prisma.notification.count({ where }),
-    prisma.notification.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      skip: pagination.skip,
-      take: pagination.take,
-    }),
-  ]);
-
-  return res.json({ total, page: pagination.page, pageSize: pagination.pageSize, rows });
 });
 
 router.patch("/notifications/:id/read", requireAuth, async (req, res) => {
@@ -224,24 +219,25 @@ router.delete('/notifications/cleanup', requireAuth, async (req, res) => {
 });
 
 router.delete('/notifications/:id', requireAuth, async (req, res) => {
-  const id = String(req.params.id);
-  const userId = req.authUser!.id;
+  try {
+    const id = String(req.params.id);
+    const userId = req.authUser!.id;
 
-  const result = await prisma.notification.deleteMany({
-    where: { id, userId },
-  });
-
-  return res.json({ deleted: result.count });
+    await deleteNotification(id, userId);
+    return res.json({ deleted: 1 });
+  } catch (error) {
+    return res.status(404).json({ message: 'Notificação não encontrada.' });
+  }
 });
 
 router.delete('/notifications', requireAuth, async (req, res) => {
-  const userId = req.authUser!.id;
-
-  const result = await prisma.notification.deleteMany({
-    where: { userId },
-  });
-
-  return res.json({ deleted: result.count });
+  try {
+    const userId = req.authUser!.id;
+    const deleted = await deleteAllNotifications(userId);
+    return res.json({ deleted });
+  } catch (error) {
+    return res.status(500).json({ error: 'Falha ao eliminar notificações.' });
+  }
 });
 
 export { router as notificationsRouter };

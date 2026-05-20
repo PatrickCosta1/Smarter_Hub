@@ -3,10 +3,9 @@ import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Toast from '../components/ui/Toast';
 import { apiRequest, apiRequestCached, clearApiCache, authHeaders, getApiBase } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 import { usePortal } from '../portal/context';
 import { useFeedbackToast } from '../portal/useFeedbackToast';
-
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
 type WorkCountry = 'PT' | 'BR';
 type WellbeingTab = 'GENERAL' | WorkCountry;
@@ -214,7 +213,7 @@ export default function WellbeingPage() {
     setIsLoading(true);
 
     void apiRequestCached<WellbeingContent>('/wellbeing/content', {
-      headers: authHeaders(localStorage.getItem(STORAGE_TOKEN_KEY) || ''),
+      headers: authHeaders(getStoredAuthToken()),
     }, 60000)
       .then((response) => {
         if (!active) {
@@ -551,7 +550,7 @@ export default function WellbeingPage() {
       return;
     }
 
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     const formData = new FormData();
     formData.append('file', file);
     setUploadingKey(resourceId);
@@ -641,7 +640,7 @@ export default function WellbeingPage() {
       clearApiCache('/wellbeing/content');
       const response = await apiRequest<WellbeingContent>('/wellbeing/content', {
         method: 'PUT',
-        headers: authHeaders(localStorage.getItem(STORAGE_TOKEN_KEY) || ''),
+        headers: authHeaders(getStoredAuthToken()),
         body: JSON.stringify(draft),
       });
       setContent(response);
@@ -665,7 +664,7 @@ export default function WellbeingPage() {
     try {
       const response = await apiRequest<{ message: string }>('/wellbeing/harassment-report', {
         method: 'POST',
-        headers: authHeaders(localStorage.getItem(STORAGE_TOKEN_KEY) || ''),
+        headers: authHeaders(getStoredAuthToken()),
         body: JSON.stringify(reportDraft),
       });
       showToast('success', response.message || 'Reporte enviado com sucesso.');

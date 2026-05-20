@@ -17,6 +17,8 @@ import { notifyUsers } from '../lib/notifications.js';
 import { sendTransactionalEmail } from '../lib/email.js';
 import { requireAuth } from '../middleware/auth.js';
 
+import { createUser } from '../services/users/create-user.service.js';
+
 const router = Router();
 const roleSchema = z.enum(['COLABORADOR', 'MANAGER', 'COORDENADOR', 'ADMIN', 'CONVIDADO']);
 const countrySchema = z.enum(['PT', 'BR']);
@@ -111,6 +113,10 @@ const BULK_IMPORT_PROFILE_FIELD_KEYS = [
   'dataFimContrato',
   'tipoContrato',
   'regimeHorario',
+  'workCountry',
+  'brWorkState',
+  'localidade',
+  'isActive',
 ] as const;
 
 type BulkImportProfileFieldKey = typeof BULK_IMPORT_PROFILE_FIELD_KEYS[number];
@@ -199,8 +205,8 @@ const updateAdminUserSchema = z.object({
   dataFimContrato: z.string().optional(),
   tipoContrato: z.string().optional(),
   regimeHorario: z.string().optional(),
-  workCountry: countrySchema.optional(),
-  brWorkState: brWorkStateSchema.optional(),
+  workCountry: z.string().optional(),
+  brWorkState: z.string().optional(),
   localidade: z.string().optional(),
   isActive: z.boolean().optional(),
 });
@@ -1273,6 +1279,7 @@ router.get('/users', requireAuth, async (req, res) => {
           githubUser: true,
           moradaFiscal: true,
           endereco: true,
+          localidade: true,
           codigoPostal: true,
           matriculaCarro: true,
           localNascimentoPais: true,
@@ -1327,7 +1334,7 @@ router.get('/users', requireAuth, async (req, res) => {
           tipoContrato: true,
           regimeHorario: true,
           workCountry: true,
-          localidade: true,
+          brWorkState: true,
         },
       },
     },
@@ -1463,73 +1470,18 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
           select: {
             nomeAbreviado: true, nomeCompleto: true,
             dataNascimento: true,
+            dataInicioContrato: true,
+            tipoContrato: true,
             genero: true,
-            estadoCivil: true,
             habilitacoesLiterarias: true,
-            curso: true,
-            faculdade: true,
-            emailPessoal: true,
-            telemovel: true,
-            nacionalidade: true,
-            githubUser: true,
-            moradaFiscal: true,
-            endereco: true,
-            codigoPostal: true,
-            matriculaCarro: true,
-            localNascimentoPais: true,
-            localNascimentoCidade: true,
-            nomePai: true,
-            nomeMae: true,
-            cartaoCidadao: true,
-            validadeCartaoCidadao: true,
-            nif: true,
-            cpf: true,
-            pis: true,
-            ctps: true,
-            ctpsSerie: true,
-            ctpsDataExpedicao: true,
-            rg: true,
-            rgOrgaoEmissor: true,
-            rgDataExpedicao: true,
-            cnh: true,
-            cnhCategoria: true,
-            cnhDataValidade: true,
-            tituloEleitor: true,
-            zonaEleitoral: true,
-            secaoEleitoral: true,
-            certificadoReservista: true,
-            niss: true,
-            iban: true,
-            situacaoIrs: true,
-            numeroDependentes: true,
-            declaracaoIrs: true,
-            irsJovem: true,
-            anoPrimeiroDesconto: true,
-            primeiroEmprego: true,
-            recebeAposentadoria: true,
-            recebeSeguroDesemprego: true,
-            valeTransporte: true,
-            numeroCartaoContinente: true,
-            voucherNosData: true,
-            comprovativoMoradaFiscal: true,
-            comprovativoCartaoCidadao: true,
-            comprovativoIban: true,
-            comprovativoCartaoContinente: true,
-            criminalRecordUrl: true,
-            contactoEmergenciaNome: true,
-            contactoEmergenciaParentesco: true,
-            contactoEmergenciaNumero: true,
             cargo: true,
             categoriaProfissional: true,
             numeroMecanografico: true,
-            funcao: true,
-            dataInicioContrato: true,
-            dataFimContrato: true,
-            tipoContrato: true,
-            regimeHorario: true,
-            workCountry: true,
-            brWorkState: true,
             localidade: true,
+            workCountry: true,
+            funcao: true,
+            voucherNosData: true,
+            numeroCartaoContinente: true,
           },
         },
       },
@@ -1709,7 +1661,7 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
   }
 
   const getDisplayName = (user: typeof collaboratorRows[number]) => (
-    user.profile?.nomeAbreviado?.trim()
+    user.profile?.nomeAbreviado
       || user.profile?.nomeCompleto?.trim()
       || user.username
   );
@@ -3512,11 +3464,14 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
       update: {
         ...profilePayload,
         ...(data.localidade !== undefined ? { localidade: data.localidade } : {}),
+        workCountry: profilePayload.workCountry ? (profilePayload.workCountry as any) : undefined,
+        brWorkState: profilePayload.brWorkState ? (profilePayload.brWorkState as any) : undefined,
       },
       create: {
         userId,
         ...profilePayload,
-        workCountry: data.workCountry ?? 'PT',
+        workCountry: (data.workCountry as any) ?? 'PT',
+        brWorkState: (data.brWorkState as any) || null,
         localidade: data.localidade ?? '',
       },
     });
@@ -3585,6 +3540,7 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
       matriculaCarro: '',
       numeroCartaoContinente: '',
       voucherNosData: '',
+      comprovativoMoradaFiscal: '',
       comprovativoCartaoCidadao: '',
       comprovativoIban: '',
       comprovativoCartaoContinente: '',
@@ -4464,6 +4420,16 @@ router.post('/users/import', requireAuth, async (req, res, next) => {
     });
   } catch (error) {
     return next(error);
+  }
+});
+
+router.post('/users', requireAuth, async (req, res) => {
+  try {
+    const user = await createUser(req.body);
+    return res.status(201).json(user);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    return res.status(400).json({ message: errorMessage });
   }
 });
 

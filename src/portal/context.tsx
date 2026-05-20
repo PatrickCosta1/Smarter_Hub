@@ -1,9 +1,8 @@
 import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { initialProfileData } from './data';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache } from './api';
+import { clearStoredAuthToken, getStoredAuthToken, setStoredAuthToken } from './auth-storage';
 import { AuthUser, PortalNotification, ProfileData, UserRole } from './types';
-
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 const NOTIFICATIONS_REFRESH_INTERVAL_MS = 45000;
 const NOTIFICATIONS_FOCUS_DEBOUNCE_MS = 12000;
 
@@ -254,7 +253,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
           headers: authHeaders(token),
         }, 15000, forceRefresh, 45000);
 
-        if (window.localStorage.getItem(STORAGE_TOKEN_KEY) === token && notificationsRefreshSequence.current === sequence) {
+        if (getStoredAuthToken() === token && notificationsRefreshSequence.current === sequence) {
           setNotifications(Array.isArray(data.rows) ? data.rows : []);
           notificationsLastSyncAt.current = Date.now();
         }
@@ -295,7 +294,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const completeLoginSession = useCallback(async (token: string, user: AuthUser) => {
-    window.localStorage.setItem(STORAGE_TOKEN_KEY, token);
+    setStoredAuthToken(token);
     setAuthToken(token);
     setCurrentUser(user);
     setUserRole(mapBackendRole(user.role));
@@ -308,7 +307,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   }, [loadAccessData, loadPortalData]);
 
   useEffect(() => {
-    const existingToken = window.localStorage.getItem(STORAGE_TOKEN_KEY);
+    const existingToken = getStoredAuthToken();
 
     if (!existingToken) {
       setIsLoadingSession(false);
@@ -332,7 +331,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
           loadPortalData(existingToken),
         ]);
       } catch {
-        window.localStorage.removeItem(STORAGE_TOKEN_KEY);
+        clearStoredAuthToken();
         setAuthToken('');
       } finally {
         setIsLoadingSession(false);
@@ -420,7 +419,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
   }, [completeLoginSession]);
 
   const logout = useCallback(() => {
-    window.localStorage.removeItem(STORAGE_TOKEN_KEY);
+    clearStoredAuthToken();
     clearApiCache();
     setAuthToken('');
     setIsAuthenticated(false);

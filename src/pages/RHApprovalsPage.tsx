@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getBackendBase, isAbortError } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 import { usePortal } from '../portal/context';
 import { MICROCOPY, resolveErrorMessage } from '../portal/microcopy';
 import { formatVacationStatusLabel, getVacationStatusTone } from '../portal/labels';
@@ -11,10 +12,8 @@ import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
 import Toast from '../components/ui/Toast';
 
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
-
 function getAuthHeaders() {
-  const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+  const token = getStoredAuthToken();
   return authHeaders(token);
 }
 

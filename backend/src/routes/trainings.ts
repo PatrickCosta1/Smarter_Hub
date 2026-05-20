@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
+import { getUserTrainings, deleteTraining } from '../services/trainings/get-trainings.service.js';
 import { buildUserWhereFromScope, canAccessUserByPermission, canReviewAccessTotalHierarchy, getPermissionScope, hasPermission } from '../lib/permission-engine.js';
 import { notifyUsers, notifyUsersByPermission } from '../lib/notifications.js';
 
@@ -148,29 +149,18 @@ async function filterHierarchyRecordsForActor(
 router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
-    const pagination = parsePagination(req.query);
-
+    
     if (!await hasPermission(userId, 'view_trainings')) {
       return res.status(403).json({ error: 'Sem permissões para consultar formações.' });
     }
 
-    const where = { userId };
+    const pagination = parsePagination(req.query);
+    const data = await getUserTrainings(userId, pagination.skip, pagination.take);
 
-    const [total, rows] = await Promise.all([
-      prisma.training.count({ where }),
-      prisma.training.findMany({
-        where,
-        include: ownTrainingInclude,
-        orderBy: { createdAt: 'desc' },
-        skip: pagination.skip,
-        take: pagination.take,
-      }),
-    ]);
-
-    return res.json({ total, page: pagination.page, pageSize: pagination.pageSize, rows });
+    return res.json({ ...data, page: pagination.page, pageSize: pagination.pageSize });
   } catch (error) {
     console.error('[GET /trainings/me]', error);
-    res.status(500).json({ error: 'Falha ao buscar formações' });
+    return res.status(500).json({ error: 'Falha ao buscar formações' });
   }
 });
 
@@ -501,21 +491,15 @@ router.delete('/trainings/:id', requireAuth, async (req: Request, res: Response)
     }
 
     const id = typeof req.params.id === 'string' ? req.params.id : '';
+    await deleteTraining(id, userId);
 
-    const training = await prisma.training.findFirst({
-      where: { id, userId },
-    });
-
-    if (!training) {
-      return res.status(404).json({ error: 'Formação não encontrada' });
-    }
-
-    await prisma.training.delete({ where: { id } });
-
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (error) {
     console.error('[DELETE /trainings/:id]', error);
-    res.status(500).json({ error: 'Falha ao eliminar formação' });
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return res.status(403).json({ error: 'Não podes eliminar esta formação.' });
+    }
+    return res.status(404).json({ error: 'Formação não encontrada' });
   }
 });
 

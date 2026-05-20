@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 
 import Modal from '../components/ui/Modal';
 import { apiRequest, authHeaders, clearApiCache } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 import { CAREER_LEVELS, resolveCareerPlan } from '../portal/career-plan';
 import { usePortal } from '../portal/context';
 
@@ -127,7 +128,7 @@ function ListEditor({ label, items, onChange, addLabel, emptyItemPlaceholder }: 
 }
 
 function getAuthHeaders() {
-  const token = window.localStorage.getItem('smarter_hub_auth_token') || '';
+  const token = getStoredAuthToken();
   return authHeaders(token);
 }
 

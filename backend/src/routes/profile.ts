@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma, ProfileOptionType } from "@prisma/client";
 
 import { prisma } from "../lib/prisma.js";
+import { getUserProfile } from "../services/profile/get-profile.service.js";
 import {
   buildUserWhereFromScope,
   canAccessUserByPermission,
@@ -844,17 +845,13 @@ function normalizeContractType(value: string) {
 }
 
 router.get("/profile/me", requireAuth, async (req, res) => {
-  const userId = req.authUser!.id;
-
-  const profile = await prisma.profile.findUnique({
-    where: { userId }
-  });
-
-  if (!profile) {
-    return res.status(404).json({ message: "Perfil nao encontrado." });
+  try {
+    const userId = req.authUser!.id;
+    const profile = await getUserProfile(userId);
+    return res.json(profile);
+  } catch (error) {
+    return res.status(404).json({ message: "Perfil não encontrado." });
   }
-
-  return res.json(profile);
 });
 
 router.post('/profile/me/voucher-nos/request', requireAuth, async (req, res) => {

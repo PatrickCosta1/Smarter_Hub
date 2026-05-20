@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Button from '../components/ui/Button';
 import { usePortal } from '../portal/context';
 import { apiRequest, authHeaders, getBackendBase } from '../portal/api';
+import { getStoredAuthToken } from '../portal/auth-storage';
 
 type HourBankEntry = {
   id: string;
@@ -75,8 +76,6 @@ type WeeklyReportsResponse = {
 };
 
 type Tab = 'meu-saldo' | 'visao-rh' | 'lancamentos' | 'limites' | 'relatorios';
-
-const STORAGE_TOKEN_KEY = 'smarter_hub_auth_token';
 
 function formatDateTime(value: string) {
   const date = new Date(value);
@@ -160,7 +159,7 @@ export default function HourBankPage() {
   ];
 
   async function loadData() {
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     if (!token) {
       setStatus('Sessão inválida.');
       setIsLoading(false);
@@ -233,7 +232,7 @@ export default function HourBankPage() {
       return;
     }
 
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     if (!token) {
       return;
     }
@@ -278,7 +277,7 @@ export default function HourBankPage() {
       return;
     }
 
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     if (!token) {
       return;
     }
@@ -311,7 +310,7 @@ export default function HourBankPage() {
   }
 
   async function handleExport() {
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     if (!token) return;
 
     const params = new URLSearchParams();
@@ -351,7 +350,7 @@ export default function HourBankPage() {
       return;
     }
 
-    const token = localStorage.getItem(STORAGE_TOKEN_KEY) || '';
+    const token = getStoredAuthToken();
     if (!token) {
       return;
     }
