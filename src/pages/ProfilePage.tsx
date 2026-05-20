@@ -332,6 +332,27 @@ function renderFileLink(value: string) {
   );
 }
 
+function normalizeProfileFileUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith('/uploads/')) {
+    return `${getBackendBase()}${trimmed}`;
+  }
+
+  if (trimmed.startsWith('uploads/')) {
+    return `${getBackendBase()}/${trimmed}`;
+  }
+
+  return `${getBackendBase()}/uploads/${trimmed.replace(/^\/+/, '')}`;
+}
+
 type SearchableDropdownProps = {
   label: string;
   value: string;
@@ -686,6 +707,7 @@ export default function ProfilePage() {
   const [profileErrors, setProfileErrors] = useState<ProfileFieldError>({});
   const { toast, showToast } = useFeedbackToast(3400);
   const [isSaving, setIsSaving] = useState(false);
+  const [isAvatarLoadError, setIsAvatarLoadError] = useState(false);
   const [currentSection, setCurrentSection] = useState<SectionKey>('personal');
   type PendingChangeDetail = { fieldKey: string; field: string; oldValue: string; newValue: string };
   const [hasPendingRequest, setHasPendingRequest] = useState(false);
@@ -798,6 +820,11 @@ export default function ProfilePage() {
 
     return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
   }, [heroName]);
+  const heroPhotoUrl = useMemo(() => normalizeProfileFileUrl(String(draftProfile.photoUrl || '')), [draftProfile.photoUrl]);
+
+  useEffect(() => {
+    setIsAvatarLoadError(false);
+  }, [heroPhotoUrl]);
   const contractCostCenter = useMemo(() => {
     return currentUser?.team?.costCenter?.trim() || '';
   }, [currentUser?.team?.costCenter]);
@@ -1364,8 +1391,13 @@ export default function ProfilePage() {
         <div className="hero-main">
           <div className="profile-hero__identity">
             <div className="profile-hero__avatar-wrap">
-              {draftProfile.photoUrl ? (
-                <img src={draftProfile.photoUrl} alt="Foto de utilizador" className="profile-hero__avatar" />
+              {heroPhotoUrl && !isAvatarLoadError ? (
+                <img
+                  src={heroPhotoUrl}
+                  alt="Foto de utilizador"
+                  className="profile-hero__avatar"
+                  onError={() => setIsAvatarLoadError(true)}
+                />
               ) : (
                 <span className="profile-hero__avatar profile-hero__avatar--fallback" aria-hidden="true">{heroInitials}</span>
               )}
