@@ -142,16 +142,11 @@ function parsePagination(query: Request['query']) {
   const pageRaw = typeof query.page === 'string' ? query.page.trim() : '1';
   const pageSizeRaw = typeof query.pageSize === 'string' ? query.pageSize.trim() : '50';
 
-  if (!/^\d+$/.test(pageRaw) || !/^\d+$/.test(pageSizeRaw)) {
-    return { error: 'Parâmetros de paginação inválidos.' };
-  }
+  const pageNum = Number(pageRaw);
+  const pageSizeNum = Number(pageSizeRaw);
 
-  const page = Number(pageRaw);
-  const pageSize = Number(pageSizeRaw);
-
-  if (!Number.isInteger(page) || !Number.isInteger(pageSize) || page < 1 || pageSize < 1 || pageSize > 200) {
-    return { error: 'Parâmetros de paginação inválidos.' };
-  }
+  const page = Number.isFinite(pageNum) && pageNum >= 1 ? pageNum : 1;
+  const pageSize = Number.isFinite(pageSizeNum) && pageSizeNum >= 1 && pageSizeNum <= 200 ? pageSizeNum : 50;
 
   return {
     page,
@@ -1640,9 +1635,6 @@ router.get('/vacations/me', requireAuth, async (req: Request, res: Response) => 
   try {
     const userId = req.authUser!.id;
     const pagination = parsePagination(req.query);
-    if ('error' in pagination) {
-      return res.status(400).json({ error: pagination.error });
-    }
 
     const [total, rows] = await Promise.all([
       prisma.vacation.count({ where: { userId } }),
@@ -2325,9 +2317,6 @@ router.post('/vacations/assign-direct', requireAuth, createVacationBalanceCredit
 router.get('/vacations/requests', requireAuth, async (req: Request, res: Response) => {
   const timer = createRequestTimer('GET /vacations/requests');
   const pagination = parsePagination(req.query);
-  if ('error' in pagination) {
-    return res.status(400).json({ message: pagination.error });
-  }
 
   const userId = req.authUser!.id;
   const [canApproveVacation, canRejectVacation, canViewAllVacations, isFullAccess, viewAllScope] = await Promise.all([

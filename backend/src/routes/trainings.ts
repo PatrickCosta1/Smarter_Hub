@@ -26,11 +26,6 @@ const assignTrainingSchema = z.object({
 });
 
 function parsePagination(query: Request['query']) {
-  const hasPagination = typeof query.page === 'string' || typeof query.pageSize === 'string';
-  if (!hasPagination) {
-    return null;
-  }
-
   const pageRaw = Number(typeof query.page === 'string' ? query.page : '1');
   const pageSizeRaw = Number(typeof query.pageSize === 'string' ? query.pageSize : '20');
   const page = Number.isFinite(pageRaw) ? Math.max(1, pageRaw) : 1;
@@ -42,16 +37,6 @@ function parsePagination(query: Request['query']) {
     skip: (page - 1) * pageSize,
     take: pageSize,
   };
-}
-
-function requirePagination(query: Request['query']) {
-  const pagination = parsePagination(query);
-
-  if (!pagination) {
-    return { error: 'Parâmetros de paginação são obrigatórios (page e pageSize).' };
-  }
-
-  return { pagination };
 }
 
 const ownTrainingInclude = {
@@ -163,13 +148,7 @@ async function filterHierarchyRecordsForActor(
 router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
-    const paginationResult = requirePagination(req.query);
-
-    if ('error' in paginationResult) {
-      return res.status(400).json({ error: paginationResult.error });
-    }
-
-    const { pagination } = paginationResult;
+    const pagination = parsePagination(req.query);
 
     if (!await hasPermission(userId, 'view_trainings')) {
       return res.status(403).json({ error: 'Sem permissões para consultar formações.' });
@@ -198,13 +177,7 @@ router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => 
 router.get('/trainings/team', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
-    const paginationResult = requirePagination(req.query);
-
-    if ('error' in paginationResult) {
-      return res.status(400).json({ error: paginationResult.error });
-    }
-
-    const { pagination } = paginationResult;
+    const pagination = parsePagination(req.query);
     const [canViewOwn, canAssignOthers, canViewAll, ledTeamIds] = await Promise.all([
       hasPermission(userId, 'view_trainings'),
       hasPermission(userId, 'assign_training'),
@@ -258,13 +231,7 @@ router.get('/trainings/team', requireAuth, async (req: Request, res: Response) =
 router.get('/trainings/hierarchy', requireAuth, async (req: Request, res: Response) => {
   try {
     const actorUserId = req.authUser!.id;
-    const paginationResult = requirePagination(req.query);
-
-    if ('error' in paginationResult) {
-      return res.status(400).json({ message: paginationResult.error });
-    }
-
-    const { pagination } = paginationResult;
+    const pagination = parsePagination(req.query);
 
     if (!await hasPermission(actorUserId, 'view_all_trainings')) {
       return res.status(403).json({ message: 'Sem permissões para consultar formações da hierarquia.' });
@@ -303,13 +270,7 @@ router.get('/trainings/hierarchy', requireAuth, async (req: Request, res: Respon
 });
 
 router.get('/trainings/assigned', requireAuth, async (req: Request, res: Response) => {
-  const paginationResult = requirePagination(req.query);
-
-  if ('error' in paginationResult) {
-    return res.status(400).json({ message: paginationResult.error });
-  }
-
-  const { pagination } = paginationResult;
+  const pagination = parsePagination(req.query);
 
   if (!await hasPermission(req.authUser!.id, 'view_all_trainings')) {
     return res.status(403).json({ message: 'Sem permissões para consultar formações atribuídas.' });
