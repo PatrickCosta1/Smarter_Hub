@@ -126,6 +126,7 @@ const SENSITIVE_PROFILE_CHANGE_FIELDS = new Set([
   'comprovativoMoradaFiscal',
   'comprovativoCartaoCidadao',
   'comprovativoIban',
+  'criminalRecordUrl',
 ]);
 
 function normalizeDropdownOptionLabel(value: string) {
@@ -360,6 +361,7 @@ const profileFields = [
   "photoUrl",
   "certificadoHabilitacoesUrl",
   "cartaConducaoUrl",
+  "criminalRecordUrl",
 ] as const;
 
 function normalizeProfilePayload(payload: unknown) {
@@ -473,6 +475,7 @@ const updateProfileSchema = z.object({
   photoUrl: optionalStringField,
   certificadoHabilitacoesUrl: optionalStringField,
   cartaConducaoUrl: optionalStringField,
+  criminalRecordUrl: optionalStringField,
 }).superRefine((data, ctx) => {
   const country = data.workCountry === 'BR' ? 'BR' : 'PT';
 
@@ -644,6 +647,7 @@ const friendlyProfileFieldLabels: Partial<Record<(typeof profileFields)[number],
   photoUrl: 'Foto de utilizador',
   certificadoHabilitacoesUrl: 'Certificado de habilitações',
   cartaConducaoUrl: 'Carta de condução',
+  criminalRecordUrl: 'Registo criminal',
 };
 
 async function resolveProfileRequestApproverIds(requesterUserId: string) {

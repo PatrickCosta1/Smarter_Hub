@@ -148,6 +148,7 @@ export const initialProfileData: ProfileData = {
   photoUrl: '',
   certificadoHabilitacoesUrl: '',
   cartaConducaoUrl: '',
+  criminalRecordUrl: '',
 };
 
 export function detectRoleByUsername(currentUsername: string): UserRole {

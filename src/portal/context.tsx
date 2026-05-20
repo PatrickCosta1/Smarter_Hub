@@ -80,6 +80,7 @@ const profileKeys: Array<keyof ProfileData> = [
   'photoUrl',
   'certificadoHabilitacoesUrl',
   'cartaConducaoUrl',
+  'criminalRecordUrl',
 ];
 
 function normalizeProfileData(input: unknown): ProfileData {

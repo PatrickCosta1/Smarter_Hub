@@ -81,6 +81,7 @@ export type ProfileData = {
   photoUrl: string;
   certificadoHabilitacoesUrl: string;
   cartaConducaoUrl: string;
+  criminalRecordUrl: string;
 };
 
 export type ProfileFieldError = Partial<Record<keyof ProfileData, string>>;

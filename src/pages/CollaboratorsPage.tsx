@@ -105,6 +105,7 @@ type CollaboratorRow = {
       photoUrl?: string;
       certificadoHabilitacoesUrl?: string;
       cartaConducaoUrl?: string;
+      criminalRecordUrl?: string;
     } | null;
 };
 
@@ -184,6 +185,7 @@ type CollaboratorEditDraft = {
     photoUrl: string;
     certificadoHabilitacoesUrl: string;
     cartaConducaoUrl: string;
+    criminalRecordUrl: string;
   };
 
 type EditSection = 'identificacao' | 'contactos' | 'fiscal' | 'emergencia' | 'contrato';
@@ -245,6 +247,7 @@ const PT_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
   { key: 'matriculaCarro', label: 'Matrícula do carro', section: 'identificacao' },
     { key: 'certificadoHabilitacoesUrl', label: 'Certificado de habilitações', section: 'identificacao' },
     { key: 'cartaConducaoUrl', label: 'Carta de condução (opcional)', section: 'identificacao' },
+    { key: 'criminalRecordUrl', label: 'Registo criminal', section: 'identificacao' },
   { key: 'cartaoCidadao', label: 'Cartão de cidadão', section: 'fiscal' },
   { key: 'validadeCartaoCidadao', label: 'Validade cartão de cidadão', section: 'fiscal' },
   { key: 'comprovativoCartaoCidadao', label: 'Comprovativo cartão de cidadão', section: 'fiscal' },
@@ -417,6 +420,7 @@ function getEditFieldCardClass(fieldKey: keyof CollaboratorEditDraft) {
       'photoUrl',
       'certificadoHabilitacoesUrl',
       'cartaConducaoUrl',
+      'criminalRecordUrl',
     ]);
 
   return `cm-field-card${wideFields.has(fieldKey) ? ' is-wide' : ''}`;
@@ -505,6 +509,7 @@ const EMPTY_EDIT_DRAFT: CollaboratorEditDraft = {
     photoUrl: '',
     certificadoHabilitacoesUrl: '',
     cartaConducaoUrl: '',
+    criminalRecordUrl: '',
   };
 
 
@@ -644,6 +649,7 @@ function buildEditDraftFromRow(item: CollaboratorRow): CollaboratorEditDraft {
       photoUrl: profile.photoUrl || '',
       certificadoHabilitacoesUrl: profile.certificadoHabilitacoesUrl || '',
       cartaConducaoUrl: profile.cartaConducaoUrl || '',
+      criminalRecordUrl: profile.criminalRecordUrl || '',
     };
   }
 
@@ -870,7 +876,8 @@ const IMPORT_PROFILE_FIELD_KEYS = EDIT_PROFILE_FIELDS
       && field.key !== 'comprovativoCartaoContinente'
       && field.key !== 'photoUrl'
       && field.key !== 'certificadoHabilitacoesUrl'
-      && field.key !== 'cartaConducaoUrl')
+      && field.key !== 'cartaConducaoUrl'
+      && field.key !== 'criminalRecordUrl')
   .map((field) => field.key) as Array<Exclude<keyof CollaboratorEditDraft, 'role' | 'teamId' | 'isActive' | 'workCountry' | 'nomeCompleto' | 'primeiroEmprego' | 'recebeAposentadoria' | 'recebeSeguroDesemprego' | 'valeTransporte'>>;
 
 const IMPORT_FILE_ACCEPT = '.xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
@@ -891,7 +898,8 @@ const IMPORT_TEMPLATE_FIELDS: Array<{ key: string; label: string; required?: boo
         && field.key !== 'comprovativoCartaoContinente'
         && field.key !== 'photoUrl'
         && field.key !== 'certificadoHabilitacoesUrl'
-        && field.key !== 'cartaConducaoUrl')
+        && field.key !== 'cartaConducaoUrl'
+        && field.key !== 'criminalRecordUrl')
     .map((field) => ({
       key: field.key,
       label: field.label,
@@ -2733,7 +2741,8 @@ export default function CollaboratorsPage() {
       || fieldKey === 'comprovativoCartaoContinente'
         || fieldKey === 'declaracaoIrs'
         || fieldKey === 'certificadoHabilitacoesUrl'
-        || fieldKey === 'cartaConducaoUrl';
+        || fieldKey === 'cartaConducaoUrl'
+        || fieldKey === 'criminalRecordUrl';
 
       const isPhotoField = fieldKey === 'photoUrl';
 

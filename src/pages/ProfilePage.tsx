@@ -67,6 +67,7 @@ const profileSectionFields: Record<SectionKey, Array<keyof ProfileData>> = {
     'comprovativoCartaoCidadao',
       'certificadoHabilitacoesUrl',
       'cartaConducaoUrl',
+    'criminalRecordUrl',
     'cpf',
     'rg',
     'rgOrgaoEmissor',
@@ -214,6 +215,7 @@ const profileFieldLabels: Partial<Record<keyof ProfileData, string>> = {
     photoUrl: 'Foto de utilizador',
     certificadoHabilitacoesUrl: 'Certificado de habilitações',
     cartaConducaoUrl: 'Carta de condução',
+    criminalRecordUrl: 'Registo criminal',
 };
 
 const consolidatedAddressFields: Array<keyof ProfileData> = ['moradaFiscal', 'endereco'];
@@ -1856,6 +1858,17 @@ export default function ProfilePage() {
                       onChange={(event) => handleFileChange('cartaConducaoUrl', event)}
                     />
                     {renderFileLink(draftProfile.cartaConducaoUrl)}
+                  </label>
+                  <label className="field-span-2">
+                    <span>Registo criminal (PDF/JPG)</span>
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg"
+                      disabled={!editingSections.documents}
+                      onClick={handleFileInputClick}
+                      onChange={(event) => handleFileChange('criminalRecordUrl', event)}
+                    />
+                    {renderFileLink(draftProfile.criminalRecordUrl)}
                   </label>
                 </>
               )}
