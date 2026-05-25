@@ -20,12 +20,14 @@ import { vacationsRouter } from "./routes/vacations.js";
 import { hourBankRouter } from './routes/hour-bank.js';
 import { wellbeingRouter } from './routes/wellbeing.js';
 import { careerPlanRouter } from './routes/career-plan.js';
+import { performanceReviewRouter } from './routes/performance-review.js';
 import { prisma } from './lib/prisma.js';
 import { runCitizenCardExpiryNotificationSweep } from './lib/citizen-card-expiry-notifications.js';
 import { runJanuaryIrsAlertSweep } from './lib/january-irs-alerts.js';
 import { openApiSpec } from './lib/openapi.js';
 import { runWeeklyHourBankReportSweep } from './lib/hour-bank.js';
 import { runOccupationalHealthAlertSweep } from './lib/occupational-health-alerts.js';
+import { runUpcomingTrainingsMonthlySweep } from './lib/trainings-monthly-report.js';
 
 dotenv.config();
 
@@ -142,6 +144,7 @@ app.use("/api", notificationsRouter);
 app.use('/api', hourBankRouter);
 app.use('/api', wellbeingRouter);
 app.use('/api', careerPlanRouter);
+app.use('/api', performanceReviewRouter);
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -234,6 +237,21 @@ async function runOccupationalHealthAlertSweepSafely() {
 void runOccupationalHealthAlertSweepSafely();
 setInterval(() => {
   void runOccupationalHealthAlertSweepSafely();
+}, ONE_DAY_MS);
+
+async function runTrainingsMonthlySweepSafely() {
+  try {
+    const result = await runUpcomingTrainingsMonthlySweep(prisma);
+    logger.info({ event: 'trainings-monthly-sweep', ...result }, 'Trainings monthly sweep finished');
+  } catch (error) {
+    logger.error({ err: error }, 'Trainings monthly sweep failed');
+    Sentry.captureException(error);
+  }
+}
+
+void runTrainingsMonthlySweepSafely();
+setInterval(() => {
+  void runTrainingsMonthlySweepSafely();
 }, ONE_DAY_MS);
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -93,9 +93,175 @@ type AdmissionRequest = {
   } | null;
 };
 
+const DYNAMIC_REGIME_PREFIX = 'DINAMICO::';
+
+type WorkDayKey = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
+
+type WorkDaySchedule = {
+  day: WorkDayKey;
+  label: string;
+  enabled: boolean;
+  start: string;
+  end: string;
+};
+
+const WORK_DAY_BASE: ReadonlyArray<Omit<WorkDaySchedule, 'enabled' | 'start' | 'end'>> = [
+  { day: 'MON', label: 'Segunda' },
+  { day: 'TUE', label: 'Terça' },
+  { day: 'WED', label: 'Quarta' },
+  { day: 'THU', label: 'Quinta' },
+  { day: 'FRI', label: 'Sexta' },
+  { day: 'SAT', label: 'Sábado' },
+  { day: 'SUN', label: 'Domingo' },
+];
+
+const DEFAULT_WORK_DAYS: ReadonlyArray<WorkDaySchedule> = WORK_DAY_BASE.map((item) => ({
+  ...item,
+  enabled: item.day !== 'SAT' && item.day !== 'SUN',
+  start: '09:00',
+  end: '18:00',
+}));
+
+function cloneDefaultWorkDays() {
+  return DEFAULT_WORK_DAYS.map((item) => ({ ...item }));
+}
+
+function parseTimeToMinutes(value: string) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  return (hours * 60) + minutes;
+}
+
+function calculateWeeklyHoursFromDays(days: ReadonlyArray<WorkDaySchedule>) {
+  let totalMinutes = 0;
+  let hasActiveDay = false;
+
+  for (const day of days) {
+    if (!day.enabled) {
+      continue;
+    }
+
+    hasActiveDay = true;
+    const start = parseTimeToMinutes(day.start);
+    const end = parseTimeToMinutes(day.end);
+    if (start == null || end == null || end <= start) {
+      return null;
+    }
+
+    totalMinutes += end - start;
+  }
+
+  if (!hasActiveDay || totalMinutes <= 0) {
+    return null;
+  }
+
+  return Math.round((totalMinutes / 60) * 100) / 100;
+}
+
+function parseDynamicRegimeDays(value: string) {
+  if (!value.startsWith(DYNAMIC_REGIME_PREFIX)) {
+    return cloneDefaultWorkDays();
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value.slice(DYNAMIC_REGIME_PREFIX.length));
+  } catch {
+    return cloneDefaultWorkDays();
+  }
+
+  if (!Array.isArray(parsed)) {
+    return cloneDefaultWorkDays();
+  }
+
+  const byDay = new Map<WorkDayKey, WorkDaySchedule>();
+  for (const item of parsed) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+
+    const record = item as Record<string, unknown>;
+    const key = String(record.day ?? '') as WorkDayKey;
+    const defaultDay = DEFAULT_WORK_DAYS.find((entry) => entry.day === key);
+    if (!defaultDay) {
+      continue;
+    }
+
+    byDay.set(key, {
+      day: defaultDay.day,
+      label: defaultDay.label,
+      enabled: record.enabled === true,
+      start: typeof record.start === 'string' ? record.start : defaultDay.start,
+      end: typeof record.end === 'string' ? record.end : defaultDay.end,
+    });
+  }
+
+  return DEFAULT_WORK_DAYS.map((entry) => byDay.get(entry.day) ?? { ...entry });
+}
+
+function serializeDynamicRegimeDays(days: ReadonlyArray<WorkDaySchedule>) {
+  const compact = days.map((item) => ({
+    day: item.day,
+    enabled: item.enabled,
+    start: item.start,
+    end: item.end,
+  }));
+
+  return `${DYNAMIC_REGIME_PREFIX}${JSON.stringify(compact)}`;
+}
+
+function summarizeDynamicRegime(value: string) {
+  if (!value.startsWith(DYNAMIC_REGIME_PREFIX)) {
+    return value || 'Não configurado';
+  }
+
+  const days = parseDynamicRegimeDays(value);
+  const active = days.filter((item) => item.enabled);
+  if (active.length === 0) {
+    return 'Sem dias ativos';
+  }
+
+  const labels = active.map((item) => item.label.slice(0, 3));
+  const hourSample = active[0] ? `${active[0].start} - ${active[0].end}` : '';
+  return `${labels.join(', ')}${hourSample ? ` · ${hourSample}` : ''}`;
+}
+
+function formatWeeklyHoursLabel(hours: number | null) {
+  if (hours == null) {
+    return 'Não configurado';
+  }
+
+  return `${hours.toLocaleString('pt-PT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} h por semana`;
+}
+
 type RejectionCandidate =
   | { kind: 'profile'; request: ProfileRequest }
   | { kind: 'vacation'; request: VacationRequest };
+
+type PaginatedRows<T> = {
+  rows?: T[];
+};
+
+function ensureArrayResponse<T>(payload: T[] | PaginatedRows<T> | null | undefined): T[] {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (payload && typeof payload === 'object' && Array.isArray(payload.rows)) {
+    return payload.rows;
+  }
+
+  return [];
+}
 
 function getDisplayName(user?: { username: string; profile?: { nomeAbreviado?: string; nomeCompleto?: string } | null } | null) {
   const shortName = user?.profile?.nomeAbreviado?.trim();
@@ -165,7 +331,10 @@ export default function RHApprovalsPage() {
     dataFimContrato: '',
     tipoContrato: '',
     regimeHorario: '',
+    horasSemanaisContrato: '',
   });
+  const [isAdmissionWorkHoursModalOpen, setIsAdmissionWorkHoursModalOpen] = useState(false);
+  const [admissionWorkHoursDraft, setAdmissionWorkHoursDraft] = useState<WorkDaySchedule[]>(() => cloneDefaultWorkDays());
   const [rejectionCandidate, setRejectionCandidate] = useState<RejectionCandidate | null>(null);
   const [rejectionMode, setRejectionMode] = useState<'none' | 'total' | 'partial'>('none');
   const [rejectedFields, setRejectedFields] = useState<Record<string, string>>({}); // {"fieldName": "observações"}
@@ -265,13 +434,14 @@ export default function RHApprovalsPage() {
         return;
       }
 
-      const profiles = await apiRequestCached<ProfileRequest[]>('/profile/requests', { headers: getAuthHeaders(), signal }, 45000);
-      setProfileRequests(profiles);
+      const profilesPayload = await apiRequestCached<ProfileRequest[] | PaginatedRows<ProfileRequest>>('/profile/requests', { headers: getAuthHeaders(), signal }, 45000);
+      setProfileRequests(ensureArrayResponse(profilesPayload));
     } catch (error) {
       if (isAbortError(error) || signal?.aborted) {
         return;
       }
 
+      setProfileRequests([]);
       showToast('error', resolveErrorMessage(error, MICROCOPY.approvals.loadRequestsError));
     } finally {
       if (!signal?.aborted) {
@@ -288,13 +458,14 @@ export default function RHApprovalsPage() {
         return;
       }
 
-      const vacations = await apiRequestCached<VacationRequest[]>('/vacations/requests', { headers: getAuthHeaders(), signal }, 45000);
-      setVacationRequests(vacations);
+      const vacationsPayload = await apiRequestCached<VacationRequest[] | PaginatedRows<VacationRequest>>('/vacations/requests?page=1&pageSize=200', { headers: getAuthHeaders(), signal }, 45000);
+      setVacationRequests(ensureArrayResponse(vacationsPayload));
     } catch (error) {
       if (isAbortError(error) || signal?.aborted) {
         return;
       }
 
+      setVacationRequests([]);
       showToast('error', resolveErrorMessage(error, MICROCOPY.approvals.loadRequestsError));
     } finally {
       if (!signal?.aborted) {
@@ -311,13 +482,14 @@ export default function RHApprovalsPage() {
         return;
       }
 
-      const admissions = await apiRequestCached<AdmissionRequest[]>('/users/admissions/review', { headers: getAuthHeaders(), signal }, 30000);
-      setAdmissionRequests(admissions);
+      const admissionsPayload = await apiRequestCached<AdmissionRequest[] | PaginatedRows<AdmissionRequest>>('/users/admissions/review', { headers: getAuthHeaders(), signal }, 30000);
+      setAdmissionRequests(ensureArrayResponse(admissionsPayload));
     } catch (error) {
       if (isAbortError(error) || signal?.aborted) {
         return;
       }
 
+      setAdmissionRequests([]);
       showToast('error', resolveErrorMessage(error, 'Erro ao carregar pedidos de admissão.'));
     } finally {
       if (!signal?.aborted) {
@@ -329,6 +501,39 @@ export default function RHApprovalsPage() {
   const selectedProfileChangeDetails = selectedProfileRequest?.changeDetails ?? [];
   const selectedRejectedFieldEntries = Object.entries(rejectedFields);
   const partialRejectionReady = selectedRejectedFieldEntries.length > 0 && selectedRejectedFieldEntries.every(([, note]) => note.trim().length > 0);
+  const admissionWeeklyHours = useMemo(() => {
+    if (contractDraft.regimeHorario.startsWith(DYNAMIC_REGIME_PREFIX)) {
+      return calculateWeeklyHoursFromDays(parseDynamicRegimeDays(contractDraft.regimeHorario));
+    }
+
+    const raw = Number(contractDraft.horasSemanaisContrato.replace(',', '.'));
+    if (!Number.isFinite(raw) || raw <= 0) {
+      return null;
+    }
+
+    return Math.round(raw * 100) / 100;
+  }, [contractDraft.horasSemanaisContrato, contractDraft.regimeHorario]);
+  const admissionRegimeSummary = useMemo(() => summarizeDynamicRegime(contractDraft.regimeHorario), [contractDraft.regimeHorario]);
+
+  useEffect(() => {
+    if (!contractDraft.regimeHorario.startsWith(DYNAMIC_REGIME_PREFIX)) {
+      return;
+    }
+
+    if (contractDraft.horasSemanaisContrato.trim()) {
+      return;
+    }
+
+    const calculated = calculateWeeklyHoursFromDays(parseDynamicRegimeDays(contractDraft.regimeHorario));
+    if (calculated == null) {
+      return;
+    }
+
+    setContractDraft((current) => ({
+      ...current,
+      horasSemanaisContrato: String(calculated),
+    }));
+  }, [contractDraft.horasSemanaisContrato, contractDraft.regimeHorario]);
 
   if (!canReviewProfiles && !canReviewVacations && !canReviewAdmissions) {
     return (
@@ -451,6 +656,11 @@ export default function RHApprovalsPage() {
   }
 
   async function completeAdmission(request: AdmissionRequest) {
+    if (admissionWeeklyHours == null) {
+      showToast('error', 'Configura as horas de trabalho antes de concluir a admissão.');
+      return;
+    }
+
     await runAction(`complete-admission-${request.id}`, 'Colaborador criado com sucesso.', 'Erro ao concluir a admissão.', async () => {
       await apiRequest(`/users/admissions/${request.id}/complete`, {
         method: 'POST',
@@ -472,6 +682,7 @@ export default function RHApprovalsPage() {
         dataFimContrato: '',
         tipoContrato: '',
         regimeHorario: '',
+        horasSemanaisContrato: '',
       });
       void refreshNotifications();
     });
@@ -491,7 +702,24 @@ export default function RHApprovalsPage() {
       dataFimContrato: '',
       tipoContrato: '',
       regimeHorario: '',
+      horasSemanaisContrato: '',
     });
+  }
+
+  function applyAdmissionDynamicRegime() {
+    const calculated = calculateWeeklyHoursFromDays(admissionWorkHoursDraft);
+    if (calculated == null) {
+      showToast('error', 'Configuração de horas inválida. Confirma os dias ativos e os horários.');
+      return;
+    }
+
+    const serialized = serializeDynamicRegimeDays(admissionWorkHoursDraft);
+    setContractDraft((current) => ({
+      ...current,
+      regimeHorario: serialized,
+      horasSemanaisContrato: String(calculated),
+    }));
+    setIsAdmissionWorkHoursModalOpen(false);
   }
 
   function closeAdmissionDetails() {
@@ -1056,7 +1284,7 @@ export default function RHApprovalsPage() {
                   variant="primary"
                   size="md"
                   isLoading={pendingActionKey === `complete-admission-${selectedAdmissionRequest.id}`}
-                  disabled={Boolean(pendingActionKey) || !contractDraft.companyEmail.trim() || !contractDraft.companyUsername.trim() || !contractDraft.dataInicioContrato.trim() || !contractDraft.tipoContrato.trim()}
+                  disabled={Boolean(pendingActionKey) || !contractDraft.companyEmail.trim() || !contractDraft.companyUsername.trim() || !contractDraft.dataInicioContrato.trim() || !contractDraft.tipoContrato.trim() || admissionWeeklyHours == null}
                   onClick={() => { void completeAdmission(selectedAdmissionRequest); }}
                 >
                   Concluir admissão
@@ -1146,10 +1374,26 @@ export default function RHApprovalsPage() {
                         <span>Tipo de contrato</span>
                         <input value={contractDraft.tipoContrato} onChange={(event) => setContractDraft((current) => ({ ...current, tipoContrato: event.target.value }))} />
                       </label>
-                      <label>
-                        <span>Regime horário</span>
-                        <input value={contractDraft.regimeHorario} onChange={(event) => setContractDraft((current) => ({ ...current, regimeHorario: event.target.value }))} />
-                      </label>
+                      <div className="profile-contract-dynamic" style={{ gridColumn: '1 / -1' }}>
+                        <label>
+                          <span>Regime de contrato (calculado)</span>
+                          <input value={formatWeeklyHoursLabel(admissionWeeklyHours)} readOnly />
+                        </label>
+                        <div className="profile-contract-dynamic__actions">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setAdmissionWorkHoursDraft(parseDynamicRegimeDays(contractDraft.regimeHorario));
+                              setIsAdmissionWorkHoursModalOpen(true);
+                            }}
+                          >
+                            Configurar horas de trabalho
+                          </Button>
+                        </div>
+                        <small>{admissionRegimeSummary}</small>
+                      </div>
                     </div>
                   </>
                 )}
@@ -1157,6 +1401,69 @@ export default function RHApprovalsPage() {
             </div>
           </div>
         ) : null}
+      </Modal>
+
+      <Modal
+        open={isAdmissionWorkHoursModalOpen}
+        title="Configuração de horas de trabalho"
+        onClose={() => setIsAdmissionWorkHoursModalOpen(false)}
+        width="min(760px, 96vw)"
+        footer={(
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, width: '100%' }}>
+            <Button type="button" variant="ghost" size="md" onClick={() => setIsAdmissionWorkHoursModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" variant="primary" size="md" onClick={applyAdmissionDynamicRegime}>
+              Aplicar configuração
+            </Button>
+          </div>
+        )}
+      >
+        <div style={{ display: 'grid', gap: 10 }}>
+          <p style={{ margin: 0, color: 'var(--hub-text-3)', fontSize: '0.9rem' }}>
+            Define os dias ativos e os intervalos horários. O regime de contrato é calculado automaticamente.
+          </p>
+
+          {admissionWorkHoursDraft.map((day) => (
+            <div key={day.day} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr', gap: 10, alignItems: 'center' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem' }}>
+                <input
+                  type="checkbox"
+                  checked={day.enabled}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setAdmissionWorkHoursDraft((current) => current.map((item) => (
+                      item.day === day.day ? { ...item, enabled: checked } : item
+                    )));
+                  }}
+                />
+                {day.label}
+              </label>
+              <input
+                type="time"
+                value={day.start}
+                disabled={!day.enabled}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setAdmissionWorkHoursDraft((current) => current.map((item) => (
+                    item.day === day.day ? { ...item, start: value } : item
+                  )));
+                }}
+              />
+              <input
+                type="time"
+                value={day.end}
+                disabled={!day.enabled}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setAdmissionWorkHoursDraft((current) => current.map((item) => (
+                    item.day === day.day ? { ...item, end: value } : item
+                  )));
+                }}
+              />
+            </div>
+          ))}
+        </div>
       </Modal>
 
       <Modal

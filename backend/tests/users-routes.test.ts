@@ -320,6 +320,39 @@ describe('users routes integration', () => {
       expect(Array.isArray(response.body.rows)).toBe(true);
     });
 
+    it('allows manager without view_user_list to list team collaborators', async () => {
+      permissionEngineMock.hasPermission.mockImplementation(async (_userId: string, code: string) => (
+        code !== 'view_user_list'
+      ));
+      permissionEngineMock.isAccessTotal.mockResolvedValue(false);
+      prismaMock.team.findMany.mockResolvedValue([{ id: 'team-1' }]);
+      permissionEngineMock.getPermissionScope.mockImplementation(async (_userId: string, code: string) => {
+        if (code === 'view_teams' || code === 'view_team_vacations') {
+          return { isGlobal: false, restrictedToTeams: ['team-1'] };
+        }
+        return null;
+      });
+      prismaMock.user.findUnique.mockResolvedValue({
+        id: 'manager-1',
+        teamId: 'team-1',
+        teamMemberships: [{ teamId: 'team-1' }],
+      });
+      prismaMock.user.count.mockResolvedValue(1);
+      prismaMock.user.findMany.mockResolvedValue([{
+        ...sampleUser,
+        teamId: 'team-1',
+        teamMemberships: [],
+        managedTeams: [],
+      }]);
+
+      const app = buildApp({ id: 'manager-1', role: 'MANAGER', isRootAccess: false, hasAccessTotal: false });
+      const response = await request(app).get('/api/users/collaborators?page=1&pageSize=20');
+
+      expect(response.status).toBe(200);
+      expect(Array.isArray(response.body.rows)).toBe(true);
+      expect(response.body.rows[0].id).toBe('user-1');
+    });
+
     it('redacts sensitive profile fields in collaborators list for non-privileged viewers', async () => {
       permissionEngineMock.isAccessTotal.mockResolvedValue(false);
       permissionEngineMock.hasPermission.mockImplementation(async (_userId: string, code: string) => (

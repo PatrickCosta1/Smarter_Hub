@@ -22,9 +22,31 @@ import CollaboratorProfileOptionModal from '../components/collaborators/Collabor
 import CollaboratorActiveConfirmModal from '../components/collaborators/CollaboratorActiveConfirmModal';
 import CollaboratorCountryChangeModal from '../components/collaborators/CollaboratorCountryChangeModal';
 import CollaboratorsActionsMenuPanel from '../components/collaborators/CollaboratorsActionsMenuPanel';
+import AdmissionFormSettingsModal from '../components/collaborators/AdmissionFormSettingsModal';
+import Modal from '../components/ui/Modal';
 
 const PERMISSION_CATEGORIES = ['SYSTEM', 'USERS', 'TEAMS', 'VACATIONS', 'TRAININGS', 'PROFILE', 'NOTIFICATIONS'] as const;
 type PermissionCategory = typeof PERMISSION_CATEGORIES[number];
+
+const DYNAMIC_REGIME_PREFIX = 'DINAMICO::';
+
+type DynamicRegimeDay = {
+  key: string;
+  label: string;
+  enabled: boolean;
+  start: string;
+  end: string;
+};
+
+const defaultDynamicRegimeDays: DynamicRegimeDay[] = [
+  { key: 'MON', label: 'Segunda', enabled: true, start: '09:00', end: '18:00' },
+  { key: 'TUE', label: 'Terça', enabled: true, start: '09:00', end: '18:00' },
+  { key: 'WED', label: 'Quarta', enabled: true, start: '09:00', end: '18:00' },
+  { key: 'THU', label: 'Quinta', enabled: true, start: '09:00', end: '18:00' },
+  { key: 'FRI', label: 'Sexta', enabled: true, start: '09:00', end: '18:00' },
+  { key: 'SAT', label: 'Sábado', enabled: false, start: '09:00', end: '13:00' },
+  { key: 'SUN', label: 'Domingo', enabled: false, start: '09:00', end: '13:00' },
+];
 
 type CollaboratorRow = {
   id: string;
@@ -109,6 +131,7 @@ type CollaboratorRow = {
     dataFimContrato?: string;
     tipoContrato?: string;
     regimeHorario?: string;
+    hourBankLimitHours?: number;
     workCountry?: 'PT' | 'BR';
     brWorkState?: 'SP' | 'RS';
     localidade?: string;
@@ -192,6 +215,7 @@ type CollaboratorEditDraft = {
   dataFimContrato: string;
   tipoContrato: string;
   regimeHorario: string;
+  horasSemanaisContrato: string;
     photoUrl: string;
     certificadoHabilitacoesUrl: string;
     cartaConducaoUrl: string;
@@ -206,6 +230,23 @@ type EditSectionMeta = {
   title: string;
   description: string;
   sectionClassName?: string;
+};
+
+type AdmissionSettingsFieldOption = {
+  key: string;
+  label: string;
+  defaultRequired: boolean;
+};
+
+type AdmissionFormSettingsResponse = {
+  requiredFieldsByCountry: {
+    PT: string[];
+    BR: string[];
+  };
+  availableFieldsByCountry: {
+    PT: AdmissionSettingsFieldOption[];
+    BR: AdmissionSettingsFieldOption[];
+  };
 };
 
 function resolveStatusTone(message: string): 'success' | 'error' | 'info' {
@@ -237,7 +278,7 @@ const COMMON_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
   { key: 'moradaFiscal', label: 'Morada fiscal', section: 'contactos' },
   { key: 'endereco', label: 'Morada habitual', section: 'contactos' },
   { key: 'localidade', label: 'Localidade', section: 'contactos' },
-  { key: 'codigoPostal', label: 'Código postal / CEP', section: 'contactos' },
+  { key: 'codigoPostal', label: 'Código postal', section: 'contactos' },
   { key: 'comprovativoMoradaFiscal', label: 'Comprovativo morada fiscal', section: 'fiscal' },
   { key: 'contactoEmergenciaNome', label: 'Nome contacto emergência', section: 'emergencia' },
   { key: 'contactoEmergenciaParentesco', label: 'Parentesco contacto emergência', section: 'emergencia' },
@@ -250,13 +291,13 @@ const COMMON_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
   { key: 'dataInicioContrato', label: 'Data início contrato', section: 'contrato' },
   { key: 'dataFimContrato', label: 'Data fim contrato', section: 'contrato' },
   { key: 'tipoContrato', label: 'Tipo contrato', section: 'contrato' },
-  { key: 'regimeHorario', label: 'Regime horário', section: 'contrato' },
+  { key: 'regimeHorario', label: 'Regime contrato', section: 'contrato' },
 ];
 
 const PT_EDIT_PROFILE_FIELDS: EditFieldConfig[] = [
   { key: 'matriculaCarro', label: 'Matrícula do carro', section: 'identificacao' },
     { key: 'certificadoHabilitacoesUrl', label: 'Certificado de habilitações', section: 'identificacao' },
-    { key: 'cartaConducaoUrl', label: 'Carta de condução (opcional)', section: 'identificacao' },
+    { key: 'cartaConducaoUrl', label: 'Carta de condução', section: 'identificacao' },
     { key: 'criminalRecordUrl', label: 'Registo criminal', section: 'identificacao' },
   { key: 'cartaoCidadao', label: 'Cartão de cidadão', section: 'fiscal' },
   { key: 'validadeCartaoCidadao', label: 'Validade cartão de cidadão', section: 'fiscal' },
@@ -361,8 +402,11 @@ const REQUIRED_IDENTIFICACAO_FIELDS: Array<keyof CollaboratorEditDraft> = [
   'curso',
   'faculdade',
   'nacionalidade',
-    'photoUrl',
-  ];
+  'photoUrl',
+  'certificadoHabilitacoesUrl',
+  'cartaConducaoUrl',
+  'criminalRecordUrl',
+];
 
 const REQUIRED_CONTACTOS_FIELDS: Array<keyof CollaboratorEditDraft> = [
   'emailPessoal',
@@ -376,9 +420,11 @@ const REQUIRED_CONTACTOS_FIELDS: Array<keyof CollaboratorEditDraft> = [
 const REQUIRED_FISCAL_PT_FIELDS: Array<keyof CollaboratorEditDraft> = [
   'cartaoCidadao',
   'validadeCartaoCidadao',
+  'comprovativoCartaoCidadao',
   'nif',
   'niss',
   'iban',
+  'comprovativoIban',
   'situacaoIrs',
 ];
 
@@ -389,6 +435,8 @@ const REQUIRED_FISCAL_BR_FIELDS: Array<keyof CollaboratorEditDraft> = [
   'rgOrgaoEmissor',
   'ctps',
   'ctpsSerie',
+  'comprovativoCartaoCidadao',
+  'comprovativoIban',
 ];
 
 const REQUIRED_EMERGENCIA_FIELDS: Array<keyof CollaboratorEditDraft> = [
@@ -400,8 +448,10 @@ const REQUIRED_EMERGENCIA_FIELDS: Array<keyof CollaboratorEditDraft> = [
 const REQUIRED_CONTRATO_FIELDS: Array<keyof CollaboratorEditDraft> = [
   'categoriaProfissional',
   'cargo',
+  'numeroMecanografico',
   'funcao',
   'dataInicioContrato',
+  'dataFimContrato',
   'tipoContrato',
   'regimeHorario',
 ];
@@ -516,6 +566,7 @@ const EMPTY_EDIT_DRAFT: CollaboratorEditDraft = {
   dataFimContrato: '',
   tipoContrato: '',
     regimeHorario: '',
+    horasSemanaisContrato: '',
     photoUrl: '',
     certificadoHabilitacoesUrl: '',
     cartaConducaoUrl: '',
@@ -656,6 +707,9 @@ function buildEditDraftFromRow(item: CollaboratorRow): CollaboratorEditDraft {
     dataFimContrato: profile.dataFimContrato || '',
     tipoContrato: profile.tipoContrato || '',
     regimeHorario: profile.regimeHorario || '',
+    horasSemanaisContrato: Number.isFinite(profile.hourBankLimitHours)
+      ? String(profile.hourBankLimitHours)
+      : '',
       photoUrl: profile.photoUrl || '',
       certificadoHabilitacoesUrl: profile.certificadoHabilitacoesUrl || '',
       cartaConducaoUrl: profile.cartaConducaoUrl || '',
@@ -1413,8 +1467,16 @@ function normalizeFileUrl(value: string) {
     return `${getBackendBase()}${trimmed}`;
   }
 
+  if (trimmed.startsWith('/api/uploads/')) {
+    return `${getBackendBase()}${trimmed.replace(/^\/api/, '')}`;
+  }
+
   if (trimmed.startsWith('uploads/')) {
     return `${getBackendBase()}/${trimmed}`;
+  }
+
+  if (trimmed.startsWith('api/uploads/')) {
+    return `${getBackendBase()}/${trimmed.replace(/^api\//, '')}`;
   }
 
   return `${getBackendBase()}/uploads/${trimmed.replace(/^\/+/, '')}`;
@@ -1530,6 +1592,101 @@ function formatTemplateValue(value?: string | null) {
   return value?.trim() || '';
 }
 
+function parseDynamicRegimeDays(value: string): DynamicRegimeDay[] {
+  if (!value.startsWith(DYNAMIC_REGIME_PREFIX)) {
+    return defaultDynamicRegimeDays.map((item) => ({ ...item }));
+  }
+
+  const rawPayload = value.slice(DYNAMIC_REGIME_PREFIX.length);
+  try {
+    const parsed = JSON.parse(rawPayload) as Array<Partial<DynamicRegimeDay>>;
+    const byKey = new Map(parsed.map((item) => [String(item.key || ''), item]));
+
+    return defaultDynamicRegimeDays.map((item) => {
+      const source = byKey.get(item.key);
+      if (!source) {
+        return { ...item };
+      }
+
+      const start = typeof source.start === 'string' && /^\d{2}:\d{2}$/.test(source.start) ? source.start : item.start;
+      const end = typeof source.end === 'string' && /^\d{2}:\d{2}$/.test(source.end) ? source.end : item.end;
+
+      return {
+        ...item,
+        enabled: source.enabled === true,
+        start,
+        end,
+      };
+    });
+  } catch {
+    return defaultDynamicRegimeDays.map((item) => ({ ...item }));
+  }
+}
+
+function serializeDynamicRegimeDays(days: DynamicRegimeDay[]) {
+  const compact = days.map(({ key, label, enabled, start, end }) => ({ key, label, enabled, start, end }));
+  return `${DYNAMIC_REGIME_PREFIX}${JSON.stringify(compact)}`;
+}
+
+function parseTimeToMinutes(value: string) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  return (hours * 60) + minutes;
+}
+
+function calculateWeeklyHoursFromDays(days: DynamicRegimeDay[]) {
+  let totalMinutes = 0;
+
+  for (const day of days) {
+    if (!day.enabled) {
+      continue;
+    }
+
+    const start = parseTimeToMinutes(day.start);
+    const end = parseTimeToMinutes(day.end);
+    if (start == null || end == null || end <= start) {
+      return null;
+    }
+
+    totalMinutes += (end - start);
+  }
+
+  if (totalMinutes <= 0) {
+    return null;
+  }
+
+  return Math.round((totalMinutes / 60) * 100) / 100;
+}
+
+function formatWeeklyHoursLabel(value: number) {
+  return `${new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 2 }).format(value)} h por semana`;
+}
+
+function summarizeDynamicRegime(value: string) {
+  if (!value.startsWith(DYNAMIC_REGIME_PREFIX)) {
+    return '';
+  }
+
+  const days = parseDynamicRegimeDays(value);
+  const weeklyHours = calculateWeeklyHoursFromDays(days);
+  const activeDays = days.filter((item) => item.enabled);
+  if (activeDays.length === 0) {
+    return 'Sem dias ativos';
+  }
+
+  const weeklyHoursLabel = weeklyHours == null ? 'horário inválido' : formatWeeklyHoursLabel(weeklyHours);
+  return `${weeklyHoursLabel} • ${activeDays.length} dia(s): ${activeDays.map((item) => `${item.label} ${item.start}-${item.end}`).join(', ')}`;
+}
+
 export default function CollaboratorsPage() {
   const { hasPermission, isRootAccess, isAccessTotal, currentUser } = usePortal();
   const canView = isRootAccess || hasPermission('view_user_list');
@@ -1574,6 +1731,8 @@ export default function CollaboratorsPage() {
   const [permissionTeams, setPermissionTeams] = useState<TeamOption[]>([]);
   const [pendingTeamToAdd, setPendingTeamToAdd] = useState('');
   const [editDraft, setEditDraft] = useState<CollaboratorEditDraft>(EMPTY_EDIT_DRAFT);
+  const [isWorkHoursModalOpen, setIsWorkHoursModalOpen] = useState(false);
+  const [workHoursDraft, setWorkHoursDraft] = useState<DynamicRegimeDay[]>(() => defaultDynamicRegimeDays.map((item) => ({ ...item })));
   const [isSavingEditDraft, setIsSavingEditDraft] = useState(false);
   const [isCountryChangeModalOpen, setIsCountryChangeModalOpen] = useState(false);
   const [pendingCountryChange, setPendingCountryChange] = useState<{ from: 'PT' | 'BR'; to: 'PT' | 'BR' } | null>(null);
@@ -1587,6 +1746,15 @@ export default function CollaboratorsPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [newUserDraft, setNewUserDraft] = useState<CollaboratorCreateDraft>({ fullName: '', personalEmail: '', workCountry: 'PT', brWorkState: '' });
+  const [admissionSettings, setAdmissionSettings] = useState<AdmissionFormSettingsResponse | null>(null);
+  const [settingsCountry, setSettingsCountry] = useState<'PT' | 'BR'>('PT');
+  const [settingsDraftRequiredFields, setSettingsDraftRequiredFields] = useState<string[]>([]);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isSettingsLoading, setIsSettingsLoading] = useState(false);
+  const [isSettingsSaving, setIsSettingsSaving] = useState(false);
+  const [settingsStatus, setSettingsStatus] = useState('');
+  const [isSettingsFlowFromCreateModal, setIsSettingsFlowFromCreateModal] = useState(false);
+  const [selectedCollaboratorPhotoUrl, setSelectedCollaboratorPhotoUrl] = useState('');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isParsingImportFile, setIsParsingImportFile] = useState(false);
   const [isImportingUsers, setIsImportingUsers] = useState(false);
@@ -1607,6 +1775,26 @@ export default function CollaboratorsPage() {
   useEffect(() => {
     collaboratorQueryRef.current = query;
   }, [query]);
+
+  useEffect(() => {
+    if (!editDraft.regimeHorario.startsWith(DYNAMIC_REGIME_PREFIX)) {
+      return;
+    }
+
+    if (editDraft.horasSemanaisContrato.trim()) {
+      return;
+    }
+
+    const calculated = calculateWeeklyHoursFromDays(parseDynamicRegimeDays(editDraft.regimeHorario));
+    if (calculated == null) {
+      return;
+    }
+
+    setEditDraft((current) => ({
+      ...current,
+      horasSemanaisContrato: String(calculated),
+    }));
+  }, [editDraft.horasSemanaisContrato, editDraft.regimeHorario]);
 
   const cargoDropdownOptions = useMemo(
     () => normalizeDropdownValues([
@@ -1629,6 +1817,24 @@ export default function CollaboratorsPage() {
   );
 
   const hiddenFileInputId = (fieldKey: string) => `collaborator-${fieldKey}-file`;
+  const isDynamicRegime = editDraft.regimeHorario.startsWith(DYNAMIC_REGIME_PREFIX);
+  const dynamicRegimeSummary = useMemo(() => summarizeDynamicRegime(editDraft.regimeHorario), [editDraft.regimeHorario]);
+  const regimeContractValue = useMemo(() => {
+    const direct = Number(editDraft.horasSemanaisContrato.replace(',', '.'));
+    if (Number.isFinite(direct) && direct > 0) {
+      return formatWeeklyHoursLabel(direct);
+    }
+
+    if (isDynamicRegime) {
+      const calculated = calculateWeeklyHoursFromDays(parseDynamicRegimeDays(editDraft.regimeHorario));
+      if (calculated != null) {
+        return formatWeeklyHoursLabel(calculated);
+      }
+    }
+
+    return '';
+  }, [editDraft.horasSemanaisContrato, editDraft.regimeHorario, isDynamicRegime]);
+  const workHoursDraftTotal = useMemo(() => calculateWeeklyHoursFromDays(workHoursDraft), [workHoursDraft]);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
   const visibleRows = useMemo(
@@ -1715,10 +1921,53 @@ export default function CollaboratorsPage() {
 
     return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
   }, [selectedCollaboratorName]);
-  const selectedCollaboratorPhotoUrl = useMemo(
-    () => normalizeFileUrl(editDraft.photoUrl),
-    [editDraft.photoUrl],
-  );
+
+  useEffect(() => {
+    const normalizedPhotoUrl = normalizeFileUrl(editDraft.photoUrl);
+    if (!normalizedPhotoUrl) {
+      setSelectedCollaboratorPhotoUrl('');
+      return;
+    }
+
+    let revoked = false;
+    let objectUrl = '';
+
+    const loadPhoto = async () => {
+      try {
+        const response = await fetch(normalizedPhotoUrl, {
+          headers: getAuthHeaders(),
+        });
+
+        if (!response.ok) {
+          throw new Error('Falha ao carregar foto protegida.');
+        }
+
+        const blob = await response.blob();
+        objectUrl = window.URL.createObjectURL(blob);
+
+        if (revoked) {
+          window.URL.revokeObjectURL(objectUrl);
+          return;
+        }
+
+        setSelectedCollaboratorPhotoUrl(objectUrl);
+      } catch {
+        if (!revoked) {
+          setSelectedCollaboratorPhotoUrl(normalizedPhotoUrl);
+        }
+      }
+    };
+
+    void loadPhoto();
+
+    return () => {
+      revoked = true;
+      if (objectUrl) {
+        window.URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [editDraft.photoUrl]);
+
   const selectedCollaboratorTeamName = useMemo(() => {
     const draftTeamName = collaboratorTeamOptions.find((team) => team.id === editDraft.teamId)?.name?.trim();
     return draftTeamName || selectedRowTeam?.name || 'Sem equipa';
@@ -2528,7 +2777,7 @@ export default function CollaboratorsPage() {
     setPendingCountryChange(null);
     setIsSavingEditDraft(true);
     try {
-      const result = await apiRequest<{ cancelledVacations?: number; countryChanged?: boolean }>(`/admin/users/${selectedRow.id}`, {
+      const result = await apiRequest<{ cancelledVacations?: number; removedCountrySpecificFields?: number; countryChanged?: boolean }>(`/admin/users/${selectedRow.id}`, {
         method: 'PATCH',
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -2603,6 +2852,7 @@ export default function CollaboratorsPage() {
           dataFimContrato: editDraft.dataFimContrato,
           tipoContrato: editDraft.tipoContrato,
           regimeHorario: editDraft.regimeHorario,
+          horasSemanaisContrato: editDraft.horasSemanaisContrato,
         }),
       });
 
@@ -2615,11 +2865,14 @@ export default function CollaboratorsPage() {
         const from = (selectedRow.profile?.workCountry || 'PT') as string;
         const to = editDraft.workCountry as string;
         const cancelled = result.cancelledVacations ?? 0;
+        const removedFields = result.removedCountrySpecificFields ?? 0;
         const lines = [
           `País de trabalho alterado de ${countryLabel(from)} para ${countryLabel(to)}.`,
           cancelled > 0
             ? `${cancelled} pedido(s) de férias/ausências pendente(s) foram cancelados automaticamente.`
             : 'Sem pedidos pendentes para cancelar.',
+          `${removedFields} campo(s) específicos do país anterior foram limpos automaticamente.`,
+          'Campos exclusivos do novo país foram inicializados e os campos comuns foram mantidos.',
           'As equipas foram removidas - reatribui o colaborador à equipa correta.',
         ];
         setStatus(lines.join(' '));
@@ -2819,6 +3072,57 @@ export default function CollaboratorsPage() {
     }));
   }
 
+  function openWorkHoursModal() {
+    const nextDraft = isDynamicRegime
+      ? parseDynamicRegimeDays(editDraft.regimeHorario)
+      : defaultDynamicRegimeDays.map((item) => ({ ...item }));
+
+    setWorkHoursDraft(nextDraft);
+    setIsWorkHoursModalOpen(true);
+  }
+
+  function applyWorkHoursModal() {
+    const weeklyHours = calculateWeeklyHoursFromDays(workHoursDraft);
+    if (weeklyHours == null) {
+      setStatus('Define pelo menos um dia ativo com hora de fim superior à hora de início.');
+      return;
+    }
+
+    const serialized = serializeDynamicRegimeDays(workHoursDraft);
+    setEditDraft((current) => ({
+      ...current,
+      regimeHorario: serialized,
+      horasSemanaisContrato: String(weeklyHours),
+    }));
+    setIsWorkHoursModalOpen(false);
+  }
+
+  function handleWorkHoursDayToggle(dayKey: string, enabled: boolean) {
+    setWorkHoursDraft((current) => current.map((item) => {
+      if (item.key !== dayKey) {
+        return item;
+      }
+
+      return {
+        ...item,
+        enabled,
+      };
+    }));
+  }
+
+  function handleWorkHoursTimeChange(dayKey: string, field: 'start' | 'end', value: string) {
+    setWorkHoursDraft((current) => current.map((item) => {
+      if (item.key !== dayKey) {
+        return item;
+      }
+
+      return {
+        ...item,
+        [field]: value,
+      };
+    }));
+  }
+
   function renderEditFieldControl(fieldKey: keyof CollaboratorEditDraft) {
     const isComprovativoField = fieldKey === 'comprovativoMoradaFiscal'
       || fieldKey === 'comprovativoCartaoCidadao'
@@ -2950,10 +3254,13 @@ export default function CollaboratorsPage() {
 
     if (fieldKey === 'regimeHorario') {
       return (
-        <select value={String(value || '')} onChange={(event) => onChangeValue(event.target.value)} disabled={!canEditUser}>
-          <option value="">Selecionar</option>
-          {regimeHorarioOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-        </select>
+        <div className="profile-contract-dynamic">
+          <div className="profile-contract-dynamic__actions">
+            <Button type="button" size="sm" variant="secondary" disabled={!canEditUser} onClick={openWorkHoursModal}>
+              Configurar horas
+            </Button>
+          </div>
+        </div>
       );
     }
 
@@ -2976,7 +3283,10 @@ export default function CollaboratorsPage() {
     }
 
     if (isPhotoField) {
-      const photoUrl = normalizeFileUrl(String(value || ''));
+      const rawPhotoUrl = String(value || '');
+      const photoUrl = rawPhotoUrl.trim() === editDraft.photoUrl.trim()
+        ? selectedCollaboratorPhotoUrl
+        : normalizeFileUrl(rawPhotoUrl);
       return (
         <div className="collaborator-proof-field">
           {photoUrl && (
@@ -3417,6 +3727,79 @@ export default function CollaboratorsPage() {
     setIsCreateModalOpen(true);
   }
 
+  async function loadAdmissionSettings() {
+    setIsSettingsLoading(true);
+    setSettingsStatus('');
+    try {
+      const data = await apiRequest<AdmissionFormSettingsResponse>('/users/admissions/settings', {
+        headers: getAuthHeaders(),
+      });
+      setAdmissionSettings(data);
+      setSettingsDraftRequiredFields(data.requiredFieldsByCountry[settingsCountry]);
+    } catch (error) {
+      setSettingsStatus(error instanceof Error ? error.message : 'Falha ao carregar configurações da admissão.');
+    } finally {
+      setIsSettingsLoading(false);
+    }
+  }
+
+  async function openAdmissionFormSettingsFromCreateModal() {
+    setIsSettingsFlowFromCreateModal(true);
+    setIsCreateModalOpen(false);
+    if (!admissionSettings) {
+      await loadAdmissionSettings();
+    }
+    setIsSettingsModalOpen(true);
+  }
+
+  function changeAdmissionSettingsCountry(country: 'PT' | 'BR') {
+    if (!admissionSettings) {
+      return;
+    }
+    setSettingsCountry(country);
+    setSettingsDraftRequiredFields(admissionSettings.requiredFieldsByCountry[country]);
+    setSettingsStatus('');
+  }
+
+  function toggleAdmissionRequiredField(fieldKey: string) {
+    setSettingsDraftRequiredFields((current) => (
+      current.includes(fieldKey)
+        ? current.filter((item) => item !== fieldKey)
+        : [...current, fieldKey]
+    ));
+  }
+
+  async function saveAdmissionSettingsFromCollaborators() {
+    if (settingsDraftRequiredFields.length === 0) {
+      setSettingsStatus('Seleciona pelo menos um campo obrigatório.');
+      return;
+    }
+
+    setIsSettingsSaving(true);
+    setSettingsStatus('');
+    try {
+      const saved = await apiRequest<AdmissionFormSettingsResponse>('/users/admissions/settings', {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ country: settingsCountry, requiredFields: settingsDraftRequiredFields }),
+      });
+      setAdmissionSettings(saved);
+      setSettingsDraftRequiredFields(saved.requiredFieldsByCountry[settingsCountry]);
+      if (isSettingsFlowFromCreateModal) {
+        setIsSettingsModalOpen(false);
+        setIsCreateModalOpen(true);
+        setIsSettingsFlowFromCreateModal(false);
+        setStatus(`Configuração de ${settingsCountry === 'PT' ? 'Portugal' : 'Brasil'} guardada com sucesso.`);
+      } else {
+        setSettingsStatus(`Configuração de ${settingsCountry === 'PT' ? 'Portugal' : 'Brasil'} guardada com sucesso.`);
+      }
+    } catch (error) {
+      setSettingsStatus(error instanceof Error ? error.message : 'Falha ao guardar configurações da admissão.');
+    } finally {
+      setIsSettingsSaving(false);
+    }
+  }
+
   function closeCreateModal() {
     setIsCreateModalOpen(false);
     setNewUserDraft({ fullName: '', personalEmail: '', workCountry: 'PT', brWorkState: '' });
@@ -3800,8 +4183,80 @@ export default function CollaboratorsPage() {
           onClose={closeCreateModal}
           onSubmit={() => void createUser()}
           onDraftChange={updateNewUserDraft}
+          canConfigureFormSettings={isRootAccess || isAccessTotal}
+          onOpenFormSettings={() => { void openAdmissionFormSettingsFromCreateModal(); }}
         />
       )}
+
+      <AdmissionFormSettingsModal
+        open={isSettingsModalOpen}
+        settingsCountry={settingsCountry}
+        settingsDraftRequiredFields={settingsDraftRequiredFields}
+        admissionSettings={admissionSettings}
+        isSettingsSaving={isSettingsSaving || isSettingsLoading}
+        settingsStatus={settingsStatus}
+        onClose={() => {
+          setIsSettingsModalOpen(false);
+          setIsSettingsFlowFromCreateModal(false);
+        }}
+        onCountryChange={changeAdmissionSettingsCountry}
+        onToggleField={toggleAdmissionRequiredField}
+        onSave={() => { void saveAdmissionSettingsFromCollaborators(); }}
+      />
+
+      <Modal
+        open={isWorkHoursModalOpen}
+        title="Configuração de horas de trabalho"
+        onClose={() => setIsWorkHoursModalOpen(false)}
+        width="760px"
+        footer={(
+          <div className="profile-dynamic-regime__footer">
+            <Button type="button" variant="secondary" onClick={() => setIsWorkHoursModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" variant="primary" onClick={applyWorkHoursModal}>
+              Aplicar regime
+            </Button>
+          </div>
+        )}
+      >
+        <div className="profile-dynamic-regime">
+          <div className="profile-dynamic-regime__hero">
+            <p>Define os dias ativos e os intervalos horários. O regime de contrato é calculado automaticamente.</p>
+            <strong>{workHoursDraftTotal == null ? 'Configuração incompleta' : formatWeeklyHoursLabel(workHoursDraftTotal)}</strong>
+          </div>
+          <div className="profile-dynamic-regime__grid">
+            {workHoursDraft.map((day) => (
+              <article key={day.key} className={`profile-dynamic-regime__day${day.enabled ? ' is-enabled' : ''}`}>
+                <label className="profile-dynamic-regime__toggle">
+                  <input
+                    type="checkbox"
+                    checked={day.enabled}
+                    onChange={(event) => handleWorkHoursDayToggle(day.key, event.target.checked)}
+                  />
+                  <span>{day.label}</span>
+                </label>
+
+                <div className="profile-dynamic-regime__times">
+                  <input
+                    type="time"
+                    value={day.start}
+                    disabled={!day.enabled}
+                    onChange={(event) => handleWorkHoursTimeChange(day.key, 'start', event.target.value)}
+                  />
+                  <span>até</span>
+                  <input
+                    type="time"
+                    value={day.end}
+                    disabled={!day.enabled}
+                    onChange={(event) => handleWorkHoursTimeChange(day.key, 'end', event.target.value)}
+                  />
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </Modal>
 
       <Toast show={Boolean(status)} tone={resolveStatusTone(status)} message={status} />
 

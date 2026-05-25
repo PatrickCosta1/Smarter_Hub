@@ -144,6 +144,8 @@ model User {
   hourBankEntries HourBankEntry[] @relation("HourBankEntryTarget")
   hourBankEntriesCreated HourBankEntry[] @relation("HourBankEntryAuthor")
   weeklyHourBankReportsCreated WeeklyHourBankReport[] @relation("WeeklyHourBankReportAuthor")
+  performanceReviewSubmissions PerformanceReviewSubmission[]
+  performanceReviewHistoryChanges PerformanceReviewHistory[]
 
   @@index([accessTotalGrantedById])
 }
@@ -554,4 +556,117 @@ model PermissionGrant {
   @@index([targetUserId])
   @@index([permissionId])
   @@index([createdAt])
+}
+
+enum PerformanceReviewSectionType {
+  REFLECTION_PREVIOUS_CYCLE
+  BEHAVIORAL_COMPETENCIES
+  OBJECTIVES_KPIS_CURRENT_YEAR
+  LEADERSHIP_REFLECTION
+  NEXT_CYCLE_REFLECTION
+  OBJECTIVES_KPIS_NEXT_YEAR
+}
+
+enum PerformanceReviewSubmissionStatus {
+  DRAFT
+  SUBMITTED
+  AWAITING_RESPONSE
+  REVISED
+  ACCEPTED
+  CLOSED
+}
+
+enum PerformanceReviewCollaboratorType {
+  SELF
+  MANAGER
+}
+
+model PerformanceReviewCycle {
+  id                String    @id @default(ulid())
+  cycleIdentifier   String    @unique
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  submissions       PerformanceReviewSubmission[]
+  history           PerformanceReviewHistory[]
+
+  @@index([cycleIdentifier])
+  @@index([createdAt])
+}
+
+model PerformanceReviewSubmission {
+  id                String    @id @default(ulid())
+  userId            String
+  cycleId           String
+  sectionType       PerformanceReviewSectionType
+  collaboratorType  PerformanceReviewCollaboratorType
+  status            PerformanceReviewSubmissionStatus @default(DRAFT)
+  content           Json
+  lastEditedBy      String?
+  lastEditedAt      DateTime?
+  submittedAt       DateTime?
+  acceptedAt        DateTime?
+  rejectionReason   String?
+  proposedEdits     Json?
+  proposedEditsBy   String?
+  proposedEditsAt   DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cycle             PerformanceReviewCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  history           PerformanceReviewHistory[] @relation("SubmissionHistory")
+
+  @@unique([userId, cycleId, sectionType, collaboratorType])
+  @@index([userId, cycleId])
+  @@index([status])
+  @@index([lastEditedAt])
+}
+
+model PerformanceReviewHistory {
+  id                String    @id @default(ulid())
+  submissionId      String
+  cycleId           String
+  userId            String
+  sectionType       PerformanceReviewSectionType
+  collaboratorType  PerformanceReviewCollaboratorType
+  previousStatus    PerformanceReviewSubmissionStatus
+  newStatus         PerformanceReviewSubmissionStatus
+  changeType        String
+  changedContent    Json?
+  changedById       String
+  createdAt         DateTime  @default(now())
+
+  submission        PerformanceReviewSubmission @relation("SubmissionHistory", fields: [submissionId], references: [id], onDelete: Cascade)
+  cycle             PerformanceReviewCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  changedBy         User      @relation(fields: [changedById], references: [id], onDelete: Cascade)
+
+  @@index([userId, cycleId])
+  @@index([sectionType])
+  @@index([createdAt])
+  @@index([changedById])
+}
+
+model BehavioralCompetencyExpectation {
+  id                String    @id @default(ulid())
+  organizationValue String
+  competency        String
+  hierarchyLevel    String
+  expectedBehavior  String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([organizationValue, competency, hierarchyLevel])
+  @@index([organizationValue])
+  @@index([hierarchyLevel])
+}
+
+model LeadershipReflectionQuestion {
+  id                String    @id @default(ulid())
+  order             Int
+  question          String
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([order])
 }

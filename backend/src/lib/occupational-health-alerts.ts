@@ -2,6 +2,7 @@ import type { PrismaClient, WorkCountry } from '@prisma/client';
 
 export const OCCUPATIONAL_HEALTH_ALERT_TITLE = 'Lembrete: consulta de medicina do trabalho';
 export const OCCUPATIONAL_HEALTH_ALERT_SETTING_KEY = 'occupational_health_alerts_enabled';
+const SHARED_MANAGEMENT_USERNAMES = ['t.people'];
 
 function startOfUtcDay(input = new Date()) {
   return new Date(Date.UTC(input.getUTCFullYear(), input.getUTCMonth(), input.getUTCDate()));
@@ -115,10 +116,27 @@ export async function runOccupationalHealthAlertSweep(prisma: PrismaClient) {
 
   const today = startOfUtcDay();
 
+  const sharedUsers = await prisma.user.findMany({
+    where: {
+      username: { in: SHARED_MANAGEMENT_USERNAMES },
+    },
+    select: { id: true },
+  });
+
+  if (sharedUsers.length > 0) {
+    await prisma.notification.deleteMany({
+      where: {
+        userId: { in: sharedUsers.map((user) => user.id) },
+        title: OCCUPATIONAL_HEALTH_ALERT_TITLE,
+      },
+    });
+  }
+
   const users = await prisma.user.findMany({
     where: {
       isActive: true,
       role: { not: 'CONVIDADO' },
+      username: { notIn: SHARED_MANAGEMENT_USERNAMES },
       profile: { isNot: null },
     },
     select: {

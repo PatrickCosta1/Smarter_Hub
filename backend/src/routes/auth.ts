@@ -360,7 +360,8 @@ router.get("/auth/me", requireAuth, async (req, res) => {
     const user = await getCurrentUser(req.authUser!.id);
     return res.json({ user });
   } catch (error) {
-    return res.status(500).json({ error: 'Falha ao obter utilizador atual.' });
+    console.error('[GET /auth/me]', error);
+    return res.status(500).json({ error: 'Falha ao obter utilizador atual.', details: error instanceof Error ? error.message : String(error) });
   }
 });
 

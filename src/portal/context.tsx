@@ -5,6 +5,7 @@ import { clearStoredAuthToken, getStoredAuthToken, setStoredAuthToken } from './
 import { AuthUser, PortalNotification, ProfileData, UserRole } from './types';
 const NOTIFICATIONS_REFRESH_INTERVAL_MS = 45000;
 const NOTIFICATIONS_FOCUS_DEBOUNCE_MS = 12000;
+const DYNAMIC_REGIME_PREFIX = 'DINAMICO::';
 
 const profileKeys: Array<keyof ProfileData> = [
   'nomeCompleto',
@@ -74,6 +75,7 @@ const profileKeys: Array<keyof ProfileData> = [
   'dataFimContrato',
   'tipoContrato',
   'regimeHorario',
+  'horasSemanaisContrato',
   'workCountry',
   'brWorkState',
   'photoUrl',
@@ -81,6 +83,66 @@ const profileKeys: Array<keyof ProfileData> = [
   'cartaConducaoUrl',
   'criminalRecordUrl',
 ];
+
+function parseTimeToMinutes(value: string) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  return (hours * 60) + minutes;
+}
+
+function deriveWeeklyHoursFromRegime(value: unknown) {
+  const text = typeof value === 'string' ? value : '';
+  if (!text.startsWith(DYNAMIC_REGIME_PREFIX)) {
+    return null;
+  }
+
+  try {
+    const raw = JSON.parse(text.slice(DYNAMIC_REGIME_PREFIX.length));
+    if (!Array.isArray(raw)) {
+      return null;
+    }
+
+    let totalMinutes = 0;
+    let activeDays = 0;
+
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+
+      const record = item as Record<string, unknown>;
+      if (record.enabled !== true) {
+        continue;
+      }
+
+      activeDays += 1;
+      const start = parseTimeToMinutes(String(record.start ?? ''));
+      const end = parseTimeToMinutes(String(record.end ?? ''));
+      if (start == null || end == null || end <= start) {
+        return null;
+      }
+
+      totalMinutes += (end - start);
+    }
+
+    if (activeDays === 0 || totalMinutes <= 0) {
+      return null;
+    }
+
+    return Math.round((totalMinutes / 60) * 100) / 100;
+  } catch {
+    return null;
+  }
+}
 
 function normalizeProfileData(input: unknown): ProfileData {
   const source = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
@@ -96,6 +158,19 @@ function normalizeProfileData(input: unknown): ProfileData {
 
     if (key === 'brWorkState') {
       normalized.brWorkState = value === 'RS' ? 'RS' : value === 'SP' ? 'SP' : '';
+      return;
+    }
+
+    if (key === 'horasSemanaisContrato') {
+      const fallbackValue = source.hourBankLimitHours;
+      const derivedFromRegime = deriveWeeklyHoursFromRegime(source.regimeHorario);
+      const resolved = value ?? fallbackValue ?? derivedFromRegime;
+      if (typeof resolved === 'number' && Number.isFinite(resolved)) {
+        normalized.horasSemanaisContrato = String(resolved);
+        return;
+      }
+
+      normalized.horasSemanaisContrato = typeof resolved === 'string' ? resolved : '';
       return;
     }
 
@@ -315,28 +390,90 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     }
 
     setAuthToken(existingToken);
+    // Evita "logout" visual em refresh quando há token e a API falha temporariamente.
+    setIsAuthenticated(true);
+
+    let isCancelled = false;
+
+    const isAuthFailureError = (error: unknown) => {
+      if (!(error instanceof Error)) {
+        return false;
+      }
+
+      const message = error.message.toLowerCase();
+      return message.includes('401')
+        || message.includes('token invalido')
+        || message.includes('token inválido')
+        || message.includes('sessao invalida')
+        || message.includes('sessão inválida')
+        || message.includes('autenticacao em falta')
+        || message.includes('autenticação em falta');
+    };
 
     (async () => {
-      try {
-        const response = await apiRequest<{ user: AuthUser }>('/auth/me', {
-          headers: authHeaders(existingToken),
-        });
+      // Retry logic with exponential backoff (max 4 attempts)
+      let lastError: Error | null = null;
+      let didHydrate = false;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          const response = await apiRequest<{ user: AuthUser }>('/auth/me', {
+            headers: authHeaders(existingToken),
+          });
 
-        setCurrentUser(response.user);
-        setUserRole(mapBackendRole(response.user.role));
-        setIsAuthenticated(true);
+          if (isCancelled) {
+            return;
+          }
 
-        void Promise.all([
-          loadAccessData(existingToken, response.user),
-          loadPortalData(existingToken),
-        ]);
-      } catch {
-        clearStoredAuthToken();
-        setAuthToken('');
-      } finally {
+          setCurrentUser(response.user);
+          setUserRole(mapBackendRole(response.user.role));
+          setIsAuthenticated(true);
+          didHydrate = true;
+
+          void Promise.all([
+            loadAccessData(existingToken, response.user),
+            loadPortalData(existingToken),
+          ]);
+
+          break;
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+
+          // Falha de autenticação real: limpa sessão.
+          if (isAuthFailureError(error)) {
+            if (!isCancelled) {
+              clearStoredAuthToken();
+              setAuthToken('');
+              setIsAuthenticated(false);
+              setCurrentUser(null);
+            }
+            break;
+          }
+
+          // Falha transitória: tenta novamente com backoff exponencial.
+          if (attempt < 3) {
+            await new Promise((resolve) => {
+              setTimeout(resolve, Math.pow(2, attempt) * 1000); // 1s, 2s, 4s
+            });
+          }
+        }
+      }
+
+      // Se falhou por rede/servidor, mantém sessão otimista enquanto há token.
+      if (!didHydrate && !isCancelled && lastError) {
+        console.warn('Session rehydration failed:', lastError);
+        if (getStoredAuthToken()) {
+          setIsAuthenticated(true);
+        }
+      }
+
+      if (!isCancelled) {
         setIsLoadingSession(false);
       }
     })();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [loadAccessData, loadPortalData]);
 
   useEffect(() => {

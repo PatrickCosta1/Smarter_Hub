@@ -4,6 +4,11 @@ import { z } from 'zod';
 
 import { prisma } from '../lib/prisma.js';
 import { getMyHourBankBalance } from '../services/hours-bank/get-hour-bank.service.js';
+import { findHourBankLimitTarget, updateHourBankLimit } from '../services/hours-bank/manage-hour-bank-limit.service.js';
+import {
+  getOccupationalHealthAlertSettings,
+  updateOccupationalHealthAlertSettings,
+} from '../services/hours-bank/occupational-health-alert-settings.service.js';
 import { canAccessUserByPermission, canReviewAccessTotalHierarchy, hasPermission, isAccessTotal } from '../lib/permission-engine.js';
 import {
   appendHourBankEntry,
@@ -17,10 +22,6 @@ import {
   resolveBrHourBankLimit,
   resolveLeadershipRecipientsForUser,
 } from '../lib/hour-bank.js';
-import {
-  getOccupationalHealthAlertsEnabled,
-  setOccupationalHealthAlertsEnabled,
-} from '../lib/occupational-health-alerts.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
@@ -441,17 +442,7 @@ router.patch('/hours-bank/limits/:userId', requireAuth, async (req: Request, res
     return res.status(400).json({ message: parsed.error.issues[0].message });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      isActive: true,
-      hasAccessTotal: true,
-      profile: {
-        select: { workCountry: true },
-      },
-    },
-  });
+  const user = await findHourBankLimitTarget(userId);
 
   if (!user || !user.isActive) {
     return res.status(404).json({ message: 'Colaborador não encontrado ou inativo.' });
@@ -481,14 +472,8 @@ router.patch('/hours-bank/limits/:userId', requireAuth, async (req: Request, res
     }
   }
 
-  await prisma.profile.update({
-    where: { userId },
-    data: {
-      hourBankLimitHours: parsed.data.limitHours,
-    },
-  });
-
-  return res.json({ success: true, userId, limitHours: parsed.data.limitHours });
+  const result = await updateHourBankLimit(userId, parsed.data.limitHours);
+  return res.json(result);
 });
 
 router.get('/hours-bank/export', requireAuth, async (req: Request, res: Response) => {
@@ -728,7 +713,7 @@ router.get('/hours-bank/settings/occupational-health-alert', requireAuth, async 
     return res.status(403).json({ message: 'Sem permissões para consultar configuração de alertas.' });
   }
 
-  const enabled = await getOccupationalHealthAlertsEnabled(prisma);
+  const enabled = await getOccupationalHealthAlertSettings();
   return res.json({ enabled });
 });
 
@@ -745,7 +730,7 @@ router.patch('/hours-bank/settings/occupational-health-alert', requireAuth, asyn
     return res.status(400).json({ message: parsed.error.issues[0].message });
   }
 
-  const enabled = await setOccupationalHealthAlertsEnabled(prisma, parsed.data.enabled);
+  const enabled = await updateOccupationalHealthAlertSettings(parsed.data.enabled);
   return res.json({ enabled });
 });
 

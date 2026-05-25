@@ -15,6 +15,12 @@ import {
 } from '../lib/permission-engine.js';
 import { requireAuth } from '../middleware/auth.js';
 import { createRequestTimer } from '../lib/request-timing.js';
+import {
+  findPermissionById,
+  findUserPermission,
+  revokeAssignedPermission,
+  updateAssignedPermission,
+} from '../services/permissions/permission-assignment.service.js';
 
 const router = Router();
 let permissionCatalogSyncPromise: Promise<void> | null = null;
@@ -423,19 +429,12 @@ router.patch('/users/:id/permissions/:permissionId', requireAuth, async (req, re
     return res.status(400).json({ message: payload.error.issues[0].message });
   }
 
-  const permission = await prisma.permission.findUnique({ where: { id: permissionId } });
+  const permission = await findPermissionById(permissionId);
   if (!permission) {
     return res.status(404).json({ message: 'Permissão não encontrada.' });
   }
 
-  const existing = await prisma.userPermission.findUnique({
-    where: {
-      userId_permissionId: {
-        userId: targetUserId,
-        permissionId,
-      },
-    },
-  });
+  const existing = await findUserPermission(targetUserId, permissionId);
 
   if (!existing) {
     return res.status(404).json({ message: 'O utilizador ainda não tem esta permissão.' });
@@ -446,31 +445,18 @@ router.patch('/users/:id/permissions/:permissionId', requireAuth, async (req, re
     ? undefined
     : (payload.data.customRestrictions ?? Prisma.JsonNull);
 
-  const updated = await prisma.userPermission.update({
-    where: {
-      userId_permissionId: {
-        userId: targetUserId,
-        permissionId,
-      },
-    },
-    data: {
+  const updated = await updateAssignedPermission({
+    actorUserId: req.authUser!.id,
+    targetUserId,
+    permissionId,
+    reason: payload.data.reason?.trim() || 'Permissão atualizada manualmente.',
+    payload: {
       ...(payload.data.isEnabled !== undefined ? { isEnabled: payload.data.isEnabled } : {}),
       ...(payload.data.notes !== undefined ? { notes: payload.data.notes?.trim() || null } : {}),
       ...(payload.data.restrictedToTeams !== undefined ? { restrictedToTeams: restrictionPayload.restrictedToTeams } : {}),
       ...(payload.data.restrictedToCountries !== undefined ? { restrictedToCountries: restrictionPayload.restrictedToCountries } : {}),
       ...(payload.data.restrictedToLevels !== undefined ? { restrictedToLevels: restrictionPayload.restrictedToLevels } : {}),
       ...(customRestrictions !== undefined ? { customRestrictions } : {}),
-      grantedById: req.authUser!.id,
-    },
-  });
-
-  await prisma.permissionGrant.create({
-    data: {
-      actorUserId: req.authUser!.id,
-      targetUserId,
-      permissionId,
-      action: 'GRANT',
-      reason: payload.data.reason?.trim() || 'Permissão atualizada manualmente.',
     },
   });
 
@@ -494,40 +480,17 @@ router.delete('/users/:id/permissions/:permissionId', requireAuth, async (req, r
     return res.status(403).json({ message: 'Não tens permissões para revogar esta permissão.' });
   }
 
-  const existing = await prisma.userPermission.findUnique({
-    where: {
-      userId_permissionId: {
-        userId: targetUserId,
-        permissionId,
-      },
-    },
-  });
+  const existing = await findUserPermission(targetUserId, permissionId);
 
   if (!existing) {
     return res.status(404).json({ message: 'O utilizador não tem esta permissão.' });
   }
 
-  const updated = await prisma.userPermission.update({
-    where: {
-      userId_permissionId: {
-        userId: targetUserId,
-        permissionId,
-      },
-    },
-    data: {
-      isEnabled: false,
-      grantedById: req.authUser!.id,
-    },
-  });
-
-  await prisma.permissionGrant.create({
-    data: {
-      actorUserId: req.authUser!.id,
-      targetUserId,
-      permissionId,
-      action: 'REVOKE',
-      reason: 'Permissão revogada manualmente.',
-    },
+  const updated = await revokeAssignedPermission({
+    actorUserId: req.authUser!.id,
+    targetUserId,
+    permissionId,
+    reason: 'Permissão revogada manualmente.',
   });
 
   clearPermissionEngineCacheForUser(targetUserId);

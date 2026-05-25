@@ -1,7 +1,15 @@
 import { Router } from "express";
 
 import { prisma } from "../lib/prisma.js";
-import { getUserNotifications, markNotificationAsRead, deleteNotification, deleteAllNotifications } from "../services/notifications/get-notifications.service.js";
+import {
+  cleanupReadNotifications,
+  deleteAllNotifications,
+  deleteNotification,
+  getNotificationForUser,
+  getUserNotifications,
+  markAllNotificationsAsRead,
+  markNotificationAsRead,
+} from "../services/notifications/get-notifications.service.js";
 import { requireAuth } from "../middleware/auth.js";
 import {
   CITIZEN_CARD_EXPIRY_NOTIFICATION_TITLE,
@@ -69,10 +77,7 @@ router.patch("/notifications/:id/read", requireAuth, async (req, res) => {
   const id = String(req.params.id);
   const userId = req.authUser!.id;
 
-  const notification = await prisma.notification.findFirst({
-    where: { id, userId },
-    select: { id: true, userId: true, title: true, createdAt: true, isRead: true },
-  });
+  const notification = await getNotificationForUser(id, userId);
 
   if (!notification) {
     return res.status(404).json({ message: 'Notificação não encontrada.' });
@@ -89,12 +94,9 @@ router.patch("/notifications/:id/read", requireAuth, async (req, res) => {
     });
   }
 
-  const result = await prisma.notification.updateMany({
-    where: { id, userId, isRead: false },
-    data: { isRead: true },
-  });
+  const updated = await markNotificationAsRead(id, userId);
 
-  return res.json({ updated: result.count });
+  return res.json({ updated });
 });
 
 router.patch("/notifications/read-all", requireAuth, async (req, res) => {
@@ -103,96 +105,7 @@ router.patch("/notifications/read-all", requireAuth, async (req, res) => {
   const batchSizeRaw = Number(typeof req.query.batchSize === 'string' ? req.query.batchSize : '200');
   const batchSize = Number.isFinite(batchSizeRaw) ? Math.min(500, Math.max(50, batchSizeRaw)) : 200;
 
-  let cursorId: string | undefined;
-  let updated = 0;
-  let skipped = 0;
-
-  const profile = await prisma.profile.findUnique({
-    where: { userId },
-    select: {
-      updatedAt: true,
-      validadeCartaoCidadao: true,
-      comprovativoCartaoCidadao: true,
-    },
-  });
-
-  while (true) {
-    const unreadBatch = await prisma.notification.findMany({
-      where: { userId, isRead: false },
-      select: { id: true, userId: true, title: true, createdAt: true },
-      orderBy: { id: 'asc' },
-      ...(cursorId
-        ? {
-            cursor: { id: cursorId },
-            skip: 1,
-          }
-        : {}),
-      take: batchSize,
-    });
-
-    if (unreadBatch.length === 0) {
-      break;
-    }
-
-    const idsToUpdate: string[] = [];
-
-    const citizenCardNotifications = unreadBatch.filter((notification) => notification.title === CITIZEN_CARD_EXPIRY_NOTIFICATION_TITLE);
-
-    let renewalRequestDates: Date[] = [];
-    if (citizenCardNotifications.length > 0) {
-      const oldestNotificationDate = citizenCardNotifications.reduce((oldest, item) => (item.createdAt < oldest ? item.createdAt : oldest), citizenCardNotifications[0]!.createdAt);
-
-      const renewalRequests = await prisma.profileChangeRequest.findMany({
-        where: {
-          userId,
-          createdAt: { gt: oldestNotificationDate },
-        },
-        select: {
-          createdAt: true,
-          requestedData: true,
-        },
-      });
-
-      renewalRequestDates = renewalRequests
-        .filter((request) => payloadHasCitizenCardRenewal((request.requestedData ?? {}) as Record<string, unknown>))
-        .map((request) => request.createdAt);
-    }
-
-    for (const notification of unreadBatch) {
-      if (isCitizenCardExpiryNotification(notification)) {
-        const profileAllowsRead = Boolean(
-          profile
-          && profile.updatedAt > notification.createdAt
-          && hasNonEmptyString(profile.validadeCartaoCidadao)
-          && hasNonEmptyString(profile.comprovativoCartaoCidadao),
-        );
-
-        if (!profileAllowsRead) {
-          const hasRenewalRequestAfterNotification = renewalRequestDates.some((requestDate) => requestDate > notification.createdAt);
-          if (!hasRenewalRequestAfterNotification) {
-            skipped += 1;
-            continue;
-          }
-        }
-      }
-
-      idsToUpdate.push(notification.id);
-    }
-
-    if (idsToUpdate.length > 0) {
-      const result = await prisma.notification.updateMany({
-        where: { userId, isRead: false, id: { in: idsToUpdate } },
-        data: { isRead: true },
-      });
-      updated += result.count;
-    }
-
-    if (unreadBatch.length < batchSize) {
-      break;
-    }
-
-    cursorId = unreadBatch[unreadBatch.length - 1]!.id;
-  }
+  const { updated, skipped } = await markAllNotificationsAsRead(userId, batchSize);
 
   return res.json({ updated, skipped });
 });
@@ -205,29 +118,15 @@ router.delete('/notifications/cleanup', requireAuth, async (req, res) => {
   const olderThanDaysRaw = Number(typeof req.query.olderThanDays === 'string' ? req.query.olderThanDays : '90');
   const olderThanDays = Number.isFinite(olderThanDaysRaw) ? Math.min(730, Math.max(7, olderThanDaysRaw)) : 90;
 
-  const threshold = new Date();
-  threshold.setDate(threshold.getDate() - olderThanDays);
-
-  const result = await prisma.notification.deleteMany({
-    where: {
-      isRead: true,
-      createdAt: { lt: threshold },
-    },
-  });
-
-  return res.json({ deleted: result.count, olderThanDays, threshold: threshold.toISOString() });
+  const result = await cleanupReadNotifications(olderThanDays);
+  return res.json({ deleted: result.deleted, olderThanDays, threshold: result.threshold });
 });
 
 router.delete('/notifications/:id', requireAuth, async (req, res) => {
-  try {
-    const id = String(req.params.id);
-    const userId = req.authUser!.id;
-
-    await deleteNotification(id, userId);
-    return res.json({ deleted: 1 });
-  } catch (error) {
-    return res.status(404).json({ message: 'Notificação não encontrada.' });
-  }
+  const id = String(req.params.id);
+  const userId = req.authUser!.id;
+  const deleted = await deleteNotification(id, userId);
+  return res.json({ deleted });
 });
 
 router.delete('/notifications', requireAuth, async (req, res) => {

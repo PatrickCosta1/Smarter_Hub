@@ -551,12 +551,16 @@ export default function NotificationsPage() {
     <section className="notifications-shell">
       <header className="notifications-hero">
         <div className="notifications-title-wrap">
-          <p className="hero-kicker">Central executiva</p>
+          <p className="hero-kicker">Central de notificações</p>
           <h2>Notificações</h2>
           <p className="notifications-subtitle">{headlineText}</p>
+          <div className="notifications-hero__meta">
+            <span>Última atualização dinâmica</span>
+            <span>{filterMode === 'all' ? 'Filtro atual: todas' : filterMode === 'unread' ? 'Filtro atual: por ler' : 'Filtro atual: lidas'}</span>
+          </div>
           <div className="notifications-hero__chips">
-            <span>{filterMode === 'all' ? 'A mostrar todas' : filterMode === 'unread' ? 'A mostrar por ler' : 'A mostrar lidas'}</span>
-            <span>Atualização em tempo real</span>
+            <span>{unreadNotifications > 0 ? 'Existem ações pendentes' : 'Tudo em dia'}</span>
+            <span>{notifications.length > 0 ? `${notifications.length} registo(s) no histórico` : 'Sem histórico recente'}</span>
           </div>
         </div>
 
@@ -573,6 +577,13 @@ export default function NotificationsPage() {
             <span>Lidas</span>
             <strong>{readCount}</strong>
           </div>
+          <button
+            type="button"
+            className="notifications-hero__quick-filter"
+            onClick={() => setFilterMode(unreadNotifications > 0 ? 'unread' : 'all')}
+          >
+            {unreadNotifications > 0 ? 'Ver apenas por ler' : 'Ver todas'}
+          </button>
         </div>
       </header>
 

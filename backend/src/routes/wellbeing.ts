@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { sendTransactionalEmail } from '../lib/email.js';
 import { notifyUsers } from '../lib/notifications.js';
-import { canAccessUserByPermission, hasPermission } from '../lib/permission-engine.js';
+import { hasPermission } from '../lib/permission-engine.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
@@ -22,7 +22,7 @@ const wellbeingFileSchema = z.object({
 const wellbeingReportConfigSchema = z.object({
   modalTitle: z.string().trim().max(120).default('Reportar situação'),
   introTitle: z.string().trim().max(120).default('Canal confidencial de reporte'),
-  introText: z.string().trim().max(800).default('O reporte será notificado ao RH do país respetivo e ao t.people. Usa este canal para situações que precisem de acompanhamento formal.'),
+  introText: z.string().trim().max(800).default('O reporte será enviado apenas para t.people. Usa este canal para situações que precisem de acompanhamento formal.'),
   subjectLabel: z.string().trim().max(80).default('Assunto'),
   subjectPlaceholder: z.string().trim().max(140).default('Ex.: Situação de assédio verbal'),
   descriptionLabel: z.string().trim().max(80).default('Descrição detalhada'),
@@ -115,7 +115,7 @@ function buildDefaultSharedResource(key: SharedWellbeingKey): WellbeingResource 
       id: SHARED_WELLBEING_RESOURCE_IDS.formulario_assedio,
       kind: 'form',
       title: 'Formulário de reportar assédio',
-      description: 'Canal interno para reportar situações que devam ser acompanhadas por RH e t.people.',
+      description: 'Canal interno para reportar situações que devam ser acompanhadas apenas por t.people.',
       buttonLabel: 'Reportar situação',
       files: [],
       reportConfig: wellbeingReportConfigSchema.parse({}),
@@ -394,24 +394,12 @@ async function resolveHarassmentRecipientUsers(reporterUserId: string) {
     where: {
       isActive: true,
       id: { not: reporterUserId },
-      OR: [
-        { isRootAccess: true },
-        { username: { equals: TPEOPLE_USERNAME, mode: 'insensitive' } },
-        {
-          permissionAssignments: {
-            some: {
-              isEnabled: true,
-              permission: { code: 'approve_profile_change' },
-            },
-          },
-        },
-      ],
+      username: { equals: TPEOPLE_USERNAME, mode: 'insensitive' },
     },
     select: {
       id: true,
       username: true,
       email: true,
-      isRootAccess: true,
     },
   });
 
@@ -420,17 +408,7 @@ async function resolveHarassmentRecipientUsers(reporterUserId: string) {
     if (!candidate.email?.trim()) {
       continue;
     }
-
-    const candidateIsTPeople = candidate.username.toLowerCase() === TPEOPLE_USERNAME;
-    if (candidateIsTPeople || candidate.isRootAccess) {
-      recipients.push({ id: candidate.id, email: candidate.email, username: candidate.username });
-      continue;
-    }
-
-    const canReview = await canAccessUserByPermission(candidate.id, 'approve_profile_change', reporterUserId);
-    if (canReview) {
-      recipients.push({ id: candidate.id, email: candidate.email, username: candidate.username });
-    }
+    recipients.push({ id: candidate.id, email: candidate.email, username: candidate.username });
   }
 
   return {

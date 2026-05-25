@@ -22,6 +22,7 @@ const CareerPlanPage = lazy(() => import('./pages/CareerPlanPage'));
 const ManagerTeamsPage = lazy(() => import('./pages/ManagerTeamsPage'));
 const CollaboratorsPage = lazy(() => import('./pages/CollaboratorsPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const PerformanceReviewPage = lazy(() => import('./pages/PerformanceReviewPage'));
 const EmployeeAdmissionPage = lazy(() => import('./pages/EmployeeAdmissionPage'));
 const AdmissionsPage = lazy(() => import('./pages/AdmissionsPage'));
 const WellbeingPage = lazy(() => import('./pages/WellbeingPage'));
@@ -69,6 +70,7 @@ function AppRoutes() {
       void import('./pages/ManagerTeamsPage');
       void import('./pages/CollaboratorsPage');
       void import('./pages/DashboardPage');
+      void import('./pages/PerformanceReviewPage');
       void import('./pages/WellbeingPage');
     };
 
@@ -139,7 +141,7 @@ function AppRoutes() {
       }
 
       if (canManageTrainings || canViewOwnTrainings) {
-        requests.push(safePrefetch('/trainings/me', 60000));
+        requests.push(safePrefetch('/trainings/me?page=1&pageSize=100', 60000));
       }
 
       void Promise.allSettled(requests);
@@ -190,6 +192,7 @@ function AppRoutes() {
   return (
     <Suspense fallback={<LoadingScreen />}>
       <Routes>
+        <Route path="/admissao/:token" element={<EmployeeAdmissionPage />} />
         <Route path="/" element={<PortalLayout />}>
           <Route index element={<HomePage />} />
           <Route path="perfil" element={<AccountAccessPage />} />
@@ -202,6 +205,7 @@ function AppRoutes() {
           <Route path="colaboradores" element={<CollaboratorsPage />} />
           <Route path="saude-bem-estar" element={<WellbeingPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="avaliacao-desempenho" element={<PerformanceReviewPage />} />
           <Route path="formacoes" element={<TrainingsPage />} />
           <Route path="ferias" element={<VacationsPage />} />
           <Route path="banco-horas" element={canUseHourBank ? <HourBankPage /> : <Navigate to="/" replace />} />

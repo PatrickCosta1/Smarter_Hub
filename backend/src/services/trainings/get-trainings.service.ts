@@ -37,7 +37,7 @@ export async function getUserTrainings(userId: string, skip: number, take: numbe
 }
 
 export async function deleteTraining(trainingId: string, userId: string) {
-  const training = await prisma.training.findUnique({
+  const training = await prisma.training.findFirst({
     where: { id: trainingId },
     select: { userId: true },
   });

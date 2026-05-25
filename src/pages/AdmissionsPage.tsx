@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest, authHeaders } from '../portal/api';
 import { getStoredAuthToken } from '../portal/auth-storage';
 import { usePortal } from '../portal/context';
+import Modal from '../components/ui/Modal';
 
 function getAuthHeaders() {
   const token = getStoredAuthToken();
@@ -66,7 +67,158 @@ type ContractForm = {
   dataFimContrato: string;
   tipoContrato: string;
   regimeHorario: string;
+  horasSemanaisContrato: string;
 };
+
+const DYNAMIC_REGIME_PREFIX = 'DINAMICO::';
+
+type WorkDayKey = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
+
+type WorkDaySchedule = {
+  day: WorkDayKey;
+  label: string;
+  enabled: boolean;
+  start: string;
+  end: string;
+};
+
+const WORK_DAY_BASE: ReadonlyArray<Omit<WorkDaySchedule, 'enabled' | 'start' | 'end'>> = [
+  { day: 'MON', label: 'Segunda' },
+  { day: 'TUE', label: 'Terça' },
+  { day: 'WED', label: 'Quarta' },
+  { day: 'THU', label: 'Quinta' },
+  { day: 'FRI', label: 'Sexta' },
+  { day: 'SAT', label: 'Sábado' },
+  { day: 'SUN', label: 'Domingo' },
+];
+
+const DEFAULT_WORK_DAYS: ReadonlyArray<WorkDaySchedule> = WORK_DAY_BASE.map((item) => ({
+  ...item,
+  enabled: item.day !== 'SAT' && item.day !== 'SUN',
+  start: '09:00',
+  end: '18:00',
+}));
+
+function cloneDefaultWorkDays() {
+  return DEFAULT_WORK_DAYS.map((item) => ({ ...item }));
+}
+
+function parseTimeToMinutes(value: string) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  return (hours * 60) + minutes;
+}
+
+function calculateWeeklyHoursFromDays(days: ReadonlyArray<WorkDaySchedule>) {
+  let totalMinutes = 0;
+  let hasActiveDay = false;
+
+  for (const day of days) {
+    if (!day.enabled) {
+      continue;
+    }
+
+    hasActiveDay = true;
+    const start = parseTimeToMinutes(day.start);
+    const end = parseTimeToMinutes(day.end);
+    if (start == null || end == null || end <= start) {
+      return null;
+    }
+
+    totalMinutes += end - start;
+  }
+
+  if (!hasActiveDay || totalMinutes <= 0) {
+    return null;
+  }
+
+  return Math.round((totalMinutes / 60) * 100) / 100;
+}
+
+function parseDynamicRegimeDays(value: string) {
+  if (!value.startsWith(DYNAMIC_REGIME_PREFIX)) {
+    return cloneDefaultWorkDays();
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value.slice(DYNAMIC_REGIME_PREFIX.length));
+  } catch {
+    return cloneDefaultWorkDays();
+  }
+
+  if (!Array.isArray(parsed)) {
+    return cloneDefaultWorkDays();
+  }
+
+  const byDay = new Map<WorkDayKey, WorkDaySchedule>();
+  for (const item of parsed) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+
+    const record = item as Record<string, unknown>;
+    const key = String(record.day ?? '') as WorkDayKey;
+    const defaultDay = DEFAULT_WORK_DAYS.find((entry) => entry.day === key);
+    if (!defaultDay) {
+      continue;
+    }
+
+    byDay.set(key, {
+      day: defaultDay.day,
+      label: defaultDay.label,
+      enabled: record.enabled === true,
+      start: typeof record.start === 'string' ? record.start : defaultDay.start,
+      end: typeof record.end === 'string' ? record.end : defaultDay.end,
+    });
+  }
+
+  return DEFAULT_WORK_DAYS.map((entry) => byDay.get(entry.day) ?? { ...entry });
+}
+
+function serializeDynamicRegimeDays(days: ReadonlyArray<WorkDaySchedule>) {
+  const compact = days.map((item) => ({
+    day: item.day,
+    enabled: item.enabled,
+    start: item.start,
+    end: item.end,
+  }));
+
+  return `${DYNAMIC_REGIME_PREFIX}${JSON.stringify(compact)}`;
+}
+
+function summarizeDynamicRegime(value: string) {
+  if (!value.startsWith(DYNAMIC_REGIME_PREFIX)) {
+    return value || 'Não configurado';
+  }
+
+  const days = parseDynamicRegimeDays(value);
+  const active = days.filter((item) => item.enabled);
+  if (active.length === 0) {
+    return 'Sem dias ativos';
+  }
+
+  const labels = active.map((item) => item.label.slice(0, 3));
+  const hourSample = active[0] ? `${active[0].start} - ${active[0].end}` : '';
+  return `${labels.join(', ')}${hourSample ? ` · ${hourSample}` : ''}`;
+}
+
+function formatWeeklyHoursLabel(hours: number | null) {
+  if (hours == null) {
+    return 'Não configurado';
+  }
+
+  return `${hours.toLocaleString('pt-PT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} h por semana`;
+}
 
 const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '', label: 'Todos os estados' },
@@ -184,10 +336,12 @@ export default function AdmissionsPage() {
           <h1 style={s.pageTitle}>Admissões</h1>
           <p style={s.pageSubtitle}>Gestão de processos de admissão de novos colaboradores</p>
         </div>
-        <div style={s.statsRow}>
+        <div style={{ display: 'grid', gap: 10, justifyItems: 'end' }}>
+          <div style={s.statsRow}>
           <StatCard value={total} label="Total" color="#1a56db" />
           <StatCard value={pending} label="Pendentes" color="#f59e0b" />
           <StatCard value={counts['COMPLETED'] ?? 0} label="Concluídos" color="#10b981" />
+          </div>
         </div>
       </div>
 
@@ -349,6 +503,8 @@ function DetailPanel({ admission, onClose, onRefresh }: {
   const [showCorrectionForm, setShowCorrectionForm] = useState(false);
   const [showContractForm, setShowContractForm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isWorkHoursModalOpen, setIsWorkHoursModalOpen] = useState(false);
+  const [workHoursDraft, setWorkHoursDraft] = useState<WorkDaySchedule[]>(() => cloneDefaultWorkDays());
 
   const [contract, setContract] = useState<ContractForm>({
     companyEmail: '',
@@ -360,8 +516,60 @@ function DetailPanel({ admission, onClose, onRefresh }: {
     dataInicioContrato: '',
     dataFimContrato: '',
     tipoContrato: 'Contrato a termo certo',
-    regimeHorario: 'Tempo inteiro',
+    regimeHorario: '',
+    horasSemanaisContrato: '',
   });
+
+  const weeklyHours = useMemo(() => {
+    if (contract.regimeHorario.startsWith(DYNAMIC_REGIME_PREFIX)) {
+      return calculateWeeklyHoursFromDays(parseDynamicRegimeDays(contract.regimeHorario));
+    }
+
+    const raw = Number(contract.horasSemanaisContrato.replace(',', '.'));
+    if (!Number.isFinite(raw) || raw <= 0) {
+      return null;
+    }
+
+    return Math.round(raw * 100) / 100;
+  }, [contract.horasSemanaisContrato, contract.regimeHorario]);
+
+  const regimeSummary = useMemo(() => summarizeDynamicRegime(contract.regimeHorario), [contract.regimeHorario]);
+
+  useEffect(() => {
+    if (!contract.regimeHorario.startsWith(DYNAMIC_REGIME_PREFIX)) {
+      return;
+    }
+
+    if (contract.horasSemanaisContrato.trim()) {
+      return;
+    }
+
+    const calculated = calculateWeeklyHoursFromDays(parseDynamicRegimeDays(contract.regimeHorario));
+    if (calculated == null) {
+      return;
+    }
+
+    setContract((current) => ({
+      ...current,
+      horasSemanaisContrato: String(calculated),
+    }));
+  }, [contract.horasSemanaisContrato, contract.regimeHorario]);
+
+  function applyDynamicRegime() {
+    const calculated = calculateWeeklyHoursFromDays(workHoursDraft);
+    if (calculated == null) {
+      setActionMsg('❌ Configuração de horas inválida. Confirma os dias ativos e os horários.');
+      return;
+    }
+
+    const serialized = serializeDynamicRegimeDays(workHoursDraft);
+    setContract((current) => ({
+      ...current,
+      regimeHorario: serialized,
+      horasSemanaisContrato: String(calculated),
+    }));
+    setIsWorkHoursModalOpen(false);
+  }
 
   const handleApprove = async () => {
     if (!window.confirm(`Confirmas a aprovação dos dados pessoais de ${admission.fullName}?`)) return;
@@ -401,17 +609,26 @@ function DetailPanel({ admission, onClose, onRefresh }: {
   };
 
   const handleComplete = async () => {
-    if (!contract.companyEmail || !contract.companyUsername || !contract.cargo || !contract.funcao || !contract.dataInicioContrato || !contract.tipoContrato || !contract.regimeHorario) {
+    if (!contract.companyEmail || !contract.companyUsername || !contract.cargo || !contract.funcao || !contract.dataInicioContrato || !contract.tipoContrato) {
       setActionMsg('❌ Preenche todos os campos obrigatórios do contrato.');
       return;
     }
+
+    if (weeklyHours == null) {
+      setActionMsg('❌ Configura as horas de trabalho antes de concluir a admissão.');
+      return;
+    }
+
     if (!window.confirm(`Confirmas a criação do utilizador para ${admission.fullName}?`)) return;
     setIsSaving(true);
     try {
       await apiRequest(`/users/admissions/${admission.id}/complete`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(contract),
+        body: JSON.stringify({
+          ...contract,
+          horasSemanaisContrato: contract.horasSemanaisContrato,
+        }),
       });
       setActionMsg(`✅ Admissão concluída! Utilizador criado com username @${contract.companyUsername}.`);
       setShowContractForm(false);
@@ -652,11 +869,25 @@ function DetailPanel({ admission, onClose, onRefresh }: {
                       {['Contrato a termo certo', 'Contrato a termo incerto', 'Contrato sem termo', 'CLT', 'PJ', 'Estágio'].map((v) => <option key={v}>{v}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label style={s.fieldLabel}>Regime horário *</label>
-                    <select style={s.input} value={contract.regimeHorario} onChange={(e) => setContract((p) => ({ ...p, regimeHorario: e.target.value }))} disabled={isSaving}>
-                      {['Tempo inteiro', 'Part-time', 'Horário flexível', 'Teletrabalho'].map((v) => <option key={v}>{v}</option>)}
-                    </select>
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <label style={s.fieldLabel}>Regime de contrato (calculado)</label>
+                    <input style={s.input} value={formatWeeklyHoursLabel(weeklyHours)} readOnly disabled />
+                  </div>
+                  <div style={{ gridColumn: 'span 2', display: 'grid', gap: 8 }}>
+                    <label style={s.fieldLabel}>Horas de trabalho</label>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setWorkHoursDraft(parseDynamicRegimeDays(contract.regimeHorario));
+                        setIsWorkHoursModalOpen(true);
+                      }}
+                      disabled={isSaving}
+                    >
+                      Configurar horas de trabalho
+                    </Button>
+                    <div style={{ fontSize: 12, color: '#6b7280' }}>
+                      {regimeSummary}
+                    </div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
@@ -671,6 +902,66 @@ function DetailPanel({ admission, onClose, onRefresh }: {
             )}
           </div>
         )}
+
+        <Modal
+          open={isWorkHoursModalOpen}
+          title="Configuração de horas de trabalho"
+          onClose={() => setIsWorkHoursModalOpen(false)}
+          width="min(760px, 96vw)"
+          footer={(
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, width: '100%' }}>
+              <Button variant="ghost" onClick={() => setIsWorkHoursModalOpen(false)}>Cancelar</Button>
+              <Button variant="primary" onClick={applyDynamicRegime}>Aplicar configuração</Button>
+            </div>
+          )}
+        >
+          <div style={{ display: 'grid', gap: 10 }}>
+            <p style={{ margin: 0, color: '#6b7280', fontSize: 13 }}>
+              Define os dias ativos e os intervalos horários. O regime de contrato é calculado automaticamente.
+            </p>
+            {workHoursDraft.map((day) => (
+              <div key={day.day} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: 10, alignItems: 'center' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={day.enabled}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setWorkHoursDraft((current) => current.map((item) => (
+                        item.day === day.day ? { ...item, enabled: checked } : item
+                      )));
+                    }}
+                  />
+                  {day.label}
+                </label>
+                <input
+                  style={s.input}
+                  type="time"
+                  value={day.start}
+                  disabled={!day.enabled}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setWorkHoursDraft((current) => current.map((item) => (
+                      item.day === day.day ? { ...item, start: value } : item
+                    )));
+                  }}
+                />
+                <input
+                  style={s.input}
+                  type="time"
+                  value={day.end}
+                  disabled={!day.enabled}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setWorkHoursDraft((current) => current.map((item) => (
+                      item.day === day.day ? { ...item, end: value } : item
+                    )));
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </Modal>
 
         {admission.status === 'CHANGES_REQUESTED' && (
           <div style={s.infoBox}>

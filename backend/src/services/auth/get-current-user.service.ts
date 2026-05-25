@@ -3,18 +3,13 @@ import { prisma } from '../../lib/prisma.js';
 const authTeamSelect = {
   id: true,
   name: true,
-  description: true,
-  isActive: true,
-  isHidden: true,
+  costCenter: true,
+  color: true,
 };
 
-function mapAuthTeam(team: any, isFullAccess: boolean) {
+function mapAuthTeam(team: any) {
   if (!team) return null;
-  return {
-    ...team,
-    description: isFullAccess ? team.description : null,
-    isHidden: isFullAccess ? team.isHidden : null,
-  };
+  return team;
 }
 
 export async function getCurrentUser(userId: string) {
@@ -31,11 +26,19 @@ export async function getCurrentUser(userId: string) {
       team: {
         select: authTeamSelect,
       },
+      profile: true,
     },
   });
 
   return user ? {
     ...user,
-    team: mapAuthTeam(user.team, Boolean(user.isRootAccess || user.hasAccessTotal)),
+    team: mapAuthTeam(user.team),
+    profile: user.profile || {
+      nomeCompleto: '',
+      nomeAbreviado: '',
+      cargo: '',
+      categoriaProfissional: '',
+      // ...podes adicionar outros campos default se necessário
+    },
   } : null;
 }

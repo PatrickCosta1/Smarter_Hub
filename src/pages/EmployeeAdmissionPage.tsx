@@ -81,6 +81,54 @@ type AdmissionForm = {
 
 type UploadField = 'comprovativoMoradaFiscal' | 'comprovativoCartaoCidadao' | 'comprovativoIban' | 'declaracaoIrs' | 'comprovativoCartaoContinente';
 
+type AdmissionRequiredFieldKey =
+  | 'nomeCompleto'
+  | 'nomeAbreviado'
+  | 'dataNascimento'
+  | 'genero'
+  | 'estadoCivil'
+  | 'habilitacoesLiterarias'
+  | 'emailPessoal'
+  | 'telemovel'
+  | 'moradaFiscal'
+  | 'localidade'
+  | 'codigoPostal'
+  | 'contactoEmergenciaNome'
+  | 'contactoEmergenciaParentesco'
+  | 'contactoEmergenciaNumero'
+  | 'brWorkState'
+  | 'comprovativoMoradaFiscal'
+  | 'comprovativoCartaoCidadao'
+  | 'comprovativoIban'
+  | 'declaracaoIrs'
+  | 'comprovativoCartaoContinente';
+
+type AdmissionFormSettings = {
+  requiredFields: AdmissionRequiredFieldKey[];
+};
+
+const DEFAULT_ADMISSION_REQUIRED_FIELDS: AdmissionRequiredFieldKey[] = [
+  'nomeCompleto',
+  'nomeAbreviado',
+  'dataNascimento',
+  'genero',
+  'estadoCivil',
+  'habilitacoesLiterarias',
+  'emailPessoal',
+  'telemovel',
+  'moradaFiscal',
+  'localidade',
+  'codigoPostal',
+  'contactoEmergenciaNome',
+  'contactoEmergenciaParentesco',
+  'contactoEmergenciaNumero',
+  'brWorkState',
+  'comprovativoMoradaFiscal',
+  'comprovativoCartaoCidadao',
+  'comprovativoIban',
+  'declaracaoIrs',
+];
+
 type AdmissionPayload = {
   id: string;
   fullName: string;
@@ -91,6 +139,7 @@ type AdmissionPayload = {
   reviewReason: string;
   tokenExpiresAt: string;
   personalData: Partial<Record<string, unknown>> | null;
+  formSettings?: AdmissionFormSettings;
 };
 
 const BRAZIL_STATES = [
@@ -324,6 +373,23 @@ export default function EmployeeAdmissionPage() {
 
   const isBR = form.workCountry === 'BR';
   const isCompleted = admission.status === 'COMPLETED' || admission.status === 'APPROVED_PENDING_CONTRACT';
+  const requiredFieldsSet = new Set<AdmissionRequiredFieldKey>(admission.formSettings?.requiredFields?.length
+    ? admission.formSettings.requiredFields
+    : DEFAULT_ADMISSION_REQUIRED_FIELDS);
+
+  const isFieldRequired = (field: AdmissionRequiredFieldKey) => {
+    if (field === 'brWorkState' && !isBR) {
+      return false;
+    }
+    if ((field === 'declaracaoIrs' || field === 'comprovativoCartaoContinente') && isBR) {
+      return false;
+    }
+    return requiredFieldsSet.has(field);
+  };
+
+  const requiredLabel = (label: string, field: AdmissionRequiredFieldKey) => (
+    `${label}${isFieldRequired(field) ? ' *' : ''}`
+  );
 
   if (status === 'sucesso') {
     return (
@@ -376,29 +442,29 @@ export default function EmployeeAdmissionPage() {
           {/* ── 1. Dados pessoais ── */}
           <FormSection title="Dados pessoais" icon="👤">
             <div style={styles.grid2}>
-              <Field label="Nome completo *" span={2}>
-                <input style={styles.input} value={form.nomeCompleto} onChange={(e) => updateField('nomeCompleto', e.target.value)} disabled={isReadOnly} placeholder="Nome completo" required />
+              <Field label={requiredLabel('Nome completo', 'nomeCompleto')} span={2}>
+                <input style={styles.input} value={form.nomeCompleto} onChange={(e) => updateField('nomeCompleto', e.target.value)} disabled={isReadOnly} placeholder="Nome completo" required={isFieldRequired('nomeCompleto')} />
               </Field>
-              <Field label="Nome abreviado *">
-                <input style={styles.input} value={form.nomeAbreviado} onChange={(e) => updateField('nomeAbreviado', e.target.value)} disabled={isReadOnly} placeholder="Nome Apelido" required />
+              <Field label={requiredLabel('Nome abreviado', 'nomeAbreviado')}>
+                <input style={styles.input} value={form.nomeAbreviado} onChange={(e) => updateField('nomeAbreviado', e.target.value)} disabled={isReadOnly} placeholder="Nome Apelido" required={isFieldRequired('nomeAbreviado')} />
               </Field>
-              <Field label="Data de nascimento *">
-                <input style={styles.input} type="date" value={form.dataNascimento} onChange={(e) => updateField('dataNascimento', e.target.value)} disabled={isReadOnly} required />
+              <Field label={requiredLabel('Data de nascimento', 'dataNascimento')}>
+                <input style={styles.input} type="date" value={form.dataNascimento} onChange={(e) => updateField('dataNascimento', e.target.value)} disabled={isReadOnly} required={isFieldRequired('dataNascimento')} />
               </Field>
-              <Field label="Género *">
-                <select style={styles.input} value={form.genero} onChange={(e) => updateField('genero', e.target.value)} disabled={isReadOnly} required>
+              <Field label={requiredLabel('Género', 'genero')}>
+                <select style={styles.input} value={form.genero} onChange={(e) => updateField('genero', e.target.value)} disabled={isReadOnly} required={isFieldRequired('genero')}>
                   <option value="">Selecionar</option>
                   {generoOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
               </Field>
-              <Field label="Estado civil *">
-                <select style={styles.input} value={form.estadoCivil} onChange={(e) => updateField('estadoCivil', e.target.value)} disabled={isReadOnly} required>
+              <Field label={requiredLabel('Estado civil', 'estadoCivil')}>
+                <select style={styles.input} value={form.estadoCivil} onChange={(e) => updateField('estadoCivil', e.target.value)} disabled={isReadOnly} required={isFieldRequired('estadoCivil')}>
                   <option value="">Selecionar</option>
                   {estadoCivilOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
               </Field>
-              <Field label="Habilitações literárias *">
-                <select style={styles.input} value={form.habilitacoesLiterarias} onChange={(e) => updateField('habilitacoesLiterarias', e.target.value)} disabled={isReadOnly} required>
+              <Field label={requiredLabel('Habilitações literárias', 'habilitacoesLiterarias')}>
+                <select style={styles.input} value={form.habilitacoesLiterarias} onChange={(e) => updateField('habilitacoesLiterarias', e.target.value)} disabled={isReadOnly} required={isFieldRequired('habilitacoesLiterarias')}>
                   <option value="">Selecionar</option>
                   {habilitacoesOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
@@ -436,11 +502,11 @@ export default function EmployeeAdmissionPage() {
           {/* ── 2. Contacto ── */}
           <FormSection title="Contacto" icon="📞">
             <div style={styles.grid2}>
-              <Field label="Email pessoal *">
-                <input style={styles.input} type="email" value={form.emailPessoal} onChange={(e) => updateField('emailPessoal', e.target.value)} disabled={isReadOnly} placeholder="email@exemplo.com" required />
+              <Field label={requiredLabel('Email pessoal', 'emailPessoal')}>
+                <input style={styles.input} type="email" value={form.emailPessoal} onChange={(e) => updateField('emailPessoal', e.target.value)} disabled={isReadOnly} placeholder="email@exemplo.com" required={isFieldRequired('emailPessoal')} />
               </Field>
-              <Field label="Telemóvel *">
-                <input style={styles.input} value={form.telemovel} onChange={(e) => updateField('telemovel', e.target.value)} disabled={isReadOnly} placeholder="+351 900 000 000" required />
+              <Field label={requiredLabel('Telemóvel', 'telemovel')}>
+                <input style={styles.input} value={form.telemovel} onChange={(e) => updateField('telemovel', e.target.value)} disabled={isReadOnly} placeholder="+351 900 000 000" required={isFieldRequired('telemovel')} />
               </Field>
               <Field label="País de trabalho">
                 <select style={styles.input} value={form.workCountry} disabled>
@@ -449,8 +515,8 @@ export default function EmployeeAdmissionPage() {
                 </select>
               </Field>
               {isBR ? (
-                <Field label="Estado (BR) *">
-                  <select style={styles.input} value={form.brWorkState} onChange={(e) => updateField('brWorkState', e.target.value)} disabled={isReadOnly} required>
+                <Field label={requiredLabel('Estado (BR)', 'brWorkState')}>
+                  <select style={styles.input} value={form.brWorkState} onChange={(e) => updateField('brWorkState', e.target.value)} disabled={isReadOnly} required={isFieldRequired('brWorkState')}>
                     <option value="">Selecionar estado</option>
                     {BRAZIL_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
@@ -462,14 +528,14 @@ export default function EmployeeAdmissionPage() {
           {/* ── 3. Morada ── */}
           <FormSection title="Morada" icon="🏠">
             <div style={styles.grid2}>
-              <Field label="Morada fiscal *" span={2}>
-                <input style={styles.input} value={form.moradaFiscal} onChange={(e) => { updateField('moradaFiscal', e.target.value); updateField('endereco', e.target.value); }} disabled={isReadOnly} placeholder="Rua, número, andar…" required />
+              <Field label={requiredLabel('Morada fiscal', 'moradaFiscal')} span={2}>
+                <input style={styles.input} value={form.moradaFiscal} onChange={(e) => { updateField('moradaFiscal', e.target.value); updateField('endereco', e.target.value); }} disabled={isReadOnly} placeholder="Rua, número, andar…" required={isFieldRequired('moradaFiscal')} />
               </Field>
-              <Field label={isBR ? 'CEP *' : 'Código postal *'}>
-                <input style={styles.input} value={form.codigoPostal} onChange={(e) => updateField('codigoPostal', e.target.value)} disabled={isReadOnly} placeholder={isBR ? '00000-000' : '0000-000'} required />
+              <Field label={requiredLabel(isBR ? 'CEP' : 'Código postal', 'codigoPostal')}>
+                <input style={styles.input} value={form.codigoPostal} onChange={(e) => updateField('codigoPostal', e.target.value)} disabled={isReadOnly} placeholder={isBR ? '00000-000' : '0000-000'} required={isFieldRequired('codigoPostal')} />
               </Field>
-              <Field label="Localidade *">
-                <input style={styles.input} value={form.localidade} onChange={(e) => updateField('localidade', e.target.value)} disabled={isReadOnly} placeholder="Lisboa" required />
+              <Field label={requiredLabel('Localidade', 'localidade')}>
+                <input style={styles.input} value={form.localidade} onChange={(e) => updateField('localidade', e.target.value)} disabled={isReadOnly} placeholder="Lisboa" required={isFieldRequired('localidade')} />
               </Field>
             </div>
           </FormSection>
@@ -596,17 +662,17 @@ export default function EmployeeAdmissionPage() {
           {/* ── 6. Contacto de emergência ── */}
           <FormSection title="Contacto de emergência" icon="🚨">
             <div style={styles.grid2}>
-              <Field label="Nome *">
-                <input style={styles.input} value={form.contactoEmergenciaNome} onChange={(e) => updateField('contactoEmergenciaNome', e.target.value)} disabled={isReadOnly} required />
+              <Field label={requiredLabel('Nome', 'contactoEmergenciaNome')}>
+                <input style={styles.input} value={form.contactoEmergenciaNome} onChange={(e) => updateField('contactoEmergenciaNome', e.target.value)} disabled={isReadOnly} required={isFieldRequired('contactoEmergenciaNome')} />
               </Field>
-              <Field label="Parentesco *">
-                <select style={styles.input} value={form.contactoEmergenciaParentesco} onChange={(e) => updateField('contactoEmergenciaParentesco', e.target.value)} disabled={isReadOnly} required>
+              <Field label={requiredLabel('Parentesco', 'contactoEmergenciaParentesco')}>
+                <select style={styles.input} value={form.contactoEmergenciaParentesco} onChange={(e) => updateField('contactoEmergenciaParentesco', e.target.value)} disabled={isReadOnly} required={isFieldRequired('contactoEmergenciaParentesco')}>
                   <option value="">Selecionar</option>
                   {parentescoOptions.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
               </Field>
-              <Field label="Telefone *">
-                <input style={styles.input} value={form.contactoEmergenciaNumero} onChange={(e) => updateField('contactoEmergenciaNumero', e.target.value)} disabled={isReadOnly} placeholder="+351 900 000 000" required />
+              <Field label={requiredLabel('Telefone', 'contactoEmergenciaNumero')}>
+                <input style={styles.input} value={form.contactoEmergenciaNumero} onChange={(e) => updateField('contactoEmergenciaNumero', e.target.value)} disabled={isReadOnly} placeholder="+351 900 000 000" required={isFieldRequired('contactoEmergenciaNumero')} />
               </Field>
             </div>
           </FormSection>
@@ -618,11 +684,11 @@ export default function EmployeeAdmissionPage() {
             </p>
             <div style={styles.grid2}>
               {([
-                { field: 'comprovativoMoradaFiscal' as UploadField, label: 'Comprovativo de morada', icon: '🏠', required: true },
-                { field: 'comprovativoCartaoCidadao' as UploadField, label: isBR ? 'Documento de identificação (RG/CNH)' : 'Cartão de Cidadão', icon: '🪪', required: true },
-                { field: 'comprovativoIban' as UploadField, label: 'Comprovativo de IBAN / conta bancária', icon: '🏦', required: true },
-                ...(!isBR ? [{ field: 'declaracaoIrs' as UploadField, label: 'Declaração IRS', icon: '📄', required: true }] : []),
-                ...(!isBR ? [{ field: 'comprovativoCartaoContinente' as UploadField, label: 'Comprovativo Cartão Continente', icon: '🛒', required: false }] : []),
+                { field: 'comprovativoMoradaFiscal' as UploadField, label: 'Comprovativo de morada', icon: '🏠', required: isFieldRequired('comprovativoMoradaFiscal') },
+                { field: 'comprovativoCartaoCidadao' as UploadField, label: isBR ? 'Documento de identificação (RG/CNH)' : 'Cartão de Cidadão', icon: '🪪', required: isFieldRequired('comprovativoCartaoCidadao') },
+                { field: 'comprovativoIban' as UploadField, label: 'Comprovativo de IBAN / conta bancária', icon: '🏦', required: isFieldRequired('comprovativoIban') },
+                ...(!isBR ? [{ field: 'declaracaoIrs' as UploadField, label: 'Declaração IRS', icon: '📄', required: isFieldRequired('declaracaoIrs') }] : []),
+                ...(!isBR ? [{ field: 'comprovativoCartaoContinente' as UploadField, label: 'Comprovativo Cartão Continente', icon: '🛒', required: isFieldRequired('comprovativoCartaoContinente') }] : []),
               ]).map(({ field, label, icon, required }) => (
                 <div key={field} style={styles.fileZone}>
                   <div style={styles.fileZoneIcon}>{icon}</div>

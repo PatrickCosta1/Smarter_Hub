@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { usePortal } from '../portal/context';
-import { apiRequest, apiRequestCached, authHeaders, clearApiCache, isAbortError } from '../portal/api';
+import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase, isAbortError } from '../portal/api';
 import { getStoredAuthToken } from '../portal/auth-storage';
 import { formatRoleLabel, formatTrainingStatusLabel, getTrainingStatusTone } from '../portal/labels';
 import Badge from '../components/ui/Badge';
@@ -87,6 +87,12 @@ type TrainingsScope = 'mine' | 'team' | 'hierarchy';
 type SortField = 'createdAt' | 'nome' | 'horas' | 'dataInicio' | 'dataConclusao' | 'status';
 type OrigemFilter = 'all' | 'propria' | 'atribuida';
 
+type TrainingsSettings = {
+  entities: string[];
+  requireCertificateOnComplete: boolean;
+  certificateMode: 'url' | 'file_or_url';
+};
+
 type PaginatedRows<T> = {
   total: number;
   page: number;
@@ -94,13 +100,38 @@ type PaginatedRows<T> = {
   rows: T[];
 };
 
-const TRAINING_ENTITIES = [
+type TrainingMonthlyReport = {
+  month: string;
+  windowStart: string;
+  windowEnd: string;
+  generatedAt: string;
+  totals: {
+    teams: number;
+    collaborators: number;
+    upcomingTrainings: number;
+    upcomingHours: number;
+    assignedInMonth: number;
+    completedInMonth: number;
+    completionRate: number;
+  };
+  teams: Array<{
+    teamId: string;
+    teamName: string;
+    upcomingTrainings: number;
+    upcomingHours: number;
+    collaborators: number;
+    assignedInMonth: number;
+    completedInMonth: number;
+    completionRate: number;
+  }>;
+};
+
+const DEFAULT_TRAINING_ENTITIES = [
   'Udemy',
   'Coursera',
   'LinkedIn Learning',
   'Microsoft Learn',
   'Google / Google Skillshop',
-  'YouTube',
   'Pluralsight',
   'Alura',
   'DIO',
@@ -108,6 +139,12 @@ const TRAINING_ENTITIES = [
   'Tlantic (Interna)',
   'Outra',
 ] as const;
+
+const DEFAULT_TRAININGS_SETTINGS: TrainingsSettings = {
+  entities: [...DEFAULT_TRAINING_ENTITIES],
+  requireCertificateOnComplete: false,
+  certificateMode: 'url',
+};
 
 const EMPTY_ASSIGN_DRAFT: AssignDraft = {
   nome: '',
@@ -124,6 +161,17 @@ function parseHours(value: string): number {
 
 function formatHours(value: number): string {
   return new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 2, minimumFractionDigits: 0 }).format(value);
+}
+
+function formatMonthLabel(monthValue: string) {
+  const [yearText, monthText] = String(monthValue || '').split('-');
+  const year = Number(yearText);
+  const monthIndex = Number(monthText) - 1;
+  if (!Number.isInteger(year) || !Number.isInteger(monthIndex) || monthIndex < 0 || monthIndex > 11) {
+    return monthValue;
+  }
+
+  return new Intl.DateTimeFormat('pt-PT', { month: 'long', year: 'numeric' }).format(new Date(year, monthIndex, 1));
 }
 
 function formatAbbreviatedUserName(user?: { username: string; profile?: { nomeAbreviado?: string; nomeCompleto?: string } | null } | null) {
@@ -193,13 +241,14 @@ function getTrainingTeamLabel(record: TrainingRecord) {
 }
 
 export default function TrainingsPage() {
-  const { hasPermission, isRootAccess, refreshNotifications } = usePortal();
+  const { hasPermission, isRootAccess, isAccessTotal, refreshNotifications } = usePortal();
   const canAssignTraining = isRootAccess || hasPermission('assign_training');
   const canViewHierarchyTrainings = isRootAccess || hasPermission('view_all_trainings');
+  const canUseMonthlyRhReport = isRootAccess || isAccessTotal;
   const canViewTeamTrainings = canAssignTraining && !canViewHierarchyTrainings;
   const canMarkCompleted = isRootAccess || hasPermission('mark_training_completed');
   const canCompleteForOthers = canAssignTraining || canViewHierarchyTrainings;
-  const [scope, setScope] = useState<TrainingsScope>('mine');
+  const [scope, setScope] = useState<TrainingsScope>(() => (canViewHierarchyTrainings ? 'hierarchy' : 'mine'));
 
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -220,9 +269,26 @@ export default function TrainingsPage() {
   const [isRecordsLoading, setIsRecordsLoading] = useState(false);
   const [recordsLoaded, setRecordsLoaded] = useState(false);
   const [completeConfirmRecordId, setCompleteConfirmRecordId] = useState<string | null>(null);
-    const [completeCertLink, setCompleteCertLink] = useState('');
+  const [completeCertLink, setCompleteCertLink] = useState('');
+  const [isUploadingCertificate, setIsUploadingCertificate] = useState(false);
   const [recentAssigned, setRecentAssigned] = useState<RecentAssignedItem[]>([]);
   const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isMonthlyReportModalOpen, setIsMonthlyReportModalOpen] = useState(false);
+  const [monthlyReportMonth, setMonthlyReportMonth] = useState(() => {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${now.getFullYear()}-${month}`;
+  });
+  const [monthlyReportTeamId, setMonthlyReportTeamId] = useState('');
+  const [monthlyReportPreview, setMonthlyReportPreview] = useState<TrainingMonthlyReport | null>(null);
+  const [isLoadingMonthlyReport, setIsLoadingMonthlyReport] = useState(false);
+  const [isExportingMonthlyReport, setIsExportingMonthlyReport] = useState(false);
+  const [trainingsSettings, setTrainingsSettings] = useState<TrainingsSettings>(DEFAULT_TRAININGS_SETTINGS);
+  const [trainingsSettingsDraft, setTrainingsSettingsDraft] = useState<TrainingsSettings>(DEFAULT_TRAININGS_SETTINGS);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [settingsStatus, setSettingsStatus] = useState('');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [newEntityInput, setNewEntityInput] = useState('');
 
   // ── Advanced filters
   const [entidadeFilter, setEntidadeFilter] = useState('');
@@ -347,6 +413,34 @@ export default function TrainingsPage() {
     return [...set].sort((a, b) => a.localeCompare(b, 'pt'));
   }, [records]);
 
+  const trainingEntityOptions = useMemo(() => {
+    const configured = trainingsSettings.entities.filter((item) => item.trim());
+    if (configured.length > 0) {
+      return configured;
+    }
+    return [...DEFAULT_TRAINING_ENTITIES];
+  }, [trainingsSettings.entities]);
+
+  const monthlyReportTeamOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const record of records) {
+      const primaryTeam = record.user?.team;
+      if (primaryTeam?.id && primaryTeam.name?.trim()) {
+        map.set(primaryTeam.id, primaryTeam.name.trim());
+      }
+      for (const membership of record.user?.teamMemberships || []) {
+        const team = membership.team;
+        if (team?.id && team.name?.trim()) {
+          map.set(team.id, team.name.trim());
+        }
+      }
+    }
+
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-PT'));
+  }, [records]);
+
   const activeFilterCount = useMemo(() => {
     let n = 0;
     if (query) n++;
@@ -386,12 +480,29 @@ export default function TrainingsPage() {
     }
   }, [scope]);
 
-  const availableScopes = useMemo(() => {
+  const monthlyReportDisplayMonth = useMemo(() => {
+    const sourceMonth = monthlyReportPreview?.month || monthlyReportMonth;
+    return formatMonthLabel(sourceMonth);
+  }, [monthlyReportPreview?.month, monthlyReportMonth]);
+
+  const monthlyReportTopTeams = useMemo(() => {
+    if (!monthlyReportPreview) {
+      return [] as TrainingMonthlyReport['teams'];
+    }
+
+    return [...monthlyReportPreview.teams]
+      .sort((a, b) => b.upcomingTrainings - a.upcomingTrainings || b.upcomingHours - a.upcomingHours)
+      .slice(0, 3);
+  }, [monthlyReportPreview]);
+
+  const availableScopes = useMemo<Array<{ id: TrainingsScope; label: string }>>(() => {
+    if (canViewHierarchyTrainings) {
+      return [{ id: 'hierarchy', label: 'Organização' }];
+    }
+
     const scopes: Array<{ id: TrainingsScope; label: string }> = [{ id: 'mine', label: 'Minhas' }];
     if (canViewTeamTrainings) {
       scopes.push({ id: 'team', label: 'Equipa' });
-    } else if (canViewHierarchyTrainings) {
-      scopes.push({ id: 'hierarchy', label: 'Organização' });
     }
     return scopes;
   }, [canViewHierarchyTrainings, canViewTeamTrainings]);
@@ -400,13 +511,19 @@ export default function TrainingsPage() {
     const controller = new AbortController();
 
     void loadTrainings(controller.signal);
+    void loadTrainingsSettings(controller.signal);
 
     return () => controller.abort();
   }, [scope]);
 
   useEffect(() => {
+    if (canViewHierarchyTrainings && scope !== 'hierarchy') {
+      setScope('hierarchy');
+      return;
+    }
+
     if (scope === 'team' && !canViewTeamTrainings) {
-      setScope(canViewHierarchyTrainings ? 'hierarchy' : 'mine');
+      setScope('mine');
       return;
     }
 
@@ -622,6 +739,86 @@ export default function TrainingsPage() {
     }
   }
 
+  async function loadMonthlyReportPreview() {
+    if (!canUseMonthlyRhReport || isLoadingMonthlyReport) {
+      return;
+    }
+
+    setIsLoadingMonthlyReport(true);
+    try {
+      const params = new URLSearchParams();
+      if (monthlyReportMonth) {
+        params.set('month', monthlyReportMonth);
+      }
+      if (monthlyReportTeamId) {
+        params.set('teamId', monthlyReportTeamId);
+      }
+
+      const data = await apiRequest<TrainingMonthlyReport>(`/trainings/reports/monthly?${params.toString()}`, {
+        headers: getAuthHeaders(),
+      });
+      setMonthlyReportPreview(data);
+      setStatus('Relatório mensal carregado com sucesso.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Falha ao carregar relatório mensal de formações.');
+    } finally {
+      setIsLoadingMonthlyReport(false);
+    }
+  }
+
+  function openMonthlyReportModal() {
+    setMonthlyReportPreview(null);
+    setMonthlyReportTeamId('');
+    setIsMonthlyReportModalOpen(true);
+  }
+
+  async function exportMonthlyReport(format: 'csv' | 'pdf') {
+    if (!canUseMonthlyRhReport || isExportingMonthlyReport) {
+      return;
+    }
+
+    setIsExportingMonthlyReport(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('format', format);
+      if (monthlyReportMonth) {
+        params.set('month', monthlyReportMonth);
+      }
+      if (monthlyReportTeamId) {
+        params.set('teamId', monthlyReportTeamId);
+      }
+
+      const response = await fetch(`${getApiBase()}/trainings/reports/monthly/export?${params.toString()}`, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(payload.message || 'Falha ao exportar relatório mensal de formações.');
+      }
+
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get('content-disposition') || '';
+      const matchedFileName = /filename=\"?([^\";]+)\"?/.exec(contentDisposition)?.[1] || '';
+      const defaultName = `relatorio-formacoes-${monthlyReportMonth || 'mensal'}.${format}`;
+      const fileName = matchedFileName || defaultName;
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Falha ao exportar relatório mensal de formações.');
+    } finally {
+      setIsExportingMonthlyReport(false);
+    }
+  }
+
   async function loadTrainings(signal?: AbortSignal) {
     setIsRecordsLoading(records.length === 0);
     try {
@@ -646,6 +843,27 @@ export default function TrainingsPage() {
       if (!signal?.aborted) {
         setIsRecordsLoading(false);
       }
+    }
+  }
+
+  async function loadTrainingsSettings(signal?: AbortSignal) {
+    if (!canViewHierarchyTrainings) {
+      return;
+    }
+
+    try {
+      const data = await apiRequestCached<TrainingsSettings>('/trainings/settings', {
+        headers: getAuthHeaders(),
+        signal,
+      }, 60000, true);
+
+      setTrainingsSettings(data);
+      setTrainingsSettingsDraft(data);
+    } catch (error) {
+      if (isAbortError(error) || signal?.aborted) {
+        return;
+      }
+      setStatus(error instanceof Error ? error.message : 'Falha ao carregar configurações de formações.');
     }
   }
 
@@ -735,6 +953,90 @@ export default function TrainingsPage() {
     }
   }
 
+  function openSettingsModal() {
+    setTrainingsSettingsDraft(trainingsSettings);
+    setNewEntityInput('');
+    setSettingsStatus('');
+    setIsSettingsModalOpen(true);
+  }
+
+  function addEntityToDraft(rawValue: string) {
+    const value = rawValue.trim();
+    if (!value) {
+      return;
+    }
+
+    setTrainingsSettingsDraft((current) => {
+      const exists = current.entities.some((entity) => entity.toLowerCase() === value.toLowerCase());
+      if (exists) {
+        return current;
+      }
+
+      return {
+        ...current,
+        entities: [...current.entities, value],
+      };
+    });
+    setNewEntityInput('');
+  }
+
+  function removeEntityFromDraft(entityToRemove: string) {
+    setTrainingsSettingsDraft((current) => ({
+      ...current,
+      entities: current.entities.filter((entity) => entity !== entityToRemove),
+    }));
+  }
+
+  async function saveTrainingsSettings() {
+    const normalizedEntities = trainingsSettingsDraft.entities.map((item) => item.trim()).filter(Boolean);
+    if (normalizedEntities.length === 0) {
+      setSettingsStatus('Define pelo menos uma entidade de formação.');
+      return;
+    }
+
+    setIsSavingSettings(true);
+    try {
+      const saved = await apiRequest<TrainingsSettings>('/trainings/settings', {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          entities: Array.from(new Set(normalizedEntities)),
+          requireCertificateOnComplete: trainingsSettingsDraft.requireCertificateOnComplete,
+          certificateMode: trainingsSettingsDraft.certificateMode,
+        }),
+      });
+
+      clearApiCache('/trainings/settings');
+      setTrainingsSettings(saved);
+      setTrainingsSettingsDraft(saved);
+      setSettingsStatus('Configurações guardadas com sucesso.');
+    } catch (error) {
+      setSettingsStatus(error instanceof Error ? error.message : 'Falha ao guardar configurações.');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function uploadTrainingCertificate(file: File) {
+    const token = getStoredAuthToken();
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${getApiBase()}/files/upload`, {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      throw new Error(payload.message || 'Falha ao carregar certificado.');
+    }
+
+    const payload = (await response.json()) as { link?: string; linkPath?: string };
+    return payload.linkPath || payload.link || '';
+  }
+
   async function handleAssignTraining(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -807,6 +1109,28 @@ export default function TrainingsPage() {
     }
   }
 
+  async function handleCertificateFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingCertificate(true);
+    try {
+      const uploadedLink = await uploadTrainingCertificate(file);
+      if (!uploadedLink) {
+        throw new Error('Não foi possível obter o link do certificado carregado.');
+      }
+      setCompleteCertLink(uploadedLink);
+      setStatus('Certificado carregado com sucesso.');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Falha ao carregar certificado.');
+    } finally {
+      setIsUploadingCertificate(false);
+      event.target.value = '';
+    }
+  }
+
   function openCompleteConfirm(recordId: string) {
     setCompleteConfirmRecordId(recordId);
     setCompleteCertLink('');
@@ -814,6 +1138,15 @@ export default function TrainingsPage() {
 
   async function confirmCompleteRecord() {
     if (!completeConfirmRecordId) {
+      return;
+    }
+
+    if (trainingsSettings.requireCertificateOnComplete && !completeCertLink.trim()) {
+      setStatus(
+        trainingsSettings.certificateMode === 'file_or_url'
+          ? 'Certificado obrigatório: anexa ficheiro ou URL antes de confirmar.'
+          : 'Certificado (URL) obrigatório para concluir a formação.',
+      );
       return;
     }
 
@@ -832,7 +1165,7 @@ export default function TrainingsPage() {
               key={scopeId}
               type="button"
               className={`trainings-scope-nav__btn${scope === scopeId ? ' is-active' : ''}`}
-              onClick={() => setScope(scopeId)}
+              onClick={() => setScope(scopeId as TrainingsScope)}
               aria-current={scope === scopeId ? 'page' : undefined}
             >
               {scopeId === 'mine' ? (
@@ -861,9 +1194,18 @@ export default function TrainingsPage() {
               </small>
             </div>
             <div className="trainings-list-head__topbar-actions">
-              <Button type="button" variant="ghost" onClick={handleExportExcel} disabled={visibleRecords.length === 0 || isExportingExcel}>
-                {isExportingExcel ? 'A exportar...' : 'Exportar Excel'}
-              </Button>
+              {canUseMonthlyRhReport ? (
+                <Button type="button" variant="ghost" onClick={openMonthlyReportModal}>
+                  Exportar relatório
+                </Button>
+              ) : (
+                <Button type="button" variant="ghost" onClick={handleExportExcel} disabled={visibleRecords.length === 0 || isExportingExcel}>
+                  {isExportingExcel ? 'A exportar...' : 'Exportar Excel'}
+                </Button>
+              )}
+              {canViewHierarchyTrainings && (
+                <Button type="button" variant="ghost" onClick={openSettingsModal}>Configurar formações</Button>
+              )}
               {canAssignTraining && (
                 <Button type="button" variant="primary" onClick={openAssignModal}>Nova formação</Button>
               )}
@@ -887,6 +1229,7 @@ export default function TrainingsPage() {
               <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
                 <option value="all">Todos os estados</option>
                 <option value="ASSIGNED">Ativa</option>
+                <option value="EM_CURSO">Em curso</option>
                 <option value="COMPLETED">Concluída</option>
               </select>
             </label>
@@ -1011,17 +1354,17 @@ export default function TrainingsPage() {
           <table className="trainings-table" aria-label="Lista de formações">
             <thead>
               <tr>
-                <th className="sortable-th" onClick={() => toggleSort('nome')}>Formação {sortIcon('nome')}</th>
-                {!isOwnScope && <th>Colaborador</th>}
-                {showTeamColumn && <th>Equipa</th>}
-                <th>Origem</th>
-                <th>Link</th>
-                <th className="sortable-th" onClick={() => toggleSort('horas')}>Horas {sortIcon('horas')}</th>
-                <th className="sortable-th" onClick={() => toggleSort('dataInicio')}>Data de início {sortIcon('dataInicio')}</th>
-                <th>Entidade</th>
-                <th className="sortable-th" onClick={() => toggleSort('dataConclusao')}>Data conclusão {sortIcon('dataConclusao')}</th>
-                <th className="sortable-th" onClick={() => toggleSort('status')}>Estado {sortIcon('status')}</th>
-                {((isOwnScope && canMarkCompleted) || (!isOwnScope && canCompleteForOthers)) && <th>Ações</th>}
+                <th className="sortable-th trainings-col trainings-col--training" onClick={() => toggleSort('nome')}>Formação {sortIcon('nome')}</th>
+                {!isOwnScope && <th className="trainings-col trainings-col--collaborator">Colaborador</th>}
+                {showTeamColumn && <th className="trainings-col trainings-col--team">Equipa</th>}
+                <th className="trainings-col trainings-col--origin">Origem</th>
+                <th className="trainings-col trainings-col--link">Link</th>
+                <th className="sortable-th trainings-col trainings-col--hours" onClick={() => toggleSort('horas')}>Horas {sortIcon('horas')}</th>
+                <th className="sortable-th trainings-col trainings-col--start" onClick={() => toggleSort('dataInicio')}>Data de início {sortIcon('dataInicio')}</th>
+                <th className="trainings-col trainings-col--entity">Entidade</th>
+                <th className="sortable-th trainings-col trainings-col--completion" onClick={() => toggleSort('dataConclusao')}>Data conclusão {sortIcon('dataConclusao')}</th>
+                <th className="sortable-th trainings-col trainings-col--status" onClick={() => toggleSort('status')}>Estado {sortIcon('status')}</th>
+                {((isOwnScope && canMarkCompleted) || (!isOwnScope && canCompleteForOthers)) && <th className="trainings-col trainings-col--actions">Ações</th>}
               </tr>
             </thead>
             <tbody>
@@ -1038,22 +1381,24 @@ export default function TrainingsPage() {
               ) : (
                 visibleRecords.map((record) => (
                   <tr key={record.id}>
-                    <td>{record.nome}</td>
-                    {!isOwnScope && <td>{getTrainingOwnerLabel(record)}</td>}
-                    {showTeamColumn && <td>{getTrainingTeamLabel(record)}</td>}
-                    <td>{getTrainingOriginLabel(record)}</td>
-                    <td>{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
-                    <td>{formatHours(record.horas)} h</td>
-                    <td>{getTrainingStartDate(record) || '-'}</td>
-                    <td>{record.entidade || '-'}</td>
-                    <td>{record.dataConclusao || '-'}</td>
-                    <td>
+                    <td className="trainings-col trainings-col--training">{record.nome}</td>
+                    {!isOwnScope && <td className="trainings-col trainings-col--collaborator">{getTrainingOwnerLabel(record)}</td>}
+                    {showTeamColumn && <td className="trainings-col trainings-col--team">{getTrainingTeamLabel(record)}</td>}
+                    <td className="trainings-col trainings-col--origin">{getTrainingOriginLabel(record)}</td>
+                    <td className="trainings-col trainings-col--link">{record.link ? <a href={record.link} target="_blank" rel="noreferrer">Abrir</a> : '-'}</td>
+                    <td className="trainings-col trainings-col--hours">{formatHours(record.horas)} h</td>
+                    <td className="trainings-col trainings-col--start">{getTrainingStartDate(record) || '-'}</td>
+                    <td className="trainings-col trainings-col--entity">{record.entidade || '-'}</td>
+                    <td className="trainings-col trainings-col--completion">{record.dataConclusao || '-'}</td>
+                    <td className="trainings-col trainings-col--status">
+                      <span className="trainings-status-badge">
                       <Badge tone={getTrainingStatusTone(record.status) === 'approved' ? 'success' : getTrainingStatusTone(record.status) === 'pending' ? 'warning' : 'neutral'}>
                         {formatTrainingStatusLabel(record.status)}
                       </Badge>
+                      </span>
                     </td>
                     {((isOwnScope && canMarkCompleted) || (!isOwnScope && canCompleteForOthers)) && (
-                      <td>
+                      <td className="trainings-col trainings-col--actions">
                         {record.status === 'ASSIGNED' ? (
                           <div className="trainings-row-actions">
                             <Button type="button" size="sm" variant="secondary" onClick={() => openCompleteConfirm(record.id)}>Concluir</Button>
@@ -1195,7 +1540,7 @@ export default function TrainingsPage() {
                 <span>Entidade</span>
                 <select value={assignDraft.entidade} onChange={(event) => updateAssignDraft('entidade', event.target.value)}>
                   <option value="">Selecionar entidade...</option>
-                  {TRAINING_ENTITIES.map((e) => (
+                  {trainingEntityOptions.map((e) => (
                     <option key={e} value={e}>{e}</option>
                   ))}
                 </select>
@@ -1322,6 +1667,204 @@ export default function TrainingsPage() {
       )}
 
       <Modal
+        open={isMonthlyReportModalOpen}
+        title="Relatório mensal de formações (RH)"
+        onClose={() => setIsMonthlyReportModalOpen(false)}
+        width="min(860px, 96vw)"
+        footer={
+          <div className="modal-footer-split trainings-monthly-modal__footer">
+            <Button type="button" variant="ghost" onClick={() => setIsMonthlyReportModalOpen(false)}>Fechar</Button>
+            <div className="trainings-monthly-modal__footer-actions">
+              <Button type="button" variant="secondary" onClick={() => void exportMonthlyReport('csv')} disabled={isExportingMonthlyReport || !monthlyReportPreview}>
+                {isExportingMonthlyReport ? 'A exportar...' : 'Exportar CSV'}
+              </Button>
+              <Button type="button" variant="primary" onClick={() => void exportMonthlyReport('pdf')} disabled={isExportingMonthlyReport || !monthlyReportPreview}>
+                {isExportingMonthlyReport ? 'A exportar...' : 'Exportar PDF'}
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <div className="trainings-monthly-modal">
+          <section className="trainings-monthly-modal__hero">
+            <div>
+              <p className="trainings-monthly-modal__kicker">Painel RH</p>
+              <h4>{monthlyReportDisplayMonth || 'Relatório mensal'}</h4>
+            </div>
+            <div className="trainings-monthly-modal__quick-metrics" aria-live="polite">
+              <article>
+                <span>Equipas</span>
+                <strong>{monthlyReportPreview?.totals.teams ?? '-'}</strong>
+              </article>
+              <article>
+                <span>Formações</span>
+                <strong>{monthlyReportPreview?.totals.upcomingTrainings ?? '-'}</strong>
+              </article>
+              <article>
+                <span>Conclusão</span>
+                <strong>{monthlyReportPreview ? `${monthlyReportPreview.totals.completionRate.toFixed(2)}%` : '-'}</strong>
+              </article>
+            </div>
+          </section>
+
+          <section className="trainings-monthly-modal__filters">
+            <label>
+              <span>Mês</span>
+              <input type="month" value={monthlyReportMonth} onChange={(event) => setMonthlyReportMonth(event.target.value)} />
+            </label>
+            <label>
+              <span>Equipa</span>
+              <select value={monthlyReportTeamId} onChange={(event) => setMonthlyReportTeamId(event.target.value)}>
+                <option value="">Todas as equipas</option>
+                {monthlyReportTeamOptions.map((team) => (
+                  <option key={team.id} value={team.id}>{team.name}</option>
+                ))}
+              </select>
+            </label>
+            <div className="trainings-monthly-modal__filters-action">
+              <Button type="button" variant="secondary" onClick={() => void loadMonthlyReportPreview()} disabled={isLoadingMonthlyReport}>
+                {isLoadingMonthlyReport ? 'A consultar...' : 'Consultar relatório'}
+              </Button>
+            </div>
+          </section>
+
+          {!monthlyReportPreview ? (
+            <div className="trainings-monthly-modal__empty">
+              <strong>Sem pré-visualização ainda</strong>
+              <p>Seleciona mês e equipa para carregar um resumo inteligente com os principais indicadores.</p>
+            </div>
+          ) : (
+            <>
+              <section className="trainings-monthly-modal__table-wrap">
+                <table className="trainings-table" aria-label="Resumo mensal por equipa">
+                  <thead>
+                    <tr>
+                      <th>Equipa</th>
+                      <th>Formações (3 meses)</th>
+                      <th>Horas</th>
+                      <th>Colaboradores</th>
+                      <th>Atribuídas no mês</th>
+                      <th>Concluídas no mês</th>
+                      <th>Taxa conclusão</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthlyReportPreview.teams.length === 0 ? (
+                      <tr><td colSpan={7}>Sem dados para os filtros selecionados.</td></tr>
+                    ) : monthlyReportPreview.teams.map((team) => (
+                      <tr key={`report-${team.teamId}`}>
+                        <td>{team.teamName}</td>
+                        <td>{team.upcomingTrainings}</td>
+                        <td>{team.upcomingHours}</td>
+                        <td>{team.collaborators}</td>
+                        <td>{team.assignedInMonth}</td>
+                        <td>{team.completedInMonth}</td>
+                        <td>{team.completionRate.toFixed(2)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={isSettingsModalOpen}
+        title="Configurações de formações"
+        onClose={() => setIsSettingsModalOpen(false)}
+        width="min(760px, 94vw)"
+        footer={
+          <div className="modal-footer-split">
+            <Button type="button" variant="ghost" onClick={() => setIsSettingsModalOpen(false)}>Fechar</Button>
+            <Button type="button" variant="primary" onClick={() => void saveTrainingsSettings()} disabled={isSavingSettings}>
+              {isSavingSettings ? 'A guardar...' : 'Guardar configurações'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="permissions-access-modal">
+          <label>
+            <span>Entidades de formação</span>
+            <div className="trainings-entity-editor">
+              <input
+                type="text"
+                value={newEntityInput}
+                onChange={(event) => setNewEntityInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    addEntityToDraft(newEntityInput);
+                  }
+                }}
+                placeholder="Ex.: Udemy"
+              />
+              <Button type="button" variant="secondary" onClick={() => addEntityToDraft(newEntityInput)}>
+                Adicionar
+              </Button>
+            </div>
+          </label>
+
+          <div className="trainings-entity-chip-grid" role="list" aria-label="Entidades configuradas">
+            {trainingsSettingsDraft.entities.length === 0 ? (
+              <p className="trainings-entity-empty">Sem entidades configuradas.</p>
+            ) : (
+              trainingsSettingsDraft.entities.map((entity) => (
+                <span key={entity} className="trainings-entity-chip" role="listitem">
+                  <span>{entity}</span>
+                  <button type="button" onClick={() => removeEntityFromDraft(entity)} aria-label={`Remover ${entity}`}>
+                    ×
+                  </button>
+                </span>
+              ))
+            )}
+          </div>
+
+          <div className="trainings-entity-suggestions">
+            <span>Sugestões rápidas</span>
+            <div>
+              {DEFAULT_TRAINING_ENTITIES.filter((entity) => !trainingsSettingsDraft.entities.some((draft) => draft.toLowerCase() === entity.toLowerCase())).slice(0, 10).map((entity) => (
+                <button key={`suggestion-${entity}`} type="button" onClick={() => addEntityToDraft(entity)}>
+                  + {entity}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <label>
+            <span>Submissão de certificado ao concluir</span>
+            <select
+              value={trainingsSettingsDraft.requireCertificateOnComplete ? 'required' : 'optional'}
+              onChange={(event) => setTrainingsSettingsDraft((current) => ({
+                ...current,
+                requireCertificateOnComplete: event.target.value === 'required',
+              }))}
+            >
+              <option value="optional">Opcional</option>
+              <option value="required">Obrigatório</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Modo de certificado</span>
+            <select
+              value={trainingsSettingsDraft.certificateMode}
+              onChange={(event) => setTrainingsSettingsDraft((current) => ({
+                ...current,
+                certificateMode: event.target.value as TrainingsSettings['certificateMode'],
+              }))}
+            >
+              <option value="url">Apenas URL</option>
+              <option value="file_or_url">Ficheiro ou URL</option>
+            </select>
+          </label>
+
+          <Toast show={Boolean(settingsStatus)} tone={resolveStatusTone(settingsStatus)} message={settingsStatus} />
+        </div>
+      </Modal>
+
+      <Modal
         open={Boolean(completeConfirmRecordId)}
         title="Confirmar conclusão"
         onClose={() => setCompleteConfirmRecordId(null)}
@@ -1335,17 +1878,29 @@ export default function TrainingsPage() {
         }
       >
         <div className="permissions-access-modal">
-          <p>Esta ação vai marcar a formação como concluída.</p>
+          <p>Adicione um certificado {trainingsSettings.requireCertificateOnComplete ? '(obrigatório)' : ' (opcional)'}, URL ou ficheiro, para concluir a formação.</p>
           <label className="trainings-cert-label">
-            <span>Certificado (URL) — opcional</span>
+            <span>URL</span>
             <input
               type="url"
               className="trainings-cert-input"
-              placeholder="https://... link do certificado ou evidência"
+              placeholder={trainingsSettings.certificateMode === 'file_or_url' ? 'https://... (ou anexa ficheiro abaixo)' : 'https://... link do certificado ou evidência'}
               value={completeCertLink}
               onChange={(e) => setCompleteCertLink(e.target.value)}
             />
           </label>
+          {trainingsSettings.certificateMode === 'file_or_url' && (
+            <label className="trainings-cert-label">
+              <span>Carregar ficheiro do certificado</span>
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
+                onChange={(event) => void handleCertificateFileChange(event)}
+                disabled={isUploadingCertificate}
+              />
+              {isUploadingCertificate && <small>A carregar certificado...</small>}
+            </label>
+          )}
           <p className="permissions-access-warning">A alteração só é aplicada depois de confirmares.</p>
         </div>
       </Modal>

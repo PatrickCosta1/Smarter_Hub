@@ -48,3 +48,26 @@ export async function updateUserAdminData(userId: string, data: {
     include: { profile: true, team: true },
   });
 }
+
+export async function findUserActiveState(userId: string) {
+  return prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, isActive: true },
+  });
+}
+
+export async function updateUserActiveState(userId: string, isActive: boolean) {
+  return prisma.user.update({
+    where: { id: userId },
+    data: {
+      isActive,
+      deactivatedAt: isActive ? null : new Date(),
+    },
+    select: {
+      id: true,
+      isActive: true,
+      deactivatedAt: true,
+      updatedAt: true,
+    },
+  });
+}

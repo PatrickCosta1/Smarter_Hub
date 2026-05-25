@@ -66,6 +66,8 @@ export function formatTrainingStatusLabel(status?: string) {
   switch (status) {
     case 'ASSIGNED':
       return 'Atribuída';
+    case 'EM_CURSO':
+      return 'Em curso';
     case 'PENDING':
       return 'Pendente';
     case 'COMPLETED':
@@ -82,6 +84,7 @@ export function getTrainingStatusTone(status?: string) {
 
   switch (status) {
     case 'ASSIGNED':
+    case 'EM_CURSO':
       return 'pending';
     case 'PENDING':
       return 'pending';

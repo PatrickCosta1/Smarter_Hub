@@ -24,6 +24,11 @@ import {
 } from '../repositories/vacations.repository.js';
 import { cancelVacationForOwner } from '../services/vacations/cancel-vacation.service.js';
 import { assignVacationBalanceCredit } from '../services/vacations/assign-vacation-balance-credit.service.js';
+import {
+  createVacationRequestTransaction,
+  findVacationCreateProfile,
+  findVacationTargetUserById,
+} from '../services/vacations/create-vacation-request.service.js';
 import { sellVacationDays } from '../services/vacations/sell-vacation-days.service.js';
 import { versionVacationRequest } from '../services/vacations/version-vacation-request.service.js';
 import {
@@ -2045,14 +2050,7 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
         return res.status(403).json({ error: 'Só utilizadores com acesso total podem registar pedidos para outros colaboradores.' });
       }
 
-      const targetUser = await prisma.user.findUnique({
-        where: { id: requestedTargetUserId },
-        select: {
-          id: true,
-          isActive: true,
-          hasAccessTotal: true,
-        },
-      });
+      const targetUser = await findVacationTargetUserById(requestedTargetUserId);
 
       if (!targetUser || !targetUser.isActive) {
         return res.status(404).json({ error: 'Colaborador alvo não encontrado ou inativo.' });
@@ -2071,10 +2069,7 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
 
     const contextTeamId = await resolveContextTeamId(targetUserId, data.contextTeamId);
 
-    const profile = await prisma.profile.findUnique({
-      where: { userId: targetUserId },
-      select: { workCountry: true, brWorkState: true, nomeCompleto: true, nomeAbreviado: true, dataInicioContrato: true, isIntern: true },
-    });
+    const profile = await findVacationCreateProfile(targetUserId);
     const country = profile?.workCountry ?? 'PT';
 
     await enforceVacationBusinessDays({
@@ -2089,72 +2084,48 @@ router.post('/vacations', requireAuth, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Não existem aprovadores configurados para esta equipa.' });
     }
 
-    let policyWarnings: string[] = [];
-    const vacation = await prisma.$transaction(async (tx) => {
-      await enforceNoRequestOverlap({
-        db: tx,
-        userId: targetUserId,
+    const { vacation, policyWarnings } = await createVacationRequestTransaction({
+      actorUserId,
+      targetUserId,
+      contextTeamId,
+      directApproveByAccessTotal,
+      approvalGroups,
+      data: {
         dataInicio: data.dataInicio,
         dataFim: data.dataFim,
-      });
-
-      policyWarnings = await validateVacationCountryPolicy({
-        db: tx,
-        userId: targetUserId,
-        country,
-        brWorkState: profile?.brWorkState ?? null,
+        observacoes: data.observacoes,
         requestType: data.requestType,
-        dataInicio: data.dataInicio,
-        dataFim: data.dataFim,
         partialDay: data.partialDay,
-        dataInicioContrato: profile?.dataInicioContrato || null,
-        isIntern: profile?.isIntern ?? false,
-      });
-
-      if (data.requestType === 'VACATION' && contextTeamId) {
-        await acquireTeamCapacityLock(tx, contextTeamId);
-        await enforceOneThirdCapacity(tx, contextTeamId, country, data.dataInicio, data.dataFim, data.partialDay);
-      }
-
-      const created = await tx.vacation.create({
-        data: {
+        attachmentLink: data.attachmentLink,
+      },
+      beforeCreate: async (tx) => {
+        await enforceNoRequestOverlap({
+          db: tx,
           userId: targetUserId,
-          contextTeamId,
           dataInicio: data.dataInicio,
           dataFim: data.dataFim,
-          observacoes: data.observacoes,
+        });
+
+        const warnings = await validateVacationCountryPolicy({
+          db: tx,
+          userId: targetUserId,
+          country,
+          brWorkState: profile?.brWorkState ?? null,
           requestType: data.requestType,
+          dataInicio: data.dataInicio,
+          dataFim: data.dataFim,
           partialDay: data.partialDay,
-          attachmentLink: data.attachmentLink,
-          status: directApproveByAccessTotal ? 'APPROVED' : 'PENDING',
-          reviewedById: directApproveByAccessTotal ? actorUserId : null,
-          reviewedAt: directApproveByAccessTotal ? new Date() : null,
-          ...(directApproveByAccessTotal
-            ? {
-                reviewReason: 'Registo direto por utilizador com acesso total.',
-                approvedByRole: 'ACCESS_TOTAL',
-              }
-            : {}),
-          versionNumber: 1,
-        },
-      });
+          dataInicioContrato: profile?.dataInicioContrato || null,
+          isIntern: profile?.isIntern ?? false,
+        });
 
-      if (!directApproveByAccessTotal) {
-        for (const group of approvalGroups) {
-          for (const approverId of group.approverIds) {
-            await tx.vacationApproval.create({
-              data: {
-                vacationId: created.id,
-                approverId,
-                approvalLevel: group.level,
-                status: group.level === approvalGroups[0].level ? APPROVAL_PENDING : APPROVAL_WAITING,
-              },
-            });
-          }
+        if (data.requestType === 'VACATION' && contextTeamId) {
+          await acquireTeamCapacityLock(tx, contextTeamId);
+          await enforceOneThirdCapacity(tx, contextTeamId, country, data.dataInicio, data.dataFim, data.partialDay);
         }
-      }
 
-      return created;
+        return warnings;
+      },
     });
 
     if (directApproveByAccessTotal && data.requestType !== 'VACATION') {

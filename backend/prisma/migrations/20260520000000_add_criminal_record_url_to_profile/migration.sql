@@ -1,1 +1,1 @@
-ALTER TABLE "Profile" ADD COLUMN IF NOT EXISTS "criminalRecordUrl" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "Profile" ADD COLUMN "criminalRecordUrl" TEXT NOT NULL DEFAULT '';

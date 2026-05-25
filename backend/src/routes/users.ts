@@ -14,10 +14,56 @@ import {
   isAccessTotal,
 } from '../lib/permission-engine.js';
 import { notifyUsers } from '../lib/notifications.js';
-import { sendTransactionalEmail } from '../lib/email.js';
 import { requireAuth } from '../middleware/auth.js';
 
+import { deleteTeamById, deleteUserById } from '../services/users/admin-management.service.js';
+import { canUserReviewAdmissionCountry, canUserReviewAdmissions } from '../services/users/admissions-access.service.js';
+import { sendAdmissionInviteEmail } from '../services/users/admissions-email.service.js';
+import {
+  admissionFormSettingsSchema,
+  buildDefaultAdmissionFormSettings,
+  buildEmptyAdmissionPersonalData,
+  getAdmissionRequiredFieldOptions,
+  normalizeAdmissionFormSettings,
+  normalizeEmployeeAdmissionPersonalData,
+  normalizeBooleanField,
+  resolveAdmissionRequiredFieldsByCountry,
+  validateEmployeeAdmissionPersonalDataWithSettings,
+} from '../services/users/admissions-public-data.service.js';
+import {
+  buildAdmissionToken,
+  buildFrontendAdmissionUrl,
+  createAdmissionInvitation,
+  getAdmissionExpiryDate,
+  hashAdmissionToken,
+} from '../services/users/initiate-admission.service.js';
+import {
+  findActorWorkCountry,
+  findAdmissionDetailById,
+  listAdmissionsForReview,
+  listAdmissionsWithPagination,
+} from '../services/users/admissions-query.service.js';
+import {
+  findAdmissionById,
+  markAdmissionApprovedPendingContract,
+  markAdmissionCorrectionRequested,
+  notifyAdmissionReadyForContract,
+} from '../services/users/admissions-review.service.js';
+import { approveAdmissionPersonalData, requestAdmissionCorrection } from '../services/users/admissions-review-actions.service.js';
+import { completeAdmissionAndCreateUser } from '../services/users/complete-admission-actions.service.js';
 import { createUser } from '../services/users/create-user.service.js';
+import {
+  buildDashboardSummaryAnalytics,
+  buildDashboardTeamInsights,
+  filterDashboardCollaborators,
+  findDashboardCollaboratorsExportRows,
+  loadUsersDashboardSummaryData,
+  mapDashboardCollaboratorsExportRows,
+} from '../services/users/dashboard-summary.service.js';
+import { findCollaboratorsWithPagination, findDirectoryUsers } from '../services/users/list-users.service.js';
+import { resolveAdmissionByTokenOrThrow } from '../services/users/resolve-admission-token.service.js';
+import { submitAdmissionPublicForm } from '../services/users/submit-admission-public.service.js';
+import { findUserActiveState, updateUserActiveState } from '../services/users/update-user.service.js';
 
 const router = Router();
 const roleSchema = z.enum(['COLABORADOR', 'MANAGER', 'COORDENADOR', 'ADMIN', 'CONVIDADO']);
@@ -68,11 +114,130 @@ const employeeAdmissionContractSchema = z.object({
   dataFimContrato: z.string().optional().default(''),
   tipoContrato: z.string().min(1, 'Tipo de contrato é obrigatório.'),
   regimeHorario: z.string().min(1, 'Regime horário é obrigatório.'),
+  horasSemanaisContrato: z.string().optional().default(''),
 });
+
+const DYNAMIC_REGIME_PREFIX = 'DINAMICO::';
+
+function parseWeeklyHoursContract(value: unknown) {
+  const text = String(value ?? '').trim().replace(',', '.');
+  const parsed = Number(text);
+  if (!Number.isFinite(parsed)) {
+    throw new Error('As horas semanais de contrato devem ser numéricas.');
+  }
+
+  if (parsed <= 0 || parsed > 80) {
+    throw new Error('As horas semanais de contrato devem estar entre 1 e 80 horas.');
+  }
+
+  return Math.round(parsed * 100) / 100;
+}
+
+function parseTimeToMinutes(value: string) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  return (hours * 60) + minutes;
+}
+
+function calculateWeeklyHoursFromDynamicRegime(value: string) {
+  if (!value.startsWith(DYNAMIC_REGIME_PREFIX)) {
+    return null;
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(value.slice(DYNAMIC_REGIME_PREFIX.length));
+  } catch {
+    throw new Error('Configuração de horas de trabalho inválida.');
+  }
+
+  if (!Array.isArray(payload)) {
+    throw new Error('Configuração de horas de trabalho inválida.');
+  }
+
+  let totalMinutes = 0;
+  let activeDays = 0;
+
+  for (const item of payload) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+
+    const record = item as Record<string, unknown>;
+    if (record.enabled !== true) {
+      continue;
+    }
+
+    activeDays += 1;
+    const start = parseTimeToMinutes(String(record.start ?? ''));
+    const end = parseTimeToMinutes(String(record.end ?? ''));
+    if (start == null || end == null || end <= start) {
+      throw new Error('Configuração de horas de trabalho inválida. Verifica os horários dos dias ativos.');
+    }
+
+    totalMinutes += (end - start);
+  }
+
+  if (activeDays === 0 || totalMinutes <= 0) {
+    throw new Error('Configuração de horas de trabalho inválida. Define pelo menos um dia ativo.');
+  }
+
+  return Math.round((totalMinutes / 60) * 100) / 100;
+}
+
+function deriveAdmissionHourBankLimitHours(contract: z.infer<typeof employeeAdmissionContractSchema>) {
+  if (contract.regimeHorario.startsWith(DYNAMIC_REGIME_PREFIX)) {
+    return calculateWeeklyHoursFromDynamicRegime(contract.regimeHorario) ?? undefined;
+  }
+
+  const raw = String(contract.horasSemanaisContrato ?? '').trim();
+  if (!raw) {
+    return undefined;
+  }
+
+  return parseWeeklyHoursContract(raw);
+}
 
 const employeeAdmissionCorrectionSchema = z.object({
   reason: z.string().trim().min(5, 'Indica nas observações o que está mal.'),
 });
+
+const ADMISSION_FORM_SETTINGS_KEY = 'admissions_public_form_settings_v1';
+
+async function getAdmissionFormSettings() {
+  const setting = await prisma.systemSetting.findUnique({
+    where: { key: ADMISSION_FORM_SETTINGS_KEY },
+    select: { textValue: true },
+  });
+
+  if (!setting?.textValue) {
+    return buildDefaultAdmissionFormSettings();
+  }
+
+  try {
+    const parsed = JSON.parse(setting.textValue) as unknown;
+    return normalizeAdmissionFormSettings(parsed);
+  } catch {
+    return buildDefaultAdmissionFormSettings();
+  }
+}
+
+async function canManageAdmissionFormSettings(actor: { id: string; isRootAccess: boolean }) {
+  if (actor.isRootAccess) {
+    return true;
+  }
+
+  return isAccessTotal(actor.id);
+}
 
 const BULK_IMPORT_PROFILE_FIELD_KEYS = [
   'nomeAbreviado',
@@ -205,6 +370,7 @@ const updateAdminUserSchema = z.object({
   dataFimContrato: z.string().optional(),
   tipoContrato: z.string().optional(),
   regimeHorario: z.string().optional(),
+  horasSemanaisContrato: z.string().optional(),
   workCountry: z.string().optional(),
   brWorkState: z.string().optional(),
   localidade: z.string().optional(),
@@ -435,347 +601,6 @@ function buildTodayIsoDate() {
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 }
 
-const EMPLOYEE_ADMISSION_PUBLIC_FIELDS = [
-  'nomeCompleto',
-  'nomeAbreviado',
-  'dataNascimento',
-  'genero',
-  'estadoCivil',
-  'habilitacoesLiterarias',
-  'curso',
-  'faculdade',
-  'nacionalidade',
-  'emailPessoal',
-  'telemovel',
-  'githubUser',
-  'moradaFiscal',
-  'endereco',
-  'localidade',
-  'codigoPostal',
-  'matriculaCarro',
-  'localNascimentoPais',
-  'localNascimentoCidade',
-  'nomePai',
-  'nomeMae',
-  'cartaoCidadao',
-  'validadeCartaoCidadao',
-  'nif',
-  'cpf',
-  'pis',
-  'ctps',
-  'ctpsSerie',
-  'ctpsDataExpedicao',
-  'rg',
-  'rgOrgaoEmissor',
-  'rgDataExpedicao',
-  'cnh',
-  'cnhCategoria',
-  'cnhDataValidade',
-  'tituloEleitor',
-  'zonaEleitoral',
-  'secaoEleitoral',
-  'certificadoReservista',
-  'niss',
-  'iban',
-  'situacaoIrs',
-  'numeroDependentes',
-  'declaracaoIrs',
-  'irsJovem',
-  'anoPrimeiroDesconto',
-  'primeiroEmprego',
-  'recebeAposentadoria',
-  'recebeSeguroDesemprego',
-  'valeTransporte',
-  'numeroCartaoContinente',
-  'voucherNosData',
-  'comprovativoMoradaFiscal',
-  'comprovativoCartaoCidadao',
-  'comprovativoIban',
-  'comprovativoCartaoContinente',
-  'criminalRecordUrl',
-  'contactoEmergenciaNome',
-  'contactoEmergenciaParentesco',
-  'contactoEmergenciaNumero',
-  'workCountry',
-  'brWorkState',
-] as const;
-
-type EmployeeAdmissionPublicField = typeof EMPLOYEE_ADMISSION_PUBLIC_FIELDS[number];
-
-type EmployeeAdmissionPersonalData = Partial<Record<EmployeeAdmissionPublicField, string | boolean>>;
-
-function normalizeBooleanField(value: unknown) {
-  return value === true || value === 'true' || value === '1';
-}
-
-function hashAdmissionToken(token: string) {
-  return createHash('sha256').update(token).digest('hex');
-}
-
-function buildAdmissionToken() {
-  return randomBytes(32).toString('hex');
-}
-
-function buildFrontendAdmissionUrl(token: string) {
-  const configuredBase = String(process.env.FRONTEND_URL ?? '').split(',').map((item) => item.trim()).find(Boolean) || 'http://localhost:5173';
-  return `${configuredBase.replace(/\/$/, '')}/admissao/${token}`;
-}
-
-function getAdmissionExpiryDate() {
-  const expiry = new Date();
-  expiry.setDate(expiry.getDate() + 7);
-  return expiry;
-}
-
-function buildEmptyAdmissionPersonalData(input: {
-  fullName: string;
-  personalEmail: string;
-  workCountry: 'PT' | 'BR';
-  brWorkState?: 'SP' | 'RS' | null;
-}): EmployeeAdmissionPersonalData {
-  return {
-    nomeCompleto: input.fullName,
-    nomeAbreviado: input.fullName,
-    emailPessoal: input.personalEmail,
-    workCountry: input.workCountry,
-    brWorkState: input.workCountry === 'BR' ? (input.brWorkState ?? '') : '',
-  };
-}
-
-function normalizeEmployeeAdmissionPersonalData(
-  payload: unknown,
-  invitation: { fullName: string; personalEmail: string; workCountry: 'PT' | 'BR'; brWorkState?: 'SP' | 'RS' | null },
-) {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new Error('Payload inválido.');
-  }
-
-  const source = payload as Record<string, unknown>;
-  const normalized: EmployeeAdmissionPersonalData = buildEmptyAdmissionPersonalData(invitation);
-
-  for (const field of EMPLOYEE_ADMISSION_PUBLIC_FIELDS) {
-    if (!(field in source)) {
-      continue;
-    }
-
-    if (field === 'primeiroEmprego' || field === 'recebeAposentadoria' || field === 'recebeSeguroDesemprego' || field === 'valeTransporte') {
-      normalized[field] = normalizeBooleanField(source[field]);
-      continue;
-    }
-
-    normalized[field] = source[field] == null ? '' : String(source[field]);
-  }
-
-  normalized.nomeCompleto = normalizeTextField(String(normalized.nomeCompleto ?? invitation.fullName)) || invitation.fullName;
-  normalized.emailPessoal = normalizeTextField(String(normalized.emailPessoal ?? invitation.personalEmail)).toLowerCase() || invitation.personalEmail;
-  normalized.workCountry = invitation.workCountry;
-  normalized.brWorkState = invitation.workCountry === 'BR' ? normalizeTextField(String(normalized.brWorkState ?? invitation.brWorkState ?? '')) : '';
-
-  return normalized;
-}
-
-function validateEmployeeAdmissionPersonalData(data: EmployeeAdmissionPersonalData, country: 'PT' | 'BR') {
-  const errors: string[] = [];
-
-  if (!normalizeTextField(String(data.nomeCompleto ?? ''))) errors.push('Nome completo é obrigatório.');
-  if (!normalizeTextField(String(data.nomeAbreviado ?? ''))) errors.push('Nome abreviado é obrigatório.');
-  if (!normalizeTextField(String(data.dataNascimento ?? ''))) errors.push('Data de nascimento é obrigatória.');
-  if (!normalizeTextField(String(data.genero ?? ''))) errors.push('Género é obrigatório.');
-  if (!normalizeTextField(String(data.estadoCivil ?? ''))) errors.push('Estado civil é obrigatório.');
-  if (!normalizeTextField(String(data.habilitacoesLiterarias ?? ''))) errors.push('Habilitações literárias são obrigatórias.');
-  if (!normalizeTextField(String(data.emailPessoal ?? '')) || !z.string().email().safeParse(String(data.emailPessoal ?? '')).success) errors.push('Email pessoal inválido.');
-  if (!normalizeTextField(String(data.telemovel ?? ''))) errors.push('Telemóvel é obrigatório.');
-  if (!normalizeTextField(String(data.moradaFiscal ?? ''))) errors.push('Morada fiscal é obrigatória.');
-  if (!normalizeTextField(String(data.endereco ?? ''))) errors.push('Morada habitual é obrigatória.');
-  if (!normalizeTextField(String(data.localidade ?? ''))) errors.push('Localidade é obrigatória.');
-  if (!normalizeTextField(String(data.codigoPostal ?? ''))) errors.push(country === 'BR' ? 'CEP é obrigatório.' : 'Código postal é obrigatório.');
-  if (!normalizeTextField(String(data.contactoEmergenciaNome ?? ''))) errors.push('Nome do contacto de emergência é obrigatório.');
-  if (!normalizeTextField(String(data.contactoEmergenciaParentesco ?? ''))) errors.push('Parentesco do contacto de emergência é obrigatório.');
-  if (!normalizeTextField(String(data.contactoEmergenciaNumero ?? ''))) errors.push('Número do contacto de emergência é obrigatório.');
-  if (country === 'BR' && !normalizeTextField(String(data.brWorkState ?? ''))) errors.push('Estado de trabalho no Brasil é obrigatório.');
-
-  return errors;
-}
-
-async function resolveAdmissionByTokenOrThrow(token: string) {
-  const tokenHash = hashAdmissionToken(token);
-  const admission = await prisma.employeeAdmission.findUnique({
-    where: { submissionTokenHash: tokenHash },
-  });
-
-  if (!admission) {
-    throw new Error('Convite não encontrado.');
-  }
-
-  if (admission.status === 'COMPLETED' || admission.status === 'CANCELLED') {
-    throw new Error('Este convite já não está disponível.');
-  }
-
-  if (admission.tokenExpiresAt < new Date()) {
-    throw new Error('Este convite expirou.');
-  }
-
-  return admission;
-}
-
-async function resolveAdmissionReviewersByCountry(workCountry: 'PT' | 'BR') {
-  const reviewers = await prisma.user.findMany({
-    where: {
-      isActive: true,
-      AND: [
-        {
-          OR: [
-            { isRootAccess: true },
-            {
-              permissionAssignments: {
-                some: {
-                  isEnabled: true,
-                  permission: { code: 'approve_profile_change' },
-                },
-              },
-            },
-          ],
-        },
-        {
-          OR: [
-            { isRootAccess: true },
-            { profile: { is: { workCountry } } },
-          ],
-        },
-      ],
-    },
-    select: { id: true },
-  });
-
-  return Array.from(new Set(reviewers.map((item) => item.id)));
-}
-
-async function canActorReviewAdmissionCountry(actor: { id: string; isRootAccess: boolean }, admissionCountry: 'PT' | 'BR') {
-  if (actor.isRootAccess) {
-    return true;
-  }
-
-  const actorProfile = await prisma.profile.findUnique({
-    where: { userId: actor.id },
-    select: { workCountry: true },
-  });
-
-  return (actorProfile?.workCountry ?? 'PT') === admissionCountry;
-}
-
-async function sendAdmissionInviteEmail(params: {
-  personalEmail: string;
-  fullName: string;
-  invitationLink: string;
-  reviewReason?: string;
-}) {
-  const isCorrection = Boolean(params.reviewReason);
-  const subject = isCorrection
-    ? 'Tlantic · atualização necessária no formulário de admissão'
-    : 'Bem-vindo à Tlantic · completa o teu formulário de admissão';
-
-  const headerColor = isCorrection ? '#b45309' : '#1a56db';
-  const headerGradient = isCorrection
-    ? 'linear-gradient(135deg,#b45309,#92400e)'
-    : 'linear-gradient(135deg,#1a56db,#0e3f9e)';
-  const badgeLabel = isCorrection ? 'Correção solicitada' : 'Convite de admissão';
-  const bodyTitle = isCorrection ? 'Atualização necessária no teu formulário' : 'Bem-vindo(a) à Tlantic';
-  const bodyText = isCorrection
-    ? 'O teu processo de admissão foi devolvido para correção. Revê os dados submetidos e atualiza o formulário de acordo com as observações da equipa de RH.'
-    : 'O teu processo de admissão na Tlantic foi iniciado. Usa o link abaixo para preencher o formulário com os teus dados pessoais e profissionais.';
-
-  const reviewBlock = isCorrection && params.reviewReason
-    ? `<div style="background:#fffbeb;border:1px solid #fcd34d;border-left:4px solid #f59e0b;border-radius:8px;padding:16px 20px;margin:0 0 28px;">
-        <p style="margin:0 0 4px;font-weight:700;color:#92400e;font-size:14px;">Motivo da devolução:</p>
-        <p style="margin:0;color:#78350f;font-size:14px;line-height:1.6;">${params.reviewReason}</p>
-      </div>`
-    : '';
-
-  const html = `<!DOCTYPE html>
-<html lang="pt">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#eef2f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#eef2f7;padding:48px 16px;">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.10);">
-
-        <!-- HEADER -->
-        <tr><td style="background:${headerGradient};padding:40px 40px 32px;text-align:center;">
-          <div style="display:inline-block;background:rgba(255,255,255,0.15);border-radius:8px;padding:6px 16px;margin-bottom:16px;">
-            <span style="color:rgba(255,255,255,0.9);font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;">${badgeLabel}</span>
-          </div>
-          <h1 style="margin:0 0 6px;color:#ffffff;font-size:32px;font-weight:800;letter-spacing:-1px;">Tlantic</h1>
-          <p style="margin:0;color:rgba(255,255,255,0.75);font-size:14px;">Smarter Hub · Portal de Recursos Humanos</p>
-        </td></tr>
-
-        <!-- BODY -->
-        <tr><td style="padding:40px 40px 32px;">
-          <h2 style="margin:0 0 8px;color:#111827;font-size:22px;font-weight:700;">${bodyTitle}</h2>
-          <p style="margin:0 0 8px;color:#6b7280;font-size:15px;">Olá <strong style="color:#111827;">${params.fullName}</strong>,</p>
-          <p style="margin:0 0 28px;color:#4b5563;font-size:15px;line-height:1.7;">${bodyText}</p>
-
-          ${reviewBlock}
-
-          <!-- CTA BUTTON -->
-          <div style="text-align:center;margin:0 0 32px;">
-            <a href="${params.invitationLink}"
-               style="display:inline-block;background:${headerColor};color:#ffffff;text-decoration:none;padding:15px 36px;border-radius:10px;font-size:16px;font-weight:700;letter-spacing:0.2px;box-shadow:0 4px 12px rgba(26,86,219,0.35);">
-              ${isCorrection ? 'Corrigir a minha ficha' : 'Preencher ficha de admissão'} →
-            </a>
-          </div>
-
-          <!-- LINK FALLBACK -->
-          <div style="background:#f9fafb;border-radius:10px;padding:16px 20px;margin-bottom:28px;">
-            <p style="margin:0 0 6px;color:#9ca3af;font-size:12px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;">Ou copia o link diretamente</p>
-            <p style="margin:0;word-break:break-all;color:${headerColor};font-size:13px;font-family:monospace;">${params.invitationLink}</p>
-          </div>
-
-          <!-- EXPIRY NOTE -->
-          <div style="display:flex;align-items:flex-start;gap:12px;background:#f0f9ff;border-radius:10px;padding:16px 20px;border:1px solid #bae6fd;">
-            <span style="font-size:20px;flex-shrink:0;">⏱</span>
-            <p style="margin:0;color:#0369a1;font-size:14px;line-height:1.6;">Este link é <strong>pessoal e intransmissível</strong> e expira em <strong>7 dias</strong>. Se o prazo expirar, responde a este processo junto da equipa de RH para receberes um novo convite.</p>
-          </div>
-        </td></tr>
-
-        <!-- DIVIDER -->
-        <tr><td style="padding:0 40px;"><hr style="border:none;border-top:1px solid #e5e7eb;margin:0;"></td></tr>
-
-        <!-- FOOTER -->
-        <tr><td style="padding:24px 40px;">
-          <p style="margin:0 0 4px;color:#9ca3af;font-size:12px;text-align:center;">Este email foi enviado automaticamente por <strong>Tlantic · Smarter Hub</strong>.</p>
-          <p style="margin:0;color:#d1d5db;font-size:12px;text-align:center;">Em caso de dúvida, contacta a equipa de RH.</p>
-        </td></tr>
-
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-
-  const textFallback = [
-    `Olá ${params.fullName},`,
-    '',
-    isCorrection
-      ? 'Foi solicitada uma atualização no teu formulário de admissão da Tlantic.'
-      : 'Bem-vindo(a) à Tlantic. O teu processo de admissão foi iniciado.',
-    '',
-    bodyText,
-    ...(params.reviewReason ? ['', `Motivo: ${params.reviewReason}`] : []),
-    '',
-    'Link:',
-    params.invitationLink,
-    '',
-    'Este link expira em 7 dias.',
-  ].join('\n');
-
-  await sendTransactionalEmail({
-    to: params.personalEmail,
-    subject,
-    text: textFallback,
-    html,
-  });
-}
-
 function sanitizeBulkImportProfile(profile?: Record<string, string>) {
   const sanitized: Partial<Record<BulkImportProfileFieldKey, string>> = {};
 
@@ -809,6 +634,10 @@ async function createManagedUser(params: {
   const workCountry = params.workCountry ?? 'PT';
   const shortName = normalizeTextField(String(profile.nomeAbreviado ?? '')) || fullName;
   const dataInicioContrato = normalizeTextField(String(profile.dataInicioContrato ?? '')) || buildTodayIsoDate();
+  const rawHourBankLimit = Number(profile.hourBankLimitHours);
+  const hourBankLimitHours = Number.isFinite(rawHourBankLimit) && rawHourBankLimit > 0
+    ? Math.round(rawHourBankLimit * 100) / 100
+    : null;
   const user = await prisma.user.create({
     data: {
       username: normalizeTextField(params.username).toLowerCase(),
@@ -898,6 +727,7 @@ async function createManagedUser(params: {
           dataFimContrato: normalizeTextField(String(profile.dataFimContrato ?? '')),
           tipoContrato: normalizeTextField(String(profile.tipoContrato ?? '')),
           regimeHorario: normalizeTextField(String(profile.regimeHorario ?? '')),
+          ...(hourBankLimitHours != null ? { hourBankLimitHours } : {}),
           workCountry,
           brWorkState: workCountry === 'BR'
             ? ((normalizeTextField(String(profile.brWorkState ?? '')) || null) as 'SP' | 'RS' | null)
@@ -945,47 +775,12 @@ function parseIsoDate(value?: string | null) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function yearsBetween(start: Date, end = new Date()) {
-  const diff = end.getTime() - start.getTime();
-  if (!Number.isFinite(diff) || diff <= 0) {
-    return 0;
-  }
-
-  return diff / (365.25 * 24 * 60 * 60 * 1000);
-}
-
 function average(values: number[]) {
   if (values.length === 0) {
     return 0;
   }
 
   return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function normalizeGender(value?: string) {
-  const normalized = (value || '').trim().toLowerCase();
-
-  if (!normalized) {
-    return 'Não informado';
-  }
-
-  if (['m', 'masculino', 'male', 'homem'].includes(normalized)) {
-    return 'Masculino';
-  }
-
-  if (['f', 'feminino', 'female', 'mulher'].includes(normalized)) {
-    return 'Feminino';
-  }
-
-  return 'Outro';
-}
-
-function normalizeContractType(value?: string | null) {
-  return (value || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
 }
 
 function parseMultiValueQuery(value: unknown) {
@@ -1141,7 +936,7 @@ function parseBooleanQuery(value: unknown) {
 }
 
 async function resolveTeamScopeForUser(userId: string, isRootAccess: boolean) {
-  const [teamsScope, vacationsScope, isFullAccess, user] = await Promise.all([
+  const [teamsScope, vacationsScope, isFullAccess, user, managedTeams] = await Promise.all([
     getPermissionScope(userId, 'view_teams'),
     getPermissionScope(userId, 'view_team_vacations'),
     isAccessTotal(userId),
@@ -1154,6 +949,15 @@ async function resolveTeamScopeForUser(userId: string, isRootAccess: boolean) {
           select: { teamId: true },
         },
       },
+    }),
+    prisma.team.findMany({
+      where: {
+        OR: [
+          { managerId: userId },
+          { coordinatorId: userId },
+        ],
+      },
+      select: { id: true },
     }),
   ]);
 
@@ -1168,6 +972,9 @@ async function resolveTeamScopeForUser(userId: string, isRootAccess: boolean) {
   }
   for (const membership of user?.teamMemberships ?? []) {
     ownTeamIds.add(membership.teamId);
+  }
+  for (const team of managedTeams) {
+    ownTeamIds.add(team.id);
   }
 
   const canViewGlobally = isRootAccess
@@ -1242,107 +1049,7 @@ router.get('/users', requireAuth, async (req, res) => {
     ? { AND: [baseWhere, scopeWhere] }
     : baseWhere;
 
-  const users = await prisma.user.findMany({
-    where,
-    select: {
-      id: true,
-      username: true,
-      email: true,
-      role: true,
-      teamId: true,
-      team: { select: { id: true, name: true } },
-      teamMemberships: {
-        where: { isActive: true },
-        select: {
-          teamId: true,
-          membershipRole: true,
-          isApprover: true,
-          approvalLevel: true,
-          team: { select: { id: true, name: true } },
-        },
-      },
-      managedTeams: {
-        select: { id: true, name: true },
-      },
-      profile: {
-        select: {
-          nomeAbreviado: true, nomeCompleto: true,
-          dataNascimento: true,
-          genero: true,
-          estadoCivil: true,
-          habilitacoesLiterarias: true,
-          curso: true,
-          faculdade: true,
-          emailPessoal: true,
-          telemovel: true,
-          nacionalidade: true,
-          githubUser: true,
-          moradaFiscal: true,
-          endereco: true,
-          localidade: true,
-          codigoPostal: true,
-          matriculaCarro: true,
-          localNascimentoPais: true,
-          localNascimentoCidade: true,
-          nomePai: true,
-          nomeMae: true,
-          cartaoCidadao: true,
-          validadeCartaoCidadao: true,
-          nif: true,
-          cpf: true,
-          pis: true,
-          ctps: true,
-          ctpsSerie: true,
-          ctpsDataExpedicao: true,
-          rg: true,
-          rgOrgaoEmissor: true,
-          rgDataExpedicao: true,
-          cnh: true,
-          cnhCategoria: true,
-          cnhDataValidade: true,
-          tituloEleitor: true,
-          zonaEleitoral: true,
-          secaoEleitoral: true,
-          certificadoReservista: true,
-          niss: true,
-          iban: true,
-          situacaoIrs: true,
-          numeroDependentes: true,
-          declaracaoIrs: true,
-          irsJovem: true,
-          anoPrimeiroDesconto: true,
-          primeiroEmprego: true,
-          recebeAposentadoria: true,
-          recebeSeguroDesemprego: true,
-          valeTransporte: true,
-          numeroCartaoContinente: true,
-          voucherNosData: true,
-          comprovativoMoradaFiscal: true,
-          comprovativoCartaoCidadao: true,
-          comprovativoIban: true,
-          comprovativoCartaoContinente: true,
-          criminalRecordUrl: true,
-          contactoEmergenciaNome: true,
-          contactoEmergenciaParentesco: true,
-          contactoEmergenciaNumero: true,
-          cargo: true,
-          categoriaProfissional: true,
-          numeroMecanografico: true,
-          funcao: true,
-          dataInicioContrato: true,
-          dataFimContrato: true,
-          tipoContrato: true,
-          regimeHorario: true,
-          workCountry: true,
-          brWorkState: true,
-        },
-      },
-    },
-    take: limit,
-    orderBy: {
-      createdAt: 'desc',
-    },
-  });
+  const users = await findDirectoryUsers(where, limit);
 
   const normalizedUsers = users.map((user) => ({
     ...user,
@@ -1360,12 +1067,46 @@ router.get('/users', requireAuth, async (req, res) => {
 });
 
 router.get('/users/collaborators', requireAuth, async (req, res) => {
-    const scope = await getPermissionScope(req.authUser!.id, 'view_user_list');
+  const actorUserId = req.authUser!.id;
+  const [hasUserListPermission, hasAccessTotalActor, managedTeams] = await Promise.all([
+    hasPermission(actorUserId, 'view_user_list'),
+    isAccessTotal(actorUserId),
+    prisma.team.findMany({
+      where: {
+        OR: [
+          { managerId: actorUserId },
+          { coordinatorId: actorUserId },
+        ],
+      },
+      select: { id: true },
+    }),
+  ]);
+
+  const managedTeamIds = managedTeams.map((item) => item.id);
+  const hasLeadershipVisibility = req.authUser!.isRootAccess || hasAccessTotalActor || managedTeamIds.length > 0;
+
+  let scopeWhere: Prisma.UserWhereInput | null = null;
+  if (hasUserListPermission) {
+    const scope = await getPermissionScope(actorUserId, 'view_user_list');
     if (!scope) {
       return res.status(403).json({ message: 'Sem permissões para consultar colaboradores.' });
     }
 
-  if (!await hasPermission(req.authUser!.id, 'view_user_list')) {
+    scopeWhere = buildUserWhereFromScope(scope) as Prisma.UserWhereInput | null;
+  } else if (hasLeadershipVisibility) {
+    if (!req.authUser!.isRootAccess && !hasAccessTotalActor && managedTeamIds.length === 0) {
+      return res.status(403).json({ message: 'Sem permissões para consultar colaboradores.' });
+    }
+
+    scopeWhere = (req.authUser!.isRootAccess || hasAccessTotalActor)
+      ? null
+      : {
+          OR: [
+            { teamId: { in: managedTeamIds } },
+            { teamMemberships: { some: { teamId: { in: managedTeamIds }, isActive: true } } },
+          ],
+        };
+  } else {
     return res.status(403).json({ message: 'Sem permissões para consultar colaboradores.' });
   }
 
@@ -1430,63 +1171,16 @@ router.get('/users/collaborators', requireAuth, async (req, res) => {
     ...(andConditions.length > 0 ? { AND: andConditions } : {}),
   };
 
-  const scopeWhere = buildUserWhereFromScope(scope) as Prisma.UserWhereInput | null;
   const scopedWhere: Prisma.UserWhereInput = scopeWhere
     ? { AND: [where, scopeWhere] }
     : where;
 
-  const [total, rows] = await Promise.all([
-    prisma.user.count({ where: scopedWhere }),
-    prisma.user.findMany({
-      where: scopedWhere,
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      orderBy: orderByMap[sortBy] || orderByMap.createdAt,
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        role: true,
-        isRootAccess: true,
-        hasAccessTotal: true,
-        isActive: true,
-        deactivatedAt: true,
-        createdAt: true,
-        updatedAt: true,
-        teamId: true,
-        team: { select: { id: true, name: true } },
-        teamMemberships: {
-          where: { isActive: true },
-          select: {
-            teamId: true,
-            membershipRole: true,
-            team: { select: { id: true, name: true } },
-          },
-        },
-        managedTeams: {
-          select: { id: true, name: true },
-        },
-        profile: {
-          select: {
-            nomeAbreviado: true, nomeCompleto: true,
-            dataNascimento: true,
-            dataInicioContrato: true,
-            tipoContrato: true,
-            genero: true,
-            habilitacoesLiterarias: true,
-            cargo: true,
-            categoriaProfissional: true,
-            numeroMecanografico: true,
-            localidade: true,
-            workCountry: true,
-            funcao: true,
-            voucherNosData: true,
-            numeroCartaoContinente: true,
-          },
-        },
-      },
-    }),
-  ]);
+  const { total, rows } = await findCollaboratorsWithPagination({
+    where: scopedWhere,
+    page,
+    pageSize,
+    orderBy: orderByMap[sortBy] || orderByMap.createdAt,
+  });
 
   const normalizedRows = rows.map((user) => ({
     ...user,
@@ -1522,118 +1216,10 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
   const requestScopeWhere = scopeWhere ? { user: scopeWhere } : {};
   const actorHasAccessTotal = Boolean(req.authUser!.isRootAccess || await isAccessTotal(req.authUser!.id));
 
-  const [usersResult, profileRequestsResult, vacationsResult, trainingsResult, historyResult] = await Promise.allSettled([
-    prisma.user.findMany({
-      where: collaboratorWhere,
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        role: true,
-        isActive: true,
-        team: { select: { id: true, name: true } },
-        teamMemberships: {
-          where: { isActive: true },
-          select: {
-            team: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-        },
-        profile: {
-          select: {
-            nomeAbreviado: true,
-            nomeCompleto: true,
-            dataNascimento: true,
-            dataInicioContrato: true,
-            tipoContrato: true,
-            genero: true,
-            habilitacoesLiterarias: true,
-            cargo: true,
-            categoriaProfissional: true,
-            numeroMecanografico: true,
-            localidade: true,
-            workCountry: true,
-            funcao: true,
-            voucherNosData: true,
-            numeroCartaoContinente: true,
-          },
-        },
-        createdAt: true,
-      },
-    }),
-    prisma.profileChangeRequest.findMany({
-      where: {
-        status: 'PENDING',
-        ...requestScopeWhere,
-      },
-      select: {
-        userId: true,
-        user: {
-          select: {
-            hasAccessTotal: true,
-          },
-        },
-      },
-    }),
-    prisma.vacation.findMany({
-      where: {
-        status: 'PENDING',
-        ...requestScopeWhere,
-      },
-      select: {
-        userId: true,
-        user: {
-          select: {
-            hasAccessTotal: true,
-          },
-        },
-      },
-    }),
-    Promise.all([
-      prisma.training.count({
-        where: {
-          status: { in: ['ASSIGNED', 'ATRIBUIDA', 'ATRIBUÍDA'] },
-          ...requestScopeWhere,
-        },
-      }),
-      prisma.training.count({
-        where: {
-          status: { in: ['COMPLETED', 'CONCLUIDA', 'CONCLUÍDA'] },
-          ...requestScopeWhere,
-        },
-      }),
-      prisma.training.findMany({
-        where: requestScopeWhere,
-        select: { horas: true },
-      }),
-    ]),
-    prisma.profileChangeRequest.findMany({
-      where: {
-        status: { in: ['APPROVED', 'PARTIALLY_REJECTED', 'REJECTED'] },
-        reviewedAt: { not: null },
-        ...requestScopeWhere,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            username: true,
-            profile: {
-              select: {
-                nomeAbreviado: true, nomeCompleto: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: [{ reviewedAt: 'desc' }, { createdAt: 'desc' }],
-      take: 120,
-    }),
-  ]);
+  const [usersResult, profileRequestsResult, vacationsResult, trainingsResult, historyResult] = await loadUsersDashboardSummaryData({
+    collaboratorWhere,
+    requestScopeWhere: scopeWhere,
+  });
 
   const collaboratorRows = usersResult.status === 'fulfilled' ? usersResult.value : [];
 
@@ -1660,334 +1246,46 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
     return res.status(400).json({ message: 'Período inválido. A data inicial deve ser anterior à data final.' });
   }
 
-  const getDisplayName = (user: typeof collaboratorRows[number]) => (
-    user.profile?.nomeAbreviado
-      || user.profile?.nomeCompleto?.trim()
-      || user.username
-  );
-
-  const getUserTeams = (user: typeof collaboratorRows[number]) => {
-    const map = new Map<string, { id: string; name: string }>();
-
-    if (user.team?.id && user.team?.name) {
-      map.set(user.team.id, { id: user.team.id, name: user.team.name });
-    }
-
-    for (const membership of user.teamMemberships) {
-      if (membership.team?.id && membership.team?.name) {
-        map.set(membership.team.id, { id: membership.team.id, name: membership.team.name });
-      }
-    }
-
-    return Array.from(map.values());
+  const dashboardFilters = {
+    search: filterSearch,
+    teamId: filterTeamId,
+    role: filterRole,
+    gender: filterGender,
+    function: filterFunction,
+    contractTypes: filterContractTypes,
+    geography: filterGeography,
+    level: filterLevel,
+    isActive: filterIsActive,
+    periodStart: filterPeriodStart,
+    periodEnd: filterPeriodEnd,
   };
 
-  const getHierarchyLevel = (user: typeof collaboratorRows[number]) => (
-    user.profile?.cargo?.trim()
-      || user.profile?.categoriaProfissional?.trim()
-      || user.role
-  );
-
-  const getGeography = (user: typeof collaboratorRows[number]) => (
-    user.profile?.localidade?.trim()
-      || user.profile?.workCountry
-      || 'Não informado'
-  );
-
-  const getFunction = (user: typeof collaboratorRows[number]) => (
-    user.profile?.funcao?.trim()
-      || 'Não informado'
-  );
-
-  const buildDistribution = (
-    rows: typeof collaboratorRows,
-    getLabel: (item: typeof collaboratorRows[number]) => string,
-  ) => {
-    const map = new Map<string, number>();
-    for (const row of rows) {
-      const label = getLabel(row).trim() || 'Não informado';
-      map.set(label, (map.get(label) || 0) + 1);
-    }
-
-    const total = rows.length;
-    return Array.from(map.entries())
-      .map(([label, count]) => ({
-        label,
-        count,
-        share: total > 0 ? (count / total) * 100 : 0,
-      }))
-      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  };
-
-  const buildCharacterization = (rows: typeof collaboratorRows) => {
-    const ageValues = rows
-      .map((item) => parseIsoDate(item.profile?.dataNascimento || ''))
-      .filter((value): value is Date => value !== null)
-      .map((birthDate) => yearsBetween(birthDate));
-
-    const tenureValues = rows
-      .map((item) => parseIsoDate(item.profile?.dataInicioContrato || ''))
-      .filter((value): value is Date => value !== null)
-      .map((startDate) => yearsBetween(startDate));
-
-    const activeRows = rows.filter((item) => item.isActive !== false);
-    const activeCount = activeRows.length;
-    const total = rows.length;
-
-    const eligibleNosVoucherRows = activeRows.filter((row) => {
-      const isPtProfile = !row.profile?.workCountry || row.profile?.workCountry === 'PT';
-      return isPtProfile && normalizeContractType(row.profile?.tipoContrato) === 'sem termo';
-    });
-
-    const requestedNosVoucherRows = eligibleNosVoucherRows.filter((row) => Boolean(row.profile?.voucherNosData?.trim()));
-    const nosVoucherRate = eligibleNosVoucherRows.length > 0
-      ? (requestedNosVoucherRows.length / eligibleNosVoucherRows.length) * 100
-      : 0;
-
-    const voucherRequestLeadDays = requestedNosVoucherRows
-      .map((row) => {
-        const contractStart = parseIsoDate(row.profile?.dataInicioContrato || '');
-        const requestDate = parseIsoDate(row.profile?.voucherNosData || '');
-
-        if (!contractStart || !requestDate) {
-          return null;
-        }
-
-        const diffDays = (requestDate.getTime() - contractStart.getTime()) / (1000 * 60 * 60 * 24);
-        return diffDays >= 0 ? diffDays : null;
-      })
-      .filter((value): value is number => typeof value === 'number');
-
-    const voucherRequestLeadDetails = eligibleNosVoucherRows
-      .map((row) => {
-        const contractStart = parseIsoDate(row.profile?.dataInicioContrato || '');
-        const requestDate = parseIsoDate(row.profile?.voucherNosData || '');
-        const teamName = getUserTeams(row).map((team) => team.name).join(', ');
-        const displayName = getDisplayName(row);
-
-        let leadDays: number | null = null;
-        let daysSinceStart: number | null = null;
-
-        if (contractStart) {
-          const referenceDate = requestDate ?? new Date();
-          const diffDays = Math.floor((referenceDate.getTime() - contractStart.getTime()) / (1000 * 60 * 60 * 24));
-          if (diffDays >= 0) {
-            if (requestDate) {
-              leadDays = diffDays;
-            } else {
-              daysSinceStart = diffDays;
-            }
-          }
-        }
-
-        return {
-          id: row.id,
-          name: displayName,
-          teamName: teamName || 'Sem equipa',
-          contractStart: row.profile?.dataInicioContrato || null,
-          requestDate: row.profile?.voucherNosData?.trim() || null,
-          leadDays,
-          daysSinceStart,
-          hasRequested: Boolean(requestDate),
-        };
-      })
-      .sort((a, b) => {
-        if (a.hasRequested !== b.hasRequested) {
-          return a.hasRequested ? -1 : 1;
-        }
-
-        if (a.hasRequested) {
-          return (a.leadDays ?? Number.MAX_SAFE_INTEGER) - (b.leadDays ?? Number.MAX_SAFE_INTEGER);
-        }
-
-        return a.name.localeCompare(b.name);
-      });
-
-    // % cartão Continente (activos)
-    const continenteCardRate = activeCount > 0
-      ? (activeRows.filter((r) => r.profile?.numeroCartaoContinente?.trim()).length / activeCount) * 100
-      : 0;
-
-    // Tempo médio por função
-    const functionTenureMap = new Map<string, number[]>();
-    for (const row of rows) {
-      const fn = getFunction(row);
-      if (fn === 'Não informado') {
-        continue;
-      }
-
-      const tenure = parseIsoDate(row.profile?.dataInicioContrato || '');
-      if (!tenure) {
-        continue;
-      }
-
-      if (!functionTenureMap.has(fn)) {
-        functionTenureMap.set(fn, []);
-      }
-
-      functionTenureMap.get(fn)!.push(yearsBetween(tenure));
-    }
-
-    const avgTenureByFunction = Array.from(functionTenureMap.entries())
-      .map(([label, values]) => ({ label, avgTenure: average(values), count: values.length }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-
-    return {
-      headcount: total,
-      averages: {
-        age: average(ageValues),
-        tenure: average(tenureValues),
-      },
-      retentionRate: total > 0 ? (activeCount / total) * 100 : 0,
-      nosVoucherRate,
-      avgVoucherRequestLeadDays: voucherRequestLeadDays.length > 0 ? average(voucherRequestLeadDays) : null,
-      voucherRequestLeadDetails,
-      continenteCardRate,
-      avgTenureByFunction,
-      distributions: {
-        hierarchy: buildDistribution(rows, getHierarchyLevel),
-        geography: buildDistribution(rows, getGeography),
-        gender: buildDistribution(rows, (item) => normalizeGender(item.profile?.genero)),
-        function: buildDistribution(rows, getFunction),
-      },
-    };
-  };
-
-  const periodScopedRows = collaboratorRows.filter((item) => {
-    if (!periodStartDate && !periodEndDate) {
-      return true;
-    }
-
-    const contractStart = parseIsoDate(item.profile?.dataInicioContrato || '');
-    if (!contractStart) {
-      return false;
-    }
-
-    if (periodStartDate && contractStart < periodStartDate) {
-      return false;
-    }
-
-    if (periodEndDate && contractStart > periodEndDate) {
-      return false;
-    }
-
-    return true;
-  });
-
-  const teamOptions = Array.from(new Map(
-    periodScopedRows
-      .flatMap((item) => getUserTeams(item))
-      .map((team) => [team.id, team]),
-  ).values()).sort((a, b) => a.name.localeCompare(b.name));
-
-  const levelOptions = Array.from(new Set(periodScopedRows.map((item) => getHierarchyLevel(item)).filter(Boolean)))
-    .sort((a, b) => a.localeCompare(b));
-  const geographyOptions = Array.from(new Set(periodScopedRows.map((item) => getGeography(item)).filter(Boolean)))
-    .sort((a, b) => a.localeCompare(b));
-  const functionOptions = Array.from(new Set(periodScopedRows.map((item) => getFunction(item)).filter(Boolean)))
-    .sort((a, b) => a.localeCompare(b));
-  const contractTypeOptions = Array.from(new Set(
-    periodScopedRows
-      .map((item) => item.profile?.tipoContrato?.trim())
-      .filter((value): value is string => Boolean(value)),
-  )).sort((a, b) => a.localeCompare(b));
-  const genderOptions = Array.from(new Set(periodScopedRows.map((item) => normalizeGender(item.profile?.genero))))
-    .sort((a, b) => a.localeCompare(b));
-
-  const selectedRows = periodScopedRows.filter((item) => {
-    const teams = getUserTeams(item);
-
-    if (filterTeamId && !teams.some((team) => team.id === filterTeamId)) {
-      return false;
-    }
-
-    if (filterRole && item.role !== filterRole) {
-      return false;
-    }
-
-    if (filterGender && normalizeGender(item.profile?.genero) !== filterGender) {
-      return false;
-    }
-
-    if (filterFunction && getFunction(item) !== filterFunction) {
-      return false;
-    }
-
-    if (filterContractTypes.length > 0 && !filterContractTypes.includes(item.profile?.tipoContrato?.trim() || '')) {
-      return false;
-    }
-
-    if (filterGeography && getGeography(item) !== filterGeography) {
-      return false;
-    }
-
-    if (filterLevel && getHierarchyLevel(item) !== filterLevel) {
-      return false;
-    }
-
-    if (filterIsActive === 'active' && item.isActive === false) {
-      return false;
-    }
-
-    if (filterIsActive === 'inactive' && item.isActive !== false) {
-      return false;
-    }
-
-    if (!filterSearch) {
-      return true;
-    }
-
-    const haystack = [
-      getDisplayName(item),
-      item.username,
-      item.email,
-      teams.map((team) => team.name).join(' '),
-      getHierarchyLevel(item),
-      getFunction(item),
-      getGeography(item),
-      item.profile?.numeroMecanografico || '',
-    ].join(' ').toLowerCase();
-
-    return haystack.includes(filterSearch);
-  });
-
-  const selectedTeamName = filterTeamId
-    ? (teamOptions.find((team) => team.id === filterTeamId)?.name || 'Equipa filtrada')
-    : 'Todas as equipas';
-
-  const teamInsights = {
-    appliedFilters: {
-      search: filterSearch,
-      teamId: filterTeamId,
-      role: filterRole,
-      gender: filterGender,
-      function: filterFunction,
-      contractTypes: filterContractTypes,
-      geography: filterGeography,
-      level: filterLevel,
-      isActive: filterIsActive,
-      periodStart: filterPeriodStart,
-      periodEnd: filterPeriodEnd,
-    },
+  const {
+    periodScopedRows,
+    selectedRows,
+    teamOptions,
+    levelOptions,
+    geographyOptions,
+    functionOptions,
+    contractTypeOptions,
+    genderOptions,
     selectedTeamName,
-    availableFilters: {
-      teams: teamOptions,
-      roles: ['COLABORADOR', 'MANAGER', 'COORDENADOR', 'ADMIN'],
-      genders: genderOptions,
-      functions: functionOptions,
-      contractTypes: contractTypeOptions,
-      geographies: geographyOptions,
-      levels: levelOptions,
-      activeStates: [
-        { value: 'all', label: 'Todos' },
-        { value: 'active', label: 'Ativos' },
-        { value: 'inactive', label: 'Inativos' },
-      ],
+  } = filterDashboardCollaborators(collaboratorRows, dashboardFilters, periodStartDate, periodEndDate);
+
+  const teamInsights = buildDashboardTeamInsights(
+    periodScopedRows,
+    selectedRows,
+    dashboardFilters,
+    {
+      teamOptions,
+      genderOptions,
+      functionOptions,
+      contractTypeOptions,
+      geographyOptions,
+      levelOptions,
+      selectedTeamName,
     },
-    selected: buildCharacterization(selectedRows),
-    company: buildCharacterization(periodScopedRows),
-  };
+  );
   const teamCount = new Set(
     periodScopedRows
       .map((item) => item.team?.name?.trim())
@@ -2038,106 +1336,13 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
     : 0;
   const historyRows = historyResult.status === 'fulfilled' ? historyResult.value : [];
 
-  const activeUsers = periodScopedRows.filter((user) => user.isActive !== false).length;
-  const inactiveUsers = Math.max(0, periodScopedRows.length - activeUsers);
-
-  const ageValues = periodScopedRows
-    .map((item) => parseIsoDate(item.profile?.dataNascimento || ''))
-    .filter((value): value is Date => value !== null)
-    .map((birthDate) => yearsBetween(birthDate));
-
-  const tenureValues = periodScopedRows
-    .map((item) => parseIsoDate(item.profile?.dataInicioContrato || ''))
-    .filter((value): value is Date => value !== null)
-    .map((startDate) => yearsBetween(startDate));
-
-  const educationMap = new Map<string, number>();
-  const areaGenderMap = new Map<string, { Masculino: number; Feminino: number; Outro: number; 'Não informado': number }>();
-  const timeInLevelMap = new Map<string, number[]>();
-
-  const promotionEvents = historyRows
-    .filter((item) => Boolean(item.reviewedAt))
-    .filter((item) => {
-      const requestedData = (item.requestedData as Record<string, unknown>) || {};
-      const approvedFields = (item.approvedFields as Record<string, unknown>) || {};
-      const changedFields = Object.keys(requestedData);
-      const approvedFieldNames = Object.keys(approvedFields);
-      const requestedCargo = String(requestedData.cargo || '').trim();
-      const approvedCargo = String(approvedFields.cargo || '').trim();
-
-      const approvedWithCargo = item.status === 'APPROVED' && changedFields.includes('cargo') && requestedCargo.length > 0;
-      const partialWithApprovedCargo = item.status === 'PARTIALLY_REJECTED' && approvedFieldNames.includes('cargo') && approvedCargo.length > 0;
-
-      return approvedWithCargo || partialWithApprovedCargo;
-    })
-    .map((item) => ({
-      id: item.id,
-      userId: item.user?.id || '',
-      collaborator: item.user?.profile?.nomeAbreviado?.trim()
-        || String(item.user?.profile?.nomeCompleto || '').trim()
-        || item.user?.username
-        || 'Colaborador',
-      promotedTo: String(((item.approvedFields as Record<string, unknown>)?.cargo || (item.requestedData as Record<string, unknown>)?.cargo || '')).trim() || 'Nível atualizado',
-      reviewedAt: item.reviewedAt?.toISOString() || item.createdAt.toISOString(),
-    }))
-    .filter((item) => Boolean(item.userId))
-    .sort((a, b) => new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime());
-
-  const latestPromotionByUser = new Map<string, string>();
-  for (const event of promotionEvents) {
-    if (!latestPromotionByUser.has(event.userId)) {
-      latestPromotionByUser.set(event.userId, event.reviewedAt);
-    }
-  }
-
-  for (const collaborator of periodScopedRows) {
-    const education = (collaborator.profile?.habilitacoesLiterarias || '').trim() || 'Não informado';
-    educationMap.set(education, (educationMap.get(education) || 0) + 1);
-
-    const area = (collaborator.team?.name || collaborator.profile?.funcao || 'Sem área').trim() || 'Sem área';
-    if (!areaGenderMap.has(area)) {
-      areaGenderMap.set(area, { Masculino: 0, Feminino: 0, Outro: 0, 'Não informado': 0 });
-    }
-
-    const genderBucket = areaGenderMap.get(area)!;
-    const gender = normalizeGender(collaborator.profile?.genero);
-    genderBucket[gender as keyof typeof genderBucket] += 1;
-
-    const currentLevel = (collaborator.profile?.cargo || collaborator.profile?.funcao || 'Sem nível').trim() || 'Sem nível';
-    const promotionDate = latestPromotionByUser.get(collaborator.id);
-    const baseDate = promotionDate ? new Date(promotionDate) : parseIsoDate(collaborator.profile?.dataInicioContrato || '');
-
-    if (baseDate) {
-      if (!timeInLevelMap.has(currentLevel)) {
-        timeInLevelMap.set(currentLevel, []);
-      }
-
-      timeInLevelMap.get(currentLevel)!.push(yearsBetween(baseDate));
-    }
-  }
-
-  const educationDistribution = Array.from(educationMap.entries())
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 6);
-
-  const genderByArea = Array.from(areaGenderMap.entries())
-    .map(([area, counts]) => ({
-      area,
-      counts,
-      total: Object.values(counts).reduce((sum, value) => sum + value, 0),
-    }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 6);
-
-  const timeInCurrentLevelByCargo = Array.from(timeInLevelMap.entries())
-    .map(([cargo, durations]) => ({
-      cargo,
-      averageYears: average(durations),
-      people: durations.length,
-    }))
-    .sort((a, b) => b.people - a.people)
-    .slice(0, 6);
+  const {
+    activeUsers,
+    inactiveUsers,
+    averages,
+    charts,
+    promotionEvents,
+  } = buildDashboardSummaryAnalytics(periodScopedRows, historyRows);
 
   return res.json({
     refreshedAt: new Date().toISOString(),
@@ -2153,15 +1358,8 @@ router.get('/users/dashboard-summary', requireAuth, async (req, res) => {
       trainingHoursAvg,
       promotionEvents: promotionEvents.length,
     },
-    averages: {
-      age: average(ageValues),
-      tenure: average(tenureValues),
-    },
-    charts: {
-      educationDistribution,
-      genderByArea,
-      timeInCurrentLevelByCargo,
-    },
+    averages,
+    charts,
     recentPromotions: promotionEvents.slice(0, 8),
     teamInsights,
   });
@@ -2206,179 +1404,30 @@ router.get('/users/dashboard-collaborators', requireAuth, async (req, res) => {
     return res.status(400).json({ message: 'Período inválido. A data inicial deve ser anterior à data final.' });
   }
 
-  const collaboratorRows = await prisma.user.findMany({
-    where: collaboratorWhere,
-    select: {
-      id: true,
-      username: true,
-      email: true,
-      role: true,
-      isActive: true,
-      team: { select: { id: true, name: true } },
-      teamMemberships: {
-        where: { isActive: true },
-        select: {
-          team: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-        },
-      },
-      profile: {
-        select: {
-          nomeAbreviado: true,
-          nomeCompleto: true,
-          numeroMecanografico: true,
-          genero: true,
-          funcao: true,
-          cargo: true,
-          categoriaProfissional: true,
-          localidade: true,
-          workCountry: true,
-          dataInicioContrato: true,
-          tipoContrato: true,
-        },
-      },
-    },
-    orderBy: [{ username: 'asc' }],
-  });
+  const collaboratorRows = await findDashboardCollaboratorsExportRows(collaboratorWhere);
 
-  const getDisplayName = (user: typeof collaboratorRows[number]) => (
-    user.profile?.nomeAbreviado?.trim()
-      || user.profile?.nomeCompleto?.trim()
-      || user.username
-  );
-
-  const getUserTeams = (user: typeof collaboratorRows[number]) => {
-    const map = new Map<string, { id: string; name: string }>();
-
-    if (user.team?.id && user.team?.name) {
-      map.set(user.team.id, { id: user.team.id, name: user.team.name });
-    }
-
-    for (const membership of user.teamMemberships) {
-      if (membership.team?.id && membership.team?.name) {
-        map.set(membership.team.id, { id: membership.team.id, name: membership.team.name });
-      }
-    }
-
-    return Array.from(map.values());
+  const dashboardFilters = {
+    search: filterSearch,
+    teamId: filterTeamId,
+    role: filterRole,
+    gender: filterGender,
+    function: filterFunction,
+    contractTypes: filterContractTypes,
+    geography: filterGeography,
+    level: filterLevel,
+    isActive: filterIsActive,
+    periodStart: filterPeriodStart,
+    periodEnd: filterPeriodEnd,
   };
 
-  const getHierarchyLevel = (user: typeof collaboratorRows[number]) => (
-    user.profile?.cargo?.trim()
-      || user.profile?.categoriaProfissional?.trim()
-      || user.role
+  const { selectedRows } = filterDashboardCollaborators(
+    collaboratorRows,
+    dashboardFilters,
+    periodStartDate,
+    periodEndDate,
   );
 
-  const getGeography = (user: typeof collaboratorRows[number]) => (
-    user.profile?.localidade?.trim()
-      || user.profile?.workCountry
-      || 'Não informado'
-  );
-
-  const getFunction = (user: typeof collaboratorRows[number]) => (
-    user.profile?.funcao?.trim()
-      || 'Não informado'
-  );
-
-  const periodScopedRows = collaboratorRows.filter((item) => {
-    if (!periodStartDate && !periodEndDate) {
-      return true;
-    }
-
-    const contractStart = parseIsoDate(item.profile?.dataInicioContrato || '');
-    if (!contractStart) {
-      return false;
-    }
-
-    if (periodStartDate && contractStart < periodStartDate) {
-      return false;
-    }
-
-    if (periodEndDate && contractStart > periodEndDate) {
-      return false;
-    }
-
-    return true;
-  });
-
-  const filteredRows = periodScopedRows.filter((item) => {
-    const teams = getUserTeams(item);
-
-    if (filterTeamId && !teams.some((team) => team.id === filterTeamId)) {
-      return false;
-    }
-
-    if (filterRole && item.role !== filterRole) {
-      return false;
-    }
-
-    if (filterGender && normalizeGender(item.profile?.genero) !== filterGender) {
-      return false;
-    }
-
-    if (filterFunction && getFunction(item) !== filterFunction) {
-      return false;
-    }
-
-    if (filterContractTypes.length > 0 && !filterContractTypes.includes(item.profile?.tipoContrato?.trim() || '')) {
-      return false;
-    }
-
-    if (filterGeography && getGeography(item) !== filterGeography) {
-      return false;
-    }
-
-    if (filterLevel && getHierarchyLevel(item) !== filterLevel) {
-      return false;
-    }
-
-    if (filterIsActive === 'active' && item.isActive === false) {
-      return false;
-    }
-
-    if (filterIsActive === 'inactive' && item.isActive !== false) {
-      return false;
-    }
-
-    if (!filterSearch) {
-      return true;
-    }
-
-    const haystack = [
-      getDisplayName(item),
-      item.username,
-      item.email,
-      teams.map((team) => team.name).join(' '),
-      getHierarchyLevel(item),
-      getFunction(item),
-      getGeography(item),
-      item.profile?.numeroMecanografico || '',
-    ].join(' ').toLowerCase();
-
-    return haystack.includes(filterSearch);
-  });
-
-  const rows = filteredRows
-    .map((item) => ({
-      id: item.id,
-      nome: getDisplayName(item),
-      username: item.username,
-      email: item.email,
-      numeroMecanografico: item.profile?.numeroMecanografico || '',
-      role: item.role,
-      estado: item.isActive === false ? 'Inativo' : 'Ativo',
-      equipa: getUserTeams(item).map((team) => team.name).join(' | ') || 'Sem equipa',
-      nivel: getHierarchyLevel(item),
-      funcao: getFunction(item),
-      genero: normalizeGender(item.profile?.genero),
-      geografia: getGeography(item),
-      dataInicioContrato: item.profile?.dataInicioContrato || '',
-    }))
-    .sort((a, b) => a.nome.localeCompare(b.nome));
+  const rows = mapDashboardCollaboratorsExportRows(selectedRows);
 
   return res.json({
     refreshedAt: new Date().toISOString(),
@@ -2415,7 +1464,7 @@ router.patch('/users/:id/active', requireAuth, async (req, res) => {
     return res.status(400).json({ message: 'Não é permitido desativar a tua própria conta.' });
   }
 
-  const existing = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, isActive: true } });
+  const existing = await findUserActiveState(userId);
   if (!existing) {
     return res.status(404).json({ message: 'Utilizador não encontrado.' });
   }
@@ -2427,19 +1476,7 @@ router.patch('/users/:id/active', requireAuth, async (req, res) => {
     }
   }
 
-  const updated = await prisma.user.update({
-    where: { id: userId },
-    data: {
-      isActive: payload.data.isActive,
-      deactivatedAt: payload.data.isActive ? null : new Date(),
-    },
-    select: {
-      id: true,
-      isActive: true,
-      deactivatedAt: true,
-      updatedAt: true,
-    },
-  });
+  const updated = await updateUserActiveState(userId, payload.data.isActive);
 
   return res.json(updated);
 });
@@ -3259,19 +2296,7 @@ router.delete('/admin/teams/:id', requireAuth, async (req, res) => {
 
   const teamId = String(req.params.id || '');
 
-  const existing = await prisma.team.findUnique({
-    where: { id: teamId },
-    select: { managerId: true },
-  });
-
-  await prisma.$transaction([
-    prisma.teamMembership.deleteMany({ where: { teamId } }),
-    prisma.user.updateMany({ where: { teamId }, data: { teamId: null } }),
-    prisma.team.update({ where: { id: teamId }, data: { managerId: null, coordinatorId: null, parentTeamId: null } }),
-    prisma.team.delete({ where: { id: teamId } }),
-  ]);
-
-  const previousLeaderId = existing?.managerId ?? null;
+  const { previousLeaderId } = await deleteTeamById(teamId);
   if (previousLeaderId) {
     await syncTeamLeaderPreset(previousLeaderId, req.authUser!.id);
   }
@@ -3339,6 +2364,22 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
   const normalizedBrWorkState = data.workCountry === 'PT'
     ? null
     : (data.brWorkState ?? undefined);
+
+  let derivedHourBankLimitHours: number | undefined;
+  try {
+    if (data.regimeHorario && data.regimeHorario.startsWith(DYNAMIC_REGIME_PREFIX)) {
+      derivedHourBankLimitHours = calculateWeeklyHoursFromDynamicRegime(data.regimeHorario) ?? undefined;
+    } else if (data.horasSemanaisContrato !== undefined) {
+      const raw = String(data.horasSemanaisContrato ?? '').trim();
+      if (raw) {
+        derivedHourBankLimitHours = parseWeeklyHoursContract(raw);
+      }
+    }
+  } catch (error) {
+    return res.status(400).json({
+      message: error instanceof Error ? error.message : 'Configuração de horas de trabalho inválida.',
+    });
+  }
 
   const profilePayload = {
     ...(data.nomeCompleto !== undefined ? { nomeCompleto: data.nomeCompleto } : {}),
@@ -3409,6 +2450,7 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
     ...(data.dataFimContrato !== undefined ? { dataFimContrato: data.dataFimContrato } : {}),
     ...(data.tipoContrato !== undefined ? { tipoContrato: data.tipoContrato } : {}),
     ...(data.regimeHorario !== undefined ? { regimeHorario: data.regimeHorario } : {}),
+    ...(derivedHourBankLimitHours !== undefined ? { hourBankLimitHours: derivedHourBankLimitHours } : {}),
     ...(data.workCountry !== undefined ? { workCountry: data.workCountry } : {}),
     ...(data.workCountry !== undefined || data.brWorkState !== undefined ? { brWorkState: normalizedBrWorkState } : {}),
   };
@@ -3456,6 +2498,9 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
       select: { cargo: true },
     });
 
+    const shouldUpdateWorkCountry = Object.prototype.hasOwnProperty.call(profilePayload, 'workCountry');
+    const shouldUpdateBrWorkState = Object.prototype.hasOwnProperty.call(profilePayload, 'brWorkState');
+
     const previousCargo = (existingProfileForHistory?.cargo ?? '').trim();
     const nextCargo = data.cargo === undefined ? previousCargo : (data.cargo ?? '').trim();
 
@@ -3464,8 +2509,8 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
       update: {
         ...profilePayload,
         ...(data.localidade !== undefined ? { localidade: data.localidade } : {}),
-        workCountry: profilePayload.workCountry ? (profilePayload.workCountry as any) : undefined,
-        brWorkState: profilePayload.brWorkState ? (profilePayload.brWorkState as any) : undefined,
+        ...(shouldUpdateWorkCountry ? { workCountry: profilePayload.workCountry as any } : {}),
+        ...(shouldUpdateBrWorkState ? { brWorkState: profilePayload.brWorkState as any } : {}),
       },
       create: {
         userId,
@@ -3504,6 +2549,7 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
   const previousCountry = existing.profile?.workCountry ?? 'PT';
   const newCountry = data.workCountry;
   let cancelledVacations = 0;
+  let removedCountrySpecificFields = 0;
 
   if (newCountry && newCountry !== previousCountry) {
     // Cancel all PENDING vacation requests - they were submitted under old country rules
@@ -3548,6 +2594,53 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
     };
 
     const BR_ONLY_FIELDS = {
+      brWorkState: null,
+      cpf: '',
+      pis: '',
+      ctps: '',
+      ctpsSerie: '',
+      ctpsDataExpedicao: '',
+      rg: '',
+      rgOrgaoEmissor: '',
+      rgDataExpedicao: '',
+      cnh: '',
+      cnhCategoria: '',
+      cnhDataValidade: '',
+      tituloEleitor: '',
+      zonaEleitoral: '',
+      secaoEleitoral: '',
+      certificadoReservista: '',
+      localNascimentoPais: '',
+      localNascimentoCidade: '',
+      nomePai: '',
+      nomeMae: '',
+      primeiroEmprego: false,
+      recebeAposentadoria: false,
+      recebeSeguroDesemprego: false,
+      valeTransporte: false,
+    };
+
+    const PT_ONLY_DEFAULTS_ON_SWITCH = {
+      cartaoCidadao: '',
+      validadeCartaoCidadao: '',
+      nif: '',
+      niss: '',
+      iban: '',
+      situacaoIrs: '',
+      numeroDependentes: '',
+      irsJovem: '',
+      anoPrimeiroDesconto: '',
+      matriculaCarro: '',
+      numeroCartaoContinente: '',
+      voucherNosData: '',
+      comprovativoMoradaFiscal: '',
+      comprovativoCartaoCidadao: '',
+      comprovativoIban: '',
+      comprovativoCartaoContinente: '',
+      criminalRecordUrl: '',
+    };
+
+    const BR_ONLY_DEFAULTS_ON_SWITCH = {
       cpf: '',
       pis: '',
       ctps: '',
@@ -3575,13 +2668,22 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
 
     // Clear the fields belonging to the OLD country (they no longer apply)
     const fieldsToClean = previousCountry === 'PT' ? PT_ONLY_FIELDS : BR_ONLY_FIELDS;
+    const fieldsToInitialize = newCountry === 'PT' ? PT_ONLY_DEFAULTS_ON_SWITCH : BR_ONLY_DEFAULTS_ON_SWITCH;
 
     // Clear codigoPostal when moving to BR - CEP format is different, avoid stale PT postal code
     const extraClean = newCountry === 'BR' ? { codigoPostal: '' } : {};
 
+    removedCountrySpecificFields = Object.keys({ ...fieldsToClean, ...extraClean }).length;
+
+    const countryTransitionProfileData: Prisma.ProfileUpdateInput = {
+      ...fieldsToClean,
+      ...fieldsToInitialize,
+      ...extraClean,
+    };
+
     await prisma.profile.update({
       where: { userId },
-      data: { ...fieldsToClean, ...extraClean },
+      data: countryTransitionProfileData,
     });
 
     // Deactivate all team memberships - teams are country-scoped
@@ -3618,6 +2720,7 @@ router.patch('/admin/users/:id', requireAuth, async (req, res) => {
     teamId: updatedUser.teamId,
     isActive: updatedUser.isActive,
     cancelledVacations,
+    removedCountrySpecificFields,
     countryChanged: newCountry !== undefined && newCountry !== previousCountry,
   });
 });
@@ -3652,7 +2755,7 @@ router.delete('/admin/users/:id', requireAuth, async (req, res) => {
     }
   }
 
-  await prisma.user.delete({ where: { id: userId } });
+  await deleteUserById(userId);
 
   return res.json({ success: true });
 });
@@ -3793,61 +2896,27 @@ router.post('/users/admissions', requireAuth, async (req, res, next) => {
     }
 
     const data = employeeAdmissionCreateSchema.parse(req.body);
-    const personalEmail = normalizeTextField(data.personalEmail).toLowerCase();
-    const workCountry = data.workCountry;
-    const brWorkState = workCountry === 'BR' ? (data.brWorkState ?? null) : null;
-
-    const existingActiveAdmission = await prisma.employeeAdmission.findFirst({
-      where: {
-        personalEmail,
-        status: { in: ['INVITED', 'SUBMITTED', 'CHANGES_REQUESTED', 'APPROVED_PENDING_CONTRACT'] },
-      },
-      select: { id: true },
+    const invitation = await createAdmissionInvitation({
+      actorUserId: req.authUser!.id,
+      fullName: data.fullName,
+      personalEmail: data.personalEmail,
+      workCountry: data.workCountry,
+      brWorkState: data.brWorkState,
     });
 
-    if (existingActiveAdmission) {
+    if (invitation.conflict) {
       return res.status(409).json({ message: 'Já existe um processo de admissão ativo para este email pessoal.' });
     }
 
-    const token = buildAdmissionToken();
-    const invitationLink = buildFrontendAdmissionUrl(token);
-    const admission = await prisma.employeeAdmission.create({
-      data: {
-        fullName: normalizeTextField(data.fullName).replace(/\s+/g, ' '),
-        personalEmail,
-        workCountry,
-        brWorkState,
-        personalData: buildEmptyAdmissionPersonalData({
-          fullName: normalizeTextField(data.fullName).replace(/\s+/g, ' '),
-          personalEmail,
-          workCountry,
-          brWorkState,
-        }) as Prisma.InputJsonValue,
-        submissionTokenHash: hashAdmissionToken(token),
-        tokenExpiresAt: getAdmissionExpiryDate(),
-        lastInvitationSentAt: new Date(),
-        invitedById: req.authUser!.id,
-      },
-      select: {
-        id: true,
-        fullName: true,
-        personalEmail: true,
-        workCountry: true,
-        brWorkState: true,
-        status: true,
-        tokenExpiresAt: true,
-      },
-    });
-
     await sendAdmissionInviteEmail({
-      personalEmail,
-      fullName: admission.fullName,
-      invitationLink,
+      personalEmail: invitation.personalEmail,
+      fullName: invitation.admission.fullName,
+      invitationLink: invitation.invitationLink,
     });
 
     return res.status(201).json({
-      ...admission,
-      invitationLinkPreview: process.env.NODE_ENV === 'production' ? undefined : invitationLink,
+      ...invitation.admission,
+      invitationLinkPreview: process.env.NODE_ENV === 'production' ? undefined : invitation.invitationLink,
     });
   } catch (error) {
     return next(error);
@@ -3857,6 +2926,8 @@ router.post('/users/admissions', requireAuth, async (req, res, next) => {
 router.get('/users/admissions/public/:token', async (req, res) => {
   try {
     const admission = await resolveAdmissionByTokenOrThrow(String(req.params.token));
+    const formSettings = await getAdmissionFormSettings();
+    const requiredFields = resolveAdmissionRequiredFieldsByCountry(formSettings, admission.workCountry);
 
     return res.json({
       id: admission.id,
@@ -3868,10 +2939,78 @@ router.get('/users/admissions/public/:token', async (req, res) => {
       reviewReason: admission.reviewReason,
       tokenExpiresAt: admission.tokenExpiresAt,
       personalData: admission.personalData,
+      formSettings: { requiredFields },
     });
   } catch (error) {
     return res.status(404).json({ message: error instanceof Error ? error.message : 'Convite não encontrado.' });
   }
+});
+
+router.get('/users/admissions/settings', requireAuth, async (req, res) => {
+  const canManage = await canManageAdmissionFormSettings(req.authUser!);
+  if (!canManage) {
+    return res.status(403).json({ message: 'Sem permissões para consultar configurações da ficha de admissão.' });
+  }
+
+  const settings = await getAdmissionFormSettings();
+  return res.json({
+    requiredFieldsByCountry: {
+      PT: settings.byCountry.PT.requiredFields,
+      BR: settings.byCountry.BR.requiredFields,
+    },
+    availableFieldsByCountry: getAdmissionRequiredFieldOptions(),
+  });
+});
+
+router.put('/users/admissions/settings', requireAuth, async (req, res) => {
+  const canManage = await canManageAdmissionFormSettings(req.authUser!);
+  if (!canManage) {
+    return res.status(403).json({ message: 'Sem permissões para editar configurações da ficha de admissão.' });
+  }
+
+  const payload = admissionFormSettingsSchema.safeParse(req.body);
+  if (!payload.success) {
+    return res.status(400).json({ message: payload.error.issues[0].message });
+  }
+
+  const previousSettings = await getAdmissionFormSettings();
+  const targetCountry = payload.data.country;
+  const normalizedCountryFields = Array.from(new Set(payload.data.requiredFields));
+
+  if (normalizedCountryFields.length === 0) {
+    return res.status(400).json({ message: 'Define pelo menos um campo obrigatório.' });
+  }
+
+  const normalized = {
+    byCountry: {
+      PT: {
+        requiredFields: targetCountry === 'PT'
+          ? normalizedCountryFields
+          : previousSettings.byCountry.PT.requiredFields,
+      },
+      BR: {
+        requiredFields: targetCountry === 'BR'
+          ? normalizedCountryFields
+          : previousSettings.byCountry.BR.requiredFields,
+      },
+    },
+  };
+
+  const safeNormalized = normalizeAdmissionFormSettings(normalized);
+
+  await prisma.systemSetting.upsert({
+    where: { key: ADMISSION_FORM_SETTINGS_KEY },
+    update: { textValue: JSON.stringify(safeNormalized), boolValue: null },
+    create: { key: ADMISSION_FORM_SETTINGS_KEY, textValue: JSON.stringify(safeNormalized), boolValue: null },
+  });
+
+  return res.json({
+    requiredFieldsByCountry: {
+      PT: safeNormalized.byCountry.PT.requiredFields,
+      BR: safeNormalized.byCountry.BR.requiredFields,
+    },
+    availableFieldsByCountry: getAdmissionRequiredFieldOptions(),
+  });
 });
 
 router.post('/users/admissions/public/:token/submit', async (req, res, next) => {
@@ -3887,30 +3026,24 @@ router.post('/users/admissions/public/:token/submit', async (req, res, next) => 
       workCountry: admission.workCountry,
       brWorkState: admission.brWorkState,
     });
-    const validationErrors = validateEmployeeAdmissionPersonalData(normalized, admission.workCountry);
+    const formSettings = await getAdmissionFormSettings();
+    const validationErrors = validateEmployeeAdmissionPersonalDataWithSettings(
+      normalized,
+      admission.workCountry,
+      formSettings,
+    );
     if (validationErrors.length > 0) {
       return res.status(400).json({ message: validationErrors[0] });
     }
 
-    await prisma.employeeAdmission.update({
-      where: { id: admission.id },
-      data: {
-        personalData: normalized as Prisma.InputJsonValue,
-        status: 'SUBMITTED',
-        reviewReason: '',
-        submittedAt: new Date(),
-        reviewedAt: null,
-        reviewedById: null,
-      },
+    await submitAdmissionPublicForm({
+      admissionId: admission.id,
+      fullName: admission.fullName,
+      personalEmail: admission.personalEmail,
+      workCountry: admission.workCountry,
+      brWorkState: admission.brWorkState,
+      normalizedPersonalData: normalized as Record<string, unknown>,
     });
-
-    const reviewerIds = await resolveAdmissionReviewersByCountry(admission.workCountry);
-    await notifyUsers(prisma, reviewerIds, 'Novo pedido de admissão', [
-      `${admission.fullName} submeteu a ficha de admissão e está pronto para revisão.`,
-      `País: ${admission.workCountry === 'BR' ? 'Brasil' : 'Portugal'}${admission.brWorkState ? ` (${admission.brWorkState})` : ''}`,
-      `Email pessoal: ${admission.personalEmail}`,
-      `ação: Abrir admissões|/admissoes`,
-    ].join('\n'));
 
     return res.json({ success: true, message: 'Ficha submetida para revisão RH.' });
   } catch (error) {
@@ -3922,22 +3055,15 @@ router.post('/users/admissions/public/:token/submit', async (req, res, next) => 
 });
 
 router.get('/users/admissions/review', requireAuth, async (req, res) => {
-  const canReview = req.authUser!.isRootAccess || await hasPermission(req.authUser!.id, 'approve_profile_change');
+  const canReview = await canUserReviewAdmissions(req.authUser!);
   if (!canReview) {
     return res.status(403).json({ message: 'Sem permissões para consultar admissões.' });
   }
 
-  const actorProfile = await prisma.profile.findUnique({ where: { userId: req.authUser!.id }, select: { workCountry: true } });
-  const rows = await prisma.employeeAdmission.findMany({
-    where: {
-      status: { in: ['SUBMITTED', 'APPROVED_PENDING_CONTRACT'] },
-      ...(req.authUser!.isRootAccess ? {} : { workCountry: actorProfile?.workCountry ?? 'PT' }),
-    },
-    orderBy: [{ status: 'asc' }, { submittedAt: 'desc' }, { createdAt: 'desc' }],
-    include: {
-      invitedBy: { select: { id: true, username: true, email: true, profile: { select: { nomeAbreviado: true, nomeCompleto: true } } } },
-      reviewedBy: { select: { id: true, username: true, email: true, profile: { select: { nomeAbreviado: true, nomeCompleto: true } } } },
-    },
+  const actorWorkCountry = await findActorWorkCountry(req.authUser!.id);
+  const rows = await listAdmissionsForReview({
+    isRootAccess: req.authUser!.isRootAccess,
+    actorWorkCountry,
   });
 
   return res.json(rows);
@@ -3945,42 +3071,28 @@ router.get('/users/admissions/review', requireAuth, async (req, res) => {
 
 router.post('/users/admissions/:id/request-correction', requireAuth, async (req, res, next) => {
   try {
-    const canReview = req.authUser!.isRootAccess || await hasPermission(req.authUser!.id, 'approve_profile_change');
+    const canReview = await canUserReviewAdmissions(req.authUser!);
     if (!canReview) {
       return res.status(403).json({ message: 'Sem permissões para devolver admissões.' });
     }
 
     const payload = employeeAdmissionCorrectionSchema.parse(req.body);
-    const admission = await prisma.employeeAdmission.findUnique({ where: { id: String(req.params.id) } });
+    const admission = await findAdmissionById(String(req.params.id));
     if (!admission) {
       return res.status(404).json({ message: 'Pedido de admissão não encontrado.' });
     }
 
-    const canReviewCountry = await canActorReviewAdmissionCountry(req.authUser!, admission.workCountry as 'PT' | 'BR');
+    const canReviewCountry = await canUserReviewAdmissionCountry(req.authUser!, admission.workCountry as 'PT' | 'BR');
     if (!canReviewCountry) {
       return res.status(403).json({ message: 'Sem permissões para devolver admissões deste país.' });
     }
 
-    const token = buildAdmissionToken();
-    const invitationLink = buildFrontendAdmissionUrl(token);
-    await prisma.employeeAdmission.update({
-      where: { id: admission.id },
-      data: {
-        status: 'CHANGES_REQUESTED',
-        reviewReason: payload.reason,
-        reviewedAt: new Date(),
-        reviewedById: req.authUser!.id,
-        submissionTokenHash: hashAdmissionToken(token),
-        tokenExpiresAt: getAdmissionExpiryDate(),
-        lastInvitationSentAt: new Date(),
-      },
-    });
-
-    await sendAdmissionInviteEmail({
-      personalEmail: admission.personalEmail,
+    await requestAdmissionCorrection({
+      admissionId: admission.id,
+      reviewerId: req.authUser!.id,
       fullName: admission.fullName,
-      invitationLink,
-      reviewReason: payload.reason,
+      personalEmail: admission.personalEmail,
+      reason: payload.reason,
     });
 
     return res.json({ success: true });
@@ -3991,17 +3103,17 @@ router.post('/users/admissions/:id/request-correction', requireAuth, async (req,
 
 router.post('/users/admissions/:id/approve-personal', requireAuth, async (req, res, next) => {
   try {
-    const canReview = req.authUser!.isRootAccess || await hasPermission(req.authUser!.id, 'approve_profile_change');
+    const canReview = await canUserReviewAdmissions(req.authUser!);
     if (!canReview) {
       return res.status(403).json({ message: 'Sem permissões para aprovar admissões.' });
     }
 
-    const admission = await prisma.employeeAdmission.findUnique({ where: { id: String(req.params.id) } });
+    const admission = await findAdmissionById(String(req.params.id));
     if (!admission) {
       return res.status(404).json({ message: 'Pedido de admissão não encontrado.' });
     }
 
-    const canReviewCountry = await canActorReviewAdmissionCountry(req.authUser!, admission.workCountry as 'PT' | 'BR');
+    const canReviewCountry = await canUserReviewAdmissionCountry(req.authUser!, admission.workCountry as 'PT' | 'BR');
     if (!canReviewCountry) {
       return res.status(403).json({ message: 'Sem permissões para aprovar admissões deste país.' });
     }
@@ -4010,21 +3122,11 @@ router.post('/users/admissions/:id/approve-personal', requireAuth, async (req, r
       return res.status(409).json({ message: 'Este pedido não está pronto para aprovação dos dados pessoais.' });
     }
 
-    await prisma.employeeAdmission.update({
-      where: { id: admission.id },
-      data: {
-        status: 'APPROVED_PENDING_CONTRACT',
-        reviewReason: '',
-        reviewedAt: new Date(),
-        reviewedById: req.authUser!.id,
-      },
+    await approveAdmissionPersonalData({
+      admissionId: admission.id,
+      reviewerId: req.authUser!.id,
+      fullName: admission.fullName,
     });
-
-    await notifyUsers(prisma, [req.authUser!.id], 'Admissão pronta para contrato', [
-      `Os dados pessoais de ${admission.fullName} foram aprovados.`,
-      'Passo seguinte: preencher dados contratuais e criar o utilizador.',
-      `ação: Abrir admissões|/admissoes`,
-    ].join('\n'));
     return res.json({ success: true });
   } catch (error) {
     return next(error);
@@ -4033,17 +3135,17 @@ router.post('/users/admissions/:id/approve-personal', requireAuth, async (req, r
 
 router.post('/users/admissions/:id/complete', requireAuth, async (req, res, next) => {
   try {
-    const canReview = req.authUser!.isRootAccess || await hasPermission(req.authUser!.id, 'approve_profile_change');
+    const canReview = await canUserReviewAdmissions(req.authUser!);
     if (!canReview) {
       return res.status(403).json({ message: 'Sem permissões para concluir admissões.' });
     }
 
-    const admission = await prisma.employeeAdmission.findUnique({ where: { id: String(req.params.id) } });
+    const admission = await findAdmissionById(String(req.params.id));
     if (!admission) {
       return res.status(404).json({ message: 'Pedido de admissão não encontrado.' });
     }
 
-    const canReviewCountry = await canActorReviewAdmissionCountry(req.authUser!, admission.workCountry as 'PT' | 'BR');
+    const canReviewCountry = await canUserReviewAdmissionCountry(req.authUser!, admission.workCountry as 'PT' | 'BR');
     if (!canReviewCountry) {
       return res.status(403).json({ message: 'Sem permissões para concluir admissões deste país.' });
     }
@@ -4053,52 +3155,20 @@ router.post('/users/admissions/:id/complete', requireAuth, async (req, res, next
     }
 
     const contract = employeeAdmissionContractSchema.parse(req.body);
-    const createdUser = await createManagedUser({
+    const derivedHourBankLimitHours = deriveAdmissionHourBankLimitHours(contract);
+    const createdUser = await completeAdmissionAndCreateUser({
       actorUserId: req.authUser!.id,
-      username: contract.companyUsername,
-      email: contract.companyEmail,
-      fullName: admission.fullName,
-      role: 'COLABORADOR',
-      workCountry: admission.workCountry,
-      profile: {
-        ...((admission.personalData as Record<string, unknown>) ?? {}),
-        cargo: contract.cargo,
-        categoriaProfissional: contract.categoriaProfissional,
-        numeroMecanografico: contract.numeroMecanografico,
-        funcao: contract.funcao,
-        dataInicioContrato: contract.dataInicioContrato,
-        dataFimContrato: contract.dataFimContrato,
-        tipoContrato: contract.tipoContrato,
-        regimeHorario: contract.regimeHorario,
+      admission: {
+        id: admission.id,
+        fullName: admission.fullName,
+        personalEmail: admission.personalEmail,
         workCountry: admission.workCountry,
         brWorkState: admission.brWorkState,
+        personalData: admission.personalData,
       },
-    });
-
-    await prisma.employeeAdmission.update({
-      where: { id: admission.id },
-      data: {
-        status: 'COMPLETED',
-        companyEmail: contract.companyEmail.trim().toLowerCase(),
-        companyUsername: contract.companyUsername.trim().toLowerCase(),
-        contractData: contract as unknown as Prisma.InputJsonValue,
-        completedAt: new Date(),
-        completedById: req.authUser!.id,
-      },
-    });
-
-    await sendTransactionalEmail({
-      to: admission.personalEmail,
-      subject: 'Smarter Hub · admissão concluída',
-      text: [
-        `Olá ${admission.fullName},`,
-        '',
-        'O teu processo de admissão foi concluído com sucesso.',
-        `Username criado: ${contract.companyUsername.trim().toLowerCase()}`,
-        `Email da empresa: ${contract.companyEmail.trim().toLowerCase()}`,
-        '',
-        'A autenticação no Smarter Hub segue a política definida pela empresa (Microsoft SSO ou credenciais geridas por RH).',
-      ].join('\n'),
+      contract,
+      derivedHourBankLimitHours,
+      createManagedUser,
     });
 
     return res.status(201).json(createdUser);
@@ -4109,13 +3179,12 @@ router.post('/users/admissions/:id/complete', requireAuth, async (req, res, next
 
 // ── LIST ALL ADMISSIONS (for RH / admin review page) ──────────────────────────
 router.get('/users/admissions/list', requireAuth, async (req, res) => {
-  const canView = req.authUser!.isRootAccess || await hasPermission(req.authUser!.id, 'approve_profile_change');
+  const canView = await canUserReviewAdmissions(req.authUser!);
   if (!canView) {
     return res.status(403).json({ message: 'Sem permissões para consultar admissões.' });
   }
 
-  const actorProfile = await prisma.profile.findUnique({ where: { userId: req.authUser!.id }, select: { workCountry: true } });
-  const countryFilter = req.authUser!.isRootAccess ? {} : { workCountry: actorProfile?.workCountry ?? 'PT' };
+  const actorWorkCountry = await findActorWorkCountry(req.authUser!.id);
 
   const rawStatus = typeof req.query.status === 'string' ? req.query.status.trim().toUpperCase() : '';
   const statusValidation = rawStatus ? employeeAdmissionStatusSchema.safeParse(rawStatus) : null;
@@ -4123,9 +3192,7 @@ router.get('/users/admissions/list', requireAuth, async (req, res) => {
     return res.status(400).json({ message: 'Parâmetro status inválido.' });
   }
 
-  const statusFilter = statusValidation
-    ? { status: statusValidation.data as EmployeeAdmissionStatus }
-    : {};
+  const status = statusValidation?.success ? statusValidation.data as EmployeeAdmissionStatus : undefined;
 
   const pageRaw = typeof req.query.page === 'string' ? req.query.page.trim() : '1';
   const pageSizeRaw = typeof req.query.pageSize === 'string' ? req.query.pageSize.trim() : '50';
@@ -4136,48 +3203,32 @@ router.get('/users/admissions/list', requireAuth, async (req, res) => {
   const page = Math.max(1, Number(pageRaw));
   const pageSize = Math.min(100, Math.max(1, Number(pageSizeRaw)));
 
-  const where = { ...countryFilter, ...statusFilter };
-
-  const [total, rows] = await Promise.all([
-    prisma.employeeAdmission.count({ where }),
-    prisma.employeeAdmission.findMany({
-      where,
-      orderBy: [{ createdAt: 'desc' }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      include: {
-        invitedBy: { select: { id: true, username: true, profile: { select: { nomeAbreviado: true } } } },
-        reviewedBy: { select: { id: true, username: true, profile: { select: { nomeAbreviado: true } } } },
-        completedBy: { select: { id: true, username: true, profile: { select: { nomeAbreviado: true } } } },
-      },
-    }),
-  ]);
+  const { total, rows } = await listAdmissionsWithPagination({
+    isRootAccess: req.authUser!.isRootAccess,
+    actorWorkCountry,
+    status,
+    page,
+    pageSize,
+  });
 
   return res.json({ total, page, pageSize, rows });
 });
 
 // ── GET SINGLE ADMISSION DETAIL ──────────────────────────────────────────────
 router.get('/users/admissions/:id', requireAuth, async (req, res) => {
-  const canView = req.authUser!.isRootAccess || await hasPermission(req.authUser!.id, 'approve_profile_change');
+  const canView = await canUserReviewAdmissions(req.authUser!);
   if (!canView) {
     return res.status(403).json({ message: 'Sem permissões para consultar admissões.' });
   }
 
-  const admission = await prisma.employeeAdmission.findUnique({
-    where: { id: String(req.params.id) },
-    include: {
-      invitedBy: { select: { id: true, username: true, profile: { select: { nomeAbreviado: true } } } },
-      reviewedBy: { select: { id: true, username: true, profile: { select: { nomeAbreviado: true } } } },
-      completedBy: { select: { id: true, username: true, profile: { select: { nomeAbreviado: true } } } },
-    },
-  });
+  const admission = await findAdmissionDetailById(String(req.params.id));
 
   if (!admission) {
     return res.status(404).json({ message: 'Admissão não encontrada.' });
   }
 
-  const actorProfile = await prisma.profile.findUnique({ where: { userId: req.authUser!.id }, select: { workCountry: true } });
-  if (!req.authUser!.isRootAccess && admission.workCountry !== actorProfile?.workCountry) {
+  const actorWorkCountry = await findActorWorkCountry(req.authUser!.id);
+  if (!req.authUser!.isRootAccess && admission.workCountry !== actorWorkCountry) {
     return res.status(403).json({ message: 'Sem permissões para consultar esta admissão.' });
   }
 

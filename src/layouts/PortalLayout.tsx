@@ -29,6 +29,8 @@ export default function PortalLayout() {
   const isBrProfile = profile.workCountry === 'BR';
   const canUseHourBankAcrossCountries = isTPeople;
   const canManageTrainings = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
+  const canReviewProfiles = isRootAccess || hasPermission('approve_profile_change');
+  const canReviewVacations = isRootAccess || hasPermission('approve_vacation') || hasPermission('reject_vacation') || hasPermission('view_all_vacations');
 
   const roleMenus = useMemo(() => {
     const can = (code: string) => isRootAccess || hasPermission(code);
@@ -38,6 +40,7 @@ export default function PortalLayout() {
       ...(isRootAccess || isAccessTotal ? [{ id: 'dashboard', label: 'Dashboard', path: '/dashboard' }] : []),
       ...(!isTPeople ? [{ id: 'profile', label: 'A Minha Ficha', path: '/profile' }] : []),
       ...(!isTPeople ? [{ id: 'plano-carreira', label: 'Plano de Carreira', path: '/plano-carreira' }] : []),
+      ...((currentUser?.role ?? '') !== 'CONVIDADO' ? [{ id: 'avaliacao-desempenho', label: 'Av. Desempenho', path: '/avaliacao-desempenho' }] : []),
       ...((currentUser?.role ?? '') !== 'CONVIDADO' ? [{ id: 'equipas', label: 'Equipas', path: '/equipas' }] : []),
       ...(can('view_user_list') ? [{ id: 'colaboradores', label: 'Colaboradores', path: '/colaboradores' }] : []),
       ...((currentUser?.role ?? '') !== 'CONVIDADO' ? [{ id: 'saude-bem-estar', label: 'Saúde e bem-estar', path: '/saude-bem-estar' }] : []),
@@ -77,7 +80,7 @@ export default function PortalLayout() {
   }, [menuQuery, roleMenus]);
 
   const personalMenu = useMemo(() => {
-    const personalIds = new Set(['home', 'profile', 'plano-carreira', 'equipas', 'formacoes', 'ferias', 'saude-bem-estar', 'notifications']);
+    const personalIds = new Set(['home', 'profile', 'plano-carreira', 'avaliacao-desempenho', 'equipas', 'formacoes', 'ferias', 'saude-bem-estar', 'notifications']);
     return filteredMenu.filter((item) => personalIds.has(item.id));
   }, [filteredMenu]);
 
@@ -211,6 +214,9 @@ export default function PortalLayout() {
       case '/profile':
         void import('../pages/ProfilePage');
         break;
+      case '/avaliacao-desempenho':
+        void import('../pages/PerformanceReviewPage');
+        break;
       default:
         break;
     }
@@ -239,15 +245,25 @@ export default function PortalLayout() {
     }
 
     if (path === '/aprovacoes') {
-      void Promise.allSettled([
-        safePrefetch('/profile/requests', 45000),
-        safePrefetch('/vacations/requests', 45000),
-      ]);
+      const approvalPrefetches: Array<Promise<unknown>> = [];
+
+      if (canReviewProfiles) {
+        approvalPrefetches.push(safePrefetch('/profile/requests', 45000));
+      }
+
+      if (canReviewVacations) {
+        approvalPrefetches.push(safePrefetch('/vacations/requests?page=1&pageSize=50', 45000));
+      }
+
+      if (approvalPrefetches.length > 0) {
+        void Promise.allSettled(approvalPrefetches);
+      }
+
       return;
     }
 
     if (path === '/formacoes') {
-      void safePrefetch('/trainings/me', 45000);
+      void safePrefetch('/trainings/me?page=1&pageSize=100', 45000);
       return;
     }
 
@@ -268,7 +284,7 @@ export default function PortalLayout() {
       void Promise.allSettled([
         safePrefetch('/hours-bank/me', 30000),
         safePrefetch('/hours-bank/overview?page=1&pageSize=50&workCountry=BR', 30000),
-        safePrefetch('/hours-bank/reports', 30000),
+        safePrefetch('/hours-bank/reports?page=1&pageSize=50', 30000),
       ]);
     }
   }

@@ -15,6 +15,8 @@ type CollaboratorCreateModalProps = {
   onClose: () => void;
   onSubmit: () => void;
   onDraftChange: (patch: Partial<CollaboratorCreateDraft>) => void;
+  canConfigureFormSettings?: boolean;
+  onOpenFormSettings?: () => void;
 };
 
 export default function CollaboratorCreateModal({
@@ -24,6 +26,8 @@ export default function CollaboratorCreateModal({
   onClose,
   onSubmit,
   onDraftChange,
+  canConfigureFormSettings = false,
+  onOpenFormSettings,
 }: CollaboratorCreateModalProps) {
   return (
     <Modal
@@ -86,6 +90,32 @@ export default function CollaboratorCreateModal({
               <option value="RS">Rio Grande do Sul</option>
             </select>
           </label>
+        ) : null}
+
+        {canConfigureFormSettings ? (
+          <div style={{
+            display: 'grid',
+            gap: 8,
+            padding: '12px 14px',
+            borderRadius: 10,
+            border: '1px solid #dbe6f5',
+            background: '#f8fbff',
+          }}>
+            <small style={{ color: '#335174', fontSize: 12 }}>
+              Precisa de ajustar os campos obrigatórios do formulário enviado por email?
+            </small>
+            <div>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={isCreatingUser || !onOpenFormSettings}
+                onClick={() => onOpenFormSettings?.()}
+              >
+                Configurar campos do formulário
+              </Button>
+            </div>
+          </div>
         ) : null}
       </form>
     </Modal>

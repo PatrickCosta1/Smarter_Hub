@@ -5314,11 +5314,11 @@
   overflow: hidden;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, auto);
-  gap: 14px;
-  padding: 16px 18px;
+  gap: 16px;
+  padding: 18px 20px;
   background:
-    radial-gradient(circle at 8% 8%, rgba(46, 115, 203, 0.14), transparent 42%),
-    linear-gradient(160deg, #ffffff 0%, #f4f9ff 60%, #eef5ff 100%);
+    radial-gradient(circle at 8% 10%, rgba(46, 115, 203, 0.18), transparent 44%),
+    linear-gradient(160deg, #ffffff 0%, #f2f8ff 58%, #e9f3ff 100%);
 }
 
 .notifications-hero::after {
@@ -5336,6 +5336,23 @@
 .notifications-stats {
   display: grid;
   gap: 8px;
+}
+
+.notifications-hero__meta {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notifications-hero__meta span {
+  border-radius: 999px;
+  border: 1px solid #d5e4fb;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  color: #2c5d99;
+  font-weight: 700;
 }
 
 .notifications-stat {
@@ -5386,6 +5403,24 @@
   font-size: 0.72rem;
   color: #24528d;
   background: rgba(255, 255, 255, 0.9);
+}
+
+.notifications-hero__quick-filter {
+  margin-top: 4px;
+  min-height: 36px;
+  border-radius: 10px;
+  border: 1px solid #8eb8f5;
+  background: linear-gradient(135deg, #2466bf, #1a4f97);
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 0 12px;
+}
+
+.notifications-hero__quick-filter:hover {
+  border-color: #7aa8ee;
+  background: linear-gradient(135deg, #1f5aab, #184689);
 }
 
 .notifications-toolbar {
@@ -14987,6 +15022,10 @@
   .notifications-stats {
     grid-template-columns: 1fr;
   }
+
+  .notifications-hero__quick-filter {
+    width: 100%;
+  }
 }
 
 .team-picker-item span {
@@ -16239,6 +16278,194 @@
     grid-template-columns: 1fr;
   }
 
+
+/* Trainings table readability and modern settings editor */
+.trainings-shell .trainings-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #dbe7fb;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.trainings-shell .trainings-table {
+  width: 100%;
+  min-width: 1180px;
+  table-layout: fixed;
+}
+
+.trainings-shell .trainings-table th,
+.trainings-shell .trainings-table td {
+  vertical-align: top;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.trainings-shell .trainings-table thead th {
+  white-space: nowrap;
+}
+
+.trainings-shell .trainings-col {
+  font-size: 0.93rem;
+}
+
+.trainings-shell .trainings-col--training {
+  width: 20%;
+  min-width: 230px;
+  font-weight: 600;
+}
+
+.trainings-shell .trainings-col--collaborator {
+  width: 14%;
+  min-width: 170px;
+}
+
+.trainings-shell .trainings-col--team {
+  width: 12%;
+  min-width: 150px;
+}
+
+.trainings-shell .trainings-col--origin,
+.trainings-shell .trainings-col--entity {
+  width: 10%;
+  min-width: 130px;
+}
+
+.trainings-shell .trainings-col--link {
+  width: 7%;
+  min-width: 95px;
+  white-space: nowrap;
+}
+
+.trainings-shell .trainings-col--hours,
+.trainings-shell .trainings-col--start,
+.trainings-shell .trainings-col--completion,
+.trainings-shell .trainings-col--status,
+.trainings-shell .trainings-col--actions {
+  width: 7%;
+  min-width: 96px;
+  white-space: nowrap;
+}
+
+.trainings-shell .trainings-col--status,
+.trainings-shell .trainings-col--actions {
+  text-align: center;
+}
+
+.trainings-shell .trainings-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+}
+
+.trainings-shell .trainings-status-badge .badge {
+  white-space: nowrap;
+}
+
+.trainings-shell .trainings-entity-editor {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.trainings-shell .trainings-entity-editor input {
+  flex: 1;
+  min-width: 0;
+}
+
+.trainings-shell .trainings-entity-helper {
+  margin-top: 6px;
+  display: inline-block;
+  color: #4d6283;
+  font-size: 0.82rem;
+}
+
+.trainings-shell .trainings-entity-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 0;
+}
+
+.trainings-shell .trainings-entity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #bed7fb;
+  background: #eef5ff;
+  color: #163d73;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.trainings-shell .trainings-entity-chip button {
+  border: none;
+  background: transparent;
+  color: #2d548f;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.trainings-shell .trainings-entity-chip button:hover {
+  color: #123665;
+}
+
+.trainings-shell .trainings-entity-empty {
+  margin: 0;
+  color: #6b7e9d;
+  font-size: 0.88rem;
+}
+
+.trainings-shell .trainings-entity-suggestions {
+  display: grid;
+  gap: 8px;
+}
+
+.trainings-shell .trainings-entity-suggestions > span {
+  color: #2b4d7d;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.trainings-shell .trainings-entity-suggestions > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.trainings-shell .trainings-entity-suggestions button {
+  border: 1px solid #d2e2fa;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #274f88;
+  padding: 5px 11px;
+  font-size: 0.83rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.trainings-shell .trainings-entity-suggestions button:hover {
+  background: #f0f6ff;
+  border-color: #b8cff3;
+}
+
+@media (max-width: 900px) {
+  .trainings-shell .trainings-table {
+    min-width: 1060px;
+  }
+
+  .trainings-shell .trainings-entity-editor {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
   .collaborator-export-preview__grid {
     grid-template-columns: 1fr;
   }

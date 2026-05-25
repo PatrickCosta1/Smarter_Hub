@@ -1,0 +1,239 @@
+@startuml smarter_hub_casos_de_uso
+left to right direction
+scale max 1600 width
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam linetype ortho
+skinparam dpi 130
+skinparam ArrowColor #1F3A68
+skinparam defaultFontName Segoe UI
+skinparam defaultFontSize 14
+skinparam Usecase {
+  BorderColor #1F3A68
+  BackgroundColor #EEF3FA
+  FontColor #0F2342
+}
+skinparam Package {
+  BorderColor #B7C6DD
+  BackgroundColor #F8FAFD
+  FontColor #0F2342
+}
+
+actor "Colaboradores" as COL
+actor "Chefe de Equipa" as CHEFE
+actor "RH (Acesso Total)" as RHAT
+actor "Admin" as ADMIN
+actor "Candidato de Admissão" as CAND
+
+rectangle "SMARTER HUB" as HUB {
+  package "Identidade, Perfil e Comunicação" {
+    usecase "Iniciar sessão" as UC_LOGIN
+    usecase "Autenticar por OAuth" as UC_LOGIN_OAUTH
+    usecase "Terminar sessão" as UC_LOGOUT
+    usecase "Consultar permissões efetivas" as UC_PERM_SELF
+    usecase "Ver perfil" as UC_PROFILE_VIEW
+    usecase "Pedir alteração de perfil" as UC_PROFILE_REQUEST
+    usecase "Rever pedido de alteração" as UC_PROFILE_REVIEW
+    usecase "Aprovar pedido de alteração" as UC_PROFILE_APPROVE
+    usecase "Rejeitar pedido de alteração" as UC_PROFILE_REJECT
+    usecase "Gerir opções de Cargo/Função" as UC_PROFILE_OPTIONS
+    usecase "Ver notificações" as UC_NOTIF_VIEW
+    usecase "Marcar notificação como lida" as UC_NOTIF_READ
+    usecase "Notificar decisão de processo" as UC_NOTIF_DECISION
+    usecase "Reportar situação de wellbeing" as UC_WELL_REPORT
+    usecase "Ver alertas de wellbeing" as UC_WELL_VIEW
+    usecase "Ativar/desativar alerta ocupacional" as UC_WELL_TOGGLE
+    usecase "Fazer upload de anexo" as UC_FILE_UPLOAD
+    usecase "Fazer upload de anexo da admissão" as UC_FILE_UPLOAD_ADM
+  }
+
+  package "Tempo, Férias e Ausências" {
+    usecase "Pedir férias/ausência" as UC_VAC_REQUEST
+    usecase "Registar pedido para colaborador" as UC_VAC_REQUEST_FOR_OTHER
+    usecase "Editar pedido pendente" as UC_VAC_EDIT
+    usecase "Cancelar pedido pendente" as UC_VAC_CANCEL
+    usecase "Aprovar pedido" as UC_VAC_APPROVE
+    usecase "Rejeitar pedido" as UC_VAC_REJECT
+    usecase "Consultar pedidos pendentes" as UC_VAC_PENDING
+    usecase "Ver calendário pessoal" as UC_VAC_CAL_ME
+    usecase "Ver calendário de equipa" as UC_VAC_CAL_TEAM
+    usecase "Ver overview de saldo e regras" as UC_VAC_OVERVIEW
+    usecase "Exportar mapa anual XLSX" as UC_VAC_EXPORT
+    usecase "Configurar dias extra da empresa" as UC_VAC_EXTRA
+    usecase "Creditar saldo extraordinário" as UC_VAC_CREDIT
+    usecase "Marcar pedido como processado/realizado" as UC_VAC_PROCESS
+    usecase "Validar políticas PT/BR e capacidade" as UC_VAC_VALIDATE
+    usecase "Notificar decisão/estado" as UC_VAC_NOTIFY
+  }
+
+  package "Banco de Horas BR" {
+    usecase "Ver saldo próprio" as UC_HB_ME
+    usecase "Ver overview da equipa" as UC_HB_OV
+    usecase "Lançar crédito/débito" as UC_HB_ENTRY
+    usecase "Definir limite de banco de horas" as UC_HB_LIMIT
+    usecase "Gerar relatório semanal" as UC_HB_REPORT
+    usecase "Exportar banco de horas (XLSX)" as UC_HB_EXPORT
+    usecase "Notificar excesso de horas" as UC_HB_ALERT
+  }
+
+  package "Admissões e Onboarding" {
+    usecase "Iniciar admissão" as UC_ADM_START
+    usecase "Enviar convite de admissão" as UC_ADM_INVITE
+    usecase "Consultar convite por token" as UC_ADM_TOKEN_VIEW
+    usecase "Submeter ficha de admissão" as UC_ADM_SUBMIT
+    usecase "Pedir correção da ficha" as UC_ADM_CORRECT
+    usecase "Aprovar dados pessoais" as UC_ADM_APPROVE
+    usecase "Concluir admissão e criar utilizador" as UC_ADM_COMPLETE
+    usecase "Listar/consultar admissão" as UC_ADM_LIST
+  }
+
+  package "Pessoas, Estrutura e Governação" {
+    usecase "Ver catálogo de permissões" as UC_PERM_CATALOG
+    usecase "Ver permissões de utilizador" as UC_PERM_VIEW
+    usecase "Conceder/revogar permissão" as UC_PERM_GRANT_REVOKE
+    usecase "Conceder/revogar acesso total" as UC_ACCESS_TOTAL
+    usecase "Auditar grants/revokes" as UC_AUDIT
+    usecase "Listar utilizadores" as UC_USERS_LIST
+    usecase "Criar utilizador" as UC_USERS_CREATE
+    usecase "Editar utilizador" as UC_USERS_EDIT
+    usecase "Ativar/desativar utilizador" as UC_USERS_TOGGLE
+    usecase "Apagar utilizador" as UC_USERS_DELETE
+    usecase "Editar credenciais (username/email)" as UC_USERS_CREDENTIALS
+    usecase "Importar utilizadores em lote" as UC_USERS_IMPORT
+    usecase "Gerir memberships" as UC_USERS_MEMBERSHIP
+    usecase "Listar equipas" as UC_TEAMS_LIST
+    usecase "Criar/editar/remover equipa" as UC_TEAMS_MUTATE
+    usecase "Consultar dashboard" as UC_DASH_VIEW
+    usecase "Exportar indicadores" as UC_DASH_EXPORT
+    usecase "Pedir formação" as UC_TRN_REQUEST
+    usecase "Aprovar/rejeitar formação" as UC_TRN_DECIDE
+    usecase "Ver plano de carreira" as UC_CAREER_VIEW
+    usecase "Editar plano de carreira" as UC_CAREER_EDIT
+  }
+}
+
+COL --> UC_LOGIN
+COL --> UC_LOGIN_OAUTH
+COL --> UC_LOGOUT
+COL --> UC_PERM_SELF
+COL --> UC_PROFILE_VIEW
+COL --> UC_PROFILE_REQUEST
+COL --> UC_NOTIF_VIEW
+COL --> UC_NOTIF_READ
+COL --> UC_FILE_UPLOAD
+COL --> UC_WELL_REPORT
+COL --> UC_WELL_VIEW
+COL --> UC_VAC_REQUEST
+COL --> UC_VAC_EDIT
+COL --> UC_VAC_CANCEL
+COL --> UC_VAC_CAL_ME
+COL --> UC_VAC_OVERVIEW
+COL --> UC_HB_ME
+COL --> UC_TRN_REQUEST
+COL --> UC_CAREER_VIEW
+
+CHEFE --> UC_VAC_PENDING
+CHEFE --> UC_VAC_APPROVE
+CHEFE --> UC_VAC_REJECT
+CHEFE --> UC_VAC_CAL_TEAM
+CHEFE --> UC_HB_OV
+CHEFE --> UC_TRN_DECIDE
+CHEFE --> UC_DASH_VIEW
+
+RHAT --> UC_PROFILE_VIEW
+RHAT --> UC_PERM_SELF
+RHAT --> UC_PROFILE_REVIEW
+RHAT --> UC_PROFILE_APPROVE
+RHAT --> UC_PROFILE_REJECT
+RHAT --> UC_PROFILE_OPTIONS
+RHAT --> UC_VAC_EXTRA
+RHAT --> UC_VAC_EXPORT
+RHAT --> UC_VAC_CREDIT
+RHAT --> UC_VAC_REQUEST_FOR_OTHER
+RHAT --> UC_HB_OV
+RHAT --> UC_HB_ENTRY
+RHAT --> UC_HB_LIMIT
+RHAT --> UC_HB_REPORT
+RHAT --> UC_HB_EXPORT
+RHAT --> UC_WELL_TOGGLE
+RHAT --> UC_WELL_VIEW
+RHAT --> UC_ADM_START
+RHAT --> UC_ADM_INVITE
+RHAT --> UC_ADM_CORRECT
+RHAT --> UC_ADM_APPROVE
+RHAT --> UC_ADM_COMPLETE
+RHAT --> UC_ADM_LIST
+RHAT --> UC_USERS_LIST
+RHAT --> UC_USERS_EDIT
+RHAT --> UC_USERS_CREDENTIALS
+RHAT --> UC_USERS_MEMBERSHIP
+RHAT --> UC_TEAMS_LIST
+RHAT --> UC_DASH_VIEW
+RHAT --> UC_DASH_EXPORT
+RHAT --> UC_CAREER_VIEW
+
+ADMIN --> UC_PERM_CATALOG
+ADMIN --> UC_PERM_VIEW
+ADMIN --> UC_PERM_GRANT_REVOKE
+ADMIN --> UC_ACCESS_TOTAL
+ADMIN --> UC_AUDIT
+ADMIN --> UC_USERS_LIST
+ADMIN --> UC_USERS_CREATE
+ADMIN --> UC_USERS_EDIT
+ADMIN --> UC_USERS_CREDENTIALS
+ADMIN --> UC_USERS_TOGGLE
+ADMIN --> UC_USERS_DELETE
+ADMIN --> UC_USERS_IMPORT
+ADMIN --> UC_USERS_MEMBERSHIP
+ADMIN --> UC_TEAMS_LIST
+ADMIN --> UC_TEAMS_MUTATE
+ADMIN --> UC_VAC_PROCESS
+ADMIN --> UC_CAREER_EDIT
+
+CAND --> UC_ADM_TOKEN_VIEW
+CAND --> UC_ADM_SUBMIT
+CAND --> UC_FILE_UPLOAD_ADM
+
+UC_PROFILE_REQUEST ..> UC_FILE_UPLOAD : <<extend>>
+UC_LOGIN_OAUTH ..> UC_LOGIN : <<extend>>
+UC_PROFILE_REVIEW ..> UC_PROFILE_VIEW : <<include>>
+UC_PROFILE_APPROVE ..> UC_NOTIF_DECISION : <<include>>
+UC_PROFILE_REJECT ..> UC_NOTIF_DECISION : <<include>>
+
+UC_VAC_REQUEST ..> UC_VAC_VALIDATE : <<include>>
+UC_VAC_REQUEST_FOR_OTHER ..> UC_VAC_REQUEST : <<extend>>
+UC_VAC_EDIT ..> UC_VAC_VALIDATE : <<include>>
+UC_VAC_APPROVE ..> UC_VAC_NOTIFY : <<include>>
+UC_VAC_REJECT ..> UC_VAC_NOTIFY : <<include>>
+UC_VAC_EXPORT ..> UC_VAC_CAL_TEAM : <<include>>
+
+UC_HB_ENTRY ..> UC_HB_ALERT : <<include>>
+UC_HB_REPORT ..> UC_HB_OV : <<include>>
+UC_HB_EXPORT ..> UC_HB_OV : <<include>>
+
+UC_ADM_START ..> UC_ADM_INVITE : <<include>>
+UC_ADM_SUBMIT ..> UC_ADM_TOKEN_VIEW : <<include>>
+UC_ADM_SUBMIT ..> UC_FILE_UPLOAD_ADM : <<extend>>
+UC_ADM_COMPLETE ..> UC_USERS_CREATE : <<include>>
+
+UC_PERM_GRANT_REVOKE ..> UC_AUDIT : <<include>>
+UC_ACCESS_TOTAL ..> UC_AUDIT : <<include>>
+UC_USERS_EDIT ..> UC_AUDIT : <<include>>
+UC_USERS_CREDENTIALS ..> UC_AUDIT : <<include>>
+UC_USERS_MEMBERSHIP ..> UC_AUDIT : <<include>>
+UC_TEAMS_MUTATE ..> UC_AUDIT : <<include>>
+UC_DASH_EXPORT ..> UC_DASH_VIEW : <<include>>
+UC_TRN_DECIDE ..> UC_NOTIF_VIEW : <<include>>
+
+note right of HUB
+Modelo orientado a ações reais (pedir, aprovar, rejeitar,
+exportar, enviar, ver, editar, concluir), alinhado a:
+auth, profile, vacations, hour-bank, admissions,
+permissions, users, teams, trainings, career-plan,
+notifications, files e wellbeing.
+Cobertura de produto completo: fluxos do utilizador comum,
+liderança, RH com acesso total, administração e candidato.
+end note
+@enduml

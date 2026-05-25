@@ -143,6 +143,7 @@ export const initialProfileData: ProfileData = {
   dataFimContrato: '',
   tipoContrato: '',
   regimeHorario: '',
+  horasSemanaisContrato: '',
   workCountry: 'PT',
   brWorkState: '',
   photoUrl: '',

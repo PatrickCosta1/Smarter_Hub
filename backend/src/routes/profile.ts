@@ -344,6 +344,7 @@ const profileFields = [
   "dataFimContrato",
   "tipoContrato",
   "regimeHorario",
+  "horasSemanaisContrato",
   "githubUser",
   "workCountry",
   "brWorkState",
@@ -352,6 +353,8 @@ const profileFields = [
   "cartaConducaoUrl",
   "criminalRecordUrl",
 ] as const;
+
+const DYNAMIC_REGIME_PREFIX = 'DINAMICO::';
 
 function normalizeProfilePayload(payload: unknown) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -381,6 +384,112 @@ function normalizeProfilePayload(payload: unknown) {
   });
 
   return normalized;
+}
+
+function parseWeeklyHoursContract(value: unknown) {
+  const text = String(value ?? '').trim().replace(',', '.');
+  const parsed = Number(text);
+  if (!Number.isFinite(parsed)) {
+    throw new Error('As horas semanais de contrato devem ser numéricas.');
+  }
+
+  if (parsed <= 0 || parsed > 80) {
+    throw new Error('As horas semanais de contrato devem estar entre 1 e 80 horas.');
+  }
+
+  return Math.round(parsed * 100) / 100;
+}
+
+function parseTimeToMinutes(value: string) {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  return (hours * 60) + minutes;
+}
+
+function calculateWeeklyHoursFromDynamicRegime(value: string) {
+  if (!value.startsWith(DYNAMIC_REGIME_PREFIX)) {
+    return null;
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(value.slice(DYNAMIC_REGIME_PREFIX.length));
+  } catch {
+    throw new Error('Configuração de horas de trabalho inválida.');
+  }
+
+  if (!Array.isArray(payload)) {
+    throw new Error('Configuração de horas de trabalho inválida.');
+  }
+
+  let totalMinutes = 0;
+  let activeDays = 0;
+
+  for (const item of payload) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+
+    const record = item as Record<string, unknown>;
+    if (record.enabled !== true) {
+      continue;
+    }
+
+    activeDays += 1;
+    const start = parseTimeToMinutes(String(record.start ?? ''));
+    const end = parseTimeToMinutes(String(record.end ?? ''));
+    if (start == null || end == null || end <= start) {
+      throw new Error('Configuração de horas de trabalho inválida. Verifica os horários dos dias ativos.');
+    }
+
+    totalMinutes += (end - start);
+  }
+
+  if (activeDays === 0 || totalMinutes <= 0) {
+    throw new Error('Configuração de horas de trabalho inválida. Define pelo menos um dia ativo.');
+  }
+
+  return Math.round((totalMinutes / 60) * 100) / 100;
+}
+
+function mapWeeklyHoursContractField(input: Record<string, unknown>) {
+  const mapped = { ...input };
+
+  if (!Object.prototype.hasOwnProperty.call(mapped, 'horasSemanaisContrato')) {
+    return mapped;
+  }
+
+  const rawValue = String(mapped.horasSemanaisContrato ?? '').trim();
+  if (!rawValue) {
+    delete mapped.horasSemanaisContrato;
+    return mapped;
+  }
+
+  mapped.hourBankLimitHours = parseWeeklyHoursContract(rawValue);
+  delete mapped.horasSemanaisContrato;
+
+  return mapped;
+}
+
+function deriveContractWorkloadFields(input: Record<string, unknown>) {
+  const mapped = mapWeeklyHoursContractField(input);
+  const regimeValue = String(mapped.regimeHorario ?? '');
+
+  const derivedWeeklyHours = calculateWeeklyHoursFromDynamicRegime(regimeValue);
+  if (derivedWeeklyHours != null) {
+    mapped.hourBankLimitHours = derivedWeeklyHours;
+  }
+
+  return mapped;
 }
 
 const optionalStringField = z.union([z.string(), z.null()]).transform((value) => value ?? '').optional();
@@ -458,6 +567,7 @@ const updateProfileSchema = z.object({
   dataFimContrato: optionalStringField,
   tipoContrato: optionalStringField,
   regimeHorario: optionalStringField,
+  horasSemanaisContrato: optionalStringField,
   githubUser: optionalStringField,
   workCountry: z.enum(['PT', 'BR']).optional(),
   brWorkState: z.enum(['SP', 'RS']).or(z.literal('')).optional().transform((value) => value || undefined),
@@ -479,6 +589,15 @@ const updateProfileSchema = z.object({
       message: `${label} é obrigatório.`,
     });
   };
+
+  requireNonEmpty('comprovativoMoradaFiscal', 'Comprovativo da morada fiscal');
+  requireNonEmpty('comprovativoCartaoCidadao', 'Comprovativo do cartão de cidadão');
+  requireNonEmpty('comprovativoIban', 'Comprovativo do IBAN');
+  requireNonEmpty('comprovativoCartaoContinente', 'Comprovativo do cartão continente');
+  requireNonEmpty('photoUrl', 'Foto de utilizador');
+  requireNonEmpty('certificadoHabilitacoesUrl', 'Certificado de habilitações');
+  requireNonEmpty('cartaConducaoUrl', 'Carta de condução');
+  requireNonEmpty('criminalRecordUrl', 'Registo criminal');
 
   if (country === 'PT') {
     requireNonEmpty('cartaoCidadao', 'Cartão de cidadão');
@@ -555,6 +674,31 @@ const updateProfileSchema = z.object({
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['codigoPostal'], message: 'CEP inválido. Use 00000-000.' });
     }
   }
+
+  const weeklyHours = String(data.horasSemanaisContrato ?? '').trim().replace(',', '.');
+  const dynamicRegimeHours = (() => {
+    try {
+      return calculateWeeklyHoursFromDynamicRegime(String(data.regimeHorario ?? ''));
+    } catch (error) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['regimeHorario'],
+        message: error instanceof Error ? error.message : 'Configuração de horas de trabalho inválida.',
+      });
+      return null;
+    }
+  })();
+
+  if (dynamicRegimeHours == null && weeklyHours) {
+    const parsedWeeklyHours = Number(weeklyHours);
+    if (!Number.isFinite(parsedWeeklyHours) || parsedWeeklyHours <= 0 || parsedWeeklyHours > 80) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['horasSemanaisContrato'],
+        message: 'Indique um valor entre 1 e 80 horas semanais.',
+      });
+    }
+  }
 });
 
 const reviewRequestSchema = z.object({
@@ -563,7 +707,11 @@ const reviewRequestSchema = z.object({
   rejectedFields: z.record(z.string(), z.string()).optional(), // {"fieldName": "observações"}
 });
 
-const friendlyProfileFieldLabels: Partial<Record<(typeof profileFields)[number], string>> = {
+const updateProfilePhotoSchema = z.object({
+  photoUrl: z.string().trim().min(1, 'Foto de utilizador é obrigatória.'),
+});
+
+const friendlyProfileFieldLabels: Partial<Record<(typeof profileFields)[number] | 'hourBankLimitHours', string>> = {
   nomeCompleto: 'Nome completo',
   nomeAbreviado: 'Nome abreviado',
   dataNascimento: 'Data de nascimento',
@@ -629,6 +777,8 @@ const friendlyProfileFieldLabels: Partial<Record<(typeof profileFields)[number],
   dataFimContrato: 'Data de fim do contrato',
   tipoContrato: 'Tipo de contrato',
   regimeHorario: 'Regime horário',
+  horasSemanaisContrato: 'Horas semanais de contrato',
+  hourBankLimitHours: 'Horas semanais de contrato',
   validadeCartaoCidadao: 'Validade do cartão de cidadão',
   githubUser: 'GitHub',
   workCountry: 'País de trabalho',
@@ -842,6 +992,35 @@ router.get("/profile/me", requireAuth, async (req, res) => {
   }
 });
 
+router.put('/profile/me/photo', requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.authUser!.id;
+    const canEditOwnProfile = await hasPermission(userId, 'edit_profile');
+    const canRequestProfileChange = await hasPermission(userId, 'request_profile_change');
+    const canEditOtherProfiles = await hasPermission(userId, 'edit_other_profile');
+    const canEditGlobalProfileFields = req.authUser?.isRootAccess || await isAccessTotal(userId);
+
+    if (!canEditOwnProfile && !canRequestProfileChange && !canEditOtherProfiles && !canEditGlobalProfileFields) {
+      return res.status(403).json({ message: 'Sem permissões para editar ficha.' });
+    }
+
+    const { photoUrl } = updateProfilePhotoSchema.parse(req.body);
+
+    const profile = await prisma.profile.upsert({
+      where: { userId },
+      update: { photoUrl },
+      create: {
+        userId,
+        photoUrl,
+      },
+    });
+
+    return res.json(profile);
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.post('/profile/me/voucher-nos/request', requireAuth, async (req, res) => {
   const userId = req.authUser!.id;
 
@@ -981,7 +1160,8 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
   try {
     const userId = req.authUser!.id;
     const normalizedPayload = normalizeProfilePayload(req.body);
-    const data = updateProfileSchema.parse(normalizedPayload) as Record<string, unknown>;
+    let data = updateProfileSchema.parse(normalizedPayload) as Record<string, unknown>;
+    data = deriveContractWorkloadFields(data);
     const canEditOwnProfile = await hasPermission(userId, 'edit_profile');
     const canRequestProfileChange = await hasPermission(userId, 'request_profile_change');
     const canEditOtherProfiles = await hasPermission(userId, 'edit_other_profile');
@@ -995,17 +1175,36 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
       data.brWorkState = null;
     }
 
-    if (mustRequestProfileChange || (req.authUser!.role === 'COLABORADOR' && canRequestProfileChange)) {
-      const currentProfile = await prisma.profile.findUnique({
-        where: { userId },
-      });
+    const currentProfile = await prisma.profile.findUnique({
+      where: { userId },
+    });
 
-      const changedKeys = getChangedKeys(currentProfile as Record<string, unknown> | null, data as Record<string, unknown>);
+    const changedKeys = getChangedKeys(currentProfile as Record<string, unknown> | null, data as Record<string, unknown>);
 
-      if (changedKeys.length === 0) {
-        return res.status(400).json({ message: 'Não existem alterações para submeter.' });
+    if (changedKeys.length === 0) {
+      return res.status(400).json({ message: 'Não existem alterações para submeter.' });
+    }
+
+    const isPhotoOnlyChange = changedKeys.length === 1 && changedKeys[0] === 'photoUrl';
+
+    if (isPhotoOnlyChange) {
+      if (!canEditOwnProfile && !canEditOtherProfiles && !canRequestProfileChange && !canEditGlobalProfileFields) {
+        return res.status(403).json({ message: 'Sem permissões para editar ficha.' });
       }
 
+      const profile = await prisma.profile.upsert({
+        where: { userId },
+        update: { photoUrl: String(data.photoUrl ?? '') },
+        create: {
+          userId,
+          photoUrl: String(data.photoUrl ?? ''),
+        },
+      });
+
+      return res.json(profile);
+    }
+
+    if (mustRequestProfileChange || (req.authUser!.role === 'COLABORADOR' && canRequestProfileChange)) {
       const requesterName = resolveRequesterDisplayName(currentProfile);
       const summary = `Pedido de alteração de ficha: ${formatChangedKeys(changedKeys)}`;
       const notificationMessage = buildProfileChangeMessage(
@@ -1088,6 +1287,15 @@ router.put("/profile/me", requireAuth, async (req, res, next) => {
 
     return res.json(profile);
   } catch (error) {
+    if (
+      error instanceof Error
+      && (
+        error.message.toLowerCase().includes('horas semanais')
+        || error.message.toLowerCase().includes('configuração de horas')
+      )
+    ) {
+      return res.status(400).json({ message: error.message });
+    }
     return next(error);
   }
 });
@@ -1316,7 +1524,7 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
 
   // CASE 1: Aprovação completa
   if (reviewType === 'FULL_APPROVE') {
-    const requestedData = request.requestedData as Record<string, unknown>;
+    const requestedData = deriveContractWorkloadFields(request.requestedData as Record<string, unknown>);
 
     // Aplicar alterações ao perfil e marcar pedido como aprovado atomicamente
     await prisma.$transaction(async (tx) => {
@@ -1357,7 +1565,7 @@ router.post('/profile/requests/:id/approve', requireAuth, async (req, res) => {
   }
   // CASE 2: Rejeição parcial (alguns campos rejeitados)
   else if (reviewType === 'PARTIAL_REJECT') {
-    const requestedData = request.requestedData as Record<string, unknown>;
+    const requestedData = deriveContractWorkloadFields(request.requestedData as Record<string, unknown>);
     const approvedFields: Record<string, unknown> = {};
 
     // Separar campos aprovados dos rejeitados

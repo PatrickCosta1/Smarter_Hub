@@ -15,6 +15,10 @@ type DashboardSummaryMetrics = {
   };
 };
 
+type PaginatedRows<T> = {
+  rows: T[];
+};
+
 function getAuthHeaders() {
   const token = getStoredAuthToken();
   return authHeaders(token);
@@ -31,6 +35,8 @@ export default function HomePage() {
   const navigate = useNavigate();
   const { profile, unreadNotifications, hasPermission, isRootAccess, currentUser } = usePortal();
   const isTPeople = currentUser?.username === 't.people';
+  const canReviewProfiles = isRootAccess || isTPeople || hasPermission('approve_profile_change');
+  const canReviewVacations = isRootAccess || hasPermission('approve_vacation') || hasPermission('reject_vacation') || hasPermission('view_all_vacations');
   const canViewUserList = isRootAccess || hasPermission('view_user_list');
   const canReviewApprovals = isRootAccess || hasPermission('approve_profile_change') || hasPermission('approve_vacation') || hasPermission('reject_vacation');
   const canManageTrainings = isRootAccess || hasPermission('assign_training') || hasPermission('view_all_trainings');
@@ -83,11 +89,15 @@ export default function HomePage() {
                 headers,
                 signal: controller.signal,
               }, 15000, true),
-              apiRequestCached<unknown[]>('/profile/requests', { headers, signal: controller.signal }, 15000, true),
-              apiRequestCached<unknown[]>('/vacations/requests', { headers, signal: controller.signal }, 15000, true),
+              canReviewProfiles
+                ? apiRequestCached<unknown[]>('/profile/requests', { headers, signal: controller.signal }, 15000, true)
+                : Promise.resolve([]),
+              canReviewVacations
+                ? apiRequestCached<unknown[]>('/vacations/requests', { headers, signal: controller.signal }, 15000, true)
+                : Promise.resolve([]),
               apiRequestCached<{ pending?: boolean }>('/profile/requests/me', { headers, signal: controller.signal }, 15000),
               apiRequestCached<Array<{ status: string }>>('/vacations/me', { headers, signal: controller.signal }, 15000),
-              apiRequestCached<Array<{ status?: string }>>('/trainings/me', { headers, signal: controller.signal }, 15000),
+              apiRequestCached<PaginatedRows<{ status?: string }>>('/trainings/me?page=1&pageSize=100', { headers, signal: controller.signal }, 15000),
             ]);
 
             if (!controller.signal.aborted) {
@@ -95,7 +105,7 @@ export default function HomePage() {
               setPendingVacationRequests(Number(summary.totals?.pendingVacationRequests || 0));
               setPendingProfileApprovals(profileApprovals.length);
               setPendingVacationApprovals(vacationApprovals.length);
-              setAssignedTrainings(ownTrainings.filter((item) => item.status === 'ASSIGNED').length);
+              setAssignedTrainings((ownTrainings.rows || []).filter((item) => item.status === 'ASSIGNED').length);
               setOwnPendingProfileRequest(Boolean(ownRequest.pending));
               setOwnPendingVacationCount(ownVacations.filter((v) => v.status === 'PENDING').length);
             }
@@ -119,9 +129,13 @@ export default function HomePage() {
           }
         } else {
           const [profileRequestsResult, vacationRequestsResult, assignedTrainingsResult, ownRequestResult, ownVacationsResult] = await Promise.allSettled([
-            apiRequestCached<unknown[]>('/profile/requests', { headers, signal: controller.signal }, 15000, true),
-            apiRequestCached<unknown[]>('/vacations/requests', { headers, signal: controller.signal }, 15000, true),
-            apiRequestCached<Array<{ status?: string }>>('/trainings/me', { headers, signal: controller.signal }, 15000),
+            canReviewProfiles
+              ? apiRequestCached<unknown[]>('/profile/requests', { headers, signal: controller.signal }, 15000, true)
+              : Promise.resolve([]),
+            canReviewVacations
+              ? apiRequestCached<unknown[]>('/vacations/requests', { headers, signal: controller.signal }, 15000, true)
+              : Promise.resolve([]),
+            apiRequestCached<PaginatedRows<{ status?: string }>>('/trainings/me?page=1&pageSize=100', { headers, signal: controller.signal }, 15000),
             apiRequestCached<{ pending?: boolean }>('/profile/requests/me', { headers, signal: controller.signal }, 15000),
             apiRequestCached<Array<{ status: string }>>('/vacations/me', { headers, signal: controller.signal }, 15000),
           ]);
@@ -133,11 +147,15 @@ export default function HomePage() {
             setPendingVacationApprovals(vacationRequestsResult.status === 'fulfilled' ? vacationRequestsResult.value.length : 0);
             setAssignedTrainings(
               assignedTrainingsResult.status === 'fulfilled'
-                ? assignedTrainingsResult.value.filter((item) => item.status === 'ASSIGNED').length
+                ? (assignedTrainingsResult.value.rows || []).filter((item) => item.status === 'ASSIGNED').length
                 : 0,
             );
             setOwnPendingProfileRequest(ownRequestResult.status === 'fulfilled' ? Boolean(ownRequestResult.value.pending) : false);
-            setOwnPendingVacationCount(ownVacationsResult.status === 'fulfilled' ? ownVacationsResult.value.filter((v) => v.status === 'PENDING').length : 0);
+            setOwnPendingVacationCount(
+              ownVacationsResult.status === 'fulfilled' && Array.isArray(ownVacationsResult.value)
+                ? ownVacationsResult.value.filter((v) => v.status === 'PENDING').length
+                : 0,
+            );
             setIsLoadingPendingProfileRequests(false);
             setIsLoadingPendingVacationRequests(false);
             setIsLoadingAssignedTrainings(false);
@@ -154,7 +172,11 @@ export default function HomePage() {
       ]).then(([profileResult, vacationsResult]) => {
         if (!controller.signal.aborted) {
           setOwnPendingProfileRequest(profileResult.status === 'fulfilled' ? Boolean(profileResult.value.pending) : false);
-          setOwnPendingVacationCount(vacationsResult.status === 'fulfilled' ? vacationsResult.value.filter((v) => v.status === 'PENDING').length : 0);
+          setOwnPendingVacationCount(
+            vacationsResult.status === 'fulfilled' && Array.isArray(vacationsResult.value)
+              ? vacationsResult.value.filter((v) => v.status === 'PENDING').length
+              : 0,
+          );
           setIsLoadingOwnPendingProfileRequest(false);
           setIsLoadingPendingVacationRequests(false);
         }

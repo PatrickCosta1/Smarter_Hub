@@ -75,6 +75,8 @@ function buildApp(authOverride?: Partial<typeof defaultAuthUser>) {
 }
 
 describe('admissions routes integration', () => {
+  const futureDate = () => new Date(Date.now() + 24 * 60 * 60 * 1000);
+
   beforeEach(() => {
     vi.resetAllMocks();
     authConfig.currentUser = defaultAuthUser;
@@ -90,7 +92,7 @@ describe('admissions routes integration', () => {
       workCountry: 'PT',
       brWorkState: null,
       status: 'INVITED',
-      tokenExpiresAt: new Date('2026-05-14T12:00:00.000Z'),
+      tokenExpiresAt: futureDate(),
     });
     prismaMock.employeeAdmission.findUnique.mockResolvedValue(null);
     prismaMock.employeeAdmission.update.mockResolvedValue({});
@@ -159,7 +161,7 @@ describe('admissions routes integration', () => {
       brWorkState: null,
       status: 'INVITED',
       reviewReason: '',
-      tokenExpiresAt: new Date('2026-05-14T12:00:00.000Z'),
+      tokenExpiresAt: futureDate(),
       personalData: { nomeCompleto: 'Ana Silva' },
     });
 
@@ -180,7 +182,7 @@ describe('admissions routes integration', () => {
       brWorkState: null,
       status: 'INVITED',
       reviewReason: '',
-      tokenExpiresAt: new Date('2026-05-14T12:00:00.000Z'),
+      tokenExpiresAt: futureDate(),
       personalData: {},
     });
 

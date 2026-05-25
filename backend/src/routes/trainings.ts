@@ -5,8 +5,82 @@ import { prisma } from '../lib/prisma.js';
 import { getUserTrainings, deleteTraining } from '../services/trainings/get-trainings.service.js';
 import { buildUserWhereFromScope, canAccessUserByPermission, canReviewAccessTotalHierarchy, getPermissionScope, hasPermission } from '../lib/permission-engine.js';
 import { notifyUsers, notifyUsersByPermission } from '../lib/notifications.js';
+import {
+  buildTrainingMonthlyReport,
+  buildTrainingMonthlyReportCsv,
+  writeTrainingMonthlyReportPdf,
+} from '../lib/trainings-monthly-report.js';
 
 const router = Router();
+
+const TRAININGS_SETTINGS_KEY = 'trainings_settings_v1';
+
+const DEFAULT_TRAINING_ENTITIES = [
+  'Udemy',
+  'Coursera',
+  'LinkedIn Learning',
+  'Microsoft Learn',
+  'Google / Google Skillshop',
+  'Pluralsight',
+  'Alura',
+  'DIO',
+  'IEFP',
+  'Tlantic (Interna)',
+  'Outra',
+];
+
+const trainingsSettingsSchema = z.object({
+  entities: z.array(z.string().trim().min(1).max(120)).min(1).max(200),
+  requireCertificateOnComplete: z.boolean().default(false),
+  certificateMode: z.enum(['url', 'file_or_url']).default('url'),
+});
+
+type TrainingsSettings = z.infer<typeof trainingsSettingsSchema>;
+
+const DEFAULT_TRAININGS_SETTINGS: TrainingsSettings = {
+  entities: DEFAULT_TRAINING_ENTITIES,
+  requireCertificateOnComplete: false,
+  certificateMode: 'url',
+};
+
+async function canManageTrainingsSettings(userId: string, isRootAccess: boolean, hasAccessTotal: boolean) {
+  if (isRootAccess || hasAccessTotal) {
+    return true;
+  }
+
+  return hasPermission(userId, 'view_all_trainings');
+}
+
+async function canGenerateTrainingsMonthlyReport(userId: string, isRootAccess: boolean, hasAccessTotal: boolean) {
+  if (isRootAccess || hasAccessTotal) {
+    return true;
+  }
+
+  return hasPermission(userId, 'view_all_trainings');
+}
+
+async function getTrainingsSettings() {
+  const setting = await prisma.systemSetting.findUnique({
+    where: { key: TRAININGS_SETTINGS_KEY },
+    select: { textValue: true },
+  });
+
+  if (!setting?.textValue) {
+    return DEFAULT_TRAININGS_SETTINGS;
+  }
+
+  try {
+    const parsed = JSON.parse(setting.textValue) as unknown;
+    const result = trainingsSettingsSchema.safeParse(parsed);
+    if (!result.success) {
+      return DEFAULT_TRAININGS_SETTINGS;
+    }
+
+    return result.data;
+  } catch {
+    return DEFAULT_TRAININGS_SETTINGS;
+  }
+}
 
 const createTrainingSchema = z.object({
   nome: z.string().min(1, 'Nome é obrigatório'),
@@ -38,6 +112,15 @@ function parsePagination(query: Request['query']) {
     skip: (page - 1) * pageSize,
     take: pageSize,
   };
+}
+
+function requirePagination(query: Request['query']) {
+  const hasPagination = typeof query.page === 'string' || typeof query.pageSize === 'string';
+  if (!hasPagination) {
+    return { error: 'Parâmetros de paginação são obrigatórios (page e pageSize).' };
+  }
+
+  return { pagination: parsePagination(query) };
 }
 
 const ownTrainingInclude = {
@@ -149,12 +232,17 @@ async function filterHierarchyRecordsForActor(
 router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
+
+    const paginationResult = requirePagination(req.query);
+    if ('error' in paginationResult) {
+      return res.status(400).json({ error: paginationResult.error });
+    }
     
     if (!await hasPermission(userId, 'view_trainings')) {
       return res.status(403).json({ error: 'Sem permissões para consultar formações.' });
     }
 
-    const pagination = parsePagination(req.query);
+    const { pagination } = paginationResult;
     const data = await getUserTrainings(userId, pagination.skip, pagination.take);
 
     return res.json({ ...data, page: pagination.page, pageSize: pagination.pageSize });
@@ -164,10 +252,56 @@ router.get('/trainings/me', requireAuth, async (req: Request, res: Response) => 
   }
 });
 
+router.get('/trainings/settings', requireAuth, async (req: Request, res: Response) => {
+  const userId = req.authUser!.id;
+  const allowed = await canManageTrainingsSettings(userId, Boolean(req.authUser!.isRootAccess), Boolean(req.authUser!.hasAccessTotal));
+  if (!allowed) {
+    return res.status(403).json({ message: 'Sem permissões para consultar configurações de formações.' });
+  }
+
+  const settings = await getTrainingsSettings();
+  return res.json(settings);
+});
+
+router.put('/trainings/settings', requireAuth, async (req: Request, res: Response) => {
+  const userId = req.authUser!.id;
+  const allowed = await canManageTrainingsSettings(userId, Boolean(req.authUser!.isRootAccess), Boolean(req.authUser!.hasAccessTotal));
+  if (!allowed) {
+    return res.status(403).json({ message: 'Sem permissões para editar configurações de formações.' });
+  }
+
+  const payload = trainingsSettingsSchema.safeParse(req.body);
+  if (!payload.success) {
+    return res.status(400).json({ message: payload.error.issues[0].message });
+  }
+
+  const normalized: TrainingsSettings = {
+    entities: Array.from(new Set(payload.data.entities.map((item) => item.trim()).filter(Boolean))),
+    requireCertificateOnComplete: payload.data.requireCertificateOnComplete,
+    certificateMode: payload.data.certificateMode,
+  };
+
+  if (normalized.entities.length === 0) {
+    return res.status(400).json({ message: 'Define pelo menos uma entidade de formação.' });
+  }
+
+  await prisma.systemSetting.upsert({
+    where: { key: TRAININGS_SETTINGS_KEY },
+    update: { textValue: JSON.stringify(normalized), boolValue: null },
+    create: { key: TRAININGS_SETTINGS_KEY, textValue: JSON.stringify(normalized), boolValue: null },
+  });
+
+  return res.json(normalized);
+});
+
 router.get('/trainings/team', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.authUser!.id;
-    const pagination = parsePagination(req.query);
+    const paginationResult = requirePagination(req.query);
+    if ('error' in paginationResult) {
+      return res.status(400).json({ error: paginationResult.error });
+    }
+    const { pagination } = paginationResult;
     const [canViewOwn, canAssignOthers, canViewAll, ledTeamIds] = await Promise.all([
       hasPermission(userId, 'view_trainings'),
       hasPermission(userId, 'assign_training'),
@@ -221,7 +355,11 @@ router.get('/trainings/team', requireAuth, async (req: Request, res: Response) =
 router.get('/trainings/hierarchy', requireAuth, async (req: Request, res: Response) => {
   try {
     const actorUserId = req.authUser!.id;
-    const pagination = parsePagination(req.query);
+    const paginationResult = requirePagination(req.query);
+    if ('error' in paginationResult) {
+      return res.status(400).json({ message: paginationResult.error });
+    }
+    const { pagination } = paginationResult;
 
     if (!await hasPermission(actorUserId, 'view_all_trainings')) {
       return res.status(403).json({ message: 'Sem permissões para consultar formações da hierarquia.' });
@@ -260,7 +398,11 @@ router.get('/trainings/hierarchy', requireAuth, async (req: Request, res: Respon
 });
 
 router.get('/trainings/assigned', requireAuth, async (req: Request, res: Response) => {
-  const pagination = parsePagination(req.query);
+  const paginationResult = requirePagination(req.query);
+  if ('error' in paginationResult) {
+    return res.status(400).json({ message: paginationResult.error });
+  }
+  const { pagination } = paginationResult;
 
   if (!await hasPermission(req.authUser!.id, 'view_all_trainings')) {
     return res.status(403).json({ message: 'Sem permissões para consultar formações atribuídas.' });
@@ -290,6 +432,57 @@ router.get('/trainings/assigned', requireAuth, async (req: Request, res: Respons
   ]);
 
   return res.json({ total, page: pagination.page, pageSize: pagination.pageSize, rows });
+});
+
+router.get('/trainings/reports/monthly', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.authUser!.id;
+    const allowed = await canGenerateTrainingsMonthlyReport(userId, Boolean(req.authUser!.isRootAccess), Boolean(req.authUser!.hasAccessTotal));
+    if (!allowed) {
+      return res.status(403).json({ message: 'Sem permissões para gerar o relatório mensal de formações.' });
+    }
+
+    const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+    const teamId = typeof req.query.teamId === 'string' ? req.query.teamId : undefined;
+    const report = await buildTrainingMonthlyReport(prisma, { month, teamId });
+
+    return res.json(report);
+  } catch (error) {
+    return res.status(400).json({ message: error instanceof Error ? error.message : 'Falha ao gerar relatório mensal.' });
+  }
+});
+
+router.get('/trainings/reports/monthly/export', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.authUser!.id;
+    const allowed = await canGenerateTrainingsMonthlyReport(userId, Boolean(req.authUser!.isRootAccess), Boolean(req.authUser!.hasAccessTotal));
+    if (!allowed) {
+      return res.status(403).json({ message: 'Sem permissões para exportar o relatório mensal de formações.' });
+    }
+
+    const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+    const teamId = typeof req.query.teamId === 'string' ? req.query.teamId : undefined;
+    const format = typeof req.query.format === 'string' ? req.query.format.toLowerCase() : 'csv';
+
+    const report = await buildTrainingMonthlyReport(prisma, { month, teamId });
+    const teamSuffix = teamId ? `-${teamId}` : '-todas-equipas';
+
+    if (format === 'pdf') {
+      const fileName = `relatorio-formacoes-${report.month}${teamSuffix}.pdf`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      writeTrainingMonthlyReportPdf(report, res);
+      return;
+    }
+
+    const csv = buildTrainingMonthlyReportCsv(report);
+    const fileName = `relatorio-formacoes-${report.month}${teamSuffix}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return res.send(`\uFEFF${csv}`);
+  } catch (error) {
+    return res.status(400).json({ message: error instanceof Error ? error.message : 'Falha ao exportar relatório mensal.' });
+  }
 });
 
 router.post('/trainings', requireAuth, async (req: Request, res: Response) => {
@@ -404,7 +597,16 @@ router.post('/trainings/:id/complete', requireAuth, async (req: Request, res: Re
     const id = typeof req.params.id === 'string' ? req.params.id : '';
 
     const certParse = z.object({ certificateLink: z.string().default('') }).safeParse(req.body);
-    const certificateLink = certParse.success ? certParse.data.certificateLink : '';
+    const certificateLink = certParse.success ? certParse.data.certificateLink.trim() : '';
+    const trainingSettings = await getTrainingsSettings();
+
+    if (trainingSettings.requireCertificateOnComplete && !certificateLink) {
+      return res.status(400).json({
+        error: trainingSettings.certificateMode === 'file_or_url'
+          ? 'Certificado é obrigatório: anexa ficheiro ou URL.'
+          : 'Certificado (URL) é obrigatório para concluir a formação.',
+      });
+    }
 
     const training = await prisma.training.findFirst({ where: { id } });
 

@@ -1,6 +1,6 @@
 export type UserRole = 'colaborador' | 'manager' | 'coordenador' | 'admin' | 'convidado';
 
-export type PortalPage = 'home' | 'profile' | 'perfil' | 'notifications' | 'aprovacoes' | 'equipas' | 'formacoes' | 'ferias' | 'banco-horas' | 'admin' | 'colaboradores';
+export type PortalPage = 'home' | 'profile' | 'perfil' | 'notifications' | 'aprovacoes' | 'equipas' | 'formacoes' | 'ferias' | 'banco-horas' | 'admin' | 'colaboradores' | 'avaliacao-desempenho';
 
 export type MenuItem = {
   id: string;
@@ -76,6 +76,7 @@ export type ProfileData = {
   dataFimContrato: string;
   tipoContrato: string;
   regimeHorario: string;
+  horasSemanaisContrato: string;
   workCountry: 'PT' | 'BR';
   brWorkState: '' | 'SP' | 'RS';
   photoUrl: string;

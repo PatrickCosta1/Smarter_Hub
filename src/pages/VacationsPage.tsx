@@ -1386,13 +1386,6 @@ export default function VacationsPage() {
       return;
     }
 
-    if (currentUser?.id && !selectedVacationTargetUserId) {
-      const firstCandidate = vacationTargetCandidates.find((item) => item.id !== currentUser.id)?.id
-        || vacationTargetCandidates[0]?.id
-        || currentUser.id;
-      setSelectedVacationTargetUserId(firstCandidate);
-    }
-
     const timeout = window.setTimeout(() => {
       void loadVacationTargetCandidates(vacationTargetSearch);
     }, 220);
@@ -1400,7 +1393,24 @@ export default function VacationsPage() {
     return () => {
       window.clearTimeout(timeout);
     };
-  }, [canBookForOthers, currentUser?.id, selectedVacationTargetUserId, vacationTargetCandidates, vacationTargetSearch]);
+  }, [canBookForOthers, vacationTargetSearch]);
+
+  useEffect(() => {
+    if (!canBookForOthers || selectedVacationTargetUserId) {
+      return;
+    }
+
+    const firstCandidate = (currentUser?.id
+      ? vacationTargetCandidates.find((item) => item.id !== currentUser.id)?.id
+      : undefined)
+      || vacationTargetCandidates[0]?.id
+      || currentUser?.id
+      || '';
+
+    if (firstCandidate) {
+      setSelectedVacationTargetUserId(firstCandidate);
+    }
+  }, [canBookForOthers, currentUser?.id, selectedVacationTargetUserId, vacationTargetCandidates]);
 
   useEffect(() => {
     if (activeCollaboratorPickerMode === 'vacation-target') {
