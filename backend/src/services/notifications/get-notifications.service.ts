@@ -8,10 +8,18 @@ import { OCCUPATIONAL_HEALTH_ALERT_TITLE } from '../../lib/occupational-health-a
 const SHARED_MANAGEMENT_USERNAMES = ['t.people'];
 
 export async function getUserNotifications(userId: string, skip: number, take: number) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { username: true },
-  });
+  const userDelegate = (prisma as unknown as {
+    user?: {
+      findUnique?: (args: { where: { id: string }; select: { username: boolean } }) => Promise<{ username: string } | null>;
+    };
+  }).user;
+
+  const user = userDelegate?.findUnique
+    ? await userDelegate.findUnique({
+      where: { id: userId },
+      select: { username: true },
+    })
+    : null;
 
   const isSharedManagementUser = user
     ? SHARED_MANAGEMENT_USERNAMES.includes(user.username.toLowerCase())

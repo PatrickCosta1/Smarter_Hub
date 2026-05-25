@@ -60,7 +60,17 @@ async function canGenerateTrainingsMonthlyReport(userId: string, isRootAccess: b
 }
 
 async function getTrainingsSettings() {
-  const setting = await prisma.systemSetting.findUnique({
+  const systemSettingDelegate = (prisma as unknown as {
+    systemSetting?: {
+      findUnique?: (args: { where: { key: string }; select: { textValue: boolean } }) => Promise<{ textValue: string | null } | null>;
+    };
+  }).systemSetting;
+
+  if (!systemSettingDelegate?.findUnique) {
+    return DEFAULT_TRAININGS_SETTINGS;
+  }
+
+  const setting = await systemSettingDelegate.findUnique({
     where: { key: TRAININGS_SETTINGS_KEY },
     select: { textValue: true },
   });
