@@ -1362,7 +1362,7 @@ export default function TrainingsPage() {
                 <th className="sortable-th trainings-col trainings-col--hours" onClick={() => toggleSort('horas')}>Horas {sortIcon('horas')}</th>
                 <th className="sortable-th trainings-col trainings-col--start" onClick={() => toggleSort('dataInicio')}>Data de início {sortIcon('dataInicio')}</th>
                 <th className="trainings-col trainings-col--entity">Entidade</th>
-                <th className="sortable-th trainings-col trainings-col--completion" onClick={() => toggleSort('dataConclusao')}>Data conclusão {sortIcon('dataConclusao')}</th>
+                <th className="sortable-th trainings-col trainings-col--completion" onClick={() => toggleSort('dataConclusao')}>Conclusão {sortIcon('dataConclusao')}</th>
                 <th className="sortable-th trainings-col trainings-col--status" onClick={() => toggleSort('status')}>Estado {sortIcon('status')}</th>
                 {((isOwnScope && canMarkCompleted) || (!isOwnScope && canCompleteForOthers)) && <th className="trainings-col trainings-col--actions">Ações</th>}
               </tr>
@@ -1784,7 +1784,7 @@ export default function TrainingsPage() {
           </div>
         }
       >
-        <div className="permissions-access-modal">
+        <div className="permissions-access-modal trainings-shell trainings-settings-modal">
           <label>
             <span>Entidades de formação</span>
             <div className="trainings-entity-editor">

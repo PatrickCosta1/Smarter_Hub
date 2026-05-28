@@ -16274,7 +16274,6 @@
   }
 }
 
-@media (max-width: 900px) {
   .collaborators-filter-group {
     flex-direction: column;
   }
@@ -16291,71 +16290,75 @@
 
 /* Trainings table readability and modern settings editor */
 .trainings-shell .trainings-table-wrap {
-  overflow-x: auto;
+  overflow-x: hidden;
+  overflow-y: hidden;
   border: 1px solid #dbe7fb;
   border-radius: 14px;
   background: #ffffff;
+  min-width: 0;
 }
 
 .trainings-shell .trainings-table {
   width: 100%;
-  min-width: 1180px;
+  min-width: 0;
   table-layout: fixed;
+}
+
+.trainings-shell .trainings-table,
+.trainings-shell .trainings-table th,
+.trainings-shell .trainings-table td {
+  box-sizing: border-box;
 }
 
 .trainings-shell .trainings-table th,
 .trainings-shell .trainings-table td {
-  vertical-align: top;
   line-height: 1.35;
-  white-space: normal;
   overflow-wrap: anywhere;
   word-break: normal;
+  padding: 8px 6px;
 }
 
 .trainings-shell .trainings-table thead th {
   white-space: nowrap;
+  font-weight: 800;
+  font-size: 0.75rem;
+}
+
+.trainings-shell .trainings-table tbody td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .trainings-shell .trainings-col {
-  font-size: 0.93rem;
+  font-size: 0.73rem;
 }
 
-.trainings-shell .trainings-col--training {
-  width: 20%;
-  min-width: 230px;
-  font-weight: 600;
+.trainings-shell .trainings-col--training { width: 13%; }
+.trainings-shell .trainings-col--collaborator { width: 10%; }
+.trainings-shell .trainings-col--team { width: 7%; }
+.trainings-shell .trainings-col--origin { width: 6%; }
+.trainings-shell .trainings-col--link { width: 4%; }
+.trainings-shell .trainings-col--hours { width: 5.5%; }
+.trainings-shell .trainings-col--start { width: 9.6%; }
+.trainings-shell .trainings-col--entity { width: 10%; }
+.trainings-shell .trainings-col--completion { width: 8.5%; }
+.trainings-shell .trainings-col--status { width: 6.6%; }
+.trainings-shell .trainings-col--actions { width: 8%; }
+
+/* Allow Formação cell to wrap into multiple lines and increase cell height */
+.trainings-shell .trainings-table tbody td.trainings-col--training {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  padding-top: 12px;
+  padding-bottom: 12px;
 }
 
-.trainings-shell .trainings-col--collaborator {
-  width: 14%;
-  min-width: 170px;
-}
-
-.trainings-shell .trainings-col--team {
-  width: 12%;
-  min-width: 150px;
-}
-
-.trainings-shell .trainings-col--origin,
-.trainings-shell .trainings-col--entity {
-  width: 10%;
-  min-width: 130px;
-}
-
-.trainings-shell .trainings-col--link {
-  width: 7%;
-  min-width: 95px;
-  white-space: nowrap;
-}
-
-.trainings-shell .trainings-col--hours,
-.trainings-shell .trainings-col--start,
-.trainings-shell .trainings-col--completion,
-.trainings-shell .trainings-col--status,
-.trainings-shell .trainings-col--actions {
-  width: 7%;
-  min-width: 96px;
-  white-space: nowrap;
+/* Slightly reduce font-size in training cell to help fit longer titles */
+.trainings-shell .trainings-table tbody td.trainings-col--training span {
+  display: block;
+  font-size: 0.95rem;
 }
 
 .trainings-shell .trainings-col--status,
@@ -16376,13 +16379,20 @@
 
 .trainings-shell .trainings-entity-editor {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  align-items: center;
+  align-items: stretch;
 }
 
 .trainings-shell .trainings-entity-editor input {
   flex: 1;
   min-width: 0;
+  border-radius: 12px;
+}
+
+.trainings-shell .trainings-entity-editor button {
+  flex-shrink: 0;
+  min-width: 120px;
 }
 
 .trainings-shell .trainings-entity-helper {
@@ -16506,7 +16516,7 @@
     flex-direction: column;
     align-items: stretch;
   }
-}
+
 
   .vacations-calendar-integrated {
     display: grid;
