@@ -16274,10 +16274,6 @@
   }
 }
 
-  .collaborators-filter-group {
-    flex-direction: column;
-  }
-
   .collaborators-export-actions {
     flex-direction: column;
     align-items: stretch;

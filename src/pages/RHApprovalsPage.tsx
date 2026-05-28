@@ -809,11 +809,6 @@ export default function RHApprovalsPage() {
             Alterações de ficha ({isLoadingProfileRequests ? '...' : profileRequests.length})
           </button>
         )}
-        {canReviewAdmissions && (
-          <button type="button" className={activeTab === 'admissions' ? 'is-active' : ''} onClick={() => handleTabChange('admissions')}>
-            Admissões ({isLoadingAdmissionRequests ? '...' : admissionRequests.length})
-          </button>
-        )}
         {canReviewVacations && (
           <button type="button" className={activeTab === 'vacations' ? 'is-active' : ''} onClick={() => handleTabChange('vacations')}>
             Férias e ausências ({isLoadingVacationRequests ? '...' : vacationRequests.length})
