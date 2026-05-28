@@ -21,10 +21,15 @@ export default function Modal({ open, title, onClose, children, width, footer, s
     onCloseRef.current = onClose;
   }, [onClose]);
 
+  const prevBodyOverflowRef = useRef<string>('');
+
   useEffect(() => {
     if (!open) {
       return;
     }
+
+    prevBodyOverflowRef.current = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
 
     lastFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
@@ -72,6 +77,7 @@ export default function Modal({ open, title, onClose, children, width, footer, s
 
     return () => {
       window.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = prevBodyOverflowRef.current;
       if (lastFocusedElementRef.current) {
         lastFocusedElementRef.current.focus();
       }
@@ -82,7 +88,7 @@ export default function Modal({ open, title, onClose, children, width, footer, s
     return null;
   }
 
-  const showHeaderClose = showCloseButton && !footer;
+  const showHeaderClose = showCloseButton;
 
   return (
     <div className="quick-overlay" onClick={onClose} role="presentation">
@@ -98,16 +104,18 @@ export default function Modal({ open, title, onClose, children, width, footer, s
       >
         <header className="quick-modal__head">
           <h3 id={titleId}>{title}</h3>
-          {showHeaderClose && (
-            <Button variant="ghost" size="sm" type="button" onClick={onClose} aria-label="Fechar">
-              Fechar
-            </Button>
-          )}
         </header>
 
         <div className="ui-modal__body">{children}</div>
 
-        {footer ? <footer className="ui-modal__footer">{footer}</footer> : null}
+        <footer className="ui-modal__footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          {footer}
+          {showCloseButton && (
+            <Button variant="ghost" size="sm" type="button" onClick={onClose} aria-label="Fechar">
+              Fechar
+            </Button>
+          )}
+        </footer>
       </article>
     </div>
   );

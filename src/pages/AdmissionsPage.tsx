@@ -3,12 +3,12 @@ import { apiRequest, authHeaders } from '../portal/api';
 import { getStoredAuthToken } from '../portal/auth-storage';
 import { usePortal } from '../portal/context';
 import Modal from '../components/ui/Modal';
+import Button from '../components/ui/Button';
 
 function getAuthHeaders() {
   const token = getStoredAuthToken();
   return authHeaders(token);
 }
-import Button from '../components/ui/Button';
 
 /* ── Types ────────────────────────────────────────────────────────────────── */
 
@@ -105,74 +105,44 @@ function cloneDefaultWorkDays() {
 
 function parseTimeToMinutes(value: string) {
   const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
-  if (!match) {
-    return null;
-  }
-
+  if (!match) return null;
   const hours = Number(match[1]);
   const minutes = Number(match[2]);
-  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
-    return null;
-  }
-
-  return (hours * 60) + minutes;
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
 }
 
 function calculateWeeklyHoursFromDays(days: ReadonlyArray<WorkDaySchedule>) {
   let totalMinutes = 0;
   let hasActiveDay = false;
-
   for (const day of days) {
-    if (!day.enabled) {
-      continue;
-    }
-
+    if (!day.enabled) continue;
     hasActiveDay = true;
     const start = parseTimeToMinutes(day.start);
     const end = parseTimeToMinutes(day.end);
-    if (start == null || end == null || end <= start) {
-      return null;
-    }
-
+    if (start == null || end == null || end <= start) return null;
     totalMinutes += end - start;
   }
-
-  if (!hasActiveDay || totalMinutes <= 0) {
-    return null;
-  }
-
+  if (!hasActiveDay || totalMinutes <= 0) return null;
   return Math.round((totalMinutes / 60) * 100) / 100;
 }
 
 function parseDynamicRegimeDays(value: string) {
-  if (!value.startsWith(DYNAMIC_REGIME_PREFIX)) {
-    return cloneDefaultWorkDays();
-  }
-
+  if (!value.startsWith(DYNAMIC_REGIME_PREFIX)) return cloneDefaultWorkDays();
   let parsed: unknown;
   try {
     parsed = JSON.parse(value.slice(DYNAMIC_REGIME_PREFIX.length));
   } catch {
     return cloneDefaultWorkDays();
   }
-
-  if (!Array.isArray(parsed)) {
-    return cloneDefaultWorkDays();
-  }
-
+  if (!Array.isArray(parsed)) return cloneDefaultWorkDays();
   const byDay = new Map<WorkDayKey, WorkDaySchedule>();
   for (const item of parsed) {
-    if (!item || typeof item !== 'object') {
-      continue;
-    }
-
+    if (!item || typeof item !== 'object') continue;
     const record = item as Record<string, unknown>;
     const key = String(record.day ?? '') as WorkDayKey;
-    const defaultDay = DEFAULT_WORK_DAYS.find((entry) => entry.day === key);
-    if (!defaultDay) {
-      continue;
-    }
-
+    const defaultDay = DEFAULT_WORK_DAYS.find((e) => e.day === key);
+    if (!defaultDay) continue;
     byDay.set(key, {
       day: defaultDay.day,
       label: defaultDay.label,
@@ -181,42 +151,25 @@ function parseDynamicRegimeDays(value: string) {
       end: typeof record.end === 'string' ? record.end : defaultDay.end,
     });
   }
-
   return DEFAULT_WORK_DAYS.map((entry) => byDay.get(entry.day) ?? { ...entry });
 }
 
 function serializeDynamicRegimeDays(days: ReadonlyArray<WorkDaySchedule>) {
-  const compact = days.map((item) => ({
-    day: item.day,
-    enabled: item.enabled,
-    start: item.start,
-    end: item.end,
-  }));
-
-  return `${DYNAMIC_REGIME_PREFIX}${JSON.stringify(compact)}`;
+  return `${DYNAMIC_REGIME_PREFIX}${JSON.stringify(days.map((d) => ({ day: d.day, enabled: d.enabled, start: d.start, end: d.end })))}`;
 }
 
 function summarizeDynamicRegime(value: string) {
-  if (!value.startsWith(DYNAMIC_REGIME_PREFIX)) {
-    return value || 'Não configurado';
-  }
-
+  if (!value.startsWith(DYNAMIC_REGIME_PREFIX)) return value || 'Não configurado';
   const days = parseDynamicRegimeDays(value);
-  const active = days.filter((item) => item.enabled);
-  if (active.length === 0) {
-    return 'Sem dias ativos';
-  }
-
-  const labels = active.map((item) => item.label.slice(0, 3));
+  const active = days.filter((d) => d.enabled);
+  if (active.length === 0) return 'Sem dias ativos';
+  const labels = active.map((d) => d.label.slice(0, 3));
   const hourSample = active[0] ? `${active[0].start} - ${active[0].end}` : '';
   return `${labels.join(', ')}${hourSample ? ` · ${hourSample}` : ''}`;
 }
 
 function formatWeeklyHoursLabel(hours: number | null) {
-  if (hours == null) {
-    return 'Não configurado';
-  }
-
+  if (hours == null) return 'Não configurado';
   return `${hours.toLocaleString('pt-PT', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} h por semana`;
 }
 
@@ -231,12 +184,12 @@ const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
 ];
 
 const STATUS_META: Record<AdmissionStatus, { label: string; color: string; bg: string; dot: string }> = {
-  INVITED:                    { label: 'Convidado',          color: '#1a56db', bg: '#eff6ff',  dot: '#3b82f6' },
-  SUBMITTED:                  { label: 'Submetido',          color: '#92400e', bg: '#fffbeb',  dot: '#f59e0b' },
-  CHANGES_REQUESTED:          { label: 'Correção pedida',    color: '#991b1b', bg: '#fef2f2',  dot: '#ef4444' },
-  APPROVED_PENDING_CONTRACT:  { label: 'Aguarda contrato',   color: '#5b21b6', bg: '#f5f3ff',  dot: '#8b5cf6' },
-  COMPLETED:                  { label: 'Concluído',          color: '#065f46', bg: '#f0fdf4',  dot: '#10b981' },
-  CANCELLED:                  { label: 'Cancelado',          color: '#6b7280', bg: '#f9fafb',  dot: '#9ca3af' },
+  INVITED:                   { label: 'Convidado',        color: '#1a56db', bg: '#eff6ff', dot: '#3b82f6' },
+  SUBMITTED:                 { label: 'Submetido',        color: '#92400e', bg: '#fffbeb', dot: '#f59e0b' },
+  CHANGES_REQUESTED:         { label: 'Correção pedida',  color: '#991b1b', bg: '#fef2f2', dot: '#ef4444' },
+  APPROVED_PENDING_CONTRACT: { label: 'Aguarda contrato', color: '#5b21b6', bg: '#f5f3ff', dot: '#8b5cf6' },
+  COMPLETED:                 { label: 'Concluído',        color: '#065f46', bg: '#f0fdf4', dot: '#10b981' },
+  CANCELLED:                 { label: 'Cancelado',        color: '#6b7280', bg: '#f9fafb', dot: '#9ca3af' },
 };
 
 function formatDate(iso?: string | null) {
@@ -312,12 +265,10 @@ export default function AdmissionsPage() {
 
   const refreshList = useCallback(() => { void load(statusFilter); }, [load, statusFilter]);
 
-  /* Stats */
   const counts: Record<string, number> = {};
   rows.forEach((r) => { counts[r.status] = (counts[r.status] ?? 0) + 1; });
   const pending = (counts['SUBMITTED'] ?? 0) + (counts['APPROVED_PENDING_CONTRACT'] ?? 0);
 
-  /* Client-side search filter */
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
@@ -336,12 +287,10 @@ export default function AdmissionsPage() {
           <h1 style={s.pageTitle}>Admissões</h1>
           <p style={s.pageSubtitle}>Gestão de processos de admissão de novos colaboradores</p>
         </div>
-        <div style={{ display: 'grid', gap: 10, justifyItems: 'end' }}>
-          <div style={s.statsRow}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <StatCard value={total} label="Total" color="#1a56db" />
           <StatCard value={pending} label="Pendentes" color="#f59e0b" />
           <StatCard value={counts['COMPLETED'] ?? 0} label="Concluídos" color="#10b981" />
-          </div>
         </div>
       </div>
 
@@ -360,7 +309,7 @@ export default function AdmissionsPage() {
         <select
           style={s.filterSelect}
           value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setSelected(null); }}
+          onChange={(e) => { setStatusFilter(e.target.value); }}
         >
           {STATUS_FILTER_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
@@ -369,7 +318,7 @@ export default function AdmissionsPage() {
           ))}
         </select>
         {(search || statusFilter) && (
-          <button style={s.clearBtn} onClick={() => { setSearch(''); setStatusFilter(''); setSelected(null); }}>
+          <button style={s.clearBtn} onClick={() => { setSearch(''); setStatusFilter(''); }}>
             Limpar filtros
           </button>
         )}
@@ -378,101 +327,102 @@ export default function AdmissionsPage() {
         </span>
       </div>
 
-      {/* ── Body ── */}
+      {/* ── Table ── */}
       <div style={s.body}>
-        {/* LEFT: list */}
-        <div style={{ ...s.listPane, flexShrink: selected ? 1 : 0 }}>
-          {isLoading ? (
-            <div style={s.centeredMsg}>A carregar…</div>
-          ) : error ? (
-            <div style={s.errorMsg}>{error}</div>
-          ) : filtered.length === 0 ? (
-            <div style={s.centeredMsg}>
-              <div style={{ fontSize: 40, marginBottom: 8 }}>📭</div>
-              <p style={{ margin: 0, color: '#6b7280' }}>{rows.length === 0 ? 'Sem admissões registadas.' : 'Nenhum resultado para os filtros aplicados.'}</p>
-            </div>
-          ) : (
-            <table style={s.table}>
-              <thead>
-                <tr>
-                  <th style={s.th}>Colaborador</th>
-                  <th style={s.th}>Email pessoal</th>
-                  {isRootAccess && <th style={s.th}>País</th>}
-                  <th style={s.th}>Criado em</th>
-                  <th style={s.th}>Submetido em</th>
-                  <th style={s.th}>Estado</th>
-                  <th style={{ ...s.th, width: 60 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((row) => {
-                  const meta = STATUS_META[row.status] ?? STATUS_META['CANCELLED'];
-                  const isSelectedRow = selected?.id === row.id;
-                  const isHovered = hoveredId === row.id;
-                  const rowStyle: React.CSSProperties = {
-                    ...s.tr,
-                    ...(isSelectedRow ? s.trSelected : isHovered ? s.trHovered : {}),
-                  };
-                  return (
-                    <tr
-                      key={row.id}
-                      style={rowStyle}
-                      onClick={() => { void openDetail(row.id); }}
-                      onMouseEnter={() => setHoveredId(row.id)}
-                      onMouseLeave={() => setHoveredId(null)}
-                    >
-                      <td style={s.td}>
-                        <div style={{ fontWeight: 600, color: '#111827', fontSize: 14 }}>{row.fullName}</div>
-                        <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                          Convidado por {actorName(row.invitedBy)}
-                        </div>
-                      </td>
-                      <td style={s.td}><span style={{ fontFamily: 'monospace', fontSize: 12, color: '#4b5563' }}>{row.personalEmail}</span></td>
-                      {isRootAccess && (
-                        <td style={s.td}>
-                          <span style={s.countryBadge}>{row.workCountry === 'PT' ? '🇵🇹 PT' : '🇧🇷 BR'}</span>
-                        </td>
-                      )}
-                      <td style={{ ...s.td, color: '#6b7280', fontSize: 13 }}>{formatDate(row.createdAt)}</td>
-                      <td style={{ ...s.td, color: '#6b7280', fontSize: 13 }}>{row.submittedAt ? formatDate(row.submittedAt) : <span style={{ color: '#d1d5db' }}>—</span>}</td>
-                      <td style={s.td}>
-                        <span style={{ ...s.badge, background: meta.bg, color: meta.color }}>
-                          <span style={{ ...s.dot, background: meta.dot }} />
-                          {meta.label}
-                        </span>
-                      </td>
-                      <td style={{ ...s.td, textAlign: 'center' as const }}>
-                        <button
-                          style={isHovered || isSelectedRow ? s.verBtnActive : s.verBtn}
-                          onClick={(e) => { e.stopPropagation(); void openDetail(row.id); }}
-                          title="Ver ficha"
-                        >
-                          Ver
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {/* RIGHT: detail panel */}
-        {(selected || detailLoading) && (
-          <div style={s.detailPane}>
-            {detailLoading ? (
-              <div style={s.centeredMsg}>A carregar detalhes…</div>
-            ) : selected ? (
-              <DetailPanel
-                admission={selected}
-                onClose={() => setSelected(null)}
-                onRefresh={() => { refreshList(); void openDetail(selected.id); }}
-              />
-            ) : null}
+        {isLoading ? (
+          <div style={s.centeredMsg}>A carregar…</div>
+        ) : error ? (
+          <div style={s.errorMsg}>{error}</div>
+        ) : filtered.length === 0 ? (
+          <div style={s.centeredMsg}>
+            <div style={{ fontSize: 40, marginBottom: 8 }}>📭</div>
+            <p style={{ margin: 0, color: '#6b7280' }}>
+              {rows.length === 0 ? 'Sem admissões registadas.' : 'Nenhum resultado para os filtros aplicados.'}
+            </p>
           </div>
+        ) : (
+          <table style={s.table}>
+            <thead>
+              <tr>
+                <th style={s.th}>Colaborador</th>
+                <th style={s.th}>Email pessoal</th>
+                {isRootAccess && <th style={s.th}>País</th>}
+                <th style={s.th}>Criado em</th>
+                <th style={s.th}>Submetido em</th>
+                <th style={s.th}>Estado</th>
+                <th style={{ ...s.th, width: 80 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((row) => {
+                const meta = STATUS_META[row.status] ?? STATUS_META['CANCELLED'];
+                const isHovered = hoveredId === row.id;
+                return (
+                  <tr
+                    key={row.id}
+                    style={{ ...s.tr, ...(isHovered ? s.trHovered : {}) }}
+                    onClick={() => { void openDetail(row.id); }}
+                    onMouseEnter={() => setHoveredId(row.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                  >
+                    <td style={s.td}>
+                      <div style={{ fontWeight: 600, color: '#111827', fontSize: 14 }}>{row.fullName}</div>
+                      <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+                        Convidado por {actorName(row.invitedBy)}
+                      </div>
+                    </td>
+                    <td style={s.td}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#4b5563' }}>{row.personalEmail}</span>
+                    </td>
+                    {isRootAccess && (
+                      <td style={s.td}>
+                        <span style={s.countryBadge}>{row.workCountry === 'PT' ? 'PT' : 'BR'}</span>
+                      </td>
+                    )}
+                    <td style={{ ...s.td, color: '#6b7280', fontSize: 13 }}>{formatDate(row.createdAt)}</td>
+                    <td style={{ ...s.td, color: '#6b7280', fontSize: 13 }}>
+                      {row.submittedAt ? formatDate(row.submittedAt) : <span style={{ color: '#d1d5db' }}>—</span>}
+                    </td>
+                    <td style={s.td}>
+                      <span style={{ ...s.badge, background: meta.bg, color: meta.color }}>
+                        <span style={{ ...s.dot, background: meta.dot }} />
+                        {meta.label}
+                      </span>
+                    </td>
+                    <td style={{ ...s.td, textAlign: 'center' }}>
+                      <button
+                        style={isHovered ? s.verBtnActive : s.verBtn}
+                        onClick={(e) => { e.stopPropagation(); void openDetail(row.id); }}
+                        title="Ver ficha"
+                      >
+                        Ver
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
       </div>
+
+      {/* ── Detail Modal ── */}
+      <Modal
+        open={!!(selected || detailLoading)}
+        title={selected ? selected.fullName : 'A carregar…'}
+        onClose={() => setSelected(null)}
+        width="min(900px, 96vw)"
+      >
+        {detailLoading && !selected ? (
+          <div style={{ padding: '40px 0', textAlign: 'center', color: '#6b7280' }}>A carregar detalhes…</div>
+        ) : selected ? (
+          <DetailPanel
+            admission={selected}
+            onClose={() => setSelected(null)}
+            onRefresh={() => { refreshList(); void openDetail(selected.id); }}
+          />
+        ) : null}
+      </Modal>
     </div>
   );
 }
@@ -488,7 +438,7 @@ function StatCard({ value, label, color }: { value: number; label: string; color
   );
 }
 
-/* ── Detail Panel ───────────────────────────────────────────────────────────── */
+/* ── Detail Panel (rendered inside Modal) ──────────────────────────────────── */
 
 function DetailPanel({ admission, onClose, onRefresh }: {
   admission: Admission;
@@ -500,7 +450,8 @@ function DetailPanel({ admission, onClose, onRefresh }: {
 
   const [actionMsg, setActionMsg] = useState('');
   const [correctionReason, setCorrectionReason] = useState('');
-  const [showCorrectionForm, setShowCorrectionForm] = useState(false);
+  const [isCorrectionModalOpen, setIsCorrectionModalOpen] = useState(false);
+  const [isApproveConfirmOpen, setIsApproveConfirmOpen] = useState(false);
   const [showContractForm, setShowContractForm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isWorkHoursModalOpen, setIsWorkHoursModalOpen] = useState(false);
@@ -524,35 +475,19 @@ function DetailPanel({ admission, onClose, onRefresh }: {
     if (contract.regimeHorario.startsWith(DYNAMIC_REGIME_PREFIX)) {
       return calculateWeeklyHoursFromDays(parseDynamicRegimeDays(contract.regimeHorario));
     }
-
     const raw = Number(contract.horasSemanaisContrato.replace(',', '.'));
-    if (!Number.isFinite(raw) || raw <= 0) {
-      return null;
-    }
-
+    if (!Number.isFinite(raw) || raw <= 0) return null;
     return Math.round(raw * 100) / 100;
   }, [contract.horasSemanaisContrato, contract.regimeHorario]);
 
   const regimeSummary = useMemo(() => summarizeDynamicRegime(contract.regimeHorario), [contract.regimeHorario]);
 
   useEffect(() => {
-    if (!contract.regimeHorario.startsWith(DYNAMIC_REGIME_PREFIX)) {
-      return;
-    }
-
-    if (contract.horasSemanaisContrato.trim()) {
-      return;
-    }
-
+    if (!contract.regimeHorario.startsWith(DYNAMIC_REGIME_PREFIX)) return;
+    if (contract.horasSemanaisContrato.trim()) return;
     const calculated = calculateWeeklyHoursFromDays(parseDynamicRegimeDays(contract.regimeHorario));
-    if (calculated == null) {
-      return;
-    }
-
-    setContract((current) => ({
-      ...current,
-      horasSemanaisContrato: String(calculated),
-    }));
+    if (calculated == null) return;
+    setContract((c) => ({ ...c, horasSemanaisContrato: String(calculated) }));
   }, [contract.horasSemanaisContrato, contract.regimeHorario]);
 
   function applyDynamicRegime() {
@@ -561,22 +496,20 @@ function DetailPanel({ admission, onClose, onRefresh }: {
       setActionMsg('❌ Configuração de horas inválida. Confirma os dias ativos e os horários.');
       return;
     }
-
-    const serialized = serializeDynamicRegimeDays(workHoursDraft);
-    setContract((current) => ({
-      ...current,
-      regimeHorario: serialized,
+    setContract((c) => ({
+      ...c,
+      regimeHorario: serializeDynamicRegimeDays(workHoursDraft),
       horasSemanaisContrato: String(calculated),
     }));
     setIsWorkHoursModalOpen(false);
   }
 
   const handleApprove = async () => {
-    if (!window.confirm(`Confirmas a aprovação dos dados pessoais de ${admission.fullName}?`)) return;
     setIsSaving(true);
     try {
       await apiRequest(`/users/admissions/${admission.id}/approve-personal`, { method: 'POST', headers: getAuthHeaders() });
       setActionMsg('✅ Dados pessoais aprovados. O processo segue para fase contratual.');
+      setIsApproveConfirmOpen(false);
       onRefresh();
     } catch (e) {
       setActionMsg(`❌ ${e instanceof Error ? e.message : 'Erro ao aprovar.'}`);
@@ -597,8 +530,8 @@ function DetailPanel({ admission, onClose, onRefresh }: {
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: correctionReason }),
       });
-      setActionMsg('✅ Pedido de correção enviado. Novo link de preenchimento enviado ao colaborador.');
-      setShowCorrectionForm(false);
+      setActionMsg('✅ Pedido de correção enviado. Novo link enviado ao colaborador.');
+      setIsCorrectionModalOpen(false);
       setCorrectionReason('');
       onRefresh();
     } catch (e) {
@@ -613,22 +546,17 @@ function DetailPanel({ admission, onClose, onRefresh }: {
       setActionMsg('❌ Preenche todos os campos obrigatórios do contrato.');
       return;
     }
-
     if (weeklyHours == null) {
       setActionMsg('❌ Configura as horas de trabalho antes de concluir a admissão.');
       return;
     }
-
     if (!window.confirm(`Confirmas a criação do utilizador para ${admission.fullName}?`)) return;
     setIsSaving(true);
     try {
       await apiRequest(`/users/admissions/${admission.id}/complete`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...contract,
-          horasSemanaisContrato: contract.horasSemanaisContrato,
-        }),
+        body: JSON.stringify({ ...contract }),
       });
       setActionMsg(`✅ Admissão concluída! Utilizador criado com username @${contract.companyUsername}.`);
       setShowContractForm(false);
@@ -641,30 +569,29 @@ function DetailPanel({ admission, onClose, onRefresh }: {
   };
 
   return (
-    <div style={s.detail}>
-      {/* Header */}
-      <div style={s.detailHeader}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-          <div>
-            <h2 style={s.detailName}>{admission.fullName}</h2>
-            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 2 }}>{admission.personalEmail}</div>
-          </div>
-          <button onClick={onClose} style={s.closeBtn} aria-label="Fechar">✕</button>
+    <div style={dp.root}>
+      {/* ── Identity strip ── */}
+      <div style={dp.identityStrip}>
+        <div style={dp.identityLeft}>
+          <h2 style={dp.name}>{admission.fullName}</h2>
+          <div style={dp.email}>{admission.personalEmail}</div>
         </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-          <span style={{ ...s.badge, background: 'rgba(255,255,255,0.18)', color: '#fff', border: '1px solid rgba(255,255,255,0.25)' }}>
-            <span style={{ ...s.dot, background: meta.dot }} />
+        <div style={dp.identityRight}>
+          <span style={{ ...dp.badge, background: meta.bg, color: meta.color, border: `1px solid ${meta.dot}33` }}>
+            <span style={{ ...dp.dot, background: meta.dot }} />
             {meta.label}
           </span>
-          <span style={{ ...s.badge, background: 'rgba(255,255,255,0.12)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', fontSize: 12 }}>
+          <span style={dp.countryChip}>
             {admission.workCountry === 'PT' ? '🇵🇹 Portugal' : `🇧🇷 Brasil${admission.brWorkState ? ` · ${admission.brWorkState}` : ''}`}
           </span>
         </div>
       </div>
 
-      <div style={s.detailScroll}>
+      {/* ── Scrollable content ── */}
+      <div style={dp.scroll}>
+
         {/* Timeline */}
-        <Section title="Linha de tempo" icon="🕐">
+        <DpSection title="Linha de tempo" icon="🕐">
           <TimelineRow icon="📧" label="Convite enviado" date={admission.createdAt} by={actorName(admission.invitedBy)} />
           {admission.submittedAt && <TimelineRow icon="📋" label="Ficha submetida" date={admission.submittedAt} />}
           {admission.reviewedAt && (
@@ -675,21 +602,23 @@ function DetailPanel({ admission, onClose, onRefresh }: {
               by={actorName(admission.reviewedBy)}
             />
           )}
-          {admission.completedAt && <TimelineRow icon="🎉" label="Admissão concluída" date={admission.completedAt} by={actorName(admission.completedBy)} />}
-        </Section>
+          {admission.completedAt && (
+            <TimelineRow icon="🎉" label="Admissão concluída" date={admission.completedAt} by={actorName(admission.completedBy)} />
+          )}
+        </DpSection>
 
         {/* Review reason */}
         {admission.reviewReason && (
-          <div style={s.reasonBanner}>
+          <div style={dp.reasonBanner}>
             <span style={{ fontWeight: 700 }}>Motivo de devolução:</span>
             <span style={{ marginLeft: 6 }}>{admission.reviewReason}</span>
           </div>
         )}
 
-        {/* Personal data – only if submitted */}
+        {/* Personal data */}
         {admission.submittedAt ? (
           <>
-            <Section title="Identificação pessoal" icon="👤">
+            <DpSection title="Identificação pessoal" icon="👤">
               <FieldGrid>
                 <DataField label="Nome completo" value={str(pd.nomeCompleto)} span={2} />
                 <DataField label="Nome abreviado" value={str(pd.nomeAbreviado)} />
@@ -704,9 +633,9 @@ function DetailPanel({ admission, onClose, onRefresh }: {
                 <DataField label="Telemóvel" value={str(pd.telemovel)} />
                 {pd.githubUser ? <DataField label="GitHub" value={str(pd.githubUser)} /> : null}
               </FieldGrid>
-            </Section>
+            </DpSection>
 
-            <Section title="Morada" icon="🏠">
+            <DpSection title="Morada" icon="🏠">
               <FieldGrid>
                 <DataField label="Morada habitual" value={str(pd.endereco)} span={2} />
                 <DataField label="Morada fiscal" value={str(pd.moradaFiscal)} span={2} />
@@ -715,9 +644,9 @@ function DetailPanel({ admission, onClose, onRefresh }: {
                 <DataField label="País de nascimento" value={str(pd.localNascimentoPais)} />
                 <DataField label="Cidade de nascimento" value={str(pd.localNascimentoCidade)} />
               </FieldGrid>
-            </Section>
+            </DpSection>
 
-            <Section title="Dados fiscais e identificação" icon="📋">
+            <DpSection title="Dados fiscais e identificação" icon="📋">
               <FieldGrid>
                 {admission.workCountry === 'BR' ? (
                   <>
@@ -752,94 +681,75 @@ function DetailPanel({ admission, onClose, onRefresh }: {
                   </>
                 )}
               </FieldGrid>
-            </Section>
+            </DpSection>
 
-            <Section title="Dados bancários" icon="🏦">
+            <DpSection title="Dados bancários" icon="🏦">
               <FieldGrid>
                 <DataField label="IBAN" value={str(pd.iban)} span={2} />
                 {pd.matriculaCarro ? <DataField label="Matrícula" value={str(pd.matriculaCarro)} /> : null}
                 {pd.numeroCartaoContinente ? <DataField label="Cartão Continente" value={str(pd.numeroCartaoContinente)} /> : null}
               </FieldGrid>
-            </Section>
+            </DpSection>
 
-            <Section title="Contacto de emergência" icon="🚨">
+            <DpSection title="Contacto de emergência" icon="🚨">
               <FieldGrid>
                 <DataField label="Nome" value={str(pd.contactoEmergenciaNome)} />
                 <DataField label="Parentesco" value={str(pd.contactoEmergenciaParentesco)} />
                 <DataField label="Telefone" value={str(pd.contactoEmergenciaNumero)} />
               </FieldGrid>
-            </Section>
+            </DpSection>
 
-            {/* Documents */}
-            <Section title="Documentos" icon="📎">
+            <DpSection title="Documentos" icon="📎">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <DocLink label="Comprovativo de morada" url={pd.comprovativoMoradaFiscal as string | undefined} icon="🏠" />
                 <DocLink label="Cartão de Cidadão / RG" url={pd.comprovativoCartaoCidadao as string | undefined} icon="🪪" />
                 <DocLink label="Comprovativo IBAN" url={pd.comprovativoIban as string | undefined} icon="🏦" />
                 <DocLink label="Cartão Continente" url={pd.comprovativoCartaoContinente as string | undefined} icon="🛒" />
               </div>
-            </Section>
+            </DpSection>
           </>
         ) : (
-          <div style={{ padding: '20px 20px 0', color: '#6b7280', fontSize: 14 }}>
+          <div style={{ padding: '20px 0', color: '#6b7280', fontSize: 14 }}>
             ⏳ O colaborador ainda não submeteu a ficha de admissão.
           </div>
         )}
 
         {/* Completed info */}
         {admission.status === 'COMPLETED' && (
-          <Section title="Utilizador criado" icon="✅">
+          <DpSection title="Utilizador criado" icon="✅">
             <FieldGrid>
               <DataField label="Username" value={admission.companyUsername ?? '—'} />
               <DataField label="Email empresa" value={admission.companyEmail ?? '—'} />
             </FieldGrid>
-          </Section>
+          </DpSection>
         )}
 
-        {/* ── Actions ── */}
+        {/* Action feedback */}
         {actionMsg && (
-          <div style={actionMsg.startsWith('✅') ? s.actionSuccess : s.actionError}>{actionMsg}</div>
-        )}
-
-        {admission.status === 'SUBMITTED' && (
-          <div style={s.actionsBox}>
-            <h4 style={s.actionsTitle}>Ações disponíveis</h4>
-            {!showCorrectionForm ? (
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <Button variant="primary" onClick={() => { void handleApprove(); }} disabled={isSaving}>
-                  ✅ Aprovar dados pessoais
-                </Button>
-                <Button variant="secondary" onClick={() => setShowCorrectionForm(true)} disabled={isSaving}>
-                  ↩️ Pedir correção
-                </Button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <label style={s.fieldLabel}>Motivo da correção solicitada</label>
-                <textarea
-                  style={s.textarea}
-                  rows={3}
-                  placeholder="Descreve o que está incorrecto ou em falta…"
-                  value={correctionReason}
-                  onChange={(e) => setCorrectionReason(e.target.value)}
-                  disabled={isSaving}
-                />
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Button variant="primary" onClick={() => { void handleRequestCorrection(); }} disabled={isSaving || correctionReason.trim().length < 5}>
-                    {isSaving ? 'A enviar…' : 'Enviar pedido'}
-                  </Button>
-                  <Button variant="secondary" onClick={() => { setShowCorrectionForm(false); setCorrectionReason(''); }} disabled={isSaving}>
-                    Cancelar
-                  </Button>
-                </div>
-              </div>
-            )}
+          <div style={actionMsg.startsWith('✅') ? dp.actionSuccess : dp.actionError}>
+            {actionMsg}
           </div>
         )}
 
+        {/* Actions: SUBMITTED */}
+        {admission.status === 'SUBMITTED' && (
+          <div style={dp.actionsBox}>
+            <h4 style={dp.actionsTitle}>Ações disponíveis</h4>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <Button variant="primary" onClick={() => setIsApproveConfirmOpen(true)} disabled={isSaving}>
+                ✅ Aprovar dados pessoais
+              </Button>
+              <Button variant="secondary" onClick={() => setIsCorrectionModalOpen(true)} disabled={isSaving}>
+                ↩️ Pedir correção
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Actions: APPROVED_PENDING_CONTRACT */}
         {admission.status === 'APPROVED_PENDING_CONTRACT' && (
-          <div style={s.actionsBox}>
-            <h4 style={s.actionsTitle}>Concluir admissão · dados contratuais</h4>
+          <div style={dp.actionsBox}>
+            <h4 style={dp.actionsTitle}>Concluir admissão · dados contratuais</h4>
             {!showContractForm ? (
               <Button variant="primary" onClick={() => setShowContractForm(true)}>
                 📝 Preencher dados de contrato
@@ -864,30 +774,24 @@ function DetailPanel({ admission, onClose, onRefresh }: {
                   <ContractField label="Data fim contrato" value={contract.dataFimContrato} type="date"
                     onChange={(v) => setContract((p) => ({ ...p, dataFimContrato: v }))} disabled={isSaving} />
                   <div>
-                    <label style={s.fieldLabel}>Tipo de contrato *</label>
-                    <select style={s.input} value={contract.tipoContrato} onChange={(e) => setContract((p) => ({ ...p, tipoContrato: e.target.value }))} disabled={isSaving}>
-                      {['Contrato a termo certo', 'Contrato a termo incerto', 'Contrato sem termo', 'CLT', 'PJ', 'Estágio'].map((v) => <option key={v}>{v}</option>)}
+                    <label style={dp.fieldLabel}>Tipo de contrato *</label>
+                    <select style={dp.input} value={contract.tipoContrato}
+                      onChange={(e) => setContract((p) => ({ ...p, tipoContrato: e.target.value }))} disabled={isSaving}>
+                      {['Contrato a termo certo', 'Contrato a termo incerto', 'Contrato sem termo', 'CLT', 'PJ', 'Estágio'].map((v) => (
+                        <option key={v}>{v}</option>
+                      ))}
                     </select>
                   </div>
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label style={s.fieldLabel}>Regime de contrato (calculado)</label>
-                    <input style={s.input} value={formatWeeklyHoursLabel(weeklyHours)} readOnly disabled />
+                  <div>
+                    <label style={dp.fieldLabel}>Regime de contrato (calculado)</label>
+                    <input style={dp.input} value={formatWeeklyHoursLabel(weeklyHours)} readOnly disabled />
                   </div>
                   <div style={{ gridColumn: 'span 2', display: 'grid', gap: 8 }}>
-                    <label style={s.fieldLabel}>Horas de trabalho</label>
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        setWorkHoursDraft(parseDynamicRegimeDays(contract.regimeHorario));
-                        setIsWorkHoursModalOpen(true);
-                      }}
-                      disabled={isSaving}
-                    >
+                    <label style={dp.fieldLabel}>Horas de trabalho</label>
+                    <Button variant="secondary" onClick={() => { setWorkHoursDraft(parseDynamicRegimeDays(contract.regimeHorario)); setIsWorkHoursModalOpen(true); }} disabled={isSaving}>
                       Configurar horas de trabalho
                     </Button>
-                    <div style={{ fontSize: 12, color: '#6b7280' }}>
-                      {regimeSummary}
-                    </div>
+                    <div style={{ fontSize: 12, color: '#6b7280' }}>{regimeSummary}</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
@@ -903,113 +807,142 @@ function DetailPanel({ admission, onClose, onRefresh }: {
           </div>
         )}
 
-        <Modal
-          open={isWorkHoursModalOpen}
-          title="Configuração de horas de trabalho"
-          onClose={() => setIsWorkHoursModalOpen(false)}
-          width="min(760px, 96vw)"
-          footer={(
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, width: '100%' }}>
-              <Button variant="ghost" onClick={() => setIsWorkHoursModalOpen(false)}>Cancelar</Button>
-              <Button variant="primary" onClick={applyDynamicRegime}>Aplicar configuração</Button>
-            </div>
-          )}
-        >
-          <div style={{ display: 'grid', gap: 10 }}>
-            <p style={{ margin: 0, color: '#6b7280', fontSize: 13 }}>
-              Define os dias ativos e os intervalos horários. O regime de contrato é calculado automaticamente.
-            </p>
-            {workHoursDraft.map((day) => (
-              <div key={day.day} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: 10, alignItems: 'center' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                  <input
-                    type="checkbox"
-                    checked={day.enabled}
-                    onChange={(event) => {
-                      const checked = event.target.checked;
-                      setWorkHoursDraft((current) => current.map((item) => (
-                        item.day === day.day ? { ...item, enabled: checked } : item
-                      )));
-                    }}
-                  />
-                  {day.label}
-                </label>
-                <input
-                  style={s.input}
-                  type="time"
-                  value={day.start}
-                  disabled={!day.enabled}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setWorkHoursDraft((current) => current.map((item) => (
-                      item.day === day.day ? { ...item, start: value } : item
-                    )));
-                  }}
-                />
-                <input
-                  style={s.input}
-                  type="time"
-                  value={day.end}
-                  disabled={!day.enabled}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setWorkHoursDraft((current) => current.map((item) => (
-                      item.day === day.day ? { ...item, end: value } : item
-                    )));
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-        </Modal>
-
+        {/* Status banners */}
         {admission.status === 'CHANGES_REQUESTED' && (
-          <div style={s.infoBox}>
+          <div style={dp.infoBox}>
             ℹ️ Foi enviado um novo link de preenchimento ao colaborador. A aguardar nova submissão.
           </div>
         )}
-
         {admission.status === 'INVITED' && (
-          <div style={s.infoBox}>
+          <div style={dp.infoBox}>
             📧 Convite enviado em {formatDateTime(admission.lastInvitationSentAt ?? admission.createdAt)}. Expira em {formatDate(admission.tokenExpiresAt)}.
           </div>
         )}
       </div>
+
+      {/* ── Nested modals ── */}
+      <Modal
+        open={isWorkHoursModalOpen}
+        title="Configuração de horas de trabalho"
+        onClose={() => setIsWorkHoursModalOpen(false)}
+        width="min(760px, 96vw)"
+        footer={(
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, width: '100%' }}>
+            <Button variant="ghost" onClick={() => setIsWorkHoursModalOpen(false)}>Cancelar</Button>
+            <Button variant="primary" onClick={applyDynamicRegime}>Aplicar configuração</Button>
+          </div>
+        )}
+      >
+        <div style={{ display: 'grid', gap: 10 }}>
+          <p style={{ margin: 0, color: '#6b7280', fontSize: 13 }}>
+            Define os dias ativos e os intervalos horários. O regime é calculado automaticamente.
+          </p>
+          {workHoursDraft.map((day) => (
+            <div key={day.day} style={{ display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: 10, alignItems: 'center' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                <input type="checkbox" checked={day.enabled}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setWorkHoursDraft((cur) => cur.map((d) => d.day === day.day ? { ...d, enabled: checked } : d));
+                  }} />
+                {day.label}
+              </label>
+              <input style={dp.input} type="time" value={day.start} disabled={!day.enabled}
+                onChange={(e) => { const v = e.target.value; setWorkHoursDraft((cur) => cur.map((d) => d.day === day.day ? { ...d, start: v } : d)); }} />
+              <input style={dp.input} type="time" value={day.end} disabled={!day.enabled}
+                onChange={(e) => { const v = e.target.value; setWorkHoursDraft((cur) => cur.map((d) => d.day === day.day ? { ...d, end: v } : d)); }} />
+            </div>
+          ))}
+        </div>
+      </Modal>
+
+      <Modal
+        open={isApproveConfirmOpen}
+        title="Aprovar dados pessoais"
+        onClose={() => setIsApproveConfirmOpen(false)}
+        width="min(520px, 92vw)"
+        footer={(
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, width: '100%' }}>
+            <Button variant="ghost" onClick={() => setIsApproveConfirmOpen(false)}>Cancelar</Button>
+            <Button variant="primary" onClick={() => { void handleApprove(); }} disabled={isSaving}>
+              {isSaving ? 'A aprovar…' : 'Confirmar aprovação'}
+            </Button>
+          </div>
+        )}
+      >
+        <div style={{ display: 'grid', gap: 12 }}>
+          <p style={{ margin: 0, color: '#6b7280', fontSize: 13 }}>
+            Confirmas a aprovação dos dados pessoais de <strong>{admission.fullName}</strong>?
+          </p>
+          <p style={{ margin: 0, color: '#6b7280', fontSize: 13 }}>
+            Após aprovação, o pedido seguirá para fase contratual e o colaborador será avisado.
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={isCorrectionModalOpen}
+        title="Pedir correção"
+        onClose={() => setIsCorrectionModalOpen(false)}
+        width="min(620px, 92vw)"
+        footer={(
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, width: '100%' }}>
+            <Button variant="ghost" onClick={() => { setIsCorrectionModalOpen(false); setCorrectionReason(''); }}>Cancelar</Button>
+            <Button variant="primary" onClick={() => { void handleRequestCorrection(); }} disabled={isSaving || correctionReason.trim().length < 5}>
+              {isSaving ? 'A enviar…' : 'Enviar pedido'}
+            </Button>
+          </div>
+        )}
+      >
+        <div style={{ display: 'grid', gap: 10 }}>
+          <p style={{ margin: 0, color: '#6b7280', fontSize: 13 }}>
+            Descreve o que precisa de ser corrigido. O colaborador receberá o pedido e poderá atualizar os dados.
+          </p>
+          <textarea
+            style={{ ...dp.textarea, minHeight: 160 }}
+            rows={6}
+            placeholder="Ex.: falta comprovativo válido / documento ilegível / campo obrigatório em falta"
+            value={correctionReason}
+            onChange={(e) => setCorrectionReason(e.target.value)}
+            disabled={isSaving}
+          />
+        </div>
+      </Modal>
     </div>
   );
 }
 
 /* ── Sub-components ─────────────────────────────────────────────────────────── */
 
-function Section({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
+function DpSection({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
   return (
-    <div style={s.section}>
-      <div style={s.sectionHeader}>
+    <div style={dp.section}>
+      <div style={dp.sectionHeader}>
         <span style={{ fontSize: 15 }}>{icon}</span>
-        <h3 style={s.sectionTitle}>{title}</h3>
+        <h3 style={dp.sectionTitle}>{title}</h3>
       </div>
-      <div style={s.sectionBody}>{children}</div>
+      <div>{children}</div>
     </div>
   );
 }
 
 function FieldGrid({ children }: { children: React.ReactNode }) {
-  return <div style={s.fieldGrid}>{children}</div>;
+  return <div style={dp.fieldGrid}>{children}</div>;
 }
 
 function DataField({ label, value, span }: { label: string; value: string; span?: number }) {
   return (
     <div style={span === 2 ? { gridColumn: 'span 2' } : undefined}>
-      <div style={s.fieldLabel}>{label}</div>
-      <div style={s.fieldValue}>{value}</div>
+      <div style={dp.fieldLabel}>{label}</div>
+      <div style={dp.fieldValue}>{value}</div>
     </div>
   );
 }
 
 function TimelineRow({ icon, label, date, by }: { icon: string; label: string; date?: string | null; by?: string }) {
   return (
-    <div style={s.timelineRow}>
-      <span style={s.timelineIcon}>{icon}</span>
+    <div style={dp.timelineRow}>
+      <span style={{ fontSize: 16, lineHeight: 1.2, flexShrink: 0, marginTop: 1 }}>{icon}</span>
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{label}</div>
         <div style={{ fontSize: 12, color: '#6b7280' }}>
@@ -1023,7 +956,7 @@ function TimelineRow({ icon, label, date, by }: { icon: string; label: string; d
 function DocLink({ label, url, icon }: { label: string; url?: string; icon: string }) {
   if (!url) {
     return (
-      <div style={{ ...s.docZone, opacity: 0.5 }}>
+      <div style={{ ...dp.docZone, opacity: 0.5 }}>
         <span>{icon}</span>
         <span style={{ fontSize: 12, color: '#9ca3af' }}>{label}</span>
         <span style={{ fontSize: 11, color: '#d1d5db' }}>Não submetido</span>
@@ -1031,7 +964,7 @@ function DocLink({ label, url, icon }: { label: string; url?: string; icon: stri
     );
   }
   return (
-    <a href={url} target="_blank" rel="noreferrer" style={s.docZone}>
+    <a href={url} target="_blank" rel="noreferrer" style={dp.docZone}>
       <span>{icon}</span>
       <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>{label}</span>
       <span style={{ fontSize: 11, color: '#1a56db' }}>Ver ficheiro →</span>
@@ -1044,13 +977,13 @@ function ContractField({ label, value, onChange, disabled, type = 'text' }: {
 }) {
   return (
     <div>
-      <label style={s.fieldLabel}>{label}</label>
-      <input style={s.input} type={type} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+      <label style={dp.fieldLabel}>{label}</label>
+      <input style={dp.input} type={type} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
     </div>
   );
 }
 
-/* ── Styles ─────────────────────────────────────────────────────────────────── */
+/* ── Page styles ─────────────────────────────────────────────────────────────── */
 
 const s = {
   page: {
@@ -1063,14 +996,12 @@ const s = {
   },
   pageTitle: { margin: 0, fontSize: 22, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px' },
   pageSubtitle: { margin: '2px 0 0', fontSize: 13, color: '#6b7280' },
-  statsRow: { display: 'flex', gap: 12 },
   statCard: {
     background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10,
     padding: '10px 18px', textAlign: 'center' as const, minWidth: 72,
   },
   statValue: { fontSize: 22, fontWeight: 800, lineHeight: 1.1 },
   statLabel: { fontSize: 11, color: '#9ca3af', fontWeight: 500, textTransform: 'uppercase' as const, letterSpacing: '0.4px', marginTop: 2 },
-
   filtersBar: {
     display: 'flex', alignItems: 'center', gap: 10, padding: '10px 24px',
     background: '#fff', borderBottom: '1px solid #e5e7eb', flexShrink: 0, flexWrap: 'wrap' as const,
@@ -1078,9 +1009,7 @@ const s = {
   searchWrap: {
     position: 'relative' as const, display: 'flex', alignItems: 'center', flex: '1 1 220px', minWidth: 180, maxWidth: 340,
   },
-  searchIcon: {
-    position: 'absolute' as const, left: 9, fontSize: 13, pointerEvents: 'none' as const, color: '#9ca3af',
-  },
+  searchIcon: { position: 'absolute' as const, left: 9, fontSize: 13, pointerEvents: 'none' as const, color: '#9ca3af' },
   searchInput: {
     width: '100%', padding: '7px 10px 7px 30px', border: '1.5px solid #e5e7eb', borderRadius: 8,
     fontSize: 13, color: '#111827', background: '#fff', fontFamily: 'inherit', outline: 'none',
@@ -1094,21 +1023,8 @@ const s = {
     padding: '6px 12px', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 7,
     fontSize: 12, color: '#374151', cursor: 'pointer', fontWeight: 500, whiteSpace: 'nowrap' as const,
   },
-  resultCount: {
-    fontSize: 12, color: '#9ca3af', whiteSpace: 'nowrap' as const, marginLeft: 4,
-  },
-
-  body: {
-    display: 'flex', flex: 1, overflow: 'hidden',
-  },
-  listPane: {
-    flex: 1, overflowY: 'auto' as const, overflowX: 'auto' as const,
-  },
-  detailPane: {
-    width: 480, borderLeft: '1px solid #e5e7eb', overflowY: 'auto' as const, background: '#fff',
-    flexShrink: 0,
-  },
-
+  resultCount: { fontSize: 12, color: '#9ca3af', whiteSpace: 'nowrap' as const, marginLeft: 4 },
+  body: { flex: 1, overflowY: 'auto' as const, overflowX: 'auto' as const },
   centeredMsg: {
     display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center',
     height: '100%', minHeight: 200, color: '#6b7280', fontSize: 14,
@@ -1117,7 +1033,6 @@ const s = {
     margin: 24, padding: '12px 16px', background: '#fef2f2', border: '1px solid #fecaca',
     borderRadius: 8, color: '#991b1b', fontSize: 14,
   },
-
   table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: 14 },
   th: {
     padding: '11px 16px', textAlign: 'left' as const, fontSize: 11, fontWeight: 700,
@@ -1125,95 +1040,104 @@ const s = {
     background: '#f9fafb', borderBottom: '2px solid #e5e7eb', whiteSpace: 'nowrap' as const,
     position: 'sticky' as const, top: 0, zIndex: 1,
   },
-  tr: {
-    borderBottom: '1px solid #f3f4f6', cursor: 'pointer',
-    transition: 'background 0.12s',
-  } as React.CSSProperties,
-  trSelected: { background: '#eff6ff' } as React.CSSProperties,
+  tr: { borderBottom: '1px solid #f3f4f6', cursor: 'pointer', transition: 'background 0.12s' } as React.CSSProperties,
   trHovered: { background: '#f8faff' } as React.CSSProperties,
   td: { padding: '12px 16px', verticalAlign: 'middle' as const },
   verBtn: {
     padding: '4px 12px', background: 'transparent', border: '1.5px solid #e5e7eb',
-    borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#6b7280', cursor: 'pointer',
-    whiteSpace: 'nowrap' as const, transition: 'all 0.15s',
+    borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#6b7280', cursor: 'pointer', whiteSpace: 'nowrap' as const,
   } as React.CSSProperties,
   verBtnActive: {
     padding: '4px 12px', background: '#1a56db', border: '1.5px solid #1a56db',
-    borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#fff', cursor: 'pointer',
-    whiteSpace: 'nowrap' as const,
+    borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' as const,
   } as React.CSSProperties,
-
-  badge: {
-    display: 'inline-flex', alignItems: 'center', gap: 5,
-    borderRadius: 20, fontSize: 12, fontWeight: 600, padding: '3px 10px',
-  },
+  badge: { display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 20, fontSize: 12, fontWeight: 600, padding: '3px 10px' },
   dot: { width: 6, height: 6, borderRadius: '50%', flexShrink: 0 },
   countryBadge: {
     display: 'inline-block', background: '#f3f4f6', borderRadius: 6,
     fontSize: 12, fontWeight: 600, padding: '2px 8px', color: '#374151',
   },
+} satisfies Record<string, React.CSSProperties | object>;
 
-  /* Detail panel */
-  detail: { display: 'flex', flexDirection: 'column' as const, height: '100%' },
-  detailHeader: {
-    background: 'linear-gradient(135deg, #1a56db 0%, #0e3f9e 100%)',
-    padding: '20px 20px 16px', flexShrink: 0,
-  },
-  detailName: { margin: 0, fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px' },
-  closeBtn: {
-    background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6,
-    color: '#fff', cursor: 'pointer', fontSize: 14, padding: '4px 8px', flexShrink: 0,
-  },
-  detailScroll: { flex: 1, overflowY: 'auto' as const, paddingBottom: 24 },
+/* ── Detail panel styles ─────────────────────────────────────────────────────── */
 
-  section: { borderBottom: '1px solid #f3f4f6', paddingBottom: 4 },
-  sectionHeader: { display: 'flex', alignItems: 'center', gap: 8, padding: '14px 20px 4px' },
+const dp = {
+  root: {
+    display: 'flex', flexDirection: 'column' as const, gap: 0, minHeight: 0,
+  },
+
+  /* Identity strip at top of modal body */
+  identityStrip: {
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16,
+    padding: '16px 24px', background: 'linear-gradient(135deg, #1a56db 0%, #0e3f9e 100%)',
+    borderRadius: 12, marginBottom: 20, flexWrap: 'wrap' as const,
+  },
+  identityLeft: { display: 'grid', gap: 4 },
+  identityRight: { display: 'flex', gap: 8, flexWrap: 'wrap' as const, alignItems: 'center' },
+  name: { margin: 0, fontSize: 20, fontWeight: 800, color: '#fff', letterSpacing: '-0.3px' },
+  email: { fontSize: 13, color: 'rgba(255,255,255,0.75)' },
+  badge: { display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 20, fontSize: 12, fontWeight: 600, padding: '4px 12px' },
+  dot: { width: 6, height: 6, borderRadius: '50%', flexShrink: 0 },
+  countryChip: {
+    display: 'inline-flex', alignItems: 'center', padding: '4px 12px', borderRadius: 20,
+    background: 'rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontWeight: 600,
+    border: '1px solid rgba(255,255,255,0.25)',
+  },
+
+  /* Scrollable area */
+  scroll: { display: 'flex', flexDirection: 'column' as const, gap: 0 },
+
+  /* Sections */
+  section: { borderBottom: '1px solid #f3f4f6', paddingBottom: 4, marginBottom: 4 },
+  sectionHeader: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0 4px' },
   sectionTitle: { margin: 0, fontSize: 13, fontWeight: 700, color: '#111827', letterSpacing: '-0.2px' },
-  sectionBody: { padding: '4px 20px 12px' },
 
-  fieldGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' },
+  /* Fields */
+  fieldGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px 20px', padding: '4px 0 10px' },
   fieldLabel: {
     display: 'block', fontSize: 11, fontWeight: 700, color: '#9ca3af',
     textTransform: 'uppercase' as const, letterSpacing: '0.4px', marginBottom: 2,
   },
   fieldValue: { fontSize: 13, color: '#111827', fontWeight: 500 },
 
+  /* Timeline */
   timelineRow: { display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 8 },
-  timelineIcon: { fontSize: 16, lineHeight: 1.2, flexShrink: 0, marginTop: 1 },
 
+  /* Docs */
   docZone: {
     display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 4,
     border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 8px',
     textDecoration: 'none', fontSize: 20, textAlign: 'center' as const, background: '#fafafa',
   },
 
+  /* Actions */
   actionsBox: {
-    margin: '0 20px 16px', padding: '14px 16px',
+    marginTop: 12, marginBottom: 4, padding: '14px 16px',
     background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10,
   },
   actionsTitle: { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: '#111827' },
-
   infoBox: {
-    margin: '0 20px 16px', padding: '12px 16px',
+    marginTop: 12, padding: '12px 16px',
     background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8,
     fontSize: 13, color: '#1e40af',
   },
   reasonBanner: {
-    margin: '12px 20px', padding: '10px 14px',
+    marginBottom: 12, padding: '10px 14px',
     background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
     fontSize: 13, color: '#991b1b',
   },
   actionSuccess: {
-    margin: '0 20px 12px', padding: '10px 14px',
+    marginTop: 8, padding: '10px 14px',
     background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8,
     fontSize: 13, color: '#065f46',
   },
   actionError: {
-    margin: '0 20px 12px', padding: '10px 14px',
+    marginTop: 8, padding: '10px 14px',
     background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8,
     fontSize: 13, color: '#991b1b',
   },
 
+  /* Form inputs */
   input: {
     display: 'block', width: '100%', boxSizing: 'border-box' as const,
     padding: '7px 10px', border: '1.5px solid #e5e7eb', borderRadius: 7,

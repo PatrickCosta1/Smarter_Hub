@@ -64,10 +64,10 @@ export default function CollaboratorCreateModal({
             autoComplete="off"
             disabled={isCreatingUser}
           />
-          <small>Sera enviado um link unico e seguro para preencher a ficha de admissao.</small>
+          <small>Será enviado um link único e seguro para preencher a ficha de admissão.</small>
         </label>
         <label>
-          <span>Pais de trabalho</span>
+          <span>País de trabalho</span>
           <select
             value={draft.workCountry}
             onChange={(event) => onDraftChange({ workCountry: event.target.value as 'PT' | 'BR' })}

@@ -4096,17 +4096,17 @@
   background:
     radial-gradient(circle at 16% 12%, rgba(66, 153, 225, 0.22), transparent 44%),
     radial-gradient(circle at 88% 82%, rgba(59, 130, 246, 0.2), transparent 40%),
-    rgba(7, 20, 45, 0.54);
-  backdrop-filter: blur(6px);
+    rgba(7, 20, 45, 0.64);
+  backdrop-filter: blur(8px);
   display: grid;
   place-items: center;
-  z-index: 260;
+  z-index: 9999;
   overflow: auto;
-  padding: 20px 18px;
+  padding: 24px 18px;
 }
 
-.quick-modal {
-  width: min(840px, 100%);
+.quick-overlay > .quick-modal {
+  width: min(960px, 100%);
   max-height: calc(100vh - 40px);
   border-radius: 24px;
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
@@ -4119,7 +4119,7 @@
   overflow: hidden;
 }
 
-.quick-modal__head {
+.quick-overlay > .quick-modal__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4127,11 +4127,21 @@
   padding: 0 2px;
 }
 
-.quick-modal__head h3 {
+.quick-overlay > .quick-modal__head h3 {
   margin: 0;
   color: #10376f;
   font-size: 1.46rem;
   letter-spacing: -0.02em;
+}
+
+/* Footer actions for centered overlay modals */
+.quick-overlay > .quick-modal__footer {
+  border-top: 1px solid #dbe8fb;
+  padding-top: 14px;
+  margin-top: 2px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .ui-modal__body {
