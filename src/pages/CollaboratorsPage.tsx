@@ -3789,9 +3789,9 @@ export default function CollaboratorsPage() {
         setIsSettingsModalOpen(false);
         setIsCreateModalOpen(true);
         setIsSettingsFlowFromCreateModal(false);
-        setStatus(`Configuração de ${settingsCountry === 'PT' ? 'Portugal' : 'Brasil'} guardada com sucesso.`);
+        setStatus(`Configuração guardada com sucesso.`);
       } else {
-        setSettingsStatus(`Configuração de ${settingsCountry === 'PT' ? 'Portugal' : 'Brasil'} guardada com sucesso.`);
+        setSettingsStatus(`Configuração guardada com sucesso.`);
       }
     } catch (error) {
       setSettingsStatus(error instanceof Error ? error.message : 'Falha ao guardar configurações da admissão.');

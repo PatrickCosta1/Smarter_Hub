@@ -1,0 +1,13 @@
+{
+    "files.exclude": {
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        "**/c:\\Users\\patri\\OneDrive - Instituto Superior de Engenharia do Porto\\Ambiente de Trabalho\\PROGRAMAÇÃO\\TLANTIC\\SMARTER_HUB\\docs\\PC4\\PROES_RELATORIO_FINAL_2026_TEMPLATE.aux": true,
+        "**/c:\\Users\\patri\\OneDrive - Instituto Superior de Engenharia do Porto\\Ambiente de Trabalho\\PROGRAMAÇÃO\\TLANTIC\\SMARTER_HUB\\docs\\PC4\\PROES_RELATORIO_FINAL_2026_TEMPLATE.log": true,
+        "**/c:\\Users\\patri\\OneDrive - Instituto Superior de Engenharia do Porto\\Ambiente de Trabalho\\PROGRAMAÇÃO\\TLANTIC\\SMARTER_HUB\\docs\\PC4\\PROES_RELATORIO_FINAL_2026_TEMPLATE.gz": true,
+        "**/c:\\Users\\patri\\OneDrive - Instituto Superior de Engenharia do Porto\\Ambiente de Trabalho\\PROGRAMAÇÃO\\TLANTIC\\SMARTER_HUB\\docs\\PC4\\PROES_RELATORIO_FINAL_2026_TEMPLATE.out": true
+    }
+}

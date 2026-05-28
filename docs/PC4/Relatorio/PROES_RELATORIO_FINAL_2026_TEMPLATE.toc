@@ -1,0 +1,41 @@
+\babel@toc {portuguese}{}\relax 
+\contentsline {chapter}{Agradecimentos}{i}{chapter*.1}%
+\contentsline {chapter}{Resumo}{iii}{chapter*.2}%
+\contentsline {chapter}{Índice de Figuras}{vii}{chapter*.2}%
+\contentsline {chapter}{Índice de Tabelas}{ix}{chapter*.2}%
+\contentsline {chapter}{Notação e Glossário}{xi}{chapter*.3}%
+\contentsline {chapter}{\numberline {1}Introdução}{1}{chapter.1}%
+\contentsline {section}{\numberline {1.1}Enquadramento}{1}{section.1.1}%
+\contentsline {section}{\numberline {1.2}Apresentação do projeto/estágio}{1}{section.1.2}%
+\contentsline {section}{\numberline {1.3}Definição dos Objetivos}{2}{section.1.3}%
+\contentsline {section}{\numberline {1.4}Calendarização e metodologia}{2}{section.1.4}%
+\contentsline {section}{\numberline {1.5}Motivação e contributos}{3}{section.1.5}%
+\contentsline {section}{\numberline {1.6}Utilização de conteúdo gerado por IA}{3}{section.1.6}%
+\contentsline {section}{\numberline {1.7}Organização do relatório}{4}{section.1.7}%
+\contentsline {chapter}{\numberline {2}Contexto}{5}{chapter.2}%
+\contentsline {section}{\numberline {2.1}Organização e área de negócio}{5}{section.2.1}%
+\contentsline {section}{\numberline {2.2}Problema identificado}{5}{section.2.2}%
+\contentsline {section}{\numberline {2.3}Análise de causas}{5}{section.2.3}%
+\contentsline {section}{\numberline {2.4}Perspetiva do utilizador}{6}{section.2.4}%
+\contentsline {section}{\numberline {2.5}Métricas de baseline e metas}{6}{section.2.5}%
+\contentsline {section}{\numberline {2.6}Estimativa de valor}{6}{section.2.6}%
+\contentsline {section}{\numberline {2.7}Estado da arte e opção tecnológica}{6}{section.2.7}%
+\contentsline {section}{\numberline {2.8}Stakeholders principais}{7}{section.2.8}%
+\contentsline {chapter}{\numberline {3}Atividades desenvolvidas}{9}{chapter.3}%
+\contentsline {section}{\numberline {3.1}Primeira seção do Capítulo 3}{10}{section.3.1}%
+\contentsline {subsection}{\numberline {3.1.1}Primeira subseção do Capítulo 3}{10}{subsection.3.1.1}%
+\contentsline {section}{\numberline {3.2}Conclusão do Capítulo 3}{10}{section.3.2}%
+\contentsline {chapter}{\numberline {4}Arquitetura da Solução e Validação Técnica}{11}{chapter.4}%
+\contentsline {section}{\numberline {4.1}Visão arquitetural}{11}{section.4.1}%
+\contentsline {subsection}{\numberline {4.1.1}Componentes principais}{11}{subsection.4.1.1}%
+\contentsline {section}{\numberline {4.2}Modelo de dados e governança}{11}{section.4.2}%
+\contentsline {section}{\numberline {4.3}Validação técnica}{11}{section.4.3}%
+\contentsline {section}{\numberline {4.4}Síntese do capítulo}{11}{section.4.4}%
+\contentsline {chapter}{\numberline {5}Conclusão}{13}{chapter.5}%
+\contentsline {section}{\numberline {5.1}Resumo e principais conclusões}{13}{section.5.1}%
+\contentsline {section}{\numberline {5.2}Objetivos realizados}{14}{section.5.2}%
+\contentsline {section}{\numberline {5.3}Outros trabalhos realizados}{14}{section.5.3}%
+\contentsline {section}{\numberline {5.4}Limitações \& trabalho futuro}{14}{section.5.4}%
+\contentsline {section}{\numberline {5.5}Apreciação final}{14}{section.5.5}%
+\contentsline {chapter}{Anexo \numberline {A}Conteúdo em anexos}{15}{appendix.1.A}%
+\contentsline {chapter}{Anexo \numberline {B}Regras para conteúdo e estrutura do relatório}{17}{appendix.1.B}%

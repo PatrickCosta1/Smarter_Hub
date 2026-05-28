@@ -191,7 +191,7 @@ export default function HourBankPage() {
         });
         setOverview(overviewResponse.rows);
 
-        const reportsResponse = await apiRequest<WeeklyReportsResponse>('/hours-bank/reports', {
+        const reportsResponse = await apiRequest<WeeklyReportsResponse>(`/hours-bank/reports?page=1&pageSize=200`, {
           headers: authHeaders(token),
         });
         setReports(reportsResponse.rows);

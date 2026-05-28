@@ -1,0 +1,772 @@
+% =============================================================================
+% Template LaTeX — Relatório PROES (Licenciatura em Engenharia de Sistemas, ISEP)
+% Baseado no guia oficial GuiaElabRel_PROES_Word_2026.docx
+%
+% CONFIGURAÇÕES REPLICADAS DO TEMPLATE WORD:
+%   Papel:        A4 (21 × 29,7 cm)
+%   Margens:      esq 3,0 cm | dir 2,5 cm | sup 2,5 cm | inf 2,5 cm
+%   Cabeçalho/rodapé: 1,25 cm da borda
+%   Corpo de texto: Calibri 11 pt, justificado, espaçamento 1,5×, antes 0,21 cm
+%   Títulos:      Arial, bold, cor #9A1A24 (vinho ISEP)
+%     H1 (capítulo):    20 pt, antes 2,0 cm — com número na frente
+%     H2 (secção):      14 pt, recuo esq 1,02 cm
+%     H3 (subsecção):   12 pt, mesmo recuo
+%   Código fonte: Courier New
+%   Referências:  recuo deslocado (hanging 1,27 cm)
+%   Numeração:    pré-matter em romano minúsculo; corpo em árabe
+%   Cabeçalhos:   nome do capítulo (esquerda); título do projeto/estágio (direita)
+%   Rodapés:      «autor» (esquerda); número de página (direita)
+%   Capítulo inicia sempre em página ímpar
+% =============================================================================
+
+% ---------- CLASSE E PACOTES ESSENCIAIS --------------------------------------
+\documentclass[12pt, a4paper, twoside, openright]{report}
+
+% Encoding e língua
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[portuguese]{babel}
+
+% Geometria da página — margens do template Word
+\usepackage[
+  a4paper,
+  top=2.5cm,
+  bottom=2.5cm,
+  left=3.0cm,
+  right=2.5cm,
+  headsep=0.75cm,       % distância do texto ao cabeçalho (~1,25 cm da borda)
+  footskip=1.0cm
+]{geometry}
+
+% Fontes — Arial e Calibri via pacote helvet/microtype
+% NOTA: LaTeX não tem Calibri/Arial nativamente.
+% helvet dá Helvetica (equivalente visual mais próximo do Arial).
+% Para Calibri no corpo, usa-se o mesmo sans-serif ou XeLaTeX com as fontes reais.
+% Se compilares com XeLaTeX/LuaLaTeX, descomenta o bloco FONTES NATIVAS abaixo
+% e comenta o bloco FONTES SUBSTITUTAS.
+
+% --- FONTES SUBSTITUTAS (pdflatex) ---
+\usepackage[scaled=0.95]{helvet}   % Helvetica ≈ Arial, para títulos
+\usepackage{mathptmx}              % Times no corpo (fallback se não usar Calibri)
+% Para corpo mais próximo de Calibri, usa XeLaTeX — ver bloco abaixo.
+\renewcommand{\familydefault}{\rmdefault}
+
+% --- FONTES NATIVAS (XeLaTeX/LuaLaTeX) — descomenta se usares xelatex/lualatex ---
+%\usepackage{fontspec}
+%\setmainfont{Calibri}
+%\setsansfont{Arial}
+%\setmonofont{Courier New}
+
+\usepackage{microtype}  % Tipografia de qualidade (kerning, protrusion)
+
+% Cores
+\usepackage[dvipsnames,svgnames,x11names]{xcolor}
+\definecolor{isepdark}{HTML}{9A1A24}   % vinho ISEP — cor dos títulos
+\definecolor{isepgray}{HTML}{666666}   % cinza para cabeçalho/rodapé
+
+% Espaçamento do corpo: 1,5× (equivalente ao lineRule "auto" 360/240)
+\usepackage{setspace}
+\setstretch{1.5}
+
+% Parágrafo: antes 0,21 cm ≈ 6 pt, sem recuo de primeira linha (estilo Word)
+\usepackage{parskip}
+\setlength{\parskip}{6pt}
+\setlength{\parindent}{0pt}
+
+% Cabeçalho e rodapé
+\usepackage{fancyhdr}
+\usepackage{emptypage}   % páginas em branco antes de capítulos ficam sem cabeçalho
+
+% Cores e formatação de títulos
+\usepackage{titlesec}
+
+% Índices
+\usepackage{tocloft}
+
+% Figuras e tabelas
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{tabularx}
+
+% Código fonte (estilo codigoFonte do Word: Courier New)
+\usepackage{listings}
+\usepackage{courier}
+
+% Hiperligações e referências cruzadas
+\usepackage[
+  colorlinks=true,
+  linkcolor=isepdark,
+  citecolor=isepdark,
+  urlcolor=isepdark,
+  bookmarks=true,
+  bookmarksnumbered=true
+]{hyperref}
+
+% Glossário / notação
+\usepackage[acronym, toc, nonumberlist]{glossaries}
+
+% Matemática
+\usepackage{amsmath, amssymb}
+\usepackage{siunitx}   % SI units — regras do template
+
+% Miscelânea
+\usepackage{csquotes}
+\usepackage{enumitem}
+\usepackage{pdfpages}  % incluir PDFs em anexos
+
+% ---------- BIBLIOGRAFIA (estilo numérico entre colchetes) --------------------
+\usepackage[
+  backend=biber,
+  style=numeric,
+  sorting=none,
+  maxnames=99
+]{biblatex}
+\addbibresource{referencias.bib}   % cria este ficheiro com as tuas referências
+
+% =============================================================================
+% FORMATAÇÃO DE TÍTULOS
+% =============================================================================
+
+% Capítulo (Cabeçalho 1 do Word):
+%   Arial/Helvetica, 20 pt, bold, cor #9A1A24
+%   Numeração automática no estilo "1  Introdução"
+%   Espaçamento antes: 2,0 cm; sem espaço extra depois (gerido pelo \parskip)
+\titleformat{\chapter}[block]
+  {\sffamily\bfseries\fontsize{20}{24}\selectfont\color{isepdark}}
+  {\thechapter\quad}
+  {0pt}
+  {}
+\titlespacing*{\chapter}{0pt}{2.0cm}{0.5cm}
+
+% Secção (Cabeçalho 2):
+%   Arial, 14 pt, bold, cor #9A1A24, recuo esq 1,02 cm
+\titleformat{\section}[block]
+  {\sffamily\bfseries\fontsize{14}{17}\selectfont\color{isepdark}}
+  {\thesection\quad}
+  {0pt}
+  {}
+\titlespacing*{\section}{1.02cm}{0.5cm}{0.2cm}
+
+% Subsecção (Cabeçalho 3):
+%   Arial, 12 pt, bold, cor #9A1A24, mesmo recuo
+\titleformat{\subsection}[block]
+  {\sffamily\bfseries\fontsize{12}{15}\selectfont\color{isepdark}}
+  {\thesubsection\quad}
+  {0pt}
+  {}
+\titlespacing*{\subsection}{1.02cm}{0.4cm}{0.1cm}
+
+% Subsubsecção — nível máximo recomendado pelo template (ex. 1.1.1)
+\titleformat{\subsubsection}[block]
+  {\sffamily\bfseries\fontsize{11}{14}\selectfont\color{isepdark}}
+  {\thesubsubsection\quad}
+  {0pt}
+  {}
+\titlespacing*{\subsubsection}{1.02cm}{0.3cm}{0.1cm}
+
+% =============================================================================
+% FORMATAÇÃO DO ÍNDICE (TOC / TOF / TOT)
+% =============================================================================
+\setcounter{tocdepth}{3}       % mostra até subsubsecção no índice
+\setcounter{secnumdepth}{3}    % numera até subsubsecção
+
+% Entradas do índice em Arial
+\renewcommand{\cftchapfont}{\sffamily\bfseries}
+\renewcommand{\cftsecfont}{\sffamily}
+\renewcommand{\cftsubsecfont}{\sffamily}
+\renewcommand{\cftsubsubsecfont}{\sffamily}
+
+% =============================================================================
+% CABEÇALHO E RODAPÉ
+% =============================================================================
+% Estrutura replicada do Word:
+%   Cabeçalho:  [esquerda] nome do capítulo  |  [direita] «título do projeto»
+%   Rodapé:     [esquerda] «autor»            |  [direita] número de página
+%   Linha separadora no cabeçalho
+%
+% Variáveis a preencher na capa (ver secção DADOS DO RELATÓRIO abaixo)
+\newcommand{\tituloprojeto}{SMARTER HUB}
+\newcommand{\nomeautor}{Patrick Dias Mendes da Costa}
+
+\pagestyle{fancy}
+\fancyhf{}
+
+% Páginas ímpares (direita em twoside): capítulo à esq, título à dir
+\fancyhead[LO]{\small\sffamily\color{isepgray}\leftmark}
+\fancyhead[RO]{\small\sffamily\color{isepgray}\tituloprojeto}
+% Páginas pares (esquerda): título à esq, capítulo à dir
+\fancyhead[LE]{\small\sffamily\color{isepgray}\tituloprojeto}
+\fancyhead[RE]{\small\sffamily\color{isepgray}\leftmark}
+
+% Rodapé
+\fancyfoot[LO,LE]{\small\sffamily\color{isepgray}\nomeautor}
+\fancyfoot[RO,RE]{\small\sffamily\color{isepgray}\thepage}
+
+% Linha do cabeçalho (reproduz o separador visual do Word)
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Estilo das páginas de capítulo (primeira página de cada capítulo)
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \fancyfoot[RO,RE]{\small\sffamily\color{isepgray}\thepage}
+  \renewcommand{\headrulewidth}{0pt}
+}
+
+% Converte \leftmark para maiúsculas/minúsculas corretas
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+
+% =============================================================================
+% LEGENDAS DE FIGURAS E TABELAS
+% Figuras: legenda abaixo — "Figura N – Descrição"
+% Tabelas: legenda acima — "Tabela N – Descrição"
+% =============================================================================
+\captionsetup[figure]{
+  labelfont={bf,sf},
+  textfont=sf,
+  labelsep=endash,
+  position=below,
+  justification=centering
+}
+\captionsetup[table]{
+  labelfont={bf,sf},
+  textfont=sf,
+  labelsep=endash,
+  position=above,
+  justification=centering
+}
+
+% Tradução das legendas para português
+\addto\captionsportuguese{
+  \renewcommand{\figurename}{Figura}
+  \renewcommand{\tablename}{Tabela}
+  \renewcommand{\contentsname}{Índice}
+  \renewcommand{\listfigurename}{Índice de Figuras}
+  \renewcommand{\listtablename}{Índice de Tabelas}
+  \renewcommand{\bibname}{Bibliografia}
+  \renewcommand{\appendixname}{Anexo}
+  \renewcommand{\chaptername}{}
+}
+
+% =============================================================================
+% ESTILO CÓDIGO FONTE (codigoFonte do Word: Courier New, sem formatação extra)
+% =============================================================================
+\lstset{
+  basicstyle=\ttfamily\small,  % Courier New equivalente
+  breaklines=true,
+  breakatwhitespace=true,
+  frame=none,
+  numbers=none,
+  xleftmargin=0pt,
+  xrightmargin=0pt,
+}
+
+% =============================================================================
+% REFERÊNCIAS BIBLIOGRÁFICAS (estilo "referencia" do Word)
+% Recuo deslocado: left=1,27 cm, hanging=1,27 cm
+% Formato: [N] autor, título, ...
+% =============================================================================
+% Já configurado via biblatex acima. Para customizar o recuo do ambiente
+% bibliography se necessário:
+\setlength{\bibhang}{1.27cm}
+
+% =============================================================================
+% NUMERAÇÃO DE PÁGINAS
+% =============================================================================
+% Pré-matéria (capa até notação): romano minúsculo
+% Corpo (Introdução em diante): árabe a partir de 1
+% Os comandos \frontmatter / \mainmatter fazem isto automaticamente.
+% Como usamos 'report' (não 'book'), define-se manualmente:
+
+\newcommand{\frontmatter}{%
+  \cleardoublepage
+  \pagenumbering{roman}
+}
+\newcommand{\mainmatter}{%
+  \cleardoublepage
+  \pagenumbering{arabic}
+}
+
+% =============================================================================
+% ANEXOS — estilos "Anexo heading 1/2/3" do Word
+% =============================================================================
+\usepackage[title,titletoc]{appendix}
+\renewcommand{\appendixname}{Anexo}
+
+% =============================================================================
+% DADOS DO RELATÓRIO — PREENCHE AQUI
+% =============================================================================
+\newcommand{\licenciatura}{Licenciatura em Engenharia de Sistemas}
+\newcommand{\titulorelatorio}{SMARTER HUB: Plataforma Integrada de Gestão de Pessoas, Férias e Governação de Acessos}
+\newcommand{\nomeorganizacao}{Tlantic Portugal - Sistemas de Informação, S.A}
+% \nomeautor já definido acima
+\newcommand{\dataapresentacao}{Data de apresentação a definir}
+\newcommand{\orientadorisep}{Marílio Cardoso}
+\newcommand{\supervisorexterno}{Camila Teixeira}
+
+% Actualiza o título do projeto no cabeçalho
+\renewcommand{\tituloprojeto}{\titulorelatorio}
+\renewcommand{\nomeautor}{Patrick Dias Mendes da Costa}
+
+% =============================================================================
+% GLOSSÁRIO — inicialização
+% =============================================================================
+\makeglossaries
+
+% Exemplo de entrada de acrónimo:
+\newacronym{proes}{PROES}{unidade curricular de PROjeto/Estágio}
+\newacronym{si}{SI}{Sistema Internacional de Unidades}
+\newacronym{uml}{UML}{Linguagem de modelagem universal}
+
+% =============================================================================
+% DOCUMENTO
+% =============================================================================
+\begin{document}
+
+% -------------------------------------------------------------------------
+% CAPA
+% -------------------------------------------------------------------------
+\begin{titlepage}
+  \thispagestyle{empty}
+  \centering
+
+  \vspace*{1cm}
+  {\large\sffamily\bfseries\color{isepdark} \licenciatura}
+
+  \vspace{3cm}
+  {\LARGE\sffamily\bfseries \titulorelatorio}
+
+  \vspace{1.5cm}
+  {\large\sffamily \nomeorganizacao}
+
+  \vfill
+
+  {\large\sffamily \nomeautor}
+
+  \vspace{1cm}
+  {\sffamily \dataapresentacao}
+
+  \vspace{1cm}
+  {\sffamily Orientador ISEP: \orientadorisep}\\
+  {\sffamily Supervisor Externo: \supervisorexterno}
+
+  \vspace{1cm}
+\end{titlepage}
+
+% -------------------------------------------------------------------------
+% PRÉ-MATÉRIA — numeração romana
+% -------------------------------------------------------------------------
+\frontmatter
+\pagestyle{fancy}
+
+% --- Agradecimentos (opcional) ---
+\chapter*{Agradecimentos}
+\addcontentsline{toc}{chapter}{Agradecimentos}
+\fancyhead[LO,RE]{Agradecimentos}
+
+Agradeço à Tlantic Portugal pela oportunidade de desenvolvimento do estágio em contexto empresarial real, com exposição a problemas concretos de engenharia de software e de operação de RH.
+
+Agradeço ao orientador, Marílio Cardoso, pelo acompanhamento académico, validação metodológica e apoio na estruturação técnica do trabalho.
+
+Agradeço à supervisora externa, Camila Teixeira, pelo enquadramento de negócio, priorização funcional e revisão contínua dos fluxos implementados.
+
+Agradeço ainda à equipa com quem colaborei diariamente, pela disponibilidade, partilha de conhecimento e apoio na validação das soluções implementadas.
+
+\cleardoublepage
+
+% --- Resumo ---
+\chapter*{Resumo}
+\addcontentsline{toc}{chapter}{Resumo}
+\fancyhead[LO,RE]{Resumo}
+
+Este relatório descreve o trabalho desenvolvido no âmbito do projeto/estágio PROES, realizado na Tlantic Portugal, com foco no desenvolvimento e consolidação do SMARTER HUB, uma plataforma integrada para gestão de informação de colaboradores, férias e governação de acessos. O contexto inicial era marcado por forte fragmentação operacional, com processos distribuídos por email, folhas de cálculo e validações informais, gerando atrasos, retrabalho e baixa rastreabilidade.
+
+Durante o projeto, foi concebida e evoluída uma solução full-stack orientada a processos auditáveis e regras de negócio explícitas, cobrindo fluxos de perfil, férias/ausências, permissões, aprovações e componentes de gestão operacional associados. A abordagem adotada foi iterativa e incremental, permitindo incorporar alterações de requisitos ao longo do ciclo de desenvolvimento sem perder consistência funcional entre frontend, backend e modelo de dados.
+
+Como principais resultados, destaca-se a centralização dos fluxos num único sistema, a redução de complexidade operacional e o reforço da capacidade de auditoria e controlo. O trabalho permitiu ainda consolidar competências técnicas e profissionais em ambiente empresarial real, com impacto direto na qualidade do produto e no alinhamento entre engenharia e necessidades de negócio.
+
+\bigskip
+\noindent\textbf{Palavras Chave:}\quad gestão de pessoas; férias e ausências; governação de acessos; rastreabilidade; engenharia de software.
+
+
+\cleardoublepage
+
+% --- Índice geral ---
+\fancyhead[LO,RE]{Índice}
+\tableofcontents
+
+\cleardoublepage
+
+% --- Índice de Figuras ---
+\fancyhead[LO,RE]{Índice de Figuras}
+\listoffigures
+\addcontentsline{toc}{chapter}{Índice de Figuras}
+
+\cleardoublepage
+
+% --- Índice de Tabelas ---
+\fancyhead[LO,RE]{Índice de Tabelas}
+\listoftables
+\addcontentsline{toc}{chapter}{Índice de Tabelas}
+
+\cleardoublepage
+
+% --- Notação e Glossário ---
+\chapter*{Notação e Glossário}
+\addcontentsline{toc}{chapter}{Notação e Glossário}
+\fancyhead[LO,RE]{Notação e Glossário}
+
+\textit{Esta seção apresenta os conceitos (glossário de termos) ordenados
+alfabeticamente, símbolos matemáticos e acrónimos \textbf{utilizados} no corpo
+do texto do relatório.}
+
+\bigskip
+
+% Tabela de acrónimos (formato do template Word)
+\begin{tabular}{lp{0.75\textwidth}}
+  \textbf{PROES} & Unidade curricular de PROjeto/Estágio \\
+  \textbf{SI}    & Sistema Internacional de Unidades \\
+  \textbf{UML}   & Linguagem de modelagem universal \\
+\end{tabular}
+
+\cleardoublepage
+
+% -------------------------------------------------------------------------
+% CORPO — numeração árabe a partir de 1
+% -------------------------------------------------------------------------
+\mainmatter
+\pagestyle{fancy}
+
+% =========================================================================
+\chapter{Introdução}
+% =========================================================================
+% O cabeçalho usa \leftmark que capta automaticamente o nome do capítulo.
+
+O presente relatório descreve o trabalho desenvolvido no projeto SMARTER HUB durante o período de estágio curricular na Tlantic Portugal - Sistemas de Informação, S.A. O documento apresenta o problema abordado, os objetivos definidos, a metodologia aplicada e os resultados alcançados, mantendo foco na evidência técnica e no impacto operacional da solução implementada.
+
+A estrutura adotada privilegia clareza, rastreabilidade e alinhamento entre requisitos de negócio e implementação, permitindo demonstrar de forma objetiva o contributo do trabalho para a organização e para a evolução técnica do estudante.
+
+% --- 1.1 ---
+\section{Enquadramento}
+
+Antes do desenvolvimento do SMARTER HUB, a gestão de informação pessoal de colaboradores e de férias/ausências era maioritariamente manual, morosa e distribuída por múltiplos canais. A operação dependia de folhas de cálculo, email e validações informais, o que aumentava o risco de inconsistência de dados, atrasava decisões e dificultava a visibilidade global dos processos.
+
+Neste contexto, o projeto foi enquadrado como uma iniciativa de centralização e digitalização de fluxos críticos de RH e gestão operacional, com enfoque em uniformização de regras, redução de retrabalho e melhoria da rastreabilidade.
+
+% --- 1.2 ---
+\section{Apresentação do projeto/estágio}
+
+O projeto/estágio incidiu no desenvolvimento e evolução do SMARTER HUB, plataforma orientada à gestão integrada de processos de pessoas. O trabalho incluiu análise funcional, desenho de fluxos, implementação full-stack, validação técnica e documentação das decisões de engenharia.
+
+O resultado principal pretendido foi disponibilizar uma solução unificada para gestão de dados pessoais, férias/ausências e governação de permissões, reduzindo a complexidade operacional e melhorando a capacidade de controlo e auditoria.
+
+% --- 1.3 ---
+\section{Definição dos Objetivos}
+
+\textbf{Objetivos gerais}
+\begin{itemize}
+  \item Conceber e consolidar uma plataforma integrada para processos de gestão de pessoas no contexto da Tlantic.
+  \item Reduzir dependência de processos manuais e ferramentas dispersas nos fluxos de dados pessoais e férias/ausências.
+  \item Reforçar rastreabilidade, governança e consistência funcional em operações sensíveis.
+\end{itemize}
+
+\textbf{Objetivos específicos}
+\begin{itemize}
+  \item Centralizar gestão de informação de colaborador numa única aplicação web.
+  \item Implementar fluxos de férias/ausências com estados explícitos, validações e histórico.
+  \item Uniformizar regras de aprovação e visibilidade por perfil e escopo operacional.
+  \item Estruturar modelo de permissões com rastreabilidade de concessões e revogações.
+  \item Disponibilizar mecanismos de reporte e exportação para suporte à decisão.
+  \item Aumentar qualidade técnica através de validação automática com testes unitários, integração e E2E.
+  \item Garantir base evolutiva para novos requisitos sem reestruturação completa do sistema.
+\end{itemize}
+
+% --- 1.4 ---
+\section{Calendarização e metodologia}
+
+A calendarização detalhada do trabalho foi inicialmente planeada por fases e acompanhada por marcos de entrega. O cronograma de referência encontra-se no ficheiro \texttt{docs/PC3/gantt\_chart\_pc3.xlsx}.
+
+O \textit{Gantt chart} ilustrado na Figura~\ref{fig:gantt} sumariza o plano de
+trabalhos para este projeto/estágio.
+
+\begin{figure}[H]
+  \centering
+  % Exportar o gráfico Excel para PNG/PDF e substituir o caminho abaixo.
+  % \includegraphics[width=\textwidth]{docs/PC3/imagens/gantt_chart_pc3.png}
+  \rule{\textwidth}{0.4pt}   % placeholder — substituir pelo gráfico real
+  \caption{Gantt chart com o plano de trabalhos de PROES}
+  \label{fig:gantt}
+\end{figure}
+
+A metodologia seguida foi \textbf{iterativa e incremental}, com priorização contínua de requisitos e entregas sucessivas de valor. Embora existisse um planeamento inicial de funcionalidades, o contexto real de projeto exigiu adaptação a novas necessidades, revisão de prioridades e remoção de itens sem valor operacional comprovado.
+
+Em termos práticos, o ciclo de trabalho combinou:
+\begin{itemize}
+    \item definição inicial de escopo e objetivos de negócio;
+    \item implementação por incrementos funcionais;
+    \item validação técnica e funcional em cada incremento;
+    \item incorporação de feedback de stakeholders para reajuste do backlog.
+\end{itemize}
+
+Esta abordagem permitiu manter alinhamento entre objetivos académicos e necessidades reais da organização, reduzindo risco de entrega desalinhada com o contexto operacional.
+
+% --- 1.5 ---
+\section{Motivação e contributos}
+
+Do ponto de vista organizacional, o principal contributo foi a consolidação de uma plataforma integrada para gestão de dados pessoais, férias e processos associados, reduzindo a complexidade operacional e o esforço administrativo em tarefas repetitivas.
+
+Do ponto de vista individual, o estágio proporcionou experiência em ambiente empresarial real, contacto com problemas concretos de engenharia, colaboração em equipa multidisciplinar e reforço de competências de análise, implementação e validação de software orientado a negócio.
+
+% --- 1.6 ---
+\section{Utilização de conteúdo gerado por IA}
+
+No âmbito do projeto foi utilizado o GitHub Copilot como ferramenta de apoio à produtividade, principalmente para suporte à implementação de código, aceleração de tarefas de refatoração e assistência na criação/ajuste de testes. A utilização foi sempre supervisionada e validada tecnicamente antes de integração.
+
+Não foi utilizado conteúdo gerado por IA sem validação. Todas as decisões finais de arquitetura, regras de negócio, código entregue e texto académico foram revistos e aprovados pelo autor.
+
+% Tabela de utilização de IA
+\begin{table}[H]
+  \caption{Utilização de IA no relatório}
+  \label{tab:ia}
+  \small\sffamily
+  \begin{tabularx}{\textwidth}{|l|l|X|l|}
+    \hline
+    \textbf{Categoria} & \textbf{Ferramenta} & \textbf{Justificação e salvaguarda} & \textbf{Capítulos} \\
+    \hline
+    Texto  & GitHub Copilot & Apoio de estruturação e revisão; validação manual integral antes de submissão. & 1, 2 \\
+    \hline
+    Imagem & N/A & Sem geração automática de imagens para evidência técnica. & -- \\
+    \hline
+    Código & GitHub Copilot & Sugestões de implementação e testes, sempre sujeitas a revisão funcional e técnica. & 3, 4 \\
+    \hline
+    Vídeo & N/A & Não aplicável ao trabalho desenvolvido. & -- \\
+    \hline
+    Outros & N/A & Não aplicável. & -- \\
+    \hline
+  \end{tabularx}
+\end{table}
+
+Importa distinguir apoio instrumental de autoria intelectual: a ferramenta auxiliou a execução, mas a responsabilidade técnica e científica permaneceu integralmente do autor.
+
+% --- 1.7 ---
+\section{Organização do relatório}
+
+O relatório está organizado em cinco capítulos principais. O Capítulo~1 apresenta o enquadramento, objetivos, metodologia e posicionamento do trabalho. O Capítulo~\ref{cap:contexto} descreve o contexto organizacional, o problema de negócio e os fundamentos que justificam a solução.
+
+O Capítulo~3 detalha as atividades desenvolvidas e os incrementos implementados ao longo do estágio. O Capítulo~4 consolida arquitetura, validação técnica e evidências de qualidade da solução. Por fim, o Capítulo~\ref{cap:conclusao} reúne conclusões, avaliação de objetivos, limitações e direções de evolução futura.
+
+% =========================================================================
+\chapter{Contexto}
+\label{cap:contexto}
+% =========================================================================
+
+\section{Organização e área de negócio}
+
+A Tlantic Portugal - Sistemas de Informação, S.A. é uma empresa portuguesa de desenvolvimento de software especializada em soluções para eficiência operacional, gestão de pessoas e suporte às vendas no retalho físico. Com origem em 2004 no Brasil e presença consolidada em Portugal desde 2007, atua como parceira tecnológica de organizações dos setores do retalho, indústria e saúde.
+
+A empresa opera num mercado onde existe elevada pressão sobre produtividade, custos laborais e conformidade legal. Neste contexto, soluções digitais que integrem operações, pessoas e decisão em tempo útil são determinantes para competitividade.
+
+\section{Problema identificado}
+
+No contexto analisado, os processos de gestão de pessoas apresentavam fragmentação operacional e baixo nível de padronização. As principais limitações observadas foram:
+\begin{itemize}
+  \item processos distribuídos entre email, folhas de cálculo e aprovações informais;
+  \item baixa uniformização de regras entre equipas, subequipas e geografias;
+  \item dificuldade em aplicar políticas legais distintas por país de forma consistente;
+  \item visibilidade limitada sobre capacidade e sobreposição de ausências;
+  \item rastreabilidade insuficiente para auditoria, compliance e melhoria contínua.
+\end{itemize}
+
+\section{Análise de causas}
+
+A análise do problema permitiu identificar quatro causas estruturais principais:
+\begin{itemize}
+  \item \textbf{Dados:} informação pessoal dispersa e sem modelo único de atualização;
+  \item \textbf{Documentos:} redundância documental e ausência de governança consistente;
+  \item \textbf{Processo:} fluxos de pedido/aprovação sem uniformização ponta a ponta;
+  \item \textbf{Controlo:} baixa consolidação de trilhos auditáveis de decisão.
+\end{itemize}
+
+\section{Perspetiva do utilizador}
+
+O perfil de maior atrito operacional identificado foi o gestor de equipa, que necessita de aprovar rapidamente pedidos sem comprometer capacidade e continuidade de operação. O principal padrão observado foi a coexistência de pressão por resposta imediata com receio de erro operacional por falta de informação consolidada.
+
+\section{Métricas de baseline e metas}
+
+Com base no levantamento inicial (PC2), foram definidos indicadores de referência para avaliação de impacto da solução:
+\begin{itemize}
+  \item tempo médio de aprovação ponta a ponta: 72--120h (meta: $\leq$ 24h);
+  \item taxa de retrabalho em pedidos: 10--20\% (meta: $\leq$ 5\%);
+  \item produção do mapa anual de férias: 20--40 min (meta: $<$ 2 min);
+  \item perfis desatualizados: 18--25\% (meta: $\leq$ 5\%).
+\end{itemize}
+
+\section{Estimativa de valor}
+
+Na análise de viabilidade inicial foi estimada uma poupança operacional anual de referência de \euro12.768, resultante da redução de esforço administrativo recorrente em tarefas de aprovação, atualização de mapas, comunicação de estado e resposta a exceções.
+
+\section{Estado da arte e opção tecnológica}
+
+Foi realizada análise comparativa entre abordagens de mercado (buy) e desenvolvimento orientado ao contexto (build). A decisão pelo SMARTER HUB foi justificada pela necessidade de:
+\begin{itemize}
+  \item coexistência de regras PT/BR no mesmo sistema;
+  \item autorização contextual por equipa, país e hierarquia;
+  \item trilho auditável de decisões e alterações sensíveis;
+  \item controlo de roadmap sem dependência de parametrização enterprise externa.
+\end{itemize}
+
+Em termos de stack, a solução consolidou React + TypeScript no frontend, Node.js/Express no backend e PostgreSQL com Prisma na persistência, com estratégia de validação baseada em testes unitários, integração e E2E.
+
+\section{Stakeholders principais}
+
+Os stakeholders com maior influência no projeto foram direção de RH, aprovadores/gestores, direção executiva, gestores de permissões, equipa técnica e colaboradores finais. A gestão destes atores foi feita através de ciclos curtos de validação funcional e revisão iterativa de requisitos.
+
+% =========================================================================
+\chapter{Atividades desenvolvidas}
+% =========================================================================
+
+O capítulo (ou conjunto de capítulos) das atividades desenvolvidas é a componente mais importante do relatório, pois descreve o que realmente foi feito no projeto/estágio. Existem duas possibilidades de estrutura: 
+\begin{itemize}
+    \item orientada para o projeto – que deve ser utilizada na elaboração de relatórios de projeto ou estágio em que há um “produto” bem definido a apresentar. Exemplo clássico da realização de um módulo ou de uma nova aplicação. Neste caso, a estrutura típica consiste no desdobramento deste capítulo em três:
+    \begin{itemize}
+        \item Análise e Especificação
+        \item Implementação
+        \item Teste [e colocação em serviço]
+    \end{itemize}
+    \item orientada a tarefas – que deve ser usado na elaboração de relatórios de estágio em que não existe propriamente um “produto” a apresentar mas sim uma série de tarefas que foram realizadas em um ou vários “produtos” já existentes na organização. Exemplo de estágio profissional onde foi feita uma intervenção nos vários serviços de infraestrutura ou módulos de uma aplicação para suportar uma nova tecnologia. Neste caso, deverá existir um capítulo para cada tarefa/subprojecto, sendo que no capítulo devem ser descritas as atividades referidas no ponto anterior. A estrutura típica será:
+    \begin{itemize}
+        \item Tarefa/Subprojecto 1
+        \item Tarefa/Subprojecto 2 
+        \item Tarefa/Subprojecto n
+    \end{itemize}
+\end{itemize}
+
+As atividades de planeamento e acompanhamento de projeto devem ser apresentadas em subseção específica. Os contratempos do estágio devem ser referidos de forma explícita.
+
+Ao elaborar o relatório devem ter em atenção que o relatório funcionará como documentação para a organização. Dessa forma devem-se perguntar se o relatório descreve de forma suficientemente detalhada o trabalho para que possa ser compreendido e reproduzido, se necessário no futuro, por outras pessoas da organização. Todas as boas práticas abordadas no curso ou externamente deverão ser usadas neste capítulo e no relatório em geral, desde que esse uso traga mais valias para o projeto/estágio. Note-se que este capítulo não deve conter exclusivamente a explicação da forma como métodos, técnicas, algoritmos, tecnologias, etc. foram usados, mas também o processo de compreensão do problema, a visão da solução, como o problema foi atacado e eventualmente subdividido em subproblemas, a análise nos seus vários níveis (alto, médio, baixo), a identificação de requisitos, a modelação, a descrição dos componentes da solução, etc. Recomenda-se que a descrição técnica siga uma abordagem que parta do “geral” (descrição inicial do problema) para o “particular” (descrição técnica completa e coerente da solução), mas sem saltar etapas.
+
+O aluno deve, conjuntamente com o orientador, definir a estrutura mais adequada ao seu projeto/estágio.
+
+\section{Primeira seção do Capítulo 3}
+
+\ldots
+
+\subsection{Primeira subseção do Capítulo 3}
+
+\ldots
+
+\section{Conclusão do Capítulo 3}
+
+Breve conclusão do Capítulo 3.
+
+% =========================================================================
+\chapter{Arquitetura da Solução e Validação Técnica}
+% =========================================================================
+
+Este capítulo consolida as decisões de arquitetura e as evidências de qualidade técnica do SMARTER HUB, funcionando como ponte entre a descrição de atividades e a conclusão do relatório. A sua inclusão fortalece a avaliação por demonstrar maturidade de engenharia para além da execução funcional.
+
+\section{Visão arquitetural}
+
+Descrever a arquitetura lógica e física da solução, separando frontend, backend, persistência e integrações externas, com indicação de responsabilidades por camada.
+
+\subsection{Componentes principais}
+
+Identificar módulos críticos (autenticação, perfil, férias/ausências, permissões, notificações, relatórios) e respetivos pontos de integração.
+
+\section{Modelo de dados e governança}
+
+Apresentar o racional do modelo relacional, entidades nucleares e garantias de consistência para fluxos sensíveis. Integrar aqui o DER final em anexo e referenciar as tabelas de maior impacto funcional.
+
+\section{Validação técnica}
+
+Detalhar a estratégia de testes adotada (unitários, integração e E2E), critérios de aceitação e resultados globais de validação obtidos no ciclo do projeto.
+
+\section{Síntese do capítulo}
+
+Concluir com uma leitura objetiva do estado técnico da solução: robustez atual, principais riscos residuais e grau de prontidão para evolução.
+
+% =========================================================================
+\chapter{Conclusão}
+\label{cap:conclusao}
+% =========================================================================
+
+O capítulo de conclusão é um dos mais importantes do relatório, sendo aqui que devem ser apresentados os resultados do trabalho efetivamente desenvolvido. 
+
+As conclusões finais devem focar o sucesso/insucesso do trabalho, revendo as dificuldades encontradas. Devem resumir, de alguma forma, as vantagens do produto desenvolvido e a utilidade que possa ter para a instituição de estágio ou para os seus clientes/parceiros. Podem também referir a forma como o estágio decorreu, bem como a integração, a formação dada pela instituição, as facilidades e as dificuldades sentidas ao longo do estágio.
+
+As conclusões devem basear-se nos resultados realmente obtidos. Devem enquadrar-se os resultados obtidos com os objetivos enunciados e procurar extrair conclusões mais gerais, eventualmente sugeridas pelos resultados. Podem acompanhar as conclusões incluindo recomendações apropriadas, resultantes do trabalho, nomeadamente sugerindo e justificando eventuais extensões e modificações futuras.
+
+\section{Resumo e principais conclusões}
+
+Esta seção é fundamental, servindo como um resumo global do trabalho e salientando as principais conclusões. Pode ter uma estrutura de texto composta por:
+\begin{itemize}
+    \item Enquadrar brevemente o Problema e o Contexto;
+    \item Relembrar os Objetivos Gerais ou Research Questions;
+    \item Referir a Metodologia (se for importante para as conclusões);
+    \item Referir os principais Resultados;
+    \item Conclusões detalhadas (parte principal).
+\end{itemize}
+
+A conclusão deve ser breve, mas evidenciando os principais tópicos de cada parte, em particular conclusões retiradas do trabalho. 
+
+\section{Objetivos realizados}
+
+Nesta seção devem ser repetidos os objetivos apresentados no capítulo de introdução e para cada um deles deve ser descrito o seu grau de realização. Recomenda-se o uso de uma lista, dado que facilita a compreensão pelo leitor.
+
+\section{Outros trabalhos realizados}
+% Secção opcional
+
+Seção opcional onde se descrevem outras trabalhos de menor importância realizados durante o estágio e que não faziam parte dos objetivos nem do trabalho principal.
+
+\section{Limitações \& trabalho futuro}
+
+Nesta seção devem ser identificados os limites do trabalho realizado (condições de operação), fazendo uma análise autocrítica ao trabalho, bem como extrapolar sobre as direções de desenvolvimento futuro.
+
+\section{Apreciação final}
+
+Esta seção deve fornecer uma opinião pessoal sobre o trabalho desenvolvido. Nomeadamente o seu contributo para o desenvolvimento pessoal e profissional.
+
+% =========================================================================
+% BIBLIOGRAFIA
+% =========================================================================
+\cleardoublepage
+\fancyhead[LO,RE]{Bibliografia}
+
+% Opção A: biblatex automático (recomendado)
+\nocite{*}
+\printbibliography[heading=bibintoc]
+
+% Opção B: bibliografia manual (manter comentada; usar apenas se biber não estiver disponível)
+% \chapter*{Bibliografia}
+% \addcontentsline{toc}{chapter}{Bibliografia}
+% \begin{tabular}{lp{0.88\textwidth}}
+%   {[1]} & Referência manual 1. \\
+% \end{tabular}
+
+% =========================================================================
+% ANEXOS
+% =========================================================================
+\cleardoublepage
+\begin{appendices}
+
+\chapter{Conteúdo em anexos}
+\fancyhead[LO,RE]{Conteúdo em anexos}
+
+Esta parte do relatório deve conter informação adicional organizada por
+capítulos, que embora seja interessante, não faz parte do estritamente
+necessário ao relatório.
+
+\chapter{Regras para conteúdo e estrutura do relatório}
+\fancyhead[LO,RE]{Regras para conteúdo e estrutura do relatório}
+
+Ver documento de guia original.
+
+\end{appendices}
+
+\end{document}
