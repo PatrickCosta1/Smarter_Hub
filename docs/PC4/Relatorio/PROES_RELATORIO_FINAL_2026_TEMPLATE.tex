@@ -1,26 +1,6 @@
-% =============================================================================
-% Template LaTeX — Relatório PROES (Licenciatura em Engenharia de Sistemas, ISEP)
-% Baseado no guia oficial GuiaElabRel_PROES_Word_2026.docx
-%
-% CONFIGURAÇÕES REPLICADAS DO TEMPLATE WORD:
-%   Papel:        A4 (21 × 29,7 cm)
-%   Margens:      esq 3,0 cm | dir 2,5 cm | sup 2,5 cm | inf 2,5 cm
-%   Cabeçalho/rodapé: 1,25 cm da borda
-%   Corpo de texto: Calibri 11 pt, justificado, espaçamento 1,5×, antes 0,21 cm
-%   Títulos:      Arial, bold, cor #9A1A24 (vinho ISEP)
-%     H1 (capítulo):    20 pt, antes 2,0 cm — com número na frente
-%     H2 (secção):      14 pt, recuo esq 1,02 cm
-%     H3 (subsecção):   12 pt, mesmo recuo
-%   Código fonte: Courier New
-%   Referências:  recuo deslocado (hanging 1,27 cm)
-%   Numeração:    pré-matter em romano minúsculo; corpo em árabe
-%   Cabeçalhos:   nome do capítulo (esquerda); título do projeto/estágio (direita)
-%   Rodapés:      «autor» (esquerda); número de página (direita)
-%   Capítulo inicia sempre em página ímpar
-% =============================================================================
-
-% ---------- CLASSE E PACOTES ESSENCIAIS --------------------------------------
+% ---- CLASSE E PACOTES ESSENCIAIS --------------
 \documentclass[12pt, a4paper, twoside, openright]{report}
+
 
 % Encoding e língua
 \usepackage[utf8]{inputenc}
@@ -30,54 +10,39 @@
 % Geometria da página — margens do template Word
 \usepackage[
   a4paper,
-  top=2.5cm,
-  bottom=2.5cm,
+  top=2cm,
+  bottom=2cm,
   left=3.0cm,
   right=2.5cm,
-  headsep=0.75cm,       % distância do texto ao cabeçalho (~1,25 cm da borda)
+  headsep=0.75cm,
   footskip=1.0cm
 ]{geometry}
 
-% Fontes — Arial e Calibri via pacote helvet/microtype
-% NOTA: LaTeX não tem Calibri/Arial nativamente.
-% helvet dá Helvetica (equivalente visual mais próximo do Arial).
-% Para Calibri no corpo, usa-se o mesmo sans-serif ou XeLaTeX com as fontes reais.
-% Se compilares com XeLaTeX/LuaLaTeX, descomenta o bloco FONTES NATIVAS abaixo
-% e comenta o bloco FONTES SUBSTITUTAS.
-
-% --- FONTES SUBSTITUTAS (pdflatex) ---
-\usepackage[scaled=0.95]{helvet}   % Helvetica ≈ Arial, para títulos
-\usepackage{mathptmx}              % Times no corpo (fallback se não usar Calibri)
-% Para corpo mais próximo de Calibri, usa XeLaTeX — ver bloco abaixo.
+% Fontes
+\usepackage[scaled=0.95]{helvet}
+\usepackage{mathptmx}
 \renewcommand{\familydefault}{\rmdefault}
-
-% --- FONTES NATIVAS (XeLaTeX/LuaLaTeX) — descomenta se usares xelatex/lualatex ---
-%\usepackage{fontspec}
-%\setmainfont{Calibri}
-%\setsansfont{Arial}
-%\setmonofont{Courier New}
-
-\usepackage{microtype}  % Tipografia de qualidade (kerning, protrusion)
+\usepackage{microtype}
 
 % Cores
 \usepackage[dvipsnames,svgnames,x11names]{xcolor}
-\definecolor{isepdark}{HTML}{9A1A24}   % vinho ISEP — cor dos títulos
-\definecolor{isepgray}{HTML}{666666}   % cinza para cabeçalho/rodapé
+\definecolor{isepdark}{HTML}{9A1A24}
+\definecolor{isepgray}{HTML}{666666}
 
-% Espaçamento do corpo: 1,5× (equivalente ao lineRule "auto" 360/240)
+% Espaçamento
 \usepackage{setspace}
 \setstretch{1.5}
 
-% Parágrafo: antes 0,21 cm ≈ 6 pt, sem recuo de primeira linha (estilo Word)
+% Parágrafo
 \usepackage{parskip}
 \setlength{\parskip}{6pt}
 \setlength{\parindent}{0pt}
 
 % Cabeçalho e rodapé
 \usepackage{fancyhdr}
-\usepackage{emptypage}   % páginas em branco antes de capítulos ficam sem cabeçalho
+\usepackage{emptypage}
 
-% Cores e formatação de títulos
+% Títulos
 \usepackage{titlesec}
 
 % Índices
@@ -94,11 +59,11 @@
 \usepackage{multirow}
 \usepackage{tabularx}
 
-% Código fonte (estilo codigoFonte do Word: Courier New)
+% Código fonte
 \usepackage{listings}
 \usepackage{courier}
 
-% Hiperligações e referências cruzadas
+% Hiperligações
 \usepackage[
   colorlinks=true,
   linkcolor=isepdark,
@@ -108,35 +73,24 @@
   bookmarksnumbered=true
 ]{hyperref}
 
-% Glossário / notação
+% Glossário
 \usepackage[acronym, toc, nonumberlist]{glossaries}
 
 % Matemática
 \usepackage{amsmath, amssymb}
-\usepackage{siunitx}   % SI units — regras do template
+\usepackage{siunitx}
 
 % Miscelânea
 \usepackage{csquotes}
 \usepackage{enumitem}
-\usepackage{pdfpages}  % incluir PDFs em anexos
+\usepackage{pdfpages}
 
-% ---------- BIBLIOGRAFIA (estilo numérico entre colchetes) --------------------
-\usepackage[
-  backend=biber,
-  style=numeric,
-  sorting=none,
-  maxnames=99
-]{biblatex}
-\addbibresource{referencias.bib}   % cria este ficheiro com as tuas referências
+% Todonotes — para marcar os placeholders de imagens
+\usepackage[disable]{todonotes} % Mudar para [disable] na versão final para esconder os todos
 
 % =============================================================================
 % FORMATAÇÃO DE TÍTULOS
 % =============================================================================
-
-% Capítulo (Cabeçalho 1 do Word):
-%   Arial/Helvetica, 20 pt, bold, cor #9A1A24
-%   Numeração automática no estilo "1  Introdução"
-%   Espaçamento antes: 2,0 cm; sem espaço extra depois (gerido pelo \parskip)
 \titleformat{\chapter}[block]
   {\sffamily\bfseries\fontsize{20}{24}\selectfont\color{isepdark}}
   {\thechapter\quad}
@@ -144,8 +98,6 @@
   {}
 \titlespacing*{\chapter}{0pt}{2.0cm}{0.5cm}
 
-% Secção (Cabeçalho 2):
-%   Arial, 14 pt, bold, cor #9A1A24, recuo esq 1,02 cm
 \titleformat{\section}[block]
   {\sffamily\bfseries\fontsize{14}{17}\selectfont\color{isepdark}}
   {\thesection\quad}
@@ -153,8 +105,6 @@
   {}
 \titlespacing*{\section}{1.02cm}{0.5cm}{0.2cm}
 
-% Subsecção (Cabeçalho 3):
-%   Arial, 12 pt, bold, cor #9A1A24, mesmo recuo
 \titleformat{\subsection}[block]
   {\sffamily\bfseries\fontsize{12}{15}\selectfont\color{isepdark}}
   {\thesubsection\quad}
@@ -162,7 +112,6 @@
   {}
 \titlespacing*{\subsection}{1.02cm}{0.4cm}{0.1cm}
 
-% Subsubsecção — nível máximo recomendado pelo template (ex. 1.1.1)
 \titleformat{\subsubsection}[block]
   {\sffamily\bfseries\fontsize{11}{14}\selectfont\color{isepdark}}
   {\thesubsubsection\quad}
@@ -171,12 +120,10 @@
 \titlespacing*{\subsubsection}{1.02cm}{0.3cm}{0.1cm}
 
 % =============================================================================
-% FORMATAÇÃO DO ÍNDICE (TOC / TOF / TOT)
+% FORMATAÇÃO DO ÍNDICE
 % =============================================================================
-\setcounter{tocdepth}{3}       % mostra até subsubsecção no índice
-\setcounter{secnumdepth}{3}    % numera até subsubsecção
-
-% Entradas do índice em Arial
+\setcounter{tocdepth}{3}
+\setcounter{secnumdepth}{3}
 \renewcommand{\cftchapfont}{\sffamily\bfseries}
 \renewcommand{\cftsecfont}{\sffamily}
 \renewcommand{\cftsubsecfont}{\sffamily}
@@ -185,64 +132,40 @@
 % =============================================================================
 % CABEÇALHO E RODAPÉ
 % =============================================================================
-% Estrutura replicada do Word:
-%   Cabeçalho:  [esquerda] nome do capítulo  |  [direita] «título do projeto»
-%   Rodapé:     [esquerda] «autor»            |  [direita] número de página
-%   Linha separadora no cabeçalho
-%
-% Variáveis a preencher na capa (ver secção DADOS DO RELATÓRIO abaixo)
 \newcommand{\tituloprojeto}{SMARTER HUB}
 \newcommand{\nomeautor}{Patrick Dias Mendes da Costa}
 
 \pagestyle{fancy}
 \fancyhf{}
-
-% Páginas ímpares (direita em twoside): capítulo à esq, título à dir
 \fancyhead[LO]{\small\sffamily\color{isepgray}\leftmark}
 \fancyhead[RO]{\small\sffamily\color{isepgray}\tituloprojeto}
-% Páginas pares (esquerda): título à esq, capítulo à dir
 \fancyhead[LE]{\small\sffamily\color{isepgray}\tituloprojeto}
 \fancyhead[RE]{\small\sffamily\color{isepgray}\leftmark}
-
-% Rodapé
 \fancyfoot[LO,LE]{\small\sffamily\color{isepgray}\nomeautor}
 \fancyfoot[RO,RE]{\small\sffamily\color{isepgray}\thepage}
-
-% Linha do cabeçalho (reproduz o separador visual do Word)
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0pt}
 
-% Estilo das páginas de capítulo (primeira página de cada capítulo)
 \fancypagestyle{plain}{
   \fancyhf{}
   \fancyfoot[RO,RE]{\small\sffamily\color{isepgray}\thepage}
   \renewcommand{\headrulewidth}{0pt}
 }
 
-% Converte \leftmark para maiúsculas/minúsculas corretas
 \renewcommand{\chaptermark}[1]{\markboth{#1}{}}
 
 % =============================================================================
-% LEGENDAS DE FIGURAS E TABELAS
-% Figuras: legenda abaixo — "Figura N – Descrição"
-% Tabelas: legenda acima — "Tabela N – Descrição"
+% LEGENDAS
 % =============================================================================
 \captionsetup[figure]{
-  labelfont={bf,sf},
-  textfont=sf,
-  labelsep=endash,
-  position=below,
-  justification=centering
+  labelfont={bf,sf}, textfont=sf, labelsep=endash,
+  position=below, justification=centering
 }
 \captionsetup[table]{
-  labelfont={bf,sf},
-  textfont=sf,
-  labelsep=endash,
-  position=above,
-  justification=centering
+  labelfont={bf,sf}, textfont=sf, labelsep=endash,
+  position=above, justification=centering
 }
 
-% Tradução das legendas para português
 \addto\captionsportuguese{
   \renewcommand{\figurename}{Figura}
   \renewcommand{\tablename}{Tabela}
@@ -255,83 +178,85 @@
 }
 
 % =============================================================================
-% ESTILO CÓDIGO FONTE (codigoFonte do Word: Courier New, sem formatação extra)
+% ESTILO CÓDIGO FONTE
 % =============================================================================
 \lstset{
-  basicstyle=\ttfamily\small,  % Courier New equivalente
+  basicstyle=\ttfamily\small,
   breaklines=true,
   breakatwhitespace=true,
-  frame=none,
-  numbers=none,
-  xleftmargin=0pt,
-  xrightmargin=0pt,
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{isepgray!40},
+  numbers=left,
+  numberstyle=\tiny\color{isepgray},
+  numbersep=8pt,
+  xleftmargin=14pt,
+  xrightmargin=4pt,
+  keywordstyle=\color{isepdark}\bfseries,
+  stringstyle=\color{teal},
+  commentstyle=\color{isepgray}\itshape,
+  showstringspaces=false,
+  language=[Sharp]C,
 }
-
-% =============================================================================
-% REFERÊNCIAS BIBLIOGRÁFICAS (estilo "referencia" do Word)
-% Recuo deslocado: left=1,27 cm, hanging=1,27 cm
-% Formato: [N] autor, título, ...
-% =============================================================================
-% Já configurado via biblatex acima. Para customizar o recuo do ambiente
-% bibliography se necessário:
-\setlength{\bibhang}{1.27cm}
 
 % =============================================================================
 % NUMERAÇÃO DE PÁGINAS
 % =============================================================================
-% Pré-matéria (capa até notação): romano minúsculo
-% Corpo (Introdução em diante): árabe a partir de 1
-% Os comandos \frontmatter / \mainmatter fazem isto automaticamente.
-% Como usamos 'report' (não 'book'), define-se manualmente:
-
-\newcommand{\frontmatter}{%
-  \cleardoublepage
-  \pagenumbering{roman}
-}
-\newcommand{\mainmatter}{%
-  \cleardoublepage
-  \pagenumbering{arabic}
-}
+\newcommand{\frontmatter}{\pagenumbering{roman}}
+\newcommand{\mainmatter}{\pagenumbering{arabic}}
 
 % =============================================================================
-% ANEXOS — estilos "Anexo heading 1/2/3" do Word
+% ANEXOS
 % =============================================================================
 \usepackage[title,titletoc]{appendix}
 \renewcommand{\appendixname}{Anexo}
 
 % =============================================================================
-% DADOS DO RELATÓRIO — PREENCHE AQUI
+% DADOS DO RELATÓRIO
 % =============================================================================
 \newcommand{\licenciatura}{Licenciatura em Engenharia de Sistemas}
-\newcommand{\titulorelatorio}{SMARTER HUB: Plataforma Integrada de Gestão de Pessoas, Férias e Governação de Acessos}
-\newcommand{\nomeorganizacao}{Tlantic Portugal - Sistemas de Informação, S.A}
-% \nomeautor já definido acima
-\newcommand{\dataapresentacao}{Data de apresentação a definir}
+\newcommand{\titulorelatorio}{SMARTER HUB: Plataforma Integrada de Gestão de Colaboradores}
+\newcommand{\nomeorganizacao}{Tlantic Portugal - Sistemas de Informação, S.A.}
+\newcommand{\dataapresentacao}{junho de 2026}
 \newcommand{\orientadorisep}{Marílio Cardoso}
 \newcommand{\supervisorexterno}{Camila Teixeira}
 
-% Actualiza o título do projeto no cabeçalho
 \renewcommand{\tituloprojeto}{\titulorelatorio}
 \renewcommand{\nomeautor}{Patrick Dias Mendes da Costa}
 
 % =============================================================================
-% GLOSSÁRIO — inicialização
+% GLOSSÁRIO
 % =============================================================================
 \makeglossaries
 
-% Exemplo de entrada de acrónimo:
-\newacronym{proes}{PROES}{unidade curricular de PROjeto/Estágio}
+\newacronym{proes}{PROES}{Unidade Curricular de Projeto/Estágio}
 \newacronym{si}{SI}{Sistema Internacional de Unidades}
-\newacronym{uml}{UML}{Linguagem de modelagem universal}
+\newacronym{uml}{UML}{Linguagem de Modelagem Universal}
+\newacronym{api}{API}{Application Programming Interface}
+\newacronym{rest}{REST}{Representational State Transfer}
+\newacronym{jwt}{JWT}{JSON Web Token}
+\newacronym{orm}{ORM}{Object-Relational Mapper}
+\newacronym{crud}{CRUD}{Create, Read, Update, Delete}
+\newacronym{rh}{RH}{Recursos Humanos}
+\newacronym{e2e}{E2E}{End-to-End}
+\newacronym{dto}{DTO}{Data Transfer Object}
+\newacronym{iban}{IBAN}{International Bank Account Number}
+\newacronym{nif}{NIF}{Número de Identificação Fiscal}
+\newacronym{niss}{NISS}{Número de Identificação da Segurança Social}
+\newacronym{ptbr}{PT/BR}{Portugal e Brasil}
+\newacronym{mvp}{MVP}{Minimum Viable Product}
+\newacronym{moscow}{MoSCoW}{Must have, Should have, Could have, Won't have}
+\newacronym{cpf}{CPF}{Cadastro de Pessoas Físicas}
+\newacronym{pis}{PIS}{Programa de Integração Social}
 
 % =============================================================================
 % DOCUMENTO
 % =============================================================================
 \begin{document}
 
-% -------------------------------------------------------------------------
+% -------------------------
 % CAPA
-% -------------------------------------------------------------------------
+% -------------------------
 \begin{titlepage}
   \thispagestyle{empty}
   \centering
@@ -359,413 +284,1157 @@
   \vspace{1cm}
 \end{titlepage}
 
-% -------------------------------------------------------------------------
-% PRÉ-MATÉRIA — numeração romana
-% -------------------------------------------------------------------------
+% -------------------------
+% PRÉ-MATÉRIA
+% -------------------------
 \frontmatter
 \pagestyle{fancy}
 
-% --- Agradecimentos (opcional) ---
+% - Agradecimentos -
 \chapter*{Agradecimentos}
 \addcontentsline{toc}{chapter}{Agradecimentos}
 \fancyhead[LO,RE]{Agradecimentos}
 
-Agradeço à Tlantic Portugal pela oportunidade de desenvolvimento do estágio em contexto empresarial real, com exposição a problemas concretos de engenharia de software e de operação de RH.
+Agradeço à Tlantic Portugal pela oportunidade de realizar o estágio em contexto empresarial
+real, com exposição a problemas concretos de engenharia de software e à operação de
+Recursos Humanos numa empresa em crescimento. A confiança depositada num estudante
+para construir, de raiz, uma plataforma que vai ser efetivamente utilizada é algo que não é
+garantido em muitos estágios curriculares, e que tornou esta experiência genuinamente
+desafiante.
 
-Agradeço ao orientador, Marílio Cardoso, pelo acompanhamento académico, validação metodológica e apoio na estruturação técnica do trabalho.
+Agradeço ao orientador, Marílio Cardoso, pelo acompanhamento académico, pela validação
+metodológica e pelo apoio na estruturação técnica e documental do trabalho.
 
-Agradeço à supervisora externa, Camila Teixeira, pelo enquadramento de negócio, priorização funcional e revisão contínua dos fluxos implementados.
+Agradeço à supervisora externa, Camila Teixeira, pela disponibilidade permanente,
+pelo enquadramento funcional dos requisitos de negócio e pela paciência em iterações
+que por vezes exigiram rever decisões que pareciam estar fechadas. O seu olhar sobre o
+produto foi determinante para que as escolhas técnicas ficassem alinhadas com o uso real.
 
-Agradeço ainda à equipa com quem colaborei diariamente, pela disponibilidade, partilha de conhecimento e apoio na validação das soluções implementadas.
+Agradeço ainda à equipa com quem colaborei diariamente, pela partilha de conhecimento
+e pela disponibilidade em validar fluxos e comportamentos da plataforma.
 
-\cleardoublepage
+\vspace{1cm}
 
-% --- Resumo ---
+% - Resumo -
 \chapter*{Resumo}
 \addcontentsline{toc}{chapter}{Resumo}
 \fancyhead[LO,RE]{Resumo}
 
-Este relatório descreve o trabalho desenvolvido no âmbito do projeto/estágio PROES, realizado na Tlantic Portugal, com foco no desenvolvimento e consolidação do SMARTER HUB, uma plataforma integrada para gestão de informação de colaboradores, férias e governação de acessos. O contexto inicial era marcado por forte fragmentação operacional, com processos distribuídos por email, folhas de cálculo e validações informais, gerando atrasos, retrabalho e baixa rastreabilidade.
+Este relatório descreve o trabalho desenvolvido no estágio curricular realizado na Tlantic
+Portugal, no âmbito da unidade curricular PROES do ano letivo 2025/2026. O projeto
+consistiu no desenvolvimento do SMARTER HUB, uma plataforma \textit{web} integrada para
+gestão operacional de pessoas, com foco em perfis de colaboradores, férias e ausências,
+e governação de acessos.
 
-Durante o projeto, foi concebida e evoluída uma solução full-stack orientada a processos auditáveis e regras de negócio explícitas, cobrindo fluxos de perfil, férias/ausências, permissões, aprovações e componentes de gestão operacional associados. A abordagem adotada foi iterativa e incremental, permitindo incorporar alterações de requisitos ao longo do ciclo de desenvolvimento sem perder consistência funcional entre frontend, backend e modelo de dados.
+O contexto de partida era marcado por fragmentação operacional: processos de aprovação
+de férias distribuídos por email, folhas de cálculo sem controlo de versão e validações
+informais que tornavam difícil responder à pergunta mais simples que um gestor de equipa
+pode colocar - \textit{``quem está de férias esta semana?''} A ausência de rastreabilidade
+e a diferença de legislação laboral entre Portugal e Brasil, países onde a Tlantic opera,
+acrescentavam camadas adicionais de complexidade a um problema que existia, em grande
+medida, por falta de um sistema que o centralizasse.
 
-Como principais resultados, destaca-se a centralização dos fluxos num único sistema, a redução de complexidade operacional e o reforço da capacidade de auditoria e controlo. O trabalho permitiu ainda consolidar competências técnicas e profissionais em ambiente empresarial real, com impacto direto na qualidade do produto e no alinhamento entre engenharia e necessidades de negócio.
+O projeto foi desenvolvido como trabalho individual ao longo de três meses, adotando
+uma metodologia iterativa com reuniões semanais de acompanhamento. A solução
+implementada é uma aplicação \textit{full-stack}: React com TypeScript no \textit{frontend},
+Node.js com Express no \textit{backend}, e PostgreSQL com Prisma ORM na camada de
+persistência. A plataforma suporta fluxos de aprovação com hierarquias distintas para
+Portugal e Brasil, um modelo de permissões com trilho auditável de concessões e
+revogações, e mecanismos de versionamento de pedidos que garantem rastreabilidade
+completa do histórico de cada decisão.
+
+Como principais resultados, destaca-se a entrega de quatro módulos funcionais em
+ambiente de pré-produção, com validação técnica por testes unitários, de integração e
+\textit{end-to-end}. O trabalho consolidou competências de desenvolvimento \textit{full-stack}
+em ambiente profissional real, com impacto direto na qualidade do produto e no
+alinhamento entre engenharia de software e necessidades operacionais de negócio.
 
 \bigskip
-\noindent\textbf{Palavras Chave:}\quad gestão de pessoas; férias e ausências; governação de acessos; rastreabilidade; engenharia de software.
+\noindent\textbf{Palavras-chave:}\quad gestão de pessoas; férias e ausências; governação de
+acessos; rastreabilidade; engenharia de software.
 
+\newpage
 
-\cleardoublepage
-
-% --- Índice geral ---
-\fancyhead[LO,RE]{Índice}
+% - Índice geral -
+\fancyhead[LO,RE]{{\color{isepdark}Índice}}
 \tableofcontents
 
-\cleardoublepage
+\newpage
 
-% --- Índice de Figuras ---
+% - Índice de Figuras -
 \fancyhead[LO,RE]{Índice de Figuras}
 \listoffigures
 \addcontentsline{toc}{chapter}{Índice de Figuras}
 
-\cleardoublepage
+\newpage
 
-% --- Índice de Tabelas ---
+% - Índice de Tabelas -
 \fancyhead[LO,RE]{Índice de Tabelas}
 \listoftables
 \addcontentsline{toc}{chapter}{Índice de Tabelas}
 
-\cleardoublepage
+\newpage
 
-% --- Notação e Glossário ---
+% - Notação e Glossário -
 \chapter*{Notação e Glossário}
 \addcontentsline{toc}{chapter}{Notação e Glossário}
 \fancyhead[LO,RE]{Notação e Glossário}
 
-\textit{Esta seção apresenta os conceitos (glossário de termos) ordenados
-alfabeticamente, símbolos matemáticos e acrónimos \textbf{utilizados} no corpo
-do texto do relatório.}
+\textit{Esta secção apresenta os acrónimos e conceitos técnicos utilizados no corpo do
+texto, ordenados alfabeticamente.}
 
-\bigskip
 
-% Tabela de acrónimos (formato do template Word)
-\begin{tabular}{lp{0.75\textwidth}}
-  \textbf{PROES} & Unidade curricular de PROjeto/Estágio \\
-  \textbf{SI}    & Sistema Internacional de Unidades \\
-  \textbf{UML}   & Linguagem de modelagem universal \\
+\begin{table}[!h]
+\begin{tabular}{lp{0.84\textwidth}}
+  \toprule
+  \textbf{Termo} & \textbf{Definição} \\
+  \midrule
+  \textbf{API}        & \textit{Application Programming Interface} - conjunto de endpoints REST que expõe a lógica de negócio do \textit{backend} ao \textit{frontend}. \\[4pt]
+  \textbf{CPF}        & \textit{Cadastro de Pessoas Físicas} - número de identificação fiscal brasileiro, equivalente ao NIF português. \\[4pt]
+  \textbf{CRUD}       & \textit{Create, Read, Update, Delete} - operações básicas de persistência de dados. \\[4pt]
+  \textbf{DTO}        & \textit{Data Transfer Object} - estrutura de dados usada para validar e transportar informação entre camadas da aplicação. \\[4pt]
+  \textbf{E2E}        & \textit{End-to-End} - testes que simulam o comportamento real do utilizador através de toda a \textit{stack}. \\[4pt]
+  \textbf{IBAN}       & \textit{International Bank Account Number} - número de conta bancária internacional. \\[4pt]
+  \textbf{JWT}        & \textit{JSON Web Token} - mecanismo de autenticação \textit{stateless} utilizado para gerir sessões na API. \\[4pt]
+  \textbf{MoSCoW}     & Método de priorização de requisitos: \textit{Must have, Should have, Could have, Won't have}. \\[4pt]
+  \textbf{NIF}        & Número de Identificação Fiscal (Portugal). \\[4pt]
+  \textbf{NISS}       & Número de Identificação da Segurança Social (Portugal). \\[4pt]
+  \textbf{ORM}        & \textit{Object-Relational Mapper} - camada de abstração sobre a base de dados; neste projeto, o Prisma. \\[4pt]
+  \textbf{PIS}        & \textit{Programa de Integração Social} - número de identificação trabalhista brasileiro. \\[4pt]
+  \textbf{PROES}      & Unidade Curricular de Projeto/Estágio. \\[4pt]
+  \textbf{PT/BR}      & Abreviatura usada no projeto para referir as especificidades dos contextos legislativos de Portugal e do Brasil. \\[4pt]
+  \textbf{REST}       & \textit{Representational State Transfer} - estilo arquitetural para APIs HTTP. \\[4pt]
+  \textbf{RH}         & Recursos Humanos. \\[4pt]
+  \textbf{UML}        & \textit{Unified Modeling Language} - linguagem de modelação utilizada em diagramas de casos de uso e de domínio. \\[4pt]
+  \bottomrule
 \end{tabular}
+\end{table}
 
-\cleardoublepage
 
-% -------------------------------------------------------------------------
-% CORPO — numeração árabe a partir de 1
-% -------------------------------------------------------------------------
+% -------------------------
+% CORPO
+% -------------------------
 \mainmatter
 \pagestyle{fancy}
 
 % =========================================================================
 \chapter{Introdução}
+\label{cap:introducao}
 % =========================================================================
-% O cabeçalho usa \leftmark que capta automaticamente o nome do capítulo.
 
-O presente relatório descreve o trabalho desenvolvido no projeto SMARTER HUB durante o período de estágio curricular na Tlantic Portugal - Sistemas de Informação, S.A. O documento apresenta o problema abordado, os objetivos definidos, a metodologia aplicada e os resultados alcançados, mantendo foco na evidência técnica e no impacto operacional da solução implementada.
+O presente relatório documenta o trabalho desenvolvido durante o estágio curricular realizado
+na Tlantic Portugal - Sistemas de Informação, S.A., entre abril e junho de 2026. O projeto
+consistiu no desenvolvimento do \textbf{SMARTER HUB}, uma plataforma \textit{web} para
+centralizar e digitalizar os processos operacionais de gestão de pessoas da empresa.
 
-A estrutura adotada privilegia clareza, rastreabilidade e alinhamento entre requisitos de negócio e implementação, permitindo demonstrar de forma objetiva o contributo do trabalho para a organização e para a evolução técnica do estudante.
+A escolha do tema surgiu de uma necessidade real: antes do SMARTER HUB, a gestão de
+férias, perfis de colaboradores e permissões de acesso era feita de forma dispersa, sem
+um sistema único que desse visibilidade aos gestores e garantisse rastreabilidade das
+decisões. O desafio era construir algo que resolvesse esse problema num contexto
+empresarial real - com utilizadores reais, regras de negócio complexas e dois contextos
+legislativos diferentes.
 
-% --- 1.1 ---
 \section{Enquadramento}
 
-Antes do desenvolvimento do SMARTER HUB, a gestão de informação pessoal de colaboradores e de férias/ausências era maioritariamente manual, morosa e distribuída por múltiplos canais. A operação dependia de folhas de cálculo, email e validações informais, o que aumentava o risco de inconsistência de dados, atrasava decisões e dificultava a visibilidade global dos processos.
+A Tlantic Portugal opera num mercado onde a eficiência operacional é determinante.
+Com uma equipa distribuída por Portugal e Brasil, a gestão de pessoas envolve não apenas
+a diversidade cultural, mas também diferenças legislativas significativas entre os dois países.
+Antes do SMARTER HUB, esta gestão dependia de folhas de cálculo partilhadas, pedidos
+por email e validações informais entre gestores e equipas de RH.
 
-Neste contexto, o projeto foi enquadrado como uma iniciativa de centralização e digitalização de fluxos críticos de RH e gestão operacional, com enfoque em uniformização de regras, redução de retrabalho e melhoria da rastreabilidade.
+O projeto foi enquadrado como uma iniciativa de centralização e digitalização de fluxos
+críticos de RH, com três eixos principais: uniformização de regras, melhoria da
+rastreabilidade das decisões e redução da carga administrativa.
 
-% --- 1.2 ---
-\section{Apresentação do projeto/estágio}
+\section{Apresentação do projeto}
 
-O projeto/estágio incidiu no desenvolvimento e evolução do SMARTER HUB, plataforma orientada à gestão integrada de processos de pessoas. O trabalho incluiu análise funcional, desenho de fluxos, implementação full-stack, validação técnica e documentação das decisões de engenharia.
+O SMARTER HUB é uma aplicação \textit{web} desenvolvida de raiz como projeto de estágio,
+destinada a suportar a gestão integrada de pessoas na Tlantic. A plataforma cobre:
 
-O resultado principal pretendido foi disponibilizar uma solução unificada para gestão de dados pessoais, férias/ausências e governação de permissões, reduzindo a complexidade operacional e melhorando a capacidade de controlo e auditoria.
+\begin{itemize}
+  \item gestão de perfis de colaboradores com campos específicos por país (PT/BR);
+  \item fluxos de férias e ausências com estados explícitos, versionamento e deteção de
+        sobreposições;
+  \item governação de permissões de acesso com trilho auditável;
+  \item sistema de notificações para eventos críticos;
+  \item mecanismos de exportação para suporte à decisão.
+\end{itemize}
 
-% --- 1.3 ---
+O desenvolvimento foi realizado de forma individual, com acompanhamento semanal da
+supervisora externa. No final do período de estágio, a plataforma encontrava-se em
+fase de pré-produção, com entrega prevista a uma equipa piloto para testes.
+
 \section{Definição dos Objetivos}
+\label{sec:objetivos}
 
 \textbf{Objetivos gerais}
+
 \begin{itemize}
-  \item Conceber e consolidar uma plataforma integrada para processos de gestão de pessoas no contexto da Tlantic.
-  \item Reduzir dependência de processos manuais e ferramentas dispersas nos fluxos de dados pessoais e férias/ausências.
-  \item Reforçar rastreabilidade, governança e consistência funcional em operações sensíveis.
+  \item Desenvolver uma plataforma integrada para os processos de gestão de pessoas
+        no contexto da Tlantic.
+  \item Reduzir a dependência de processos manuais e ferramentas dispersas.
+  \item Garantir rastreabilidade e governança em operações sensíveis de RH.
 \end{itemize}
 
 \textbf{Objetivos específicos}
+
 \begin{itemize}
-  \item Centralizar gestão de informação de colaborador numa única aplicação web.
-  \item Implementar fluxos de férias/ausências com estados explícitos, validações e histórico.
-  \item Uniformizar regras de aprovação e visibilidade por perfil e escopo operacional.
-  \item Estruturar modelo de permissões com rastreabilidade de concessões e revogações.
-  \item Disponibilizar mecanismos de reporte e exportação para suporte à decisão.
-  \item Aumentar qualidade técnica através de validação automática com testes unitários, integração e E2E.
-  \item Garantir base evolutiva para novos requisitos sem reestruturação completa do sistema.
+  \item Centralizar a gestão de informação de colaboradores numa única aplicação \textit{web}.
+  \item Implementar fluxos de férias/ausências com estados explícitos, validações de
+        capacidade de equipa e histórico de pedidos.
+  \item Suportar dois contextos legislativos distintos (Portugal e Brasil) no mesmo sistema.
+  \item Estruturar um modelo de permissões com rastreabilidade de concessões e revogações.
+  \item Disponibilizar mecanismos de reporte e exportação de dados.
+  \item Garantir qualidade técnica através de testes unitários, de integração e \textit{end-to-end}.
+  \item Criar uma base evolutiva que suporte novos requisitos sem reestruturação completa.
 \end{itemize}
 
-% --- 1.4 ---
-\section{Calendarização e metodologia}
+\section{Calendarização e Metodologia}
 
-A calendarização detalhada do trabalho foi inicialmente planeada por fases e acompanhada por marcos de entrega. O cronograma de referência encontra-se no ficheiro \texttt{docs/PC3/gantt\_chart\_pc3.xlsx}.
-
-O \textit{Gantt chart} ilustrado na Figura~\ref{fig:gantt} sumariza o plano de
-trabalhos para este projeto/estágio.
+O estágio decorreu entre 6 de abril e finais de junho de 2026, ao longo de doze semanas.
+O Gantt \textit{chart} na Figura~\ref{fig:gantt} ilustra a distribuição temporal das principais
+fases do projeto.
 
 \begin{figure}[H]
   \centering
-  % Exportar o gráfico Excel para PNG/PDF e substituir o caminho abaixo.
-  % \includegraphics[width=\textwidth]{docs/PC3/imagens/gantt_chart_pc3.png}
-  \rule{\textwidth}{0.4pt}   % placeholder — substituir pelo gráfico real
-  \caption{Gantt chart com o plano de trabalhos de PROES}
+  % INSTRUÇÃO: Substituir pela exportação do Gantt chart real (PNG ou PDF)
+  % \includegraphics[width=\textwidth]{imagens/gantt_chart.png}
+  \missingfigure[figwidth=\textwidth]{Gantt chart com o plano de trabalhos de PROES}
+  \caption{Plano de trabalhos do estágio PROES 2025/2026}
   \label{fig:gantt}
 \end{figure}
 
-A metodologia seguida foi \textbf{iterativa e incremental}, com priorização contínua de requisitos e entregas sucessivas de valor. Embora existisse um planeamento inicial de funcionalidades, o contexto real de projeto exigiu adaptação a novas necessidades, revisão de prioridades e remoção de itens sem valor operacional comprovado.
+A metodologia adotada foi \textbf{iterativa e incremental}. Cada semana terminava com
+uma reunião de acompanhamento com a supervisora Camila Teixeira, onde se avaliava
+o trabalho realizado, reajustavam-se prioridades e clarificavam-se requisitos para a
+semana seguinte. Esta cadência permitiu responder a novos requisitos que surgiram 
+ao longo do projeto, nomeadamente funcionalidades que só ficaram claras após a
+implementação de outras, sem comprometer a estabilidade do que já estava entregue.
 
-Em termos práticos, o ciclo de trabalho combinou:
-\begin{itemize}
-    \item definição inicial de escopo e objetivos de negócio;
-    \item implementação por incrementos funcionais;
-    \item validação técnica e funcional em cada incremento;
-    \item incorporação de feedback de stakeholders para reajuste do backlog.
-\end{itemize}
+Na prática, cada incremento seguiu três etapas:
 
-Esta abordagem permitiu manter alinhamento entre objetivos académicos e necessidades reais da organização, reduzindo risco de entrega desalinhada com o contexto operacional.
+\begin{enumerate}
+  \item \textbf{Levantamento e especificação} - clarificação de requisitos com a supervisora
+        e análise das regras de negócio envolvidas;
+  \item \textbf{Implementação e teste} - desenvolvimento da funcionalidade, cobertura
+        com testes e revisão do código;
+  \item \textbf{Validação e adaptação} - demonstração do resultado e incorporação
+        de \textit{feedback}.
+\end{enumerate}
 
-% --- 1.5 ---
-\section{Motivação e contributos}
+\section{Motivação e Contributos}
 
-Do ponto de vista organizacional, o principal contributo foi a consolidação de uma plataforma integrada para gestão de dados pessoais, férias e processos associados, reduzindo a complexidade operacional e o esforço administrativo em tarefas repetitivas.
+Do ponto de vista organizacional, o principal contributo foi a disponibilização de uma
+plataforma que substitui um conjunto de processos manuais por fluxos digitais,
+auditáveis e com regras de negócio explícitas. A redução da carga administrativa
+em tarefas repetitivas, como a produção do mapa anual de férias, e a centralização
+da informação de colaboradores são os resultados com maior impacto imediato.
 
-Do ponto de vista individual, o estágio proporcionou experiência em ambiente empresarial real, contacto com problemas concretos de engenharia, colaboração em equipa multidisciplinar e reforço de competências de análise, implementação e validação de software orientado a negócio.
+Do ponto de vista individual, este estágio representou a primeira experiência de
+desenvolvimento de software em contexto profissional real. A necessidade de construir
+algo que será efetivamente utilizado por utilizadores reais, dados sensíveis
+e regras de negócio que não podem ser aproximadas foi o principal motor de
+aprendizagem, e também a principal fonte de dificuldade.
 
-% --- 1.6 ---
-\section{Utilização de conteúdo gerado por IA}
+\section{Utilização de Conteúdo Gerado por IA}
 
-No âmbito do projeto foi utilizado o GitHub Copilot como ferramenta de apoio à produtividade, principalmente para suporte à implementação de código, aceleração de tarefas de refatoração e assistência na criação/ajuste de testes. A utilização foi sempre supervisionada e validada tecnicamente antes de integração.
+No âmbito do projeto foi utilizado o GitHub Copilot como ferramenta de apoio à
+produtividade, principalmente na implementação de código, na aceleração de tarefas
+de refatoração e na criação de testes. A utilização foi sempre supervisionada:
+as sugestões geradas foram avaliadas criticamente, adaptadas ao contexto específico
+do SMARTER HUB e validadas antes de serem integradas.
 
-Não foi utilizado conteúdo gerado por IA sem validação. Todas as decisões finais de arquitetura, regras de negócio, código entregue e texto académico foram revistos e aprovados pelo autor.
+É importante distinguir entre apoio instrumental e autoria intelectual. As decisões
+de arquitetura, a modelação do domínio, as regras de negócio PT/BR e o texto académico
+são da responsabilidade do autor. O Copilot funcionou como um acelerador de execução,
+não como substituto de raciocínio.
 
-% Tabela de utilização de IA
 \begin{table}[H]
-  \caption{Utilização de IA no relatório}
+  \caption{Utilização de IA no projeto}
   \label{tab:ia}
   \small\sffamily
   \begin{tabularx}{\textwidth}{|l|l|X|l|}
     \hline
     \textbf{Categoria} & \textbf{Ferramenta} & \textbf{Justificação e salvaguarda} & \textbf{Capítulos} \\
     \hline
-    Texto  & GitHub Copilot & Apoio de estruturação e revisão; validação manual integral antes de submissão. & 1, 2 \\
+    Texto      & GitHub Copilot & Apoio à estruturação de texto técnico; revisão e validação integral pelo autor. & 1, 2 \\
     \hline
-    Imagem & N/A & Sem geração automática de imagens para evidência técnica. & -- \\
+    Imagem     & N/A & Sem geração automática de imagens; todos os diagramas foram criados pelo autor. & - \\
     \hline
-    Código & GitHub Copilot & Sugestões de implementação e testes, sempre sujeitas a revisão funcional e técnica. & 3, 4 \\
+    Código     & GitHub Copilot & Sugestões de implementação, testes e refatoração; todas revisadas e adaptadas. & 3, 4 \\
     \hline
-    Vídeo & N/A & Não aplicável ao trabalho desenvolvido. & -- \\
+    Vídeo      & N/A & Não aplicável. & - \\
     \hline
-    Outros & N/A & Não aplicável. & -- \\
+    Outros     & N/A & Não aplicável. & - \\
     \hline
   \end{tabularx}
 \end{table}
 
-Importa distinguir apoio instrumental de autoria intelectual: a ferramenta auxiliou a execução, mas a responsabilidade técnica e científica permaneceu integralmente do autor.
+\section{Organização do Relatório}
 
-% --- 1.7 ---
-\section{Organização do relatório}
-
-O relatório está organizado em cinco capítulos principais. O Capítulo~1 apresenta o enquadramento, objetivos, metodologia e posicionamento do trabalho. O Capítulo~\ref{cap:contexto} descreve o contexto organizacional, o problema de negócio e os fundamentos que justificam a solução.
-
-O Capítulo~3 detalha as atividades desenvolvidas e os incrementos implementados ao longo do estágio. O Capítulo~4 consolida arquitetura, validação técnica e evidências de qualidade da solução. Por fim, o Capítulo~\ref{cap:conclusao} reúne conclusões, avaliação de objetivos, limitações e direções de evolução futura.
+O relatório está organizado em cinco capítulos. O Capítulo~\ref{cap:introducao} apresenta
+o enquadramento, objetivos e metodologia. O Capítulo~\ref{cap:contexto} descreve o
+contexto organizacional, o problema identificado e a decisão tecnológica. O
+Capítulo~\ref{cap:atividades} detalha as atividades desenvolvidas ao longo do estágio.
+O Capítulo~\ref{cap:arquitetura} consolida a arquitetura da solução e a estratégia de
+validação técnica. Por fim, o Capítulo~\ref{cap:conclusao} reúne as conclusões, os
+objetivos realizados e as direções de trabalho futuro.
 
 % =========================================================================
 \chapter{Contexto}
 \label{cap:contexto}
 % =========================================================================
 
-\section{Organização e área de negócio}
+\section{Organização e Área de Negócio}
 
-A Tlantic Portugal - Sistemas de Informação, S.A. é uma empresa portuguesa de desenvolvimento de software especializada em soluções para eficiência operacional, gestão de pessoas e suporte às vendas no retalho físico. Com origem em 2004 no Brasil e presença consolidada em Portugal desde 2007, atua como parceira tecnológica de organizações dos setores do retalho, indústria e saúde.
+A Tlantic Portugal - Sistemas de Informação, S.A. é uma empresa portuguesa de
+desenvolvimento de \textit{software} fundada no Brasil em 2004, com presença consolidada
+em Portugal desde 2007. Com cerca de duzentos colaboradores e clientes como a Sonae,
+Auchan, Lidl, o Grupo Pão de Açúcar e a Parfois, a empresa atua como parceira
+tecnológica de grandes organizações nos setores do retalho, indústria e saúde.
 
-A empresa opera num mercado onde existe elevada pressão sobre produtividade, custos laborais e conformidade legal. Neste contexto, soluções digitais que integrem operações, pessoas e decisão em tempo útil são determinantes para competitividade.
+O posicionamento da Tlantic centra-se na eficiência operacional: os seus produtos ajudam
+os clientes a gerir pessoas, operações e ponto de venda de forma integrada. A empresa
+opera com equipas em Portugal e no Brasil, o que cria uma dualidade legislativa laboral
+que está diretamente presente no contexto do SMARTER HUB. A mesma plataforma
+tem de suportar regras de férias, aprovações e contratos diferentes, consoante o país do
+colaborador.
 
-\section{Problema identificado}
+\section{Problema Identificado}
 
-No contexto analisado, os processos de gestão de pessoas apresentavam fragmentação operacional e baixo nível de padronização. As principais limitações observadas foram:
+Antes do SMARTER HUB, a gestão de pessoas na Tlantic dependia de um conjunto
+heterogéneo de ferramentas sem integração entre si. Os pedidos de férias eram enviados
+através de uma plataforma, aprovados informalmente e registados em folhas de cálculo partilhadas. As
+permissões de acesso a sistemas eram atribuídas sem registo formal de justificativas.
+Os dados de colaboradores estavam distribuídos por diferentes fontes, sem um modelo
+único de atualização.
+
+As principais limitações observadas foram:
+
 \begin{itemize}
-  \item processos distribuídos entre email, folhas de cálculo e aprovações informais;
-  \item baixa uniformização de regras entre equipas, subequipas e geografias;
-  \item dificuldade em aplicar políticas legais distintas por país de forma consistente;
-  \item visibilidade limitada sobre capacidade e sobreposição de ausências;
-  \item rastreabilidade insuficiente para auditoria, compliance e melhoria contínua.
+  \item aprovações de férias sem rastreabilidade: não era possível saber, de forma
+        simples, quem aprovou o quê, quando e com que informação;
+  \item ausência de validação automática de sobreposições de ausências dentro da mesma
+        equipa;
+  \item dificuldade em aplicar políticas laborais distintas para colaboradores portugueses
+        e brasileiros no mesmo fluxo;
+  \item dados de perfil desatualizados por falta de um mecanismo central de gestão;
+  \item permissões de acesso sem histórico de concessão ou revogação.
 \end{itemize}
 
-\section{Análise de causas}
+\section{Análise de Causas}
 
-A análise do problema permitiu identificar quatro causas estruturais principais:
+A análise inicial do problema identificou quatro causas estruturais:
+
+\begin{description}
+  \item[Dados dispersos.] A informação de colaboradores estava fragmentada por email,
+        ficheiros partilhados e sistemas de terceiros, sem um modelo único de atualização
+        ou validação.
+  \item[Ausência de processo formal.] Os fluxos de aprovação de férias e de atribuição
+        de permissões funcionavam por convenção informal, sem estados definidos nem
+        histórico de decisões.
+  \item[Falta de validação automática.] Não existia mecanismo que detetasse, por exemplo,
+        que dois colaboradores da mesma equipa tinham férias sobrepostas num período crítico.
+  \item[Dualidade legislativa não suportada.] As diferenças entre a legislação laboral
+        portuguesa e brasileira - em matéria de elegibilidade, prazos e níveis de aprovação
+        - eram geridas ad hoc, sem regras explícitas no sistema.
+\end{description}
+
+\section{Perspetiva do Utilizador}
+
+O perfil de utilizador com maior atrito operacional identificado foi o \textbf{gestor de equipa}.
+Na prática, um gestor precisa responder rapidamente a pedidos de férias sem comprometer
+a continuidade operacional da equipa. O problema não era apenas a demora no processo,
+mas a incerteza: ao aprovar um pedido, o gestor não tinha acesso imediato à informação
+de quem mais estava de férias naquele período, o que tornava cada decisão potencialmente
+arriscada.
+
+Do lado da equipa de RH, uma das grandes queixas era a produção do mapa anual de férias, uma tarefa que exigia consolidar manualmente informação de múltiplas fontes.
+
+\section{Estado da Arte e Opção Tecnológica}
+
+Antes de iniciar o desenvolvimento, foi feita uma análise comparativa entre adquirir uma
+solução de mercado (\textit{buy}) e desenvolver uma solução orientada ao contexto (\textit{build}).
+As soluções HRIS (\textit{Human Resource Information Systems}) de mercado, como o Personio,
+o BambooHR ou o HiBob, oferecem funcionalidades de gestão de pessoas abrangentes,
+mas a sua parametrização para suportar simultaneamente a legislação laboral portuguesa
+e brasileira em um único sistema, com as especificidades de hierarquia e aprovação da
+Tlantic, exigiria customizações extensas e dependência de um fornecedor externo.
+
+A opção pelo desenvolvimento interno foi justificada por três razões principais:
+
 \begin{itemize}
-  \item \textbf{Dados:} informação pessoal dispersa e sem modelo único de atualização;
-  \item \textbf{Documentos:} redundância documental e ausência de governança consistente;
-  \item \textbf{Processo:} fluxos de pedido/aprovação sem uniformização ponta a ponta;
-  \item \textbf{Controlo:} baixa consolidação de trilhos auditáveis de decisão.
+  \item \textbf{Controlo sobre regras PT/BR.} A coexistência de dois contextos legislativos
+        com lógicas de aprovação distintas exige implementação customizada que não
+        está disponível \textit{out-of-the-box} nas soluções de mercado analisadas.
+  \item \textbf{Controlo sobre o \textit{roadmap}.} O desenvolvimento interno permite evoluir
+        a plataforma em função das necessidades reais da Tlantic, sem dependência de
+        ciclos de atualização de fornecedores.
+  \item \textbf{Alinhamento com a estratégia tecnológica.} A Tlantic opera maioritariamente
+        em PHP nas suas plataformas internas, mas tem a intenção de evoluir para tecnologias
+        mais modernas. O SMARTER HUB foi desenhado intencionalmente com uma
+        \textit{stack} diferente: React, TypeScript, Node.js e PostgreSQL, como
+        exercício prático nessa direção.
 \end{itemize}
 
-\section{Perspetiva do utilizador}
+\section{Stakeholders Principais}
 
-O perfil de maior atrito operacional identificado foi o gestor de equipa, que necessita de aprovar rapidamente pedidos sem comprometer capacidade e continuidade de operação. O principal padrão observado foi a coexistência de pressão por resposta imediata com receio de erro operacional por falta de informação consolidada.
+Os atores com maior influência no projeto foram:
 
-\section{Métricas de baseline e metas}
-
-Com base no levantamento inicial (PC2), foram definidos indicadores de referência para avaliação de impacto da solução:
 \begin{itemize}
-  \item tempo médio de aprovação ponta a ponta: 72--120h (meta: $\leq$ 24h);
-  \item taxa de retrabalho em pedidos: 10--20\% (meta: $\leq$ 5\%);
-  \item produção do mapa anual de férias: 20--40 min (meta: $<$ 2 min);
-  \item perfis desatualizados: 18--25\% (meta: $\leq$ 5\%).
+  \item \textbf{Supervisora externa (Camila Teixeira)} - interlocutora principal para
+        requisitos de negócio, validação funcional e priorização do \textit{backlog};
+  \item \textbf{Equipa de RH} - utilizadores finais dos módulos de férias, perfis
+        e permissões; principal fonte de requisitos funcionais;
+  \item \textbf{Gestores de equipa} - aprovadores nos fluxos de férias; utilizadores
+        do módulo de visibilidade de ausências;
+  \item \textbf{Colaboradores} - utilizadores finais do perfil próprio e do fluxo
+        de submissão de pedidos;
+  \item \textbf{Equipa técnica} - responsável pela revisão e integração futura
+        da plataforma no ambiente de produção da Tlantic.
 \end{itemize}
-
-\section{Estimativa de valor}
-
-Na análise de viabilidade inicial foi estimada uma poupança operacional anual de referência de \euro12.768, resultante da redução de esforço administrativo recorrente em tarefas de aprovação, atualização de mapas, comunicação de estado e resposta a exceções.
-
-\section{Estado da arte e opção tecnológica}
-
-Foi realizada análise comparativa entre abordagens de mercado (buy) e desenvolvimento orientado ao contexto (build). A decisão pelo SMARTER HUB foi justificada pela necessidade de:
-\begin{itemize}
-  \item coexistência de regras PT/BR no mesmo sistema;
-  \item autorização contextual por equipa, país e hierarquia;
-  \item trilho auditável de decisões e alterações sensíveis;
-  \item controlo de roadmap sem dependência de parametrização enterprise externa.
-\end{itemize}
-
-Em termos de stack, a solução consolidou React + TypeScript no frontend, Node.js/Express no backend e PostgreSQL com Prisma na persistência, com estratégia de validação baseada em testes unitários, integração e E2E.
-
-\section{Stakeholders principais}
-
-Os stakeholders com maior influência no projeto foram direção de RH, aprovadores/gestores, direção executiva, gestores de permissões, equipa técnica e colaboradores finais. A gestão destes atores foi feita através de ciclos curtos de validação funcional e revisão iterativa de requisitos.
 
 % =========================================================================
-\chapter{Atividades desenvolvidas}
+\chapter{Atividades Desenvolvidas}
+\label{cap:atividades}
 % =========================================================================
 
-O capítulo (ou conjunto de capítulos) das atividades desenvolvidas é a componente mais importante do relatório, pois descreve o que realmente foi feito no projeto/estágio. Existem duas possibilidades de estrutura: 
+Este capítulo descreve o trabalho realizado ao longo do estágio: desde o levantamento
+de requisitos até à entrega dos módulos funcionais, passando pelas decisões técnicas
+que moldaram a implementação. A apresentação segue a ordem cronológica do projeto,
+com ênfase nos aspetos que foram mais relevantes do ponto de vista técnico e de
+aprendizagem.
+
+\section{Planeamento e Critérios de Aceitação}
+
+O desenvolvimento foi organizado em \textit{sprints} semanais, cada um com objetivos
+definidos no início da semana e revistos na reunião de fim de semana com a supervisora.
+Esta cadência permitiu manter o alinhamento entre o que era tecnicamente implementado
+e o que era funcionalmente esperado, e foi fundamental para gerir a complexidade
+crescente dos requisitos.
+
+Cada funcionalidade foi considerada entregue quando satisfazia os seguintes critérios:
+
 \begin{itemize}
-    \item orientada para o projeto – que deve ser utilizada na elaboração de relatórios de projeto ou estágio em que há um “produto” bem definido a apresentar. Exemplo clássico da realização de um módulo ou de uma nova aplicação. Neste caso, a estrutura típica consiste no desdobramento deste capítulo em três:
-    \begin{itemize}
-        \item Análise e Especificação
-        \item Implementação
-        \item Teste [e colocação em serviço]
-    \end{itemize}
-    \item orientada a tarefas – que deve ser usado na elaboração de relatórios de estágio em que não existe propriamente um “produto” a apresentar mas sim uma série de tarefas que foram realizadas em um ou vários “produtos” já existentes na organização. Exemplo de estágio profissional onde foi feita uma intervenção nos vários serviços de infraestrutura ou módulos de uma aplicação para suportar uma nova tecnologia. Neste caso, deverá existir um capítulo para cada tarefa/subprojecto, sendo que no capítulo devem ser descritas as atividades referidas no ponto anterior. A estrutura típica será:
-    \begin{itemize}
-        \item Tarefa/Subprojecto 1
-        \item Tarefa/Subprojecto 2 
-        \item Tarefa/Subprojecto n
-    \end{itemize}
+  \item os requisitos funcionais definidos para o fluxo estavam implementados
+        e comportavam-se conforme o esperado;
+  \item as regras de negócio e restrições de integridade de dados estavam validadas;
+  \item a interface era consistente com os padrões visuais do restante SMARTER HUB;
+  \item existia cobertura de testes para os fluxos críticos da funcionalidade;
+  \item a supervisora ou outro utilizador-chave reconhecia o comportamento implementado
+        como correto.
 \end{itemize}
 
-As atividades de planeamento e acompanhamento de projeto devem ser apresentadas em subseção específica. Os contratempos do estágio devem ser referidos de forma explícita.
+\section{Análise e Especificação de Requisitos}
 
-Ao elaborar o relatório devem ter em atenção que o relatório funcionará como documentação para a organização. Dessa forma devem-se perguntar se o relatório descreve de forma suficientemente detalhada o trabalho para que possa ser compreendido e reproduzido, se necessário no futuro, por outras pessoas da organização. Todas as boas práticas abordadas no curso ou externamente deverão ser usadas neste capítulo e no relatório em geral, desde que esse uso traga mais valias para o projeto/estágio. Note-se que este capítulo não deve conter exclusivamente a explicação da forma como métodos, técnicas, algoritmos, tecnologias, etc. foram usados, mas também o processo de compreensão do problema, a visão da solução, como o problema foi atacado e eventualmente subdividido em subproblemas, a análise nos seus vários níveis (alto, médio, baixo), a identificação de requisitos, a modelação, a descrição dos componentes da solução, etc. Recomenda-se que a descrição técnica siga uma abordagem que parta do “geral” (descrição inicial do problema) para o “particular” (descrição técnica completa e coerente da solução), mas sem saltar etapas.
+A fase de análise decorreu nas primeiras semanas de estágio e continuou de forma
+intermitente ao longo de todo o projeto, à medida que novos requisitos foram emergindo.
+O processo de levantamento combinou reuniões com a supervisora, análise dos processos
+informais existentes e, em alguns casos, discussão direta com utilizadores finais para
+perceber onde estava o atrito.
 
-O aluno deve, conjuntamente com o orientador, definir a estrutura mais adequada ao seu projeto/estágio.
+\subsection{Inventário Funcional}
 
-\section{Primeira seção do Capítulo 3}
+O inventário de requisitos foi organizado em quatro domínios principais:
 
-\ldots
+\begin{description}
+  \item[Perfil de colaborador.] Dados pessoais, informação contratual, regime horário,
+        \gls{iban}, \gls{nif}/\gls{niss} para Portugal e \gls{cpf}/\gls{pis} para o
+        Brasil, contacto de emergência e associação a equipas e subequipas.
 
-\subsection{Primeira subseção do Capítulo 3}
+  \item[Férias e ausências.] Criação e gestão de pedidos com cinco estados explícitos
+        (rascunho, pendente, aprovado, rejeitado, cancelado), cálculo de saldo por
+        regras contratuais, deteção de sobreposições de ausências na mesma equipa,
+        venda de dias, crédito de dias de férias extra e suporte a meio-dias.
 
-\ldots
+  \item[Governação de acessos.] Categorias de permissão com matriz de acesso por função,
+        concessão e revogação com justificativa obrigatória, atualizações em lote por
+        equipa ou subunidade e visibilidade de permissões por colaborador.
 
-\section{Conclusão do Capítulo 3}
+  \item[Auditoria e notificações.] Histórico de versões de pedidos, registo de alterações
+        de permissões, notificações de eventos críticos e exportação de dados para
+        suporte à decisão.
+\end{description}
 
-Breve conclusão do Capítulo 3.
+\subsection{Priorização MoSCoW}
+
+Os requisitos foram classificados com o método MoSCoW para garantir foco nas
+funcionalidades de maior valor operacional:
+
+\begin{itemize}
+  \item \textbf{Must have:} módulo de perfil de colaborador, fluxo de férias com
+        aprovação e histórico, suporte PT/BR nos fluxos principais;
+  \item \textbf{Should have:} modelo de permissões com registo de concessão/revogação,
+        notificações de eventos críticos;
+  \item \textbf{Could have:} relatórios de exportação, banco de horas, dashboards de decisão;
+  \item \textbf{Won't have} (no âmbito deste estágio): integração com sistemas de terceiros,
+        módulo de \textit{payroll}, aplicação móvel nativa.
+\end{itemize}
+
+\subsection{Modelação de Domínio}
+
+A modelação de domínio foi uma das atividades com maior impacto na qualidade final
+da solução. A compreensão de que um pedido de férias não é um objeto simples -
+mas sim uma entidade que evolui ao longo do tempo, com versões, aprovações associadas
+e crédito de saldo - obrigou a um desenho cuidadoso das entidades centrais.
+
+As entidades principais do domínio são:
+
+\begin{itemize}
+  \item \textbf{User} e \textbf{Profile} - identidade de acesso e dados de colaborador,
+        separados por razões de segurança e de gestão de propriedade de dados;
+  \item \textbf{Team} e \textbf{Subteam} - estrutura organizacional que determina
+        visibilidade e hierarquia de aprovação;
+  \item \textbf{Vacation} - pedido de férias/ausência, com versões que preservam
+        o histórico de cada alteração;
+  \item \textbf{VacationApproval} - registo de cada etapa de aprovação, com responsável,
+        estado e \textit{timestamp};
+  \item \textbf{Permission} e \textbf{UserPermission} - modelo de permissões com
+        trilho auditável de concessões e revogações;
+  \item \textbf{Notification} - alertas operacionais para eventos como mudanças de
+        permissão ou resposta a pedidos;
+  \item \textbf{VacationBalanceCredit} - crédito de saldo de férias, com suporte a
+        crédito manual, venda de dias e dias extra da empresa.
+\end{itemize}
+
+A decisão de separar \texttt{User} de \texttt{Profile} foi uma das mais relevantes do
+projeto. Permite que dados sensíveis de perfil, como IBAN ou NIF, sejam
+protegidos por políticas de \textit{ownership} independentes das credenciais de acesso,
+o que é uma exigência real de segurança para informação desta natureza.
+
+\section{Implementação e Desenvolvimento}
+
+O desenvolvimento foi organizado em domínios funcionais, cada um com as suas camadas
+de \textit{frontend}, \textit{backend} e persistência. A ordem de implementação seguiu
+aproximadamente a prioridade MoSCoW: o módulo de perfil foi o primeiro a ser
+desenvolvido, seguido pelo módulo de férias, que foi o mais extenso e o que exigiu
+mais iterações, e depois pelo modelo de permissões.
+
+\subsection{Módulo de Perfil de Colaborador}
+
+O módulo de perfil foi o ponto de entrada do projeto. O objetivo era criar um sistema
+central de gestão de dados de colaboradores que substituísse as folhas de cálculo
+existentes e garantisse validação e segurança desde o início.
+
+A implementação incluiu:
+
+\begin{itemize}
+  \item campos de dados pessoais e contratuais com validação explícita;
+  \item suporte a campos específicos por país: NIF e NISS para Portugal, CPF,
+        PIS e CTPS para o Brasil;
+  \item políticas de \textit{ownership} que garantem que dados sensíveis - como
+        IBAN ou dados de identificação - só podem ser alterados por utilizadores
+        com permissão adequada, e não pelo próprio colaborador sem aprovação;
+  \item associação a equipas e subequipas com validação de hierarquia.
+\end{itemize}
+
+Uma dificuldade encontrada nesta fase foi a definição clara de quem pode alterar o quê.
+A regra geral parece simples: cada um gere o seu perfil. Mas, na prática, há campos
+que só o RH pode alterar (dados de contrato), campos que o colaborador pode propor mas
+que precisam de confirmação (dados bancários), e campos que qualquer um pode ver mas
+ninguém pode alterar diretamente (estrutura de equipa). Este modelo de \textit{ownership}
+granular foi implementado no \textit{middleware} de autorização e reutilizado em outros
+módulos.
+
+\begin{figure}[H]
+  \centering
+  % INSTRUÇÃO: Substituir pelo print real da página de perfil do colaborador
+  % \includegraphics[width=\textwidth]{imagens/profile_page.png}
+  \missingfigure[figwidth=\textwidth]{Interface do módulo de perfil de colaborador}
+  \caption{Módulo de perfil de colaborador - vista de detalhe}
+  \label{fig:perfil}
+\end{figure}
+
+\subsection{Fluxos de Férias e Ausências}
+\label{subsec:ferias}
+
+O módulo de férias foi, sem dúvida, o mais complexo e o que consumiu mais tempo de
+desenvolvimento. A razão é simples: as regras de negócio para férias não são apenas
+complexas em termos de estado: são diferentes para Portugal e para o Brasil, e
+têm de coexistir no mesmo sistema.
+
+\subsubsection{Estados e Versionamento}
+
+Cada pedido de férias passa por um ciclo de vida com cinco estados possíveis:
+
+\begin{itemize}
+  \item \textbf{Rascunho} - pedido criado mas ainda não submetido;
+  \item \textbf{Pendente} - pedido submetido e aguarda aprovação;
+  \item \textbf{Aprovado} - pedido aprovado por todos os níveis de aprovação;
+  \item \textbf{Rejeitado} - pedido rejeitado por um aprovador;
+  \item \textbf{Cancelado} - pedido cancelado pelo próprio colaborador.
+\end{itemize}
+
+A decisão de implementar \textbf{versionamento de pedidos} foi tomada cedo no
+desenvolvimento e provou ser uma das mais importantes. Em vez de simplesmente
+atualizar um registo quando um pedido é alterado, o sistema cria uma nova versão
+sempre que há uma mudança significativa. Isto garante um histórico completo e
+auditável: é possível saber exatamente como estava o pedido em cada momento, quem
+o aprovou em que versão, e que alterações foram feitas após a aprovação.
+
+\subsubsection{Diferenças PT/BR no Fluxo de Aprovação}
+
+A gestão das diferenças legislativas entre Portugal e Brasil foi o aspeto mais
+desafiante do módulo de férias. As principais diferenças implementadas foram:
+
+\begin{itemize}
+  \item \textbf{Níveis de aprovação.} Em Portugal, um pedido de férias requer aprovação
+        de um único nível, o gestor direto. No Brasil, o fluxo é de dois níveis:
+        primeiro o gestor de equipa, depois o RH. Esta diferença implicou que a
+        entidade \texttt{VacationApproval} tivesse de suportar múltiplos registos
+        por pedido, com ordem e responsável distintos consoante o país do colaborador.
+
+  \item \textbf{Prazo de submissão.} Em Portugal, existe uma data-limite de 30 de abril
+        para a submissão do mapa de férias. No Brasil, as alterações a pedidos aprovados
+        exigem uma antecedência mínima de dez dias úteis.
+
+  \item \textbf{Elegibilidade e saldo.} O cálculo do saldo de férias segue regras
+        contratuais distintas. Em Portugal, o trabalhador tem direito a 22 dias úteis
+        por ano, com elegibilidade imediata após o período de experiência. No Brasil,
+        o cálculo é baseado em meses de empresa e envolve regras específicas do regime CLT.
+
+  \item \textbf{Suporte a meio-dias.} Ambos os contextos suportam pedidos de meio-dia,
+        com distinção entre o período da manhã e da tarde.
+\end{itemize}
+
+A abordagem adotada para gerir esta complexidade foi criar serviços separados para
+as regras de cada país, \texttt{VacationRulesPT} e \texttt{VacationRulesBR},
+com uma interface comum que o serviço principal invoca com base no atributo
+\texttt{country} do perfil do colaborador. Esta separação torna as regras explícitas,
+testáveis de forma independente e fáceis de evoluir sem risco de interferência
+entre os dois contextos.
+
+\subsubsection{Validação de Capacidade}
+
+Além das regras por país, o sistema implementa uma validação de capacidade de equipa:
+não é possível aprovar um pedido de férias se mais de um terço da equipa estiver de
+ausência no mesmo período. Esta regra foi implementada como uma verificação transacional
+executada no momento da aprovação, consultando os pedidos aprovados e pendentes
+de todos os membros da equipa para o período em questão.
+
+\subsubsection{Cálculo de Saldo}
+
+O saldo de férias de cada colaborador é calculado dinamicamente a partir de quatro fontes:
+
+\begin{itemize}
+  \item dias de direito contratual para o ano em curso;
+  \item dias utilizados em pedidos aprovados;
+  \item dias de crédito extra atribuídos manualmente pela empresa;
+  \item dias resultantes de venda de férias ou transferência de saldo.
+\end{itemize}
+
+A entidade \texttt{VacationBalanceCredit} foi criada especificamente para registar
+as operações sobre o saldo (crédito, débito e venda) de forma auditável e
+independente dos pedidos de férias.
+
+\begin{figure}[H]
+  \centering
+  % INSTRUÇÃO: Substituir pelo print real do módulo de férias (página de listagem ou detalhe)
+  % \includegraphics[width=\textwidth]{imagens/vacations_page.png}
+  \missingfigure[figwidth=\textwidth]{Interface do módulo de gestão de férias}
+  \caption{Módulo de férias - listagem de pedidos com indicador de estado}
+  \label{fig:ferias}
+\end{figure}
+
+\subsection{Governação de Permissões e Acessos}
+
+O módulo de permissões foi desenhado com dois objetivos simultâneos: flexibilidade
+para atribuir diferentes níveis de acesso a diferentes utilizadores, e rastreabilidade
+absoluta de todas as alterações.
+
+A implementação inclui:
+
+\begin{itemize}
+  \item categorias de permissão organizadas em áreas funcionais (perfil, férias,
+        permissões, relatórios);
+  \item concessão e revogação de acesso total ou restrito, com justificativa obrigatória
+        em cada operação;
+  \item atualizações em lote para atribuição de permissões a todos os membros de
+        uma equipa de uma só vez;
+  \item \textit{engine} de permissões central (\texttt{permission-engine}) que é
+        consultado em cada pedido à API para verificar se o utilizador tem acesso
+        ao recurso solicitado;
+  \item painéis de inspeção que permitem ao RH ver, em tempo real, o conjunto de
+        permissões de qualquer colaborador.
+\end{itemize}
+
+A decisão de centralizar a lógica de verificação de permissões num único módulo, em vez de replicar verificações em cada rota, foi uma das que mais contribuiu
+para a consistência do sistema. Qualquer rota que necessite verificar permissões
+invoca o mesmo \textit{engine}, o que garante que as regras são aplicadas de forma
+uniforme em toda a aplicação.
+
+\subsection{Camada de Persistência e Integridade de Dados}
+
+A persistência foi implementada com PostgreSQL e Prisma ORM. O Prisma foi escolhido
+pela sua integração nativa com TypeScript. Os tipos gerados a partir do schema
+são utilizados diretamente no código, o que elimina uma classe inteira de erros de tipo
+em tempo de execução, além de facilitar a gestão de migrações.
+
+As principais decisões de implementação na camada de persistência foram:
+
+\begin{itemize}
+  \item uso de \textbf{transações} para operações que envolvem múltiplas entidades,
+        como a criação de uma nova versão de pedido de férias com atualização do
+        saldo associado;
+  \item definição de \textit{constraints} e relações no schema que garantem integridade
+        referencial mesmo em caso de falha de aplicação;
+  \item criação de \textit{scripts} de \textit{seed} para popular o ambiente de
+        desenvolvimento com dados representativos, o que foi fundamental para o
+        desenvolvimento de testes.
+\end{itemize}
+
+\subsection{Desenvolvimento de API e Serviços}
+
+O \textit{backend} foi estruturado segundo o padrão \texttt{route → service → repository}.
+As rotas Express recebem os pedidos HTTP, validam a autenticação e autorização,
+e delegam ao serviço correspondente. O serviço implementa a lógica de negócio
+e delega ao repositório para as operações de base de dados. Esta separação foi
+adotada desde o início, mas foi reforçada ao longo do projeto à medida que a
+complexidade de cada domínio cresceu.
+
+Os endpoints principais cobrem:
+
+\begin{itemize}
+  \item gestão de utilizadores e perfis (\texttt{/users}, \texttt{/profile});
+  \item gestão de férias, aprovação e versionamento (\texttt{/vacations});
+  \item governação de permissões (\texttt{/permissions});
+  \item notificações (\texttt{/notifications});
+  \item gestão de ficheiros e \textit{uploads} (\texttt{/files}).
+\end{itemize}
+
+A autenticação é baseada em \gls{jwt}: após o \textit{login}, o cliente recebe um
+\textit{token} que é incluído em cada pedido subsequente. O \textit{middleware} de
+autenticação valida o \textit{token} e extrai o identificador do utilizador, que é
+depois usado pelo \textit{engine} de permissões para verificar o acesso ao recurso
+solicitado.
+
+\subsection{Interface de Utilizador}
+
+O \textit{frontend} foi desenvolvido em React com TypeScript, com ênfase na clareza
+dos fluxos e na redução do esforço cognitivo do utilizador. As páginas com maior
+complexidade, como gestão de férias e permissões, foram as que mais iterações
+exigiram, porque a apresentação da informação de estado tem impacto direto na
+qualidade das decisões dos gestores.
+
+As principais decisões de interface foram:
+
+\begin{itemize}
+  \item indicadores de estado visuais e inequívocos em todos os pedidos de férias;
+  \item modais de confirmação para ações destrutivas ou irreversíveis, como a
+        revogação de uma permissão ou o cancelamento de um pedido aprovado;
+  \item \textit{pickers} de colaboradores e equipas com pesquisa e seleção em lote,
+        essenciais para as operações de atribuição de permissões;
+  \item mensagens de erro e de estado orientadas para o utilizador, não para o
+        sistema.
+\end{itemize}
+
+\begin{figure}[H]
+  \centering
+  % INSTRUÇÃO: Substituir pelo print real do módulo de permissões
+  % \includegraphics[width=\textwidth]{imagens/permissions_page.png}
+  \missingfigure[figwidth=\textwidth]{Interface do módulo de governação de permissões}
+  \caption{Módulo de permissões - painel de inspeção de acessos por colaborador}
+  \label{fig:permissoes}
+\end{figure}
+
+\section{Validação e Controlo de Qualidade}
+
+A estratégia de validação foi definida desde o início: cada módulo devia ter cobertura
+de testes antes de ser considerado entregue. Na prática, isto nem sempre foi possível
+com a profundidade desejada. A complexidade das regras PT/BR de férias, em particular,
+exigiu múltiplas iterações de implementação antes de ser possível escrever testes
+suficientemente estáveis.
+
+\subsection{Testes Unitários}
+
+Foram escritos testes unitários para as funções de maior criticidade de negócio,
+com foco nas áreas onde um erro tem consequências diretas no utilizador:
+
+\begin{itemize}
+  \item funções de cálculo de saldo de férias, para PT e BR;
+  \item validações de campo no módulo de perfil (formato de NIF, IBAN, CPF);
+  \item lógica de deteção de sobreposição de ausências;
+  \item componentes React críticos, com verificação de estados de erro e de carregamento.
+\end{itemize}
+
+\subsection{Testes de Integração}
+
+Os testes de integração focaram-se na validação dos fluxos completos entre a API
+e a base de dados, incluindo:
+
+\begin{itemize}
+  \item fluxo de criação, aprovação e cancelamento de um pedido de férias;
+  \item atualização de perfil com validação de regras de \textit{ownership};
+  \item atribuição e revogação de permissões com verificação da persistência
+        da justificativa.
+\end{itemize}
+
+Estes testes foram particularmente importantes para validar o comportamento
+das transações da base de dados em cenários de falha parcial.
+
+\subsection{Testes \textit{End-to-End}}
+
+Os testes E2E, implementados com Playwright, cobriram os fluxos de utilizador
+mais críticos do ponto de vista operacional:
+
+\begin{itemize}
+  \item submissão de um pedido de férias e aprovação por gestor;
+  \item criação de perfil de colaborador e visualização de histórico;
+  \item alteração de permissões e verificação do efeito na visibilidade de recursos.
+\end{itemize}
+
+\subsection{Revisões e Qualidade de Código}
+
+Além dos testes automáticos, foi adotada uma prática de revisão de código antes de
+cada integração de funcionalidade, verificando aderência às convenções de nomenclatura
+e organização de módulos, separação de responsabilidades entre camadas e ausência
+de lógica de negócio diretamente em rotas Express.
+
+\section{Contratempos e Lições Aprendidas}
+
+Três dificuldades foram particularmente relevantes ao longo do projeto:
+
+\begin{enumerate}
+  \item \textbf{Complexidade das regras PT/BR.} As diferenças entre os dois contextos
+        legislativos só ficaram completamente claras após várias semanas de implementação.
+        A regra da antecedência mínima de dez dias úteis no Brasil, por exemplo, só
+        surgiu como requisito após a implementação inicial do fluxo de alteração de
+        pedidos. A resposta foi criar uma documentação das regras de negócio:
+        o ficheiro \texttt{REGRAS\_PERFIS\_E\_FERIAS.tex}, que passou a ser a
+        referência de verdade para o desenvolvimento e os testes.
+
+  \item \textbf{Modelação de dados para versionamento.} A decisão de adicionar
+        versionamento de pedidos de férias foi tomada a meio do desenvolvimento
+        do módulo, após perceber que a abordagem inicial de atualizar diretamente
+        o registo não suportava o histórico necessário para auditoria. A migração
+        do modelo de dados existente para o novo esquema foi o momento mais tenso
+        do projeto, mas o resultado justificou o esforço.
+
+  \item \textbf{Configuração do ambiente de testes.} A integração entre o Prisma
+        e o Vitest para testes de integração com base de dados real exigiu uma
+        configuração não-trivial do ambiente. O problema principal era garantir
+        que cada teste corria com um estado de base de dados limpo, sem interferência
+        entre testes. A solução foi criar uma base de dados de teste isolada e um
+        \textit{script} de \textit{setup} que limpa e repopula o estado antes de
+        cada suite de testes.
+\end{enumerate}
+
+A lição mais importante foi a de que as regras de negócio precisam ser documentadas
+explicitamente antes de serem implementadas, não o contrário. Tentar perceber uma
+regra a partir do código que a implementa é possível, mas ineficiente. A criação
+do ficheiro de regras de negócio no meio do projeto deveria ter sido feita no início.
+
+\section{Documentação e Continuidade}
+
+Com vista à continuidade do projeto após o estágio, foram produzidos os seguintes
+artefactos de documentação:
+
+\begin{itemize}
+  \item ficheiro de regras de negócio PT/BR (\texttt{REGRAS\_PERFIS\_E\_FERIAS.tex})
+        com a especificação detalhada de todas as regras implementadas;
+  \item documentação das rotas da API com exemplos de pedido e resposta;
+  \item \textit{scripts} de migração e \textit{seed} para replicação do ambiente
+        de desenvolvimento;
+  \item identificação explícita de pontos de dívida técnica e direções de evolução futura.
+\end{itemize}
 
 % =========================================================================
 \chapter{Arquitetura da Solução e Validação Técnica}
+\label{cap:arquitetura}
 % =========================================================================
 
-Este capítulo consolida as decisões de arquitetura e as evidências de qualidade técnica do SMARTER HUB, funcionando como ponte entre a descrição de atividades e a conclusão do relatório. A sua inclusão fortalece a avaliação por demonstrar maturidade de engenharia para além da execução funcional.
+Este capítulo descreve as decisões de arquitetura do SMARTER HUB e apresenta
+as evidências de qualidade técnica da solução. A inclusão de um capítulo dedicado
+à arquitetura é justificada pela necessidade de demonstrar que as escolhas técnicas
+não foram acidentais, mas sim o resultado de um processo de análise que pesou
+alternativas, identificou \textit{trade-offs} e tomou decisões conscientes.
 
-\section{Visão arquitetural}
+\section{Visão Arquitetural}
 
-Descrever a arquitetura lógica e física da solução, separando frontend, backend, persistência e integrações externas, com indicação de responsabilidades por camada.
+O SMARTER HUB é uma aplicação \textit{full-stack} composta por três camadas principais,
+representadas na Figura~\ref{fig:arquitetura}:
 
-\subsection{Componentes principais}
+\begin{figure}[H]
+  \centering
+  % INSTRUÇÃO: Substituir pelo diagrama real de arquitetura (pode ser exportado do Lucidchart ou criado em TikZ)
+  % \includegraphics[width=0.85\textwidth]{imagens/arquitetura_logica.png}
+  \missingfigure[figwidth=0.85\textwidth]{Diagrama de arquitetura lógica do SMARTER HUB}
+  \caption{Arquitetura lógica do SMARTER HUB}
+  \label{fig:arquitetura}
+\end{figure}
 
-Identificar módulos críticos (autenticação, perfil, férias/ausências, permissões, notificações, relatórios) e respetivos pontos de integração.
+\begin{description}
+  \item[Apresentação.] Aplicação React com TypeScript, construída com Vite e
+        implantada no servidor interno da empresa. Consome a API REST e apresenta os fluxos de perfil,
+        férias, permissões e notificações.
 
-\section{Modelo de dados e governança}
+  \item[Serviço.] API REST implementada com Node.js e Express. Recebe pedidos HTTP,
+        valida autenticação e autorização via \gls{jwt}, e orquestra a lógica de
+        negócio através de serviços organizados por domínio.
 
-Apresentar o racional do modelo relacional, entidades nucleares e garantias de consistência para fluxos sensíveis. Integrar aqui o DER final em anexo e referenciar as tabelas de maior impacto funcional.
+  \item[Persistência.] PostgreSQL com Prisma ORM. Armazena colaboradores, pedidos
+        de férias, aprovações, permissões, notificações e ficheiros. Implantada
+        no Render.
+\end{description}
 
-\section{Validação técnica}
+A separação em três camadas, com responsabilidades claras, foi uma decisão deliberada
+desde o início do projeto. Numa aplicação com esta complexidade de regras de negócio,
+misturar lógica de domínio com validação HTTP ou com acesso a dados seria uma fonte
+garantida de \textit{bugs} difíceis de localizar.
 
-Detalhar a estratégia de testes adotada (unitários, integração e E2E), critérios de aceitação e resultados globais de validação obtidos no ciclo do projeto.
+\subsection{Componentes Principais}
 
-\section{Síntese do capítulo}
+A Tabela~\ref{tab:componentes} lista os módulos centrais do sistema e a sua localização
+no código-fonte.
 
-Concluir com uma leitura objetiva do estado técnico da solução: robustez atual, principais riscos residuais e grau de prontidão para evolução.
+\begin{table}[H]
+  \caption{Componentes principais do SMARTER HUB}
+  \label{tab:componentes}
+  \small\sffamily
+  \begin{tabularx}{\textwidth}{|l|X|}
+    \hline
+    \textbf{Componente} & \textbf{Localização / Responsabilidade} \\
+    \hline
+    Autenticação e sessão & \texttt{backend/src/routes/auth.ts}, \texttt{backend/src/middleware/auth.ts}, 
+    \texttt{src/portal/auth-storage.ts} \\
+    \hline
+    Perfil e colaboradores & \texttt{backend/src/routes/users.ts}, \texttt{backend/src/routes/profile.ts}, \texttt{src/pages/CollaboratorsPage.tsx} \\
+    \hline
+    Férias e ausências & \texttt{backend/src/routes/vacations.ts}, \newline \texttt{backend/src/repositories/vacations.repository.ts}, \newline \texttt{backend/src/services/vacations/*.ts} \\
+    \hline
+    Motor de permissões & \texttt{backend/src/lib/permission-engine.js}, \newline \texttt{backend/src/routes/permissions.ts} \\
+    \hline
+    Notificações e ficheiros & \texttt{backend/src/routes/notifications.ts}, \newline \texttt{backend/src/services/files/file-access.service.ts} \\
+    \hline
+  \end{tabularx}
+\end{table}
+
+\subsection{Subsistemas Transversais}
+
+Para além das três camadas principais, o sistema integra subsistemas transversais:
+
+\begin{itemize}
+  \item \textbf{Autenticação e autorização}: \gls{jwt} com validação de \textit{scope}
+        e \textit{ownership} em cada pedido à API;
+  \item \textbf{Notificações por email}: envio via Microsoft Graph API para eventos
+        críticos como aprovação ou rejeição de pedidos e alterações de permissões;
+  \item \textbf{Gestão de ficheiros}: \textit{upload} e acesso protegido a documentos
+        de suporte, com controlo de acesso por permissão.
+\end{itemize}
+
+\section{Modelo de Dados e Governança}
+
+O modelo relacional do SMARTER HUB foi construído com foco em consistência e
+auditabilidade. A Figura~\ref{fig:der} apresenta o diagrama entidade-relação
+das entidades nucleares.
+
+\begin{figure}[H]
+  \centering
+  % INSTRUÇÃO: Substituir pelo DER real (exportar do Prisma Studio, DBeaver ou Lucidchart)
+  % \includegraphics[width=\textwidth]{imagens/modelo_dados.png}
+  \missingfigure[figwidth=\textwidth]{Diagrama entidade-relação do modelo de dados}
+  \caption{Modelo relacional do SMARTER HUB - entidades nucleares}
+  \label{fig:der}
+\end{figure}
+
+A governança de dados foi reforçada com:
+
+\begin{itemize}
+  \item \textit{foreign keys} e \textit{constraints} definidas no schema Prisma, garantindo integridade referencial a nível de base de dados;
+  \item normalização das entidades para evitar duplicação de dados e inconsistências;
+  \item transações para operações que alteram múltiplas entidades relacionadas,
+        como a criação de uma versão de pedido de férias com atualização do saldo
+        (\texttt{createVacation-\\VersionTransaction}) ou o registo de crédito de
+        saldo com notificação associada
+        (\texttt{createVacationBalanceCreditsWithNotifications});
+  \item auditoria implícita através do versionamento de pedidos e do registo
+        de todas as alterações de permissões.
+\end{itemize}
+
+\section{Decisões de Arquitetura e \textit{Trade-offs}}
+
+\subsection{Padrão \texttt{Route → Service → Repository}}
+
+A separação em três camadas no \textit{backend} (rotas, serviços e repositórios) foi adotada desde o início e reforçada ao longo do projeto. A rota trata exclusivamente
+da validação HTTP e da autorização; o serviço implementa a lógica de negócio; o
+repositório é o único ponto de acesso à base de dados.
+
+O \textit{trade-off} desta abordagem é a necessidade de criar mais ficheiros e mais
+\textit{boilerplate}. O benefício é que qualquer função de negócio pode ser testada
+isoladamente, sem dependência de uma rota HTTP ou de uma instância real de base de dados.
+
+\subsection{Versionamento vs. Atualização Direta}
+
+A decisão de versionar os pedidos de férias em vez de os atualizar diretamente
+foi a que mais impacto teve no modelo de dados. Versionar é mais caro em termos
+de armazenamento e de complexidade de consulta, mas é o único mecanismo que
+garante auditabilidade completa: sem versões, não é possível saber como estava
+um pedido no momento em que foi aprovado, o que inviabiliza qualquer processo
+de auditoria sério.
+
+\subsection{Separação \texttt{User} / \texttt{Profile}}
+
+A separação da identidade de acesso (\texttt{User}) dos dados de colaborador
+(\texttt{Profile}) aumenta a complexidade das consultas mas permite um controlo
+de acesso granular. Em particular, permite que as políticas de \textit{ownership}
+sobre dados sensíveis, como dados bancários ou de identificação, sejam
+independentes das políticas de autenticação.
+
+\section{Riscos Residuais}
+
+A solução entregue é funcional e cobre os requisitos principais do projeto, mas
+mantém riscos técnicos que devem ser endereçados nas fases seguintes:
+
+\begin{itemize}
+  \item \textbf{Lógica de negócio em rotas.} Algumas rotas do \textit{backend}
+        ainda contêm lógica de negócio que deveria estar nos serviços correspondentes.
+        Esta dívida técnica resulta do crescimento orgânico do sistema e deve ser
+        endereçada antes da entrada em produção.
+  \item \textbf{Páginas React monolíticas.} Algumas páginas do \textit{frontend}
+        cresceram para dimensões que dificultam a manutenção. A decomposição em
+        componentes e \textit{hooks} reutilizáveis é o próximo passo natural.
+  \item \textbf{Cobertura de testes de integração.} Os testes de integração com
+        base de dados real precisam de ser expandidos para cobrir mais cenários
+        de falha e condições de corrida, especialmente no módulo de férias.
+  \item \textbf{Revisão de autorização em endpoints sensíveis.} A validação de
+        \textit{ownership} deve ser verificada em todos os endpoints que acedem
+        a dados de outros utilizadores.
+\end{itemize}
+
+\section{Síntese do Capítulo}
+
+A arquitetura do SMARTER HUB reflete escolhas deliberadas: a separação em camadas,
+o versionamento de pedidos, a separação \texttt{User}/\texttt{Profile} e a centralização
+da lógica de permissões são todas decisões que aumentam a complexidade a curto prazo
+mas reduzem o risco operacional a longo prazo. Os riscos residuais identificados são
+reais, mas são o resultado de decisões conscientes sobre o que priorizar dentro do
+tempo disponível, não de desconhecimento das alternativas.
 
 % =========================================================================
 \chapter{Conclusão}
 \label{cap:conclusao}
 % =========================================================================
 
-O capítulo de conclusão é um dos mais importantes do relatório, sendo aqui que devem ser apresentados os resultados do trabalho efetivamente desenvolvido. 
+\section{Resumo e Principais Conclusões}
 
-As conclusões finais devem focar o sucesso/insucesso do trabalho, revendo as dificuldades encontradas. Devem resumir, de alguma forma, as vantagens do produto desenvolvido e a utilidade que possa ter para a instituição de estágio ou para os seus clientes/parceiros. Podem também referir a forma como o estágio decorreu, bem como a integração, a formação dada pela instituição, as facilidades e as dificuldades sentidas ao longo do estágio.
+O SMARTER HUB foi desenvolvido para resolver um problema real: a fragmentação dos
+processos de gestão de pessoas numa empresa com colaboradores em dois países com
+legislações laborais distintas. No final do período de estágio, entregou-se uma plataforma funcional, com
+validação técnica por testes e revisão de código, e está em fase de pré-produção.
 
-As conclusões devem basear-se nos resultados realmente obtidos. Devem enquadrar-se os resultados obtidos com os objetivos enunciados e procurar extrair conclusões mais gerais, eventualmente sugeridas pelos resultados. Podem acompanhar as conclusões incluindo recomendações apropriadas, resultantes do trabalho, nomeadamente sugerindo e justificando eventuais extensões e modificações futuras.
+O trabalho mais difícil não foi a implementação em si, mas a compreensão das regras de
+negócio. As diferenças entre o modelo de aprovação português e o brasileiro, as
+políticas de \textit{ownership} sobre dados sensíveis e o mecanismo de versionamento
+de pedidos são problemas de domínio que exigiram análise cuidadosa antes de qualquer
+linha de código. Essa análise e a documentação que dela resultou é provavelmente
+o artefacto mais valioso do projeto.
 
-\section{Resumo e principais conclusões}
+\section{Objetivos Realizados}
 
-Esta seção é fundamental, servindo como um resumo global do trabalho e salientando as principais conclusões. Pode ter uma estrutura de texto composta por:
 \begin{itemize}
-    \item Enquadrar brevemente o Problema e o Contexto;
-    \item Relembrar os Objetivos Gerais ou Research Questions;
-    \item Referir a Metodologia (se for importante para as conclusões);
-    \item Referir os principais Resultados;
-    \item Conclusões detalhadas (parte principal).
+  \item \textbf{Centralizar a gestão de colaboradores:} cumprido. Módulo de perfil
+        com campos PT/BR, validações e políticas de \textit{ownership} implementados.
+  \item \textbf{Implementar fluxos de férias/ausências:} cumprido. Cinco estados
+        explícitos, versionamento, validações de capacidade de equipa e suporte
+        a regras PT/BR.
+  \item \textbf{Suportar dois contextos legislativos:} cumprido. Fluxos de aprovação,
+        cálculo de saldo e regras de elegibilidade implementados de forma independente
+        para PT e BR.
+  \item \textbf{Estruturar modelo de permissões:} cumprido. Motor de permissões
+        centralizado com trilho auditável de concessões e revogações.
+  \item \textbf{Disponibilizar mecanismos de reporte:} parcialmente cumprido. Notificações e suporte a exportação entregues; dashboards operacionais
+        ficam como trabalho futuro.
+  \item \textbf{Garantir qualidade técnica:} parcialmente cumprido. Testes unitários e de integração implementados; cobertura E2E com base de dados real precisa ser expandida.
 \end{itemize}
 
-A conclusão deve ser breve, mas evidenciando os principais tópicos de cada parte, em particular conclusões retiradas do trabalho. 
+\section{Outros Trabalhos Realizados}
 
-\section{Objetivos realizados}
+Para além dos módulos principais, foram também realizados trabalhos de suporte que
+tiveram impacto na qualidade geral da plataforma:
 
-Nesta seção devem ser repetidos os objetivos apresentados no capítulo de introdução e para cada um deles deve ser descrito o seu grau de realização. Recomenda-se o uso de uma lista, dado que facilita a compreensão pelo leitor.
+\begin{itemize}
+  \item reforço da segurança de autenticação e de controlo de acesso a ficheiros;
+  \item melhoria da gestão de sessão no \textit{frontend};
+  \item extração inicial de componentes React para reduzir duplicação nas páginas
+        mais complexas;
+  \item documentação das regras de negócio PT/BR para uso futuro da equipa técnica.
+\end{itemize}
 
-\section{Outros trabalhos realizados}
-% Secção opcional
+\section{Limitações e Trabalho Futuro}
 
-Seção opcional onde se descrevem outras trabalhos de menor importância realizados durante o estágio e que não faziam parte dos objetivos nem do trabalho principal.
+As limitações mais relevantes a endereçar nas fases seguintes são:
 
-\section{Limitações \& trabalho futuro}
+\begin{itemize}
+  \item completar a migração do \textit{backend} para o padrão
+        \texttt{route → service → repository} de forma consistente;
+  \item decompor as páginas React de maior dimensão em componentes reutilizáveis;
+  \item expandir os testes de integração com base de dados real para cobrir cenários
+        de falha e condições de corrida;
+  \item completar a validação de autorização por \textit{ownership} em todos os
+        \textit{endpoints} sensíveis;
+  \item implementar dashboards operacionais e relatórios de mapa de férias automático.
+\end{itemize}
 
-Nesta seção devem ser identificados os limites do trabalho realizado (condições de operação), fazendo uma análise autocrítica ao trabalho, bem como extrapolar sobre as direções de desenvolvimento futuro.
+\section{Apreciação Final}
 
-\section{Apreciação final}
+Construir uma plataforma \textit{web} de raiz, de forma individual, para uma empresa
+real, num período de três meses, é uma experiência diferente de qualquer projeto
+académico. A diferença não está na dificuldade técnica, está na responsabilidade.
+As decisões de arquitetura têm consequências reais. Os \textit{bugs} afetam utilizadores
+reais. As regras de negócio têm de ser corretas, não aproximadas.
 
-Esta seção deve fornecer uma opinião pessoal sobre o trabalho desenvolvido. Nomeadamente o seu contributo para o desenvolvimento pessoal e profissional.
+O que mais me surpreendeu foi perceber que as decisões mais difíceis não foram técnicas.
+Foram decisões de produto: o que implementar primeiro, o que simplificar, o que adiar.
+Gerir essa ambiguidade com informação incompleta, e sem a rede de segurança de um
+enunciado com todos os requisitos definidos, foi a aprendizagem mais significativa
+deste estágio.
+
+O SMARTER HUB não está terminado. Mas está funcional, está em pré-produção, e tem
+uma direção clara de evolução. Para um projeto de três meses desenvolvido de forma
+individual, esse é o resultado certo.
 
 % =========================================================================
 % BIBLIOGRAFIA
 % =========================================================================
-\cleardoublepage
 \fancyhead[LO,RE]{Bibliografia}
-
-% Opção A: biblatex automático (recomendado)
 \nocite{*}
-\printbibliography[heading=bibintoc]
-
-% Opção B: bibliografia manual (manter comentada; usar apenas se biber não estiver disponível)
-% \chapter*{Bibliografia}
-% \addcontentsline{toc}{chapter}{Bibliografia}
-% \begin{tabular}{lp{0.88\textwidth}}
-%   {[1]} & Referência manual 1. \\
-% \end{tabular}
 
 % =========================================================================
 % ANEXOS
 % =========================================================================
-\cleardoublepage
 \begin{appendices}
 
-\chapter{Conteúdo em anexos}
-\fancyhead[LO,RE]{Conteúdo em anexos}
+\chapter{Regras de Negócio PT/BR - Sumário}
+\label{anx:regras}
+\fancyhead[LO,RE]{Regras de Negócio PT/BR}
 
-Esta parte do relatório deve conter informação adicional organizada por
-capítulos, que embora seja interessante, não faz parte do estritamente
-necessário ao relatório.
+Esta secção apresenta um sumário das principais diferenças de regras de negócio
+entre os contextos português e brasileiro, tal como implementadas no SMARTER HUB.
+O documento completo de especificação de regras (\texttt{REGRAS\_PERFIS\_E\_FERIAS.tex})
+encontra-se no repositório do projeto.
 
-\chapter{Regras para conteúdo e estrutura do relatório}
-\fancyhead[LO,RE]{Regras para conteúdo e estrutura do relatório}
-
-Ver documento de guia original.
+\begin{table}[H]
+  \caption{Comparativo de regras de férias PT vs. BR}
+  \label{tab:ptbr}
+  \small\sffamily
+  \begin{tabularx}{\textwidth}{|l|X|X|}
+    \hline
+    \textbf{Dimensão} & \textbf{Portugal} & \textbf{Brasil} \\
+    \hline
+    Dias de direito & 22 dias úteis por ano & Calculado por meses de empresa (CLT) \\
+    \hline
+    Níveis de aprovação & 1 (gestor direto) & 2 (gestor + RH) \\
+    \hline
+    Prazo de submissão & Mapa anual até 30 de abril & Antecedência mínima de 10 dias úteis para alterações \\
+    \hline
+    Meio-dias & Suportado (manhã / tarde) & Suportado (manhã / tarde) \\
+    \hline
+    Venda de dias & Suportada & Suportada com regras específicas CLT \\
+    \hline
+    Campos de identificação & NIF, NISS & CPF, PIS, CTPS \\
+    \hline
+  \end{tabularx}
+\end{table}
 
 \end{appendices}
 

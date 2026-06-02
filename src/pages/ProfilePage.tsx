@@ -108,7 +108,8 @@ function calculateWeeklyHoursFromDays(days: DynamicRegimeDay[]) {
       return null;
     }
 
-    totalMinutes += (end - start);
+    const lunchDeduction = start < 13 * 60 && end > 14 * 60 ? 60 : 0;
+    totalMinutes += (end - start - lunchDeduction);
   }
 
   if (totalMinutes <= 0) {

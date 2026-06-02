@@ -3,6 +3,22 @@ import { createPortal } from 'react-dom';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getApiBase, getBackendBase, isAbortError } from '../portal/api';
 import { getStoredAuthToken } from '../portal/auth-storage';
 import { usePortal } from '../portal/context';
+import { createAdmissionRequest, loadAdmissionFormSettings, saveAdmissionFormSettings } from '../portal/api-endpoints';
+import {
+  createProfileOption,
+  createUserPermission,
+  loadAdminTeams,
+  loadProfileHistory,
+  loadProfileOptions,
+  loadTeams,
+  loadUserPermissions,
+  revokeUserPermission,
+  setUserAccessTotal,
+  toggleUserActive,
+  updateUser,
+  updateUserCredentials,
+  updateUserPermission,
+} from '../portal/user-api';
 import { estadoCivilOptions, generoOptions, habilitacoesOptions, irsJovemOptions, parentescoOptions, regimeHorarioOptions, situacaoIrsOptions, tipoContratoOptions } from '../portal/data';
 import { formatRoleLabel } from '../portal/labels';
 import Badge from '../components/ui/Badge';
@@ -1657,7 +1673,8 @@ function calculateWeeklyHoursFromDays(days: DynamicRegimeDay[]) {
       return null;
     }
 
-    totalMinutes += (end - start);
+    const lunchDeduction = start < 13 * 60 && end > 14 * 60 ? 60 : 0;
+    totalMinutes += (end - start - lunchDeduction);
   }
 
   if (totalMinutes <= 0) {
@@ -1753,8 +1770,27 @@ export default function CollaboratorsPage() {
   const [isSettingsLoading, setIsSettingsLoading] = useState(false);
   const [isSettingsSaving, setIsSettingsSaving] = useState(false);
   const [settingsStatus, setSettingsStatus] = useState('');
+  const [isSaveAdmissionSettingsConfirmationOpen, setIsSaveAdmissionSettingsConfirmationOpen] = useState(false);
   const [isSettingsFlowFromCreateModal, setIsSettingsFlowFromCreateModal] = useState(false);
   const [selectedCollaboratorPhotoUrl, setSelectedCollaboratorPhotoUrl] = useState('');
+
+  const admissionSettingsPresetFieldKeys: Record<'PT' | 'BR', string[]> = {
+    PT: ['iban', 'numeroCartaoContinente', 'comprovativoIban', 'comprovativoCartaoContinente'],
+    BR: ['comprovativoIban'],
+  };
+
+  const hasAdmissionSettingsChanges = useMemo(() => {
+    if (!admissionSettings) {
+      return false;
+    }
+
+    const currentRequired = admissionSettings.requiredFieldsByCountry[settingsCountry];
+    if (currentRequired.length !== settingsDraftRequiredFields.length) {
+      return true;
+    }
+
+    return currentRequired.some((fieldKey) => !settingsDraftRequiredFields.includes(fieldKey));
+  }, [admissionSettings, settingsCountry, settingsDraftRequiredFields]);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isParsingImportFile, setIsParsingImportFile] = useState(false);
   const [isImportingUsers, setIsImportingUsers] = useState(false);
@@ -2543,11 +2579,7 @@ export default function CollaboratorsPage() {
   async function toggleActive(item: CollaboratorRow) {
     setBusyUserId(item.id);
     try {
-      await apiRequest(`/users/${item.id}/active`, {
-        method: 'PATCH',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ isActive: !item.isActive }),
-      });
+      await toggleUserActive(item.id, !item.isActive);
 
       clearApiCache('/users/collaborators');
       await loadCollaborators();
@@ -2613,17 +2645,11 @@ export default function CollaboratorsPage() {
     try {
       const loadPermissionTeams = async () => {
         try {
-          const adminTeams = await apiRequestCached<Array<{ id: string; name: string }>>('/admin/teams', {
-            headers: getAuthHeaders(),
-            signal: controller.signal,
-          }, 8000, true);
+          const adminTeams = await loadAdminTeams<Array<{ id: string; name: string }>>(controller.signal);
           return (adminTeams || []).map((team) => ({ id: team.id, name: team.name }));
         } catch {
           try {
-            const scopedTeams = await apiRequestCached<Array<{ id: string; name: string }>>('/teams', {
-              headers: getAuthHeaders(),
-              signal: controller.signal,
-            }, 8000, true);
+            const scopedTeams = await loadTeams<Array<{ id: string; name: string }>>(controller.signal);
             return (scopedTeams || []).map((team) => ({ id: team.id, name: team.name }));
           } catch {
             return [];
@@ -2632,22 +2658,13 @@ export default function CollaboratorsPage() {
       };
 
       const [details, permissionTeams, profileOptions, profileHistoryResponse] = await Promise.all([
-        apiRequest<UserPermissionsResponse>(`/users/${item.id}/permissions`, {
-          headers: getAuthHeaders(),
-          signal: controller.signal,
-        }),
+        loadUserPermissions<UserPermissionsResponse>(item.id),
         loadPermissionTeams(),
-        apiRequestCached<{
+        loadProfileOptions<{
           cargo?: CustomProfileOption[];
           funcao?: CustomProfileOption[];
-        }>('/profile/options', {
-          headers: getAuthHeaders(),
-          signal: controller.signal,
-        }, 8000, true),
-        apiRequestCached<ProfileHistoryEntry[]>('/profile/requests/history?limit=500', {
-          headers: getAuthHeaders(),
-          signal: controller.signal,
-        }, 8000, true),
+        }>(controller.signal),
+        loadProfileHistory<ProfileHistoryEntry[]>(500, controller.signal),
       ]);
 
       if (controller.signal.aborted) {
@@ -2730,14 +2747,10 @@ export default function CollaboratorsPage() {
     setIsSavingProfileOption(true);
 
     try {
-      const payload = await apiRequest<{ option?: { id: string; type: 'CARGO' | 'FUNCAO'; label: string; groupLabel?: string | null } }>('/profile/options', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          type: profileOptionType,
-          label: normalizedLabel,
-          groupLabel: profileOptionType === 'FUNCAO' ? normalizedGroup : undefined,
-        }),
+      const payload = await createProfileOption<{ option?: { id: string; type: 'CARGO' | 'FUNCAO'; label: string; groupLabel?: string | null } }>({
+        type: profileOptionType,
+        label: normalizedLabel,
+        groupLabel: profileOptionType === 'FUNCAO' ? normalizedGroup : undefined,
       });
 
       const created = payload.option;
@@ -2777,83 +2790,79 @@ export default function CollaboratorsPage() {
     setPendingCountryChange(null);
     setIsSavingEditDraft(true);
     try {
-      const result = await apiRequest<{ cancelledVacations?: number; removedCountrySpecificFields?: number; countryChanged?: boolean }>(`/admin/users/${selectedRow.id}`, {
-        method: 'PATCH',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          teamId: editDraft.teamId || null,
-          isActive: editDraft.isActive,
-          workCountry: editDraft.workCountry,
-          brWorkState: editDraft.workCountry === 'BR' ? (editDraft.brWorkState || undefined) : undefined,
-          nomeCompleto: editDraft.nomeCompleto,
-          nomeAbreviado: editDraft.nomeAbreviado,
-          dataNascimento: editDraft.dataNascimento,
-          genero: editDraft.genero,
-          estadoCivil: editDraft.estadoCivil,
-          habilitacoesLiterarias: editDraft.habilitacoesLiterarias,
-          curso: editDraft.curso,
-          faculdade: editDraft.faculdade,
-          nacionalidade: editDraft.nacionalidade,
-          emailPessoal: editDraft.emailPessoal,
-          telemovel: editDraft.telemovel,
-          githubUser: editDraft.githubUser,
-          moradaFiscal: editDraft.moradaFiscal,
-          endereco: editDraft.endereco,
-          localidade: editDraft.localidade,
-          codigoPostal: editDraft.codigoPostal,
-          matriculaCarro: editDraft.matriculaCarro,
-          localNascimentoPais: editDraft.localNascimentoPais,
-          localNascimentoCidade: editDraft.localNascimentoCidade,
-          nomePai: editDraft.nomePai,
-          nomeMae: editDraft.nomeMae,
-          cartaoCidadao: editDraft.cartaoCidadao,
-          validadeCartaoCidadao: editDraft.validadeCartaoCidadao,
-          nif: editDraft.nif,
-          cpf: editDraft.cpf,
-          pis: editDraft.pis,
-          ctps: editDraft.ctps,
-          ctpsSerie: editDraft.ctpsSerie,
-          ctpsDataExpedicao: editDraft.ctpsDataExpedicao,
-          rg: editDraft.rg,
-          rgOrgaoEmissor: editDraft.rgOrgaoEmissor,
-          rgDataExpedicao: editDraft.rgDataExpedicao,
-          cnh: editDraft.cnh,
-          cnhCategoria: editDraft.cnhCategoria,
-          cnhDataValidade: editDraft.cnhDataValidade,
-          tituloEleitor: editDraft.tituloEleitor,
-          zonaEleitoral: editDraft.zonaEleitoral,
-          secaoEleitoral: editDraft.secaoEleitoral,
-          certificadoReservista: editDraft.certificadoReservista,
-          niss: editDraft.niss,
-          iban: editDraft.iban,
-          situacaoIrs: editDraft.situacaoIrs,
-          numeroDependentes: editDraft.numeroDependentes,
-          declaracaoIrs: editDraft.declaracaoIrs,
-          irsJovem: editDraft.irsJovem,
-          anoPrimeiroDesconto: editDraft.anoPrimeiroDesconto,
-          primeiroEmprego: editDraft.primeiroEmprego,
-          recebeAposentadoria: editDraft.recebeAposentadoria,
-          recebeSeguroDesemprego: editDraft.recebeSeguroDesemprego,
-          valeTransporte: editDraft.valeTransporte,
-          numeroCartaoContinente: editDraft.numeroCartaoContinente,
-          voucherNosData: editDraft.voucherNosData,
-          comprovativoMoradaFiscal: editDraft.comprovativoMoradaFiscal,
-          comprovativoCartaoCidadao: editDraft.comprovativoCartaoCidadao,
-          comprovativoIban: editDraft.comprovativoIban,
-          comprovativoCartaoContinente: editDraft.comprovativoCartaoContinente,
-          contactoEmergenciaNome: editDraft.contactoEmergenciaNome,
-          contactoEmergenciaParentesco: editDraft.contactoEmergenciaParentesco,
-          contactoEmergenciaNumero: editDraft.contactoEmergenciaNumero,
-          cargo: editDraft.cargo,
-          categoriaProfissional: editDraft.categoriaProfissional,
-          numeroMecanografico: editDraft.numeroMecanografico,
-          funcao: editDraft.funcao,
-          dataInicioContrato: editDraft.dataInicioContrato,
-          dataFimContrato: editDraft.dataFimContrato,
-          tipoContrato: editDraft.tipoContrato,
-          regimeHorario: editDraft.regimeHorario,
-          horasSemanaisContrato: editDraft.horasSemanaisContrato,
-        }),
+      const result = await updateUser<{ cancelledVacations?: number; removedCountrySpecificFields?: number; countryChanged?: boolean }>(selectedRow.id, {
+        teamId: editDraft.teamId || null,
+        isActive: editDraft.isActive,
+        workCountry: editDraft.workCountry,
+        brWorkState: editDraft.workCountry === 'BR' ? (editDraft.brWorkState || undefined) : undefined,
+        nomeCompleto: editDraft.nomeCompleto,
+        nomeAbreviado: editDraft.nomeAbreviado,
+        dataNascimento: editDraft.dataNascimento,
+        genero: editDraft.genero,
+        estadoCivil: editDraft.estadoCivil,
+        habilitacoesLiterarias: editDraft.habilitacoesLiterarias,
+        curso: editDraft.curso,
+        faculdade: editDraft.faculdade,
+        nacionalidade: editDraft.nacionalidade,
+        emailPessoal: editDraft.emailPessoal,
+        telemovel: editDraft.telemovel,
+        githubUser: editDraft.githubUser,
+        moradaFiscal: editDraft.moradaFiscal,
+        endereco: editDraft.endereco,
+        localidade: editDraft.localidade,
+        codigoPostal: editDraft.codigoPostal,
+        matriculaCarro: editDraft.matriculaCarro,
+        localNascimentoPais: editDraft.localNascimentoPais,
+        localNascimentoCidade: editDraft.localNascimentoCidade,
+        nomePai: editDraft.nomePai,
+        nomeMae: editDraft.nomeMae,
+        cartaoCidadao: editDraft.cartaoCidadao,
+        validadeCartaoCidadao: editDraft.validadeCartaoCidadao,
+        nif: editDraft.nif,
+        cpf: editDraft.cpf,
+        pis: editDraft.pis,
+        ctps: editDraft.ctps,
+        ctpsSerie: editDraft.ctpsSerie,
+        ctpsDataExpedicao: editDraft.ctpsDataExpedicao,
+        rg: editDraft.rg,
+        rgOrgaoEmissor: editDraft.rgOrgaoEmissor,
+        rgDataExpedicao: editDraft.rgDataExpedicao,
+        cnh: editDraft.cnh,
+        cnhCategoria: editDraft.cnhCategoria,
+        cnhDataValidade: editDraft.cnhDataValidade,
+        tituloEleitor: editDraft.tituloEleitor,
+        zonaEleitoral: editDraft.zonaEleitoral,
+        secaoEleitoral: editDraft.secaoEleitoral,
+        certificadoReservista: editDraft.certificadoReservista,
+        niss: editDraft.niss,
+        iban: editDraft.iban,
+        situacaoIrs: editDraft.situacaoIrs,
+        numeroDependentes: editDraft.numeroDependentes,
+        declaracaoIrs: editDraft.declaracaoIrs,
+        irsJovem: editDraft.irsJovem,
+        anoPrimeiroDesconto: editDraft.anoPrimeiroDesconto,
+        primeiroEmprego: editDraft.primeiroEmprego,
+        recebeAposentadoria: editDraft.recebeAposentadoria,
+        recebeSeguroDesemprego: editDraft.recebeSeguroDesemprego,
+        valeTransporte: editDraft.valeTransporte,
+        numeroCartaoContinente: editDraft.numeroCartaoContinente,
+        voucherNosData: editDraft.voucherNosData,
+        comprovativoMoradaFiscal: editDraft.comprovativoMoradaFiscal,
+        comprovativoCartaoCidadao: editDraft.comprovativoCartaoCidadao,
+        comprovativoIban: editDraft.comprovativoIban,
+        comprovativoCartaoContinente: editDraft.comprovativoCartaoContinente,
+        contactoEmergenciaNome: editDraft.contactoEmergenciaNome,
+        contactoEmergenciaParentesco: editDraft.contactoEmergenciaParentesco,
+        contactoEmergenciaNumero: editDraft.contactoEmergenciaNumero,
+        cargo: editDraft.cargo,
+        categoriaProfissional: editDraft.categoriaProfissional,
+        numeroMecanografico: editDraft.numeroMecanografico,
+        funcao: editDraft.funcao,
+        dataInicioContrato: editDraft.dataInicioContrato,
+        dataFimContrato: editDraft.dataFimContrato,
+        tipoContrato: editDraft.tipoContrato,
+        regimeHorario: editDraft.regimeHorario,
+        horasSemanaisContrato: editDraft.horasSemanaisContrato,
       });
 
       clearApiCache('/users/collaborators');
@@ -2901,10 +2910,7 @@ export default function CollaboratorsPage() {
 
     try {
       if (!draft.enabled && permission.assignment) {
-        await apiRequest(`/users/${selectedRow.id}/permissions/${permission.id}`, {
-          method: 'DELETE',
-          headers: getAuthHeaders(),
-        });
+        await revokeUserPermission(selectedRow.id, permission.id);
       } else if (draft.enabled) {
         const body = {
           permissionId: permission.id,
@@ -2920,17 +2926,9 @@ export default function CollaboratorsPage() {
         };
 
         if (permission.assignment) {
-          await apiRequest(`/users/${selectedRow.id}/permissions/${permission.id}`, {
-            method: 'PATCH',
-            headers: getAuthHeaders(),
-            body: JSON.stringify(body),
-          });
+          await updateUserPermission(selectedRow.id, permission.id, body);
         } else {
-          await apiRequest(`/users/${selectedRow.id}/permissions`, {
-            method: 'POST',
-            headers: getAuthHeaders(),
-            body: JSON.stringify(body),
-          });
+          await createUserPermission(selectedRow.id, body);
         }
       }
 
@@ -2957,18 +2955,9 @@ export default function CollaboratorsPage() {
 
     setIsTogglingAccessTotal(true);
     try {
-      const result = await apiRequest<{ success: boolean; accessTotal: boolean }>(`/users/${targetUser.id}/access-total`, {
-        method: 'PATCH',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          isEnabled: enable,
-          reason: reason?.trim() || undefined,
-        }),
-      });
+      const result = await setUserAccessTotal(targetUser.id, enable, reason);
 
-      const refreshedDetails = await apiRequest<UserPermissionsResponse>(`/users/${targetUser.id}/permissions`, {
-        headers: getAuthHeaders(),
-      });
+      const refreshedDetails = await loadUserPermissions<UserPermissionsResponse>(targetUser.id);
 
       const refreshedAccessTotal = Boolean(refreshedDetails.accessTotal ?? result.accessTotal);
       const refreshedPermissions = refreshedDetails.permissions;
@@ -3731,9 +3720,7 @@ export default function CollaboratorsPage() {
     setIsSettingsLoading(true);
     setSettingsStatus('');
     try {
-      const data = await apiRequest<AdmissionFormSettingsResponse>('/users/admissions/settings', {
-        headers: getAuthHeaders(),
-      });
+      const data = await loadAdmissionFormSettings<AdmissionFormSettingsResponse>();
       setAdmissionSettings(data);
       setSettingsDraftRequiredFields(data.requiredFieldsByCountry[settingsCountry]);
     } catch (error) {
@@ -3769,7 +3756,29 @@ export default function CollaboratorsPage() {
     ));
   }
 
-  async function saveAdmissionSettingsFromCollaborators() {
+  function toggleAdmissionInternshipPreset(enabled: boolean) {
+    const presetFields = admissionSettingsPresetFieldKeys[settingsCountry];
+    if (enabled) {
+      setSettingsDraftRequiredFields((current) => current.filter((field) => !presetFields.includes(field)));
+      return;
+    }
+
+    setSettingsDraftRequiredFields((current) => [
+      ...current,
+      ...presetFields.filter((field) => !current.includes(field)),
+    ]);
+  }
+
+  function requestSaveAdmissionSettings() {
+    if (hasAdmissionSettingsChanges) {
+      setIsSaveAdmissionSettingsConfirmationOpen(true);
+      return;
+    }
+
+    void saveAdmissionSettingsFromCollaborators(false);
+  }
+
+  async function saveAdmissionSettingsFromCollaborators(asDefault = false) {
     if (settingsDraftRequiredFields.length === 0) {
       setSettingsStatus('Seleciona pelo menos um campo obrigatório.');
       return;
@@ -3777,21 +3786,21 @@ export default function CollaboratorsPage() {
 
     setIsSettingsSaving(true);
     setSettingsStatus('');
+    setIsSaveAdmissionSettingsConfirmationOpen(false);
     try {
-      const saved = await apiRequest<AdmissionFormSettingsResponse>('/users/admissions/settings', {
-        method: 'PUT',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ country: settingsCountry, requiredFields: settingsDraftRequiredFields }),
-      });
+      const saved = await saveAdmissionFormSettings<AdmissionFormSettingsResponse>(settingsCountry, settingsDraftRequiredFields);
       setAdmissionSettings(saved);
       setSettingsDraftRequiredFields(saved.requiredFieldsByCountry[settingsCountry]);
+      const message = asDefault
+        ? 'Configuração guardada como padrão com sucesso.'
+        : 'Configuração guardada com sucesso.';
       if (isSettingsFlowFromCreateModal) {
         setIsSettingsModalOpen(false);
         setIsCreateModalOpen(true);
         setIsSettingsFlowFromCreateModal(false);
-        setStatus(`Configuração guardada com sucesso.`);
+        setStatus(message);
       } else {
-        setSettingsStatus(`Configuração guardada com sucesso.`);
+        setSettingsStatus(message);
       }
     } catch (error) {
       setSettingsStatus(error instanceof Error ? error.message : 'Falha ao guardar configurações da admissão.');
@@ -3827,10 +3836,11 @@ export default function CollaboratorsPage() {
 
     setIsCreatingUser(true);
     try {
-      await apiRequest<{ id: string; fullName: string; personalEmail: string }>('/users/admissions', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ fullName, personalEmail, workCountry, brWorkState }),
+      await createAdmissionRequest<{ id: string; fullName: string; personalEmail: string }>({
+        fullName,
+        personalEmail,
+        workCountry,
+        brWorkState,
       });
       closeCreateModal();
       setStatus('Pedido de admissão criado. O convite foi enviado para o email pessoal do colaborador.');
@@ -4198,11 +4208,39 @@ export default function CollaboratorsPage() {
         onClose={() => {
           setIsSettingsModalOpen(false);
           setIsSettingsFlowFromCreateModal(false);
+          setIsSaveAdmissionSettingsConfirmationOpen(false);
         }}
         onCountryChange={changeAdmissionSettingsCountry}
         onToggleField={toggleAdmissionRequiredField}
-        onSave={() => { void saveAdmissionSettingsFromCollaborators(); }}
+        onToggleInternshipPreset={toggleAdmissionInternshipPreset}
+        onSave={requestSaveAdmissionSettings}
       />
+
+      <Modal
+        open={isSaveAdmissionSettingsConfirmationOpen}
+        title="Guardar como padrão?"
+        onClose={() => setIsSaveAdmissionSettingsConfirmationOpen(false)}
+        width="min(520px, 92vw)"
+        footer={(
+          <div className="modal-footer-split">
+            <Button type="button" variant="ghost" onClick={() => setIsSaveAdmissionSettingsConfirmationOpen(false)}>
+              Não, só para agora
+            </Button>
+            <Button type="button" variant="primary" onClick={() => { void saveAdmissionSettingsFromCollaborators(true); }}>
+              Sim, guardar como padrão
+            </Button>
+          </div>
+        )}
+      >
+        <div style={{ display: 'grid', gap: 14 }}>
+          <p style={{ margin: 0 }}>
+            Quer guardar esta seleção de campos como padrão para futuros pedidos de admissão?
+          </p>
+          <p style={{ margin: 0, color: '#475569', fontSize: 13 }}>
+            Se não, a configuração será guardada apenas para esta sessão.
+          </p>
+        </div>
+      </Modal>
 
       <Modal
         open={isWorkHoursModalOpen}

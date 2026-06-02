@@ -55,16 +55,16 @@ type WellbeingContent = {
 };
 
 const DEFAULT_REPORT_CONFIG: WellbeingReportConfig = {
-  modalTitle: 'Reportar situação',
-  introTitle: 'Canal confidencial de reporte',
-  introText: 'O reporte será enviado apenas para t.people. Usa este canal para situações que precisem de acompanhamento formal.',
+  modalTitle: 'Reclame Aqui',
+  introTitle: 'Canal confidencial Reclame Aqui',
+  introText: 'A tua reclamação chega diretamente a t.people com prioridade. Descreve o caso com clareza, contexto e contacto preferencial.',
   subjectLabel: 'Assunto',
-  subjectPlaceholder: 'Ex.: Situação de assédio verbal',
+  subjectPlaceholder: 'Ex.: Reclamação sobre saúde e bem-estar',
   descriptionLabel: 'Descrição detalhada',
-  descriptionPlaceholder: 'Descreve o ocorrido com contexto, datas aproximadas e pessoas envolvidas.',
+  descriptionPlaceholder: 'Descreve o ocorrido, contexto, datas aproximadas, locais e pessoas envolvidas.',
   preferredContactLabel: 'Contacto preferencial',
   preferredContactPlaceholder: 'Ex.: email pessoal, Teams ou telemóvel',
-  submitLabel: 'Enviar reporte',
+  submitLabel: 'Enviar reclamação',
   cancelLabel: 'Cancelar',
 };
 
@@ -662,17 +662,17 @@ export default function WellbeingPage() {
   async function submitHarassmentReport() {
     setIsSubmittingReport(true);
     try {
-      const response = await apiRequest<{ message: string }>('/wellbeing/harassment-report', {
+      const response = await apiRequest<{ message: string }>('/wellbeing/complaint', {
         method: 'POST',
         headers: authHeaders(getStoredAuthToken()),
         body: JSON.stringify(reportDraft),
       });
-      showToast('success', response.message || 'Reporte enviado com sucesso.');
+      showToast('success', response.message || 'Reclamação enviada com sucesso.');
       setReportDraft({ subject: '', description: '', preferredContact: '' });
       setIsReportModalOpen(false);
       setActiveReportResource(null);
     } catch (error) {
-      showToast('error', error instanceof Error ? error.message : 'Não foi possível enviar o reporte.');
+      showToast('error', error instanceof Error ? error.message : 'Não foi possível enviar a reclamação.');
     } finally {
       setIsSubmittingReport(false);
     }
@@ -1160,7 +1160,7 @@ export default function WellbeingPage() {
                               setIsReportModalOpen(true);
                             }}
                           >
-                            {resource.buttonLabel || 'Reportar situação'}
+                            {resource.buttonLabel || 'Reclamar aqui'}
                           </Button>
                           {resource.files.map((file) => (
                             <a key={file.id} className="wellbeing-card__link" href={file.link} target="_blank" rel="noreferrer">
@@ -1192,17 +1192,6 @@ export default function WellbeingPage() {
         width="min(680px, calc(100vw - 32px))"
         footer={(
           <>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setIsReportModalOpen(false);
-                setActiveReportResource(null);
-              }}
-              disabled={isSubmittingReport}
-            >
-              {activeReportConfig.cancelLabel}
-            </Button>
             <Button type="button" variant="primary" onClick={() => void submitHarassmentReport()} isLoading={isSubmittingReport}>
               {activeReportConfig.submitLabel}
             </Button>
@@ -1254,7 +1243,7 @@ export default function WellbeingPage() {
           </div>
           <p className="wellbeing-report-form__privacy">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
-            Este reporte é confidencial e será tratado com discrição apenas por t.people.
+            Esta reclamação é confidencial e será tratada com discrição por t.people.
           </p>
         </div>
       </Modal>

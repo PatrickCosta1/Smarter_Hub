@@ -21,6 +21,8 @@ type NotificationDetails = {
   title: string;
   message: string;
   highlights?: string[];
+  detailRows?: Array<{ label: string; value: string }>;
+  description?: string;
   tag: string;
   icon: string;
   color: 'blue' | 'green' | 'yellow' | 'red' | 'purple' | 'orange';
@@ -403,6 +405,46 @@ function buildNotificationDetails(title: string, message: string): NotificationD
     };
   }
 
+  if (normalized.includes('reclama') || normalized.includes('reclame aqui') || normalized.includes('reclamação') || normalized.includes('reclamações')) {
+    const reporterLine = structured.lines.find((l) => /^colaborador:/i.test(l)) ?? '';
+    const countryLine = structured.lines.find((l) => /^país:/i.test(l)) ?? '';
+    const subjectLine = structured.lines.find((l) => /^assunto:/i.test(l)) ?? '';
+    const contactLine = structured.lines.find((l) => /^contacto preferencial:/i.test(l)) ?? '';
+    const descriptionIndex = structured.lines.findIndex((l) => /^descrição:/i.test(l));
+    const descriptionLines: string[] = [];
+
+    if (descriptionIndex >= 0) {
+      for (let i = descriptionIndex + 1; i < structured.lines.length; i += 1) {
+        const line = structured.lines[i];
+        if (/^─+$/.test(line)) {
+          continue;
+        }
+        descriptionLines.push(line);
+      }
+    }
+
+    const cleanedReporter = reporterLine.replace(/^colaborador:\s*/i, '') || 'Não informado';
+    const cleanedSubject = subjectLine.replace(/^assunto:\s*/i, '') || 'Não informado';
+    const cleanedCountry = countryLine.replace(/^país:\s*/i, '') || 'Não informado';
+    const cleanedContact = contactLine.replace(/^contacto preferencial:\s*/i, '') || 'Não indicado';
+    const description = descriptionLines.join(' ') || 'Sem descrição detalhada.';
+
+    return {
+      title: 'Reclamação recebida',
+      message: `${cleanedReporter} — ${cleanedSubject}`,
+      tag: 'Saúde e Bem-estar',
+      icon: '📩',
+      color: 'red',
+      detailRows: [
+        { label: 'Colaborador', value: cleanedReporter },
+        { label: 'Assunto', value: cleanedSubject },
+        { label: 'País', value: cleanedCountry },
+        { label: 'Contacto preferencial', value: cleanedContact },
+      ],
+      description,
+    };
+  }
+
   if (normalized.includes('admissão pronta para contrato') || (normalized.includes('dados pessoais') && normalized.includes('foram aprovados'))) {
     return {
       title: 'Admissão pronta para contrato',
@@ -502,7 +544,6 @@ export default function NotificationsPage() {
     () => selectedNotification ? buildNotificationDetails(selectedNotification.title, selectedNotification.message) : null,
     [selectedNotification],
   );
-  const selectedAction = selectedDetails?.action;
 
   const notificationToDeleteItem = useMemo(
     () => notifications.find((item) => item.id === notificationToDelete) || null,
@@ -807,16 +848,25 @@ export default function NotificationsPage() {
               </>
             ) : (
               <>
-                <p className="notification-detail__summary">{selectedDetails.message}</p>
 
-                {selectedDetails.highlights && selectedDetails.highlights.length > 0 && (
-                  <div className="notification-detail__panel notification-detail__panel--facts">
-                    <strong>Informação relevante</strong>
-                    <ul className="notification-detail__facts">
-                      {selectedDetails.highlights.map((line) => (
-                        <li key={`detail-${line}`}>{line}</li>
+                {selectedDetails.detailRows && selectedDetails.detailRows.length > 0 && (
+                  <div className="notification-detail__panel notification-detail__panel--structured">
+                    <strong>Dados da reclamação</strong>
+                    <div className="notification-detail__grid">
+                      {selectedDetails.detailRows.map((item) => (
+                        <div key={`detail-${item.label}`} className="notification-detail__field">
+                          <strong><span className="notification-detail__field-label">{item.label}: </span></strong>
+                          <span className="notification-detail__field-value">{item.value}</span>
+                        </div>
                       ))}
-                    </ul>
+                    </div>
+                  </div>
+                )}
+
+                {selectedDetails.description && (
+                  <div className="notification-detail__panel notification-detail__panel--description">
+                    <strong>Descrição</strong>
+                    <p>{selectedDetails.description}</p>
                   </div>
                 )}
 

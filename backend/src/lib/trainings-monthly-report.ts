@@ -18,6 +18,7 @@ export type TrainingMonthlyReportUpcomingItem = {
   collaboratorId: string;
   collaboratorName: string;
   hierarchyLevel: string;
+  requestedByName: string;
 };
 
 export type TrainingMonthlyReportTeamSummary = {
@@ -179,6 +180,23 @@ function safeCollaboratorName(user: {
   return fullName || user.username;
 }
 
+function safeAssignedByName(user?: {
+  username: string;
+  profile?: { nomeAbreviado?: string; nomeCompleto?: string } | null;
+}) {
+  if (!user) {
+    return '-';
+  }
+
+  const shortName = String(user.profile?.nomeAbreviado || '').trim();
+  if (shortName) {
+    return shortName;
+  }
+
+  const fullName = String(user.profile?.nomeCompleto || '').trim();
+  return fullName || user.username || '-';
+}
+
 function resolveHierarchyLevel(user: {
   role: string;
   profile?: { categoriaProfissional: string; cargo: string } | null;
@@ -259,6 +277,17 @@ export async function buildTrainingMonthlyReport(
           },
         },
       },
+      assignedBy: {
+        select: {
+          username: true,
+          profile: {
+            select: {
+              nomeAbreviado: true,
+              nomeCompleto: true,
+            },
+          },
+        },
+      },
     },
     orderBy: [{ dataInicio: 'asc' }, { nome: 'asc' }],
   });
@@ -307,6 +336,7 @@ export async function buildTrainingMonthlyReport(
 
     const hierarchyLevel = resolveHierarchyLevel(row.user);
     const collaboratorName = safeCollaboratorName(row.user);
+    const requestedByName = safeAssignedByName(row.assignedBy);
 
     const key = team.id;
     const existing = teamMap.get(key) || {
@@ -334,6 +364,7 @@ export async function buildTrainingMonthlyReport(
       collaboratorId: row.user.id,
       collaboratorName,
       hierarchyLevel,
+      requestedByName,
     });
 
     const breakdownMap = new Map(existing.hierarchyBreakdown.map((item) => [item.level, item.upcomingCount]));
@@ -429,6 +460,7 @@ export function buildTrainingMonthlyReportCsv(report: TrainingMonthlyReport) {
     'Estado',
     'Entidade',
     'Horas',
+    'Solicitado por',
   ];
 
   const lines = [header.map(escapeCsvCell).join(';')];
@@ -444,6 +476,7 @@ export function buildTrainingMonthlyReportCsv(report: TrainingMonthlyReport) {
         team.assignedInMonth,
         team.completedInMonth,
         team.completionRate,
+        '-',
         '-',
         '-',
         '-',
@@ -472,6 +505,7 @@ export function buildTrainingMonthlyReportCsv(report: TrainingMonthlyReport) {
         formatTrainingStatus(row.status),
         row.entity,
         row.hours,
+        row.requestedByName,
       ].map(escapeCsvCell).join(';'));
     }
   }
@@ -587,8 +621,8 @@ function drawTeamSection(pdf: PdfDoc, team: TrainingMonthlyReportTeamSummary) {
   const previewRows = team.upcoming.slice(0, 8);
   let currentY = tableTop + 24;
   for (const row of previewRows) {
-    ensurePdfSpace(pdf, 24);
-    if (currentY + 20 > pdf.page.height - pdf.page.margins.bottom) {
+    ensurePdfSpace(pdf, 32);
+    if (currentY + 28 > pdf.page.height - pdf.page.margins.bottom) {
       pdf.addPage();
       pdf.y = pdf.page.margins.top;
       currentY = pdf.y;
@@ -601,8 +635,11 @@ function drawTeamSection(pdf: PdfDoc, team: TrainingMonthlyReportTeamSummary) {
       .text(row.trainingName, x + 290, currentY, { width: width - 384, ellipsis: true })
       .text(formatTrainingStatus(row.status), x + width - 82, currentY, { width: 72, align: 'right' });
 
-    pdf.strokeColor('#e4ecfa').moveTo(x, currentY + 16).lineTo(x + width, currentY + 16).stroke();
-    currentY += 20;
+    pdf.fillColor('#4f6f95').font('Helvetica-Oblique').fontSize(7.5)
+      .text(`Entidade: ${row.entity || '-'} · Solicitado por: ${row.requestedByName}`, x + 8, currentY + 10, { width: width - 16, ellipsis: true });
+
+    pdf.strokeColor('#e4ecfa').moveTo(x, currentY + 24).lineTo(x + width, currentY + 24).stroke();
+    currentY += 28;
   }
 
   if (team.upcoming.length > previewRows.length) {

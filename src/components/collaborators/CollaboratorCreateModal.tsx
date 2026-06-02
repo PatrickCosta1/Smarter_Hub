@@ -37,7 +37,6 @@ export default function CollaboratorCreateModal({
       width="min(700px, 94vw)"
       footer={
         <div className="modal-footer-split">
-          <Button type="button" variant="ghost" onClick={onClose} disabled={isCreatingUser}>Cancelar</Button>
           <Button type="button" variant="primary" isLoading={isCreatingUser} onClick={onSubmit}>Enviar convite</Button>
         </div>
       }

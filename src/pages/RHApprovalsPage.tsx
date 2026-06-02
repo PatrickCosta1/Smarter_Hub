@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { apiRequest, apiRequestCached, authHeaders, clearApiCache, getBackendBase, isAbortError } from '../portal/api';
 import { getStoredAuthToken } from '../portal/auth-storage';
 import { usePortal } from '../portal/context';
+import { approveAdmissionPersonal as apiApproveAdmissionPersonal, completeAdmission as apiCompleteAdmission, requestAdmissionCorrection as apiRequestAdmissionCorrection } from '../portal/api-endpoints';
 import { MICROCOPY, resolveErrorMessage } from '../portal/microcopy';
 import { formatVacationStatusLabel, getVacationStatusTone } from '../portal/labels';
 import Badge from '../components/ui/Badge';
@@ -157,7 +158,8 @@ function calculateWeeklyHoursFromDays(days: ReadonlyArray<WorkDaySchedule>) {
       return null;
     }
 
-    totalMinutes += end - start;
+    const lunchDeduction = start < 13 * 60 && end > 14 * 60 ? 60 : 0;
+    totalMinutes += end - start - lunchDeduction;
   }
 
   if (!hasActiveDay || totalMinutes <= 0) {
@@ -627,11 +629,7 @@ export default function RHApprovalsPage() {
 
   async function requestAdmissionCorrection(request: AdmissionRequest, reason: string) {
     await runAction(`correct-admission-${request.id}`, 'Pedido devolvido para correção.', 'Erro ao devolver pedido para correção.', async () => {
-      await apiRequest(`/users/admissions/${request.id}/request-correction`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ reason }),
-      });
+      await apiRequestAdmissionCorrection(request.id, reason);
       clearApiCache('/users/admissions/review');
       setAdmissionRequests((current) => current.filter((item) => item.id !== request.id));
       setSelectedAdmissionRequest(null);
@@ -642,10 +640,7 @@ export default function RHApprovalsPage() {
 
   async function approveAdmissionPersonalData(request: AdmissionRequest) {
     await runAction(`approve-admission-${request.id}`, 'Dados pessoais aprovados.', 'Erro ao aprovar dados pessoais.', async () => {
-      await apiRequest(`/users/admissions/${request.id}/approve-personal`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-      });
+      await apiApproveAdmissionPersonal(request.id);
       clearApiCache('/users/admissions/review');
       setAdmissionRequests((current) => current.map((item) => (
         item.id === request.id ? { ...item, status: 'APPROVED_PENDING_CONTRACT' } : item
@@ -662,11 +657,7 @@ export default function RHApprovalsPage() {
     }
 
     await runAction(`complete-admission-${request.id}`, 'Colaborador criado com sucesso.', 'Erro ao concluir a admissão.', async () => {
-      await apiRequest(`/users/admissions/${request.id}/complete`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(contractDraft),
-      });
+      await apiCompleteAdmission(request.id, contractDraft);
       clearApiCache('/users/admissions/review');
       clearApiCache('/users/collaborators');
       setAdmissionRequests((current) => current.filter((item) => item.id !== request.id));

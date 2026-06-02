@@ -1673,7 +1673,6 @@ export default function TrainingsPage() {
         width="min(860px, 96vw)"
         footer={
           <div className="modal-footer-split trainings-monthly-modal__footer">
-            <Button type="button" variant="ghost" onClick={() => setIsMonthlyReportModalOpen(false)}>Fechar</Button>
             <div className="trainings-monthly-modal__footer-actions">
               <Button type="button" variant="secondary" onClick={() => void exportMonthlyReport('csv')} disabled={isExportingMonthlyReport || !monthlyReportPreview}>
                 {isExportingMonthlyReport ? 'A exportar...' : 'Exportar CSV'}

@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { apiRequest, authHeaders } from '../portal/api';
-import { getStoredAuthToken } from '../portal/auth-storage';
+import {
+  approveAdmissionPersonal,
+  completeAdmission,
+  loadAdmissionDetail,
+  loadAdmissionList,
+  requestAdmissionCorrection,
+} from '../portal/api-endpoints';
 import { usePortal } from '../portal/context';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
-
-function getAuthHeaders() {
-  const token = getStoredAuthToken();
-  return authHeaders(token);
-}
 
 /* ── Types ────────────────────────────────────────────────────────────────── */
 
@@ -121,7 +121,8 @@ function calculateWeeklyHoursFromDays(days: ReadonlyArray<WorkDaySchedule>) {
     const start = parseTimeToMinutes(day.start);
     const end = parseTimeToMinutes(day.end);
     if (start == null || end == null || end <= start) return null;
-    totalMinutes += end - start;
+    const lunchDeduction = start < 13 * 60 && end > 14 * 60 ? 60 : 0;
+    totalMinutes += end - start - lunchDeduction;
   }
   if (!hasActiveDay || totalMinutes <= 0) return null;
   return Math.round((totalMinutes / 60) * 100) / 100;
@@ -239,8 +240,7 @@ export default function AdmissionsPage() {
     setIsLoading(true);
     setError('');
     try {
-      const qs = status ? `?status=${encodeURIComponent(status)}` : '';
-      const data = await apiRequest<ListResponse>(`/users/admissions/list${qs}`, { headers: getAuthHeaders() });
+      const data = await loadAdmissionList<ListResponse>(status);
       setRows(data.rows);
       setTotal(data.total);
     } catch (e) {
@@ -256,7 +256,7 @@ export default function AdmissionsPage() {
   const openDetail = useCallback(async (id: string) => {
     setDetailLoading(true);
     try {
-      const data = await apiRequest<Admission>(`/users/admissions/${id}`, { headers: getAuthHeaders() });
+      const data = await loadAdmissionDetail<Admission>(id);
       setSelected(data);
     } finally {
       setDetailLoading(false);
@@ -507,7 +507,7 @@ function DetailPanel({ admission, onClose, onRefresh }: {
   const handleApprove = async () => {
     setIsSaving(true);
     try {
-      await apiRequest(`/users/admissions/${admission.id}/approve-personal`, { method: 'POST', headers: getAuthHeaders() });
+      await approveAdmissionPersonal(admission.id);
       setActionMsg('✅ Dados pessoais aprovados. O processo segue para fase contratual.');
       setIsApproveConfirmOpen(false);
       onRefresh();
@@ -525,11 +525,7 @@ function DetailPanel({ admission, onClose, onRefresh }: {
     }
     setIsSaving(true);
     try {
-      await apiRequest(`/users/admissions/${admission.id}/request-correction`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: correctionReason }),
-      });
+      await requestAdmissionCorrection(admission.id, correctionReason);
       setActionMsg('✅ Pedido de correção enviado. Novo link enviado ao colaborador.');
       setIsCorrectionModalOpen(false);
       setCorrectionReason('');
@@ -553,11 +549,7 @@ function DetailPanel({ admission, onClose, onRefresh }: {
     if (!window.confirm(`Confirmas a criação do utilizador para ${admission.fullName}?`)) return;
     setIsSaving(true);
     try {
-      await apiRequest(`/users/admissions/${admission.id}/complete`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...contract }),
-      });
+      await completeAdmission(admission.id, { ...contract });
       setActionMsg(`✅ Admissão concluída! Utilizador criado com username @${contract.companyUsername}.`);
       setShowContractForm(false);
       onRefresh();
